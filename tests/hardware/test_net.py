@@ -116,11 +116,15 @@ def test_sock_echo_between_two_modules(app_exe, wifi_peers, port_a, port_b, prot
 
 
 @pytest.mark.two_devices
-def test_dtls_between_two_modules(app_exe, wifi_peers, port_a, port_b):
+def test_dtls_between_two_modules(app_exe, wifi_peers, port_a, port_b, tmp_path):
+    """A serves DTLS with a certificate from the app's local CA (store in tmp_path); B sends one message."""
     ip_a = wifi_peers[port_a][0]
-    proc, seen, lines = _background(app_exe, port_a, "dtls.server 5684", ready="DTLS server on port")
+    made = subprocess.run(_args(app_exe, port_a, "utils.tls.ca.create", f"utils.tls.server.create server {ip_a}"),
+                          capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path)
+    assert made.returncode == 0, made.stdout
+    proc, seen, lines = _background(app_exe, port_a, "dtls.server 5684", ready="DTLS server on port", cwd=tmp_path)
     try:
-        out = _run(app_exe, port_b, f"dtls.client {ip_a} 5684 ucx-dtls")
+        out = _run(app_exe, port_b, f"dtls.client {ip_a} 5684 ucx-dtls", cwd=tmp_path)
     finally:
         text = _finish(proc, seen, lines)
     assert out.returncode == 0, out.stdout + text

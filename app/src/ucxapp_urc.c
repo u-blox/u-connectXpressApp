@@ -54,20 +54,23 @@ static void linkUpUrc(struct uCxHandle *h, int32_t wlan, uMacAddress_t *bssid, i
 {
     (void)h; (void)wlan; (void)bssid;
     ucxapp_ui_wifi_set(true);
-    evt("wifi: link up, channel %d", (int)ch);
+    evt("wifi: link up, ch %d", (int)ch);
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_UP);
 }
 static void linkDownUrc(struct uCxHandle *h, int32_t wlan, int32_t reason)
 {
     (void)h; (void)wlan;
     ucxapp_ui_wifi_set(false);
-    evt("wifi: link down, reason %d", (int)reason);
+    evt("wifi: link down (%d)", (int)reason);
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_DOWN);
 }
 static void sockConnectedUrc(struct uCxHandle *h, int32_t s)                           { (void)h; evt("sock: %d connected", (int)s); ucxapp_events_signal(URC_FLAG_SOCK_CONNECTED); }
 static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_ft_on_sock_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
 static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_stream_on_data(s); ucxapp_ft_on_sock_data(s); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
-static void sockIncomingUrc(struct uCxHandle *h, int32_t s, uSockIpAddress_t *ip, int32_t listenSock) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_stream_on_incoming(s, listenSock); ucxapp_ft_on_sock_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
+/* NORA-W36 3.2.0 and 3.5.0 send +UESOIC:<listening socket>,<ip>,<new socket> (traced: listen on 0, accept gives
+ * "+UESOIC:0,<ip>,1"), the reverse of the AT command reference that the generated parser follows, so the two
+ * handles are swapped here. */
+static void sockIncomingUrc(struct uCxHandle *h, int32_t listenSock, uSockIpAddress_t *ip, int32_t s) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_stream_on_incoming(s, listenSock); ucxapp_ft_on_sock_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
 static void spsConnectedUrc(struct uCxHandle *h, int32_t c)                            { (void)h; evt("sps: connected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_CONNECTED); }
 static void spsDisconnectedUrc(struct uCxHandle *h, int32_t c)                         { (void)h; evt("sps: disconnected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_DISCONNECTED); }
 static void spsDataUrc(struct uCxHandle *h, int32_t c, int32_t n)                      { (void)h; evt("sps: %d bytes on conn %d", (int)n, (int)c); ucxapp_stream_on_sps_data(); ucxapp_events_signal(URC_FLAG_SPS_DATA); }
@@ -116,6 +119,17 @@ static void pingCompleteUrc(struct uCxHandle *h, int32_t sent, int32_t received,
     gUcxappPingReceived = received;
     gUcxappPingAvgMs = avgMs;
     ucxapp_events_signal(URC_FLAG_PING_COMPLETE);
+}
+
+void ucxapp_adopt_connections(uCxHandle_t *ucx)
+{
+    uCxBtListConnections_t conn;
+
+    uCxBluetoothListConnectionsBegin(ucx);
+    while (uCxBluetoothListConnectionsGetNext(ucx, &conn)) {
+        ucxapp_handle_add(UCXAPP_HANDLE_CONN, conn.conn_handle);
+    }
+    uCxEnd(ucx);
 }
 
 void ucxapp_urc_register(uCxHandle_t *ucx)

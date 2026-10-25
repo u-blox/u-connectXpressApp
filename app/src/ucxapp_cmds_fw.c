@@ -172,6 +172,9 @@ static int cmdFwFlash(ucxapp_t *app, int argc, char *argv[])
     if (uCxSystemSetEchoOff(app->ucx) != 0) {
         ucxapp_print("warning: could not disable echo\n");
     }
+    if (uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON) != 0) {
+        ucxapp_print("warning: could not enable extended error codes\n");
+    }
     showVersion(app);
     return rc;
 }

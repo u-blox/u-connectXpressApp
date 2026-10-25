@@ -15,6 +15,19 @@ def test_wifi_scan_finds_networks(app_exe, port_a):
 
 
 @pytest.mark.hardware
+def test_wifi_enterprise_settings_are_accepted(app_exe, port_a):
+    """The module takes the EAP-TLS and PEAP settings; with no such network both time out cleanly."""
+    eap = _run(app_exe, port_a, "wifi.eap ucxapp-no-such-net ca0 cert0 key0 dev@example 1.2", timeout=120)
+    peap = _run(app_exe, port_a, "wifi.peap ucxapp-no-such-net alice secret12 ca0 1.3", timeout=120)
+    for out in (eap, peap):
+        assert out.returncode == 1, out.stdout
+        assert "failed to set" not in out.stdout, out.stdout
+        assert "timeout waiting for network up" in out.stdout, out.stdout
+    again = _run(app_exe, port_a, _wifi_connect_command(), "wifi.status", timeout=180)
+    assert again.returncode == 0, again.stdout
+
+
+@pytest.mark.hardware
 def test_wifi_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
     ssid, password = os.environ.get("UCX_WIFI_SSID"), os.environ.get("UCX_WIFI_PASS", "")
     if not ssid:

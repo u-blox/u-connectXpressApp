@@ -232,6 +232,14 @@ def test_hid_key_usage_error(app_exe, tmp_path):
     assert out.returncode == 1
 
 
+def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "help wifi.eap", "help wifi.peap", "wifi.ex")
+    assert "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]" in out.stdout
+    assert "<ssid> <user> <password|-> <ca> [1.2|1.3|any]" in out.stdout
+    assert "wifi.eap CorpNet ca client key" in out.stdout
+    assert "wifi.peap CorpNet alice - ca" in out.stdout
+
+
 @pytest.mark.hardware
 def test_device_info_and_wifi_status(app_exe, tmp_path, port_a):
     out = _run(app_exe, tmp_path, port_a, "device.info", "wifi.status", "sock.list")

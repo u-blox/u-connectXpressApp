@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "u_cx_system.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_stats.h"
 
@@ -326,7 +327,7 @@ static int cmdSockRecvFrom(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_events_wait(URC_FLAG_SOCK_DATA, (uint32_t)timeoutS);
-    int32_t n = uCxSocketReceiveFrom(app->ucx, handle, maxLen, buf, &from);
+    int32_t n = ucxapp_udp_recvfrom(app->ucx, handle, maxLen, buf, &from);
     if (n < 0) {
         ucxapp_print("ERROR: receive failed (%d%s)\n", (int)n, ucxapp_errname(n));
         return UCXAPP_ERR_FAILED;
@@ -340,10 +341,75 @@ static int cmdSockRecvFrom(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int closeAll(ucxapp_t *app)
+{
+    uCxSocketListStatus_t status;
+    int32_t handles[16];
+    int count = 0;
+    int failed = 0;
+
+    uCxSocketListStatusBegin(app->ucx);
+    while (uCxSocketListStatusGetNext(app->ucx, &status) && count < (int)(sizeof(handles) / sizeof(handles[0]))) {
+        handles[count++] = status.socket_handle;
+    }
+    uCxEnd(app->ucx);
+    for (int i = 0; i < count; i++) {
+        if (uCxSocketClose(app->ucx, handles[i]) != 0) {
+            failed++;
+        }
+        ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, handles[i]);
+    }
+    ucxapp_print("closed %d socket(s)\n", count - failed);
+    return failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
+#define UDP_READ_MAX     1460   /* NORA-W36 3.4 and later */
+#define UDP_READ_MAX_OLD 1000   /* NORA-W36 3.2 */
+#define ERR_INVALID_INT_RANGE 36
+static volatile int32_t gUdpReadMax;   /* 0: not probed yet, else the largest length the module accepted */
+
+void ucxapp_udp_reset_limit(void)
+{
+    gUdpReadMax = 0;
+}
+
+static bool lengthRejected(uCxHandle_t *ucx)
+{
+    int32_t code = 0;
+    return uCxSystemGetLastErrorCode(ucx, &code) == 0 && code == ERR_INVALID_INT_RANGE;
+}
+
+int32_t ucxapp_udp_recvfrom(uCxHandle_t *ucx, int32_t sock, int32_t len, uint8_t *buf, uCxSocketReceiveFrom_t *from)
+{
+    int32_t max = gUdpReadMax > 0 ? gUdpReadMax : UDP_READ_MAX;
+    if (len > max) {
+        len = max;
+    }
+    int32_t rc = uCxSocketReceiveFrom(ucx, sock, len, buf, from);
+    if (gUdpReadMax == 0 && len > UDP_READ_MAX_OLD) {
+        /* The binary read hides the error code; ask once whether the length itself was rejected. */
+        if (rc < 0 && lengthRejected(ucx)) {
+            gUdpReadMax = UDP_READ_MAX_OLD;
+            rc = uCxSocketReceiveFrom(ucx, sock, UDP_READ_MAX_OLD, buf, from);
+        } else {
+            gUdpReadMax = UDP_READ_MAX;
+        }
+    }
+    return rc;
+}
+
+int32_t ucxapp_udp_max(void)
+{
+    return gUdpReadMax > 0 ? gUdpReadMax : UDP_READ_MAX;
+}
+
 static int cmdSockClose(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t handle;
 
+    if (argc == 2 && strcmp(argv[1], "all") == 0) {
+        return closeAll(app);
+    }
     if (argc != 2 || !parseHandle(argv[1], &handle)) {
         return UCXAPP_ERR_USAGE;
     }
@@ -411,14 +477,18 @@ static int cmdSockEcho(ucxapp_t *app, int argc, char *argv[])
         int32_t n;
         if (udp) {
             uCxSocketReceiveFrom_t from;
-            n = uCxSocketReceiveFrom(app->ucx, sock, (int32_t)sizeof(buf), buf, &from);
+            n = ucxapp_udp_recvfrom(app->ucx, sock, (int32_t)sizeof(buf), buf, &from);
             if (n > 0 && uCxSocketSendTo(app->ucx, sock, &from.remote_ip, from.remote_port, buf, n) < 0) {
                 break;
             }
         } else {
             if (client < 0) {
                 if (popIncoming(&client, &listenSock)) {
-                    ucxapp_print("client connected\n");
+                    if (listenSock != sock) {
+                        client = -1;   /* another listener's connection (e.g. a web or stream server) */
+                    } else {
+                        ucxapp_print("client connected\n");
+                    }
                 }
                 n = 0;
             } else {
@@ -454,7 +524,7 @@ static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.accept",  "[wait_s]",                 "Wait for an incoming TCP connection (default 30 s)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockAccept },
     { "sock.sendto",  "[handle] <host> <port> <text>", "Send a UDP datagram",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockSendTo },
     { "sock.recvfrom", "[handle] [max] [wait_s]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
-    { "sock.close",   "[handle]",                 "Close a socket",                       UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
+    { "sock.close",   "[handle] | all",           "Close a socket, or every socket on the module", UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
     { "sock.list",    "",                         "List open sockets",                    UCXAPP_CMD_NEEDS_DEVICE, cmdSockList },
     { "sock.echo",    "<tcp|udp> <port> [seconds]", "Echo server for latency/throughput tests (default 60 s, one TCP client)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockEcho },
 };

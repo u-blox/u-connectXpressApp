@@ -66,17 +66,41 @@ static int cmdDeviceStatus(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Wait for +STARTUP so device.uptime is exact, then restore the session settings the reboot cleared. */
+static void waitStartup(ucxapp_t *app)
+{
+    if (!ucxapp_events_wait(URC_FLAG_STARTUP, 10)) {
+        ucxapp_print("warning: no +STARTUP received\n");
+    }
+    U_CX_PORT_SLEEP_MS(200);
+    if (uCxSystemSetEchoOff(app->ucx) != 0) {
+        ucxapp_print("warning: could not disable echo\n");
+    }
+    if (uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON) != 0) {
+        ucxapp_print("warning: could not enable extended error codes\n");
+    }
+}
+
+bool ucxapp_module_reboot(ucxapp_t *app)
+{
+    ucxapp_events_clear(URC_FLAG_STARTUP);
+    int32_t r = uCxSystemReboot(app->ucx);
+    if (r != 0) {
+        ucxapp_print("ERROR: reboot failed (%d%s)\n", (int)r, ucxapp_errname(r));
+        return false;
+    }
+    waitStartup(app);
+    return true;
+}
+
 static int cmdDeviceReboot(ucxapp_t *app, int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
 
-    int32_t r = uCxSystemReboot(app->ucx);
-    if (r != 0) {
-        ucxapp_print("ERROR: reboot failed (%d%s)\n", (int)r, ucxapp_errname(r));
+    if (!ucxapp_module_reboot(app)) {
         return UCXAPP_ERR_FAILED;
     }
-    U_CX_PORT_SLEEP_MS(2000);
     ucxapp_print("module rebooted\n");
     return UCXAPP_OK;
 }
@@ -91,12 +115,13 @@ static int cmdDeviceFactory(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: factory reset failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_events_clear(URC_FLAG_STARTUP);
     r = uCxSystemReboot(app->ucx);
     if (r != 0) {
         ucxapp_print("ERROR: reboot failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
-    U_CX_PORT_SLEEP_MS(2000);
+    waitStartup(app);
     ucxapp_print("module reset to factory settings and rebooted\n");
     return UCXAPP_OK;
 }

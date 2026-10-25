@@ -108,33 +108,46 @@ static void printLinkDetails(uCxHandle_t *ucx)
     }
 }
 
-static int connectTo(ucxapp_t *app, const char *ssid, const char *password, uint32_t timeoutS)
+/* Disconnect if needed and set the SSID; the caller then sets the security and calls startAndWait(). */
+static bool prepareConnect(uCxHandle_t *ucx, const char *ssid)
 {
-    uCxHandle_t *ucx = app->ucx;
-
     if (isConnected(ucx)) {
         ucxapp_print("Already connected, disconnecting first...\n");
         uCxWifiStationDisconnect(ucx);
         U_CX_PORT_SLEEP_MS(1000);
     }
-
     if (uCxWifiStationSetConnectionParams(ucx, 0, ssid) != 0) {
         ucxapp_print("ERROR: failed to set connection parameters\n");
-        return UCXAPP_ERR_FAILED;
+        return false;
     }
-    if (password[0] != '\0') {
-        if (uCxWifiStationSetSecurityWpa(ucx, 0, password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
-            ucxapp_print("ERROR: failed to set WPA security\n");
-            return UCXAPP_ERR_FAILED;
-        }
-    } else if (uCxWifiStationSetSecurityOpen(ucx, 0) != 0) {
-        ucxapp_print("ERROR: failed to set open security\n");
-        return UCXAPP_ERR_FAILED;
-    }
+    return true;
+}
+
+#define WIFI_RETRY_AFTER_REBOOT 1000   /* startAndWait: module was stuck and has been rebooted, set up again */
+#define WIFI_ERR_ALREADY_CONNECTED (-65)
+
+static int startAndWait(ucxapp_t *app, const char *ssid, uint32_t timeoutS)
+{
+    uCxHandle_t *ucx = app->ucx;
 
     ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-    if (uCxWifiStationConnect(ucx, 0) != 0) {
-        ucxapp_print("ERROR: failed to start connection\n");
+    int32_t r = uCxWifiStationConnect(ucx, 0);
+    if (r != 0) {
+        /* A previous attempt can still be pending in the module; stop it and try once more. */
+        uCxWifiStationDisconnect(ucx);
+        U_CX_PORT_SLEEP_MS(2000);
+        ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+        r = uCxWifiStationConnect(ucx, 0);
+    }
+    if (r == WIFI_ERR_ALREADY_CONNECTED && !isConnected(ucx)) {
+        /* Seen on FW 3.2: the station reports "not connected" but refuses to connect; only a reboot clears it. */
+        ucxapp_print("Wi-Fi state is stuck (%d%s), rebooting the module...\n", (int)r, ucxapp_errname(r));
+        if (ucxapp_module_reboot(app)) {
+            return WIFI_RETRY_AFTER_REBOOT;
+        }
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: failed to start connection (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     if (!ucxapp_events_wait(URC_FLAG_NETWORK_UP, timeoutS)) {
@@ -147,6 +160,110 @@ static int connectTo(ucxapp_t *app, const char *ssid, const char *password, uint
     printLinkDetails(ucx);
     return UCXAPP_OK;
 }
+
+static int connectTo(ucxapp_t *app, const char *ssid, const char *password, uint32_t timeoutS)
+{
+    uCxHandle_t *ucx = app->ucx;
+    int rc = WIFI_RETRY_AFTER_REBOOT;
+
+    for (int attempt = 0; attempt < 2 && rc == WIFI_RETRY_AFTER_REBOOT; attempt++) {
+        if (!prepareConnect(ucx, ssid)) {
+            return UCXAPP_ERR_FAILED;
+        }
+        if (password[0] != '\0') {
+            if (uCxWifiStationSetSecurityWpa(ucx, 0, password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
+                ucxapp_print("ERROR: failed to set WPA security\n");
+                return UCXAPP_ERR_FAILED;
+            }
+        } else if (uCxWifiStationSetSecurityOpen(ucx, 0) != 0) {
+            ucxapp_print("ERROR: failed to set open security\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        rc = startAndWait(app, ssid, timeoutS);
+    }
+    return rc == WIFI_RETRY_AFTER_REBOOT ? UCXAPP_ERR_FAILED : rc;
+}
+
+#ifndef UCXAPP_LITE
+/* The Enterprise settings are lost by the reboot, so the user re-runs the command. */
+static int finishEnterprise(int rc)
+{
+    if (rc == WIFI_RETRY_AFTER_REBOOT) {
+        ucxapp_print("ERROR: module rebooted, run the command again\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    return rc;
+}
+
+/* "1.2" | "1.3" | "any" -> TLS version for EAP; false on anything else. */
+static bool parseTlsVersion(const char *s, uWifiTlsVersion_t *v)
+{
+    if (strcmp(s, "1.2") == 0) {
+        *v = U_WIFI_TLS_VERSION_TLS1_2;
+    } else if (strcmp(s, "1.3") == 0) {
+        *v = U_WIFI_TLS_VERSION_TLS1_3;
+    } else if (strcmp(s, "any") == 0) {
+        *v = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* The module rejects AT+UWSSE without an identity and AT+UWSSP without a CA (FW 3.2-3.5), so both are required here. */
+
+/* wifi.eap <ssid> <ca> <client-cert> <client-key> <identity> [1.2|1.3|any]: names are certificates on the module. */
+static int cmdWifiEap(ucxapp_t *app, int argc, char *argv[])
+{
+    uWifiTlsVersion_t tls = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
+    int32_t r;
+
+    if (argc < 6 || argc > 7 || (argc == 7 && !parseTlsVersion(argv[6], &tls))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!prepareConnect(app->ucx, argv[1])) {
+        return UCXAPP_ERR_FAILED;
+    }
+    r = uCxWifiStationSetSecurityEnterprise6(app->ucx, 0, tls, argv[2], argv[3], argv[4], argv[5]);
+    if (r != 0) {
+        ucxapp_print("ERROR: failed to set EAP-TLS security (%d%s); check the names with cert.list\n", (int)r,
+                     ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    return finishEnterprise(startAndWait(app, argv[1], 30));
+}
+
+/* wifi.peap <ssid> <user> <password|-> <ca> [1.2|1.3|any] */
+static int cmdWifiPeap(ucxapp_t *app, int argc, char *argv[])
+{
+    uWifiTlsVersion_t tls = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
+    char password[128];
+    int32_t r;
+
+    if (argc < 5 || argc > 6 || (argc == 6 && !parseTlsVersion(argv[5], &tls))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(argv[3], "-") == 0) {
+        if (ucxapp_readline("password: ", password, sizeof(password)) < 0) {
+            return UCXAPP_ERR_FAILED;
+        }
+    } else {
+        snprintf(password, sizeof(password), "%s", argv[3]);
+    }
+    if (!prepareConnect(app->ucx, argv[1])) {
+        memset(password, 0, sizeof(password));
+        return UCXAPP_ERR_FAILED;
+    }
+    r = uCxWifiStationSetSecurityPeap5(app->ucx, 0, tls, argv[2], password, argv[4]);
+    memset(password, 0, sizeof(password));
+    if (r != 0) {
+        ucxapp_print("ERROR: failed to set PEAP security (%d%s); check the CA name with cert.list\n", (int)r,
+                     ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    return finishEnterprise(startAndWait(app, argv[1], 30));
+}
+#endif
 
 /* ---- saved profiles: one "name<TAB>ssid<TAB>obfuscated password" line each (older files add an ignored field) ---- */
 
@@ -950,6 +1067,10 @@ static int cmdWifiRoaming(ucxapp_t *app, int argc, char *argv[])
 static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.scan",       "",                    "Scan for networks: strongest first with band, signal and security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
     { "wifi.connect",    "[ssid|n] [password|-]", "Connect by SSID or number from wifi.scan; '-' prompts for the password; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
+#ifndef UCXAPP_LITE
+    { "wifi.eap",        "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]", "Connect with WPA2/WPA3-Enterprise EAP-TLS using certificates on the module (cert.list)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiEap },
+    { "wifi.peap",       "<ssid> <user> <password|-> <ca> [1.2|1.3|any]", "Connect with WPA2/WPA3-Enterprise PEAP (MSCHAPv2); the CA verifies the server", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPeap },
+#endif
     { "wifi.disconnect", "",                    "Disconnect from Wi-Fi",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiDisconnect },
     { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
     { "wifi.rssi",       "[count] [interval_s]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },

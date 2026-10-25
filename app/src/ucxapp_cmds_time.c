@@ -174,7 +174,7 @@ static bool syncNtp(uCxHandle_t *ucx, const char *host, int64_t *t)
             while (!ok && ucxapp_platform_tick_ms() - start < WAIT_MS) {
                 uCxSocketReceiveFrom_t from;
                 memset(&from, 0, sizeof(from));
-                int32_t n = uCxSocketReceiveFrom(ucx, sock, (int32_t)sizeof(pkt), pkt, &from);
+                int32_t n = ucxapp_udp_recvfrom(ucx, sock, (int32_t)sizeof(pkt), pkt, &from);
                 if (n > 0) {
                     ok = parseNtp(pkt, (size_t)n, ucxapp_platform_tick_ms() - start, t);
                 } else {

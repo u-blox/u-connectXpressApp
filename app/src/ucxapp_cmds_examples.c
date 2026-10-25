@@ -47,6 +47,11 @@ static const example_t kExamples[] = {
       "wifi.ip 192.168.1.50 255.255.255.0 192.168.1.1 8.8.8.8\nwifi.connect MyNetwork MyPassword" },
     { "wifi", "Access point with a join QR code",
       "wifi.ap.enable MyAP secret123 6\nwifi.ap.status" },
+    { "wifi", "Enterprise network with EAP-TLS certificates",
+      "cert.upload ca ca.pem ca\ncert.upload client client.pem client\ncert.upload key client.key key\n"
+      "wifi.eap CorpNet ca client key device@corp.example" },
+    { "wifi", "Enterprise network with PEAP user and password",
+      "cert.upload ca ca.pem ca\nwifi.peap CorpNet alice - ca" },
     { "wifi", "Watch the signal while walking around",
       "wifi.rssi 30 1" },
 
@@ -64,6 +69,7 @@ static const example_t kExamples[] = {
       "sock.open tcp\nsock.connect example.com 80\nsock.send \"GET / HTTP/1.0\\r\\n\\r\\n\"\nsock.read\nsock.close" },
     { "sock", "TLS client with your CA",
       "cert.upload ca ca.pem myca\nsock.open tcp\nsock.tls myca\nsock.connect example.com 443" },
+    { "sock", "Close every socket left open on the module", "sock.list\nsock.close all" },
     { "sock", "UDP send and receive",
       "sock.open udp\nsock.bind 5000\nsock.sendto 192.168.1.10 5000 hello\nsock.recvfrom" },
     { "sock", "TCP server",

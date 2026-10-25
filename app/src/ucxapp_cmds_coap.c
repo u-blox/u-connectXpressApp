@@ -124,7 +124,7 @@ static int exchange(uCxHandle_t *ucx, int32_t sock, const uint8_t *req, size_t r
         for (int i = 0; i < COAP_WAIT_POLLS; i++) {
             uCxSocketReceiveFrom_t from;
             memset(&from, 0, sizeof(from));
-            int32_t rc = uCxSocketReceiveFrom(ucx, sock, (int32_t)bufMax, buf, &from);
+            int32_t rc = ucxapp_udp_recvfrom(ucx, sock, (int32_t)bufMax, buf, &from);
             if (rc > 0) {
                 int pl = parseResponse(buf, (size_t)rc, mid, code, payload);
                 if (pl >= 0) {

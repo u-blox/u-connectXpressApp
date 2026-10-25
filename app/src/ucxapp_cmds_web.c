@@ -344,7 +344,7 @@ static void pumpLoop(void *arg)
         while (!gStop && popEvent(&e)) {
             switch (e.type) {
             case EVT_INCOMING: {
-                /* u-connectXpress 3.5.0 reports the listening socket first in +UESOIC. */
+                /* Accept either handle order in +UESOIC (see sockIncomingUrc in ucxapp_urc.c). */
                 int32_t listen = uWebServerGetListenSocket(gServer);
                 int32_t client = (e.sock == listen) ? e.n : e.sock;
                 uWebServerHandleIncomingConnection(gServer, gApp->ucx, client, NULL, listen);
@@ -383,10 +383,11 @@ static bool tokenOk(const uHttpRequest_t *req)
         uWebServerGetQueryParam(req, "t", t, sizeof(t)) != 0) {
         return false;
     }
-    if (strlen(t) != TOKEN_LEN) {
+    size_t len = strlen(gToken);
+    if (len == 0 || strlen(t) != len) {
         return false;
     }
-    for (size_t i = 0; i < TOKEN_LEN; i++) {
+    for (size_t i = 0; i < len; i++) {
         diff |= (unsigned char)t[i] ^ (unsigned char)gToken[i];
     }
     return diff == 0;

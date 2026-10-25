@@ -3,7 +3,7 @@
 import os
 
 import pytest
-from hwutil import _join_wifi, _reset_module, _wifi_connect_command
+from hwutil import _join_wifi, _reset_module, _run, _wifi_connect_command
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -18,3 +18,12 @@ def wifi_peers(app_exe, port_a, port_b):
     """Both modules joined to the Wi-Fi: {port: (ip, gateway)}."""
     connect = _wifi_connect_command()
     return {port: _join_wifi(app_exe, port, connect) for port in (port_a, port_b)}
+
+
+@pytest.fixture(autouse=True)
+def close_stale_sockets(request, app_exe):
+    """Close sockets an earlier test left open, so a stale listener cannot take this test's connections."""
+    if request.node.get_closest_marker("two_devices") is None:
+        return
+    for port in filter(None, (os.environ.get(v) for v in ("UCX_PORT_A", "UCX_PORT_B"))):
+        _run(app_exe, port, "sock.close all", timeout=30)

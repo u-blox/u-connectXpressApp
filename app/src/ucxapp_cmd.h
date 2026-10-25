@@ -3,6 +3,7 @@
 
 #include "ucxapp.h"
 #include "ucxapp_platform.h"
+#include "u_cx_socket.h"
 
 #define UCXAPP_OK                  0
 #define UCXAPP_ERR_UNKNOWN_CMD   (-100)
@@ -141,6 +142,14 @@ bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
 void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
+
+/* Reboots the module and restores the session settings (device.reboot). */
+bool ucxapp_module_reboot(ucxapp_t *app);
+
+/* AT+USORFB that adapts to the module's read limit (FW 3.2 allows 1000 bytes, newer firmware 1460). */
+int32_t ucxapp_udp_recvfrom(uCxHandle_t *ucx, int32_t sock, int32_t len, uint8_t *buf, uCxSocketReceiveFrom_t *from);
+/* Largest datagram the module can read (1460, or 1000 once a FW 3.2 module was seen). */
+int32_t ucxapp_udp_max(void);
 
 /* Raw AT: ucxapp_at_send runs one command (AT prefix optional); in AT mode ucxapp_cmd_exec sends every line, 'back' leaves it. */
 int ucxapp_at_send(ucxapp_t *app, const char *cmd);

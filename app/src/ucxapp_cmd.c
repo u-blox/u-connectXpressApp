@@ -570,6 +570,28 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         }
         return app->ucx != NULL ? ucxapp_at_send(app, line) : UCXAPP_ERR_NOT_CONNECTED;
     }
+    {
+        /* Raw AT ("at <cmd>" or "AT+..." typed directly) goes to the module verbatim, keeping its quotes. */
+        char first[32];
+        size_t n = strcspn(line, " \t");
+        const char *rest = line + n + strspn(line + n, " \t");
+        bool atWord = n == 2 && (line[0] == 'a' || line[0] == 'A') && (line[1] == 't' || line[1] == 'T');
+        bool atDirect = n > 2 && n < sizeof(first) && (line[0] == 'a' || line[0] == 'A') &&
+                        (line[1] == 't' || line[1] == 'T') && memchr(line, '.', n) == NULL;
+
+        if (atDirect) {
+            memcpy(first, line, n);
+            first[n] = '\0';
+            atDirect = findCmd(first) == NULL;
+        }
+        if ((atWord && *rest != '\0' && strchr(line, '"') != NULL) || (atDirect && strchr(line, '"') != NULL)) {
+            if (app->ucx == NULL) {
+                ucxapp_print("ERROR: not connected to a module\n");
+                return UCXAPP_ERR_NOT_CONNECTED;
+            }
+            return ucxapp_at_send(app, atWord ? rest : line);
+        }
+    }
     argc = tokenize(line, argv, UCXAPP_MAX_ARGS);
     if (argc < 0) {
         ucxapp_print("ERROR: too many arguments (max %d)\n", UCXAPP_MAX_ARGS);

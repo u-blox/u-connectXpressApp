@@ -166,6 +166,8 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.scan` | | List networks strongest first with BSSID, channel and band, signal, security (Open, WPA, WPA2, WPA3) and any saved profile; then channel usage with congestion and the quietest channel for `wifi.ap.enable`. The results are kept for `wifi.connect` |
 | `wifi.connect` | `[ssid\|n] [password\|-]` | With no argument: connect like `wifi.profile.auto` (the last used profile, else the strongest known network). Otherwise connect by SSID or by the number from the last `wifi.scan`; `-` prompts for the password; waits up to 20 s and shows IP, mask, gateway, channel and signal. A saved profile for the SSID supplies the password; open networks need none |
 | `wifi.status` | | Connection state, SSID, RSSI, IP |
+| `wifi.eap` | `<ssid> <ca> <cert> <key> <identity> [1.2\|1.3\|any]` | Connect to a WPA2/WPA3-Enterprise network with EAP-TLS. `ca`, `cert` and `key` are names on the module (`cert.upload`, `cert.list`); the module requires an identity; TLS version defaults to `any`. Waits up to 30 s. Not in lite builds |
+| `wifi.peap` | `<ssid> <user> <password\|-> <ca> [1.2\|1.3\|any]` | Connect to a WPA2/WPA3-Enterprise network with PEAP (MSCHAPv2); `-` prompts for the password. The module requires the CA that verifies the RADIUS server. Not in lite builds |
 | `wifi.disconnect` | | Leave the network |
 | `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
 | `wifi.rssi` | `[count] [interval_s]` | Read the signal strength, repeatedly if requested |
@@ -256,7 +258,7 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "tftp.on rw"
 | `sock.accept` | `[wait_s]` | Wait for an incoming TCP connection (default 30 s) and print its handle |
 | `sock.sendto` | `[handle] <host> <port> <text...>` | Send a UDP datagram |
 | `sock.recvfrom` | `[handle] [max] [wait_s]` | Receive a UDP datagram and print the sender |
-| `sock.close` | `[handle]` | Close the socket |
+| `sock.close` | `[handle] \| all` | Close a socket, or every socket on the module |
 | `sock.list` | | List open sockets |
 | `sock.echo` | `<tcp\|udp> <port> [seconds]` | Echo server for latency/throughput tests (default 60 s, one TCP client) |
 

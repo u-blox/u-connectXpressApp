@@ -152,14 +152,14 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 433 KB | 2048 KB | 21% | 287 KB | 512 KB | 56% |
-| `f767` | NUCLEO-F767ZI | 419 KB | 2048 KB | 21% | 299 KB | 368 KB | 81% |
-| `f439` | NUCLEO-F439ZI | 423 KB | 2048 KB | 21% | 105 KB | 192 KB | 55% |
-| `f407` | STM32F4DISCOVERY | 420 KB | 1024 KB | 41% | 105 KB | 128 KB | 82% |
-| `f401` | NUCLEO-F401RE | 400 KB | 512 KB | 78% | 88 KB | 96 KB | 92% |
-| `f446` | NUCLEO-F446RE | 401 KB | 512 KB | 78% | 104 KB | 128 KB | 81% |
-| `f103` | NUCLEO-F103RB | 115 KB | 128 KB | 90% | 15 KB | 20 KB | 79% |
-| `g071` | NUCLEO-G071RB | 119 KB | 128 KB | 94% | 25 KB | 36 KB | 72% |
+| `h753` | NUCLEO-H753ZI | 436 KB | 2048 KB | 21% | 287 KB | 512 KB | 56% |
+| `f767` | NUCLEO-F767ZI | 422 KB | 2048 KB | 21% | 299 KB | 368 KB | 81% |
+| `f439` | NUCLEO-F439ZI | 425 KB | 2048 KB | 21% | 105 KB | 192 KB | 55% |
+| `f407` | STM32F4DISCOVERY | 423 KB | 1024 KB | 41% | 105 KB | 128 KB | 82% |
+| `f401` | NUCLEO-F401RE | 403 KB | 512 KB | 79% | 88 KB | 96 KB | 92% |
+| `f446` | NUCLEO-F446RE | 403 KB | 512 KB | 79% | 104 KB | 128 KB | 81% |
+| `f103` | NUCLEO-F103RB | 116 KB | 128 KB | 91% | 15 KB | 20 KB | 79% |
+| `g071` | NUCLEO-G071RB | 121 KB | 128 KB | 95% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
 ## Documentation

@@ -150,6 +150,8 @@ static int setupCommon(ucxapp_dtls_conn_t *c, int endpoint, char *err, size_t er
         return -1;
     }
     mbedtls_ssl_set_bio(&c->ssl, c->x, bioSend, bioRecv, NULL);
+    /* Fragment handshake flights so a peer that reads at most 1000 bytes per datagram (FW 3.2) gets them whole. */
+    mbedtls_ssl_set_mtu(&c->ssl, UCXAPP_DTLS_MTU);
     mbedtls_ssl_set_timer_cb(&c->ssl, &c->timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
     return 0;
 }

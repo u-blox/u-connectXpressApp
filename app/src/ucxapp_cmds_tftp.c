@@ -174,7 +174,7 @@ static int exchange(xfer_t *x, const uint8_t *pkt, size_t len, uint16_t op, uint
             }
             uCxSocketReceiveFrom_t from;
             memset(&from, 0, sizeof(from));
-            int32_t rc = uCxSocketReceiveFrom(x->ucx, x->sock, PKT_MAX, x->rx, &from);
+            int32_t rc = ucxapp_udp_recvfrom(x->ucx, x->sock, PKT_MAX, x->rx, &from);
             if (rc <= 0) {
                 ucxapp_platform_sleep_ms(1);
                 continue;
@@ -264,6 +264,13 @@ static long recvFile(xfer_t *x, FILE *f, int blksize)
     }
 }
 
+/* Largest block this module can read in one datagram (4-byte TFTP header + data). */
+static int blkMax(void)
+{
+    int m = (int)ucxapp_udp_max() - 4;
+    return m < BLK_MAX ? m : BLK_MAX;
+}
+
 /* Parses "blksize" and "tsize" from an option list (name\0value\0...). */
 static void parseOptions(const uint8_t *p, const uint8_t *end, int *blksize, long *tsize, bool *haveBlk, bool *haveTsize)
 {
@@ -281,7 +288,7 @@ static void parseOptions(const uint8_t *p, const uint8_t *end, int *blksize, lon
         if (strieq(name, "blksize")) {
             long v = strtol(value, NULL, 10);
             if (v >= 8) {
-                *blksize = v > BLK_MAX ? BLK_MAX : (int)v;
+                *blksize = v > blkMax() ? blkMax() : (int)v;
                 *haveBlk = true;
             }
         } else if (strieq(name, "tsize")) {
@@ -432,7 +439,7 @@ static void serverLoop(void *arg)
     while (!gStop) {
         uCxSocketReceiveFrom_t from;
         memset(&from, 0, sizeof(from));
-        int32_t rc = uCxSocketReceiveFrom(gApp->ucx, gSock, (int32_t)sizeof(req) - 1, req, &from);
+        int32_t rc = ucxapp_udp_recvfrom(gApp->ucx, gSock, (int32_t)sizeof(req) - 1, req, &from);
         if (rc >= 4) {
             req[rc] = 0;
             gLast[0] = '\0';
@@ -565,6 +572,9 @@ static bool clientOpen(ucxapp_t *app, xfer_t *x, const char *host, int32_t port)
         ucxapp_print("ERROR: failed to create a UDP socket\n");
         return false;
     }
+    /* One empty read learns the module's datagram limit before the block size is requested. */
+    uCxSocketReceiveFrom_t from;
+    (void)ucxapp_udp_recvfrom(app->ucx, x->sock, PKT_MAX, x->rx, &from);
     return true;
 }
 
@@ -576,7 +586,7 @@ static size_t buildRequest(uint8_t *pkt, uint16_t op, const char *name, long tsi
     n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "%s", name) + 1;
     n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "octet") + 1;
     n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "blksize") + 1;
-    n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "%d", BLK_MAX) + 1;
+    n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "%d", blkMax()) + 1;
     n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "tsize") + 1;
     n += (size_t)snprintf((char *)pkt + n, PKT_MAX - n, "%ld", tsize) + 1;
     return n;

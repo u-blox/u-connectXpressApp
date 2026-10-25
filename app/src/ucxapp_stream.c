@@ -1,4 +1,4 @@
-﻿/* Serial sensor stream: reader thread, raw log and module bridges (TCP server, UDP, BLE Nordic UART). */
+/* Serial sensor stream: reader thread, raw log and module bridges (TCP server, UDP, BLE Nordic UART). */
 
 #include "ucxapp_stream.h"
 
@@ -490,7 +490,7 @@ static void pullInbound(ucxapp_stream_t *s)
     } else if (s->bridge == BR_UDP) {
         uCxSocketReceiveFrom_t from;
         for (int i = 0; i < 8; i++) {
-            int32_t n = uCxSocketReceiveFrom(ucx, s->udpSock, (int32_t)sizeof(buf), buf, &from);
+            int32_t n = ucxapp_udp_recvfrom(ucx, s->udpSock, (int32_t)sizeof(buf), buf, &from);
             if (n <= 0) {
                 break;
             }

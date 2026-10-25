@@ -67,6 +67,9 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 
 /* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
 void ucxapp_urc_register(uCxHandle_t *ucx);
+/* Track BLE connections the module already has (left open by an earlier session) so "[conn]" can default to them. */
+void ucxapp_adopt_connections(uCxHandle_t *ucx);
+void ucxapp_udp_reset_limit(void);   /* forget the UDP read limit learned from the previous module */
 /* Tick of the last +STARTUP; *exact is false when none was seen and the time is the connect time instead. */
 uint32_t ucxapp_module_boot_ms(bool *exact);
 

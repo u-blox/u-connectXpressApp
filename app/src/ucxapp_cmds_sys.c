@@ -234,7 +234,24 @@ int ucxapp_at_send(ucxapp_t *app, const char *cmd)
     }
     snprintf(full, sizeof(full), "%s%s", hasPrefix ? "" : "AT", cmd);
 
-    int32_t result = uCxAtClientExecSimpleCmd(app->ucx->pAtClient, full);
+    /* Print every response line (e.g. the model name for AT+GMM), not just the final status.
+     * '+NAME:' lines count as URCs unless expected, so expect the command's own prefix. */
+    uCxAtClient_t *client = app->ucx->pAtClient;
+    const char *rxStart = (const char *)client->pConfig->pRxBuffer;
+    char prefix[32] = "";
+    char *line;
+    if (full[2] == '+') {
+        size_t n = strcspn(&full[2], "=?");
+        if (n > 1 && n < sizeof(prefix) - 2) {
+            snprintf(prefix, sizeof(prefix), "%.*s:", (int)n, &full[2]);
+        }
+    }
+    uCxAtClientCmdBeginF(client, full, "", NULL);
+    while ((line = uCxAtClientCmdGetRspParamLine(client, prefix[0] != '\0' ? prefix : NULL, NULL, NULL)) != NULL) {
+        /* A matched '+NAME:' line comes back past the prefix; a plain line starts the RX buffer. */
+        ucxapp_print("%s%s\n", line != rxStart ? prefix : "", line);
+    }
+    int32_t result = uCxAtClientCmdEnd(client);
     if (result != 0) {
         ucxapp_print("ERROR: %s failed (%d%s)\n", full, (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;

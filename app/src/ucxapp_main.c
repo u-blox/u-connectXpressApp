@@ -62,6 +62,8 @@ static bool connectModule(const char *port)
     if (uCxSystemSetExtendedError(&gUcxHandle, U_SYS_EXTENDED_ERRORS_ON) != 0) {
         ucxapp_print("warning: could not enable extended error codes\n");
     }
+    ucxapp_adopt_connections(&gUcxHandle);
+    ucxapp_udp_reset_limit();
     gConnected = true;
     ucxapp_caps_reset();
     return true;

@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 #define UCXAPP_DTLS_MAX_DGRAM 1500
+#define UCXAPP_DTLS_MTU       1000   /* smallest AT+USORFB limit across NORA-W36 firmware */
 
 /* One datagram per call. recv returns 0 when nothing is pending, the byte count otherwise, < 0 on error. */
 typedef struct {

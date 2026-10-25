@@ -181,9 +181,15 @@ def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
         handle = re.search(r"handle\s+(0x[0-9a-f]+|\d+)\s+\S*\s+0x2a19\b", chars.stdout, re.I)
         assert handle, chars.stdout
         h = int(handle.group(1), 0)
-        out = _run(app_exe, port_b, f"gatt.read {h}", f"gatt.subscribe 0 {h} notify", "gatt.listen 3",
-                   f"gatt.subscribe 0 {h} off", f"gatt.write {h} 01", f"gatt.writelong {h} 01", "bt.disconnect")
+        out = _run(app_exe, port_b, "gatt.chars", f"gatt.read {h}", f"gatt.subscribe 0 {h} notify", "gatt.listen 3",
+                   f"gatt.subscribe 0 {h} off")
+        # Battery Level is read/notify only, so the server must refuse a write with an ATT error.
+        write = _run(app_exe, port_b, f"gatt.write {h} 01")
+        write_long = _run(app_exe, port_b, f"gatt.writelong {h} 01")
+        _run(app_exe, port_b, "bt.disconnect")
     finally:
         _finish(proc, seen, lines)
     assert out.returncode == 0, out.stdout
     assert re.search(r"\b(100|level)\b", out.stdout, re.I), out.stdout
+    for w in (write, write_long):
+        assert w.returncode == 1 and "failed" in w.stdout, w.stdout

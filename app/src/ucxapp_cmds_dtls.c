@@ -53,12 +53,13 @@ static int modReceive(modSock_t *m, uint8_t *buf, int len)
 {
     uCxSocketReceiveFrom_t from;
     memset(&from, 0, sizeof(from));
-    int32_t rc = uCxSocketReceiveFrom(m->ucx, m->sock, len, buf, &from);
+    int32_t rc = ucxapp_udp_recvfrom(m->ucx, m->sock, len, buf, &from);
     if (rc > 0 && m->server) {
         m->peerIp = from.remote_ip;
         m->peerPort = from.remote_port;
     }
-    return rc < 0 ? -1 : (int)rc;
+    /* The module answers ERROR when nothing is queued; the handshake loop keeps polling. */
+    return rc < 0 ? 0 : (int)rc;
 }
 
 static int clientSend(void *ctx, const unsigned char *buf, size_t len)

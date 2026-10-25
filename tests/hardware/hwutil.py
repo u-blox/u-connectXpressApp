@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 PROFILES = Path(__file__).resolve().parents[2] / "storage" / "ucxapp.wifi"
-DEVICE_NAME = "u-blox HID Keyboard"
+DEVICE_NAME = "u-blox HID"
 GATT_NAME = "ucxgatt"
 PING_RE = re.compile(r"sent (\d+), received (\d+), average (\d+) ms")
 PING_MAX_AVG_MS = 1000
@@ -25,9 +25,9 @@ def _args(exe, port, *commands):
     return args
 
 
-def _run(exe, port, *commands, timeout=120):
+def _run(exe, port, *commands, timeout=120, cwd=None):
     return subprocess.run(_args(exe, port, *commands), capture_output=True, text=True, timeout=timeout,
-                          errors="replace")
+                          errors="replace", cwd=cwd)
 
 
 def _start_server(exe, port):
@@ -130,10 +130,10 @@ def _check_stream(source, text):
         assert re.search(r"received [1-9]\d* bytes|\[NUS RX\]", text), text
 
 
-def _background(exe, port, *commands, ready, timeout=60):
+def _background(exe, port, *commands, ready, timeout=60, cwd=None):
     """Runs commands on a module in a child app until `ready` is printed; returns (process, seen lines)."""
     proc = subprocess.Popen(_args(exe, port, *commands), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            errors="replace")
+                            errors="replace", cwd=cwd)
     lines = queue.Queue()
     threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
     seen = []

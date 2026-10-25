@@ -129,6 +129,28 @@ def test_dtls_between_two_modules(app_exe, wifi_peers, port_a, port_b):
 
 
 @pytest.mark.two_devices
+def test_tftp_between_two_modules(app_exe, wifi_peers, port_a, port_b, tmp_path):
+    """A serves its folder over TFTP (rw); B uploads a file larger than one block and downloads it again."""
+    ip_a = wifi_peers[port_a][0]
+    dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    payload = bytes(range(256)) * 20
+    (dir_b / "up.bin").write_bytes(payload)
+    proc, seen, lines = _background(app_exe, port_a, "tftp.on rw 69 40", ready="TFTP server on", cwd=dir_a)
+    try:
+        out = _run(app_exe, port_b, f"tftp.put {ip_a} up.bin", f"tftp.get {ip_a} up.bin down.bin",
+                   f"tftp.get {ip_a} missing.bin", cwd=dir_b)
+    finally:
+        text = _finish(proc, seen, lines)
+    assert f"put up.bin -> up.bin: {len(payload)} bytes" in out.stdout, out.stdout + text
+    assert (dir_a / "up.bin").read_bytes() == payload, text
+    assert (dir_b / "down.bin").read_bytes() == payload, out.stdout
+    assert "File not found" in out.stdout, out.stdout
+    assert not (dir_b / "missing.bin").exists()
+
+
+@pytest.mark.two_devices
 def test_iperf_between_two_modules(app_exe, wifi_peers, port_a, port_b):
     ip_a = wifi_peers[port_a][0]
     try:

@@ -27,7 +27,10 @@ ucxapp device.info
   (`wifi.connect "My Network" "my password"`). `\"` and `\\` escape inside quotes.
 - Lines starting with `#` are comments. Maximum 8 arguments per command.
 - `--json` prints one JSON line per command: `command`, `success`, `code` (`OK`, `USAGE`, `NOT_CONNECTED`,
-  `UNKNOWN_CMD`, `FAILED`), `error`, `output` lines and `data` (the `Key: value` lines).
+  `UNKNOWN_CMD`, `UNSUPPORTED`, `FAILED`), `error`, `moduleError` (`{"code": -5, "name": "U_ERROR_..."}` when the
+  module returned an error code), `output` lines and `data` (the `Key: value` lines).
+- Wi-Fi commands (`wifi`, `sock`, `mqtt`, `http`, `net`, `cert`, `tftp`, `web`, `coap`, `dtls`) are refused with
+  `UNSUPPORTED` on a Bluetooth LE only module (NORA-B26); the model is read once per connection.
 - `${NAME}` in `--exec` and shell commands is replaced by the environment variable (not in the web UI).
 
 ## Command reference
@@ -41,6 +44,8 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 | Command | Arguments | Description |
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
+| `examples` | `[group]` | List the groups that have examples, or show one group's examples |
+| `<group>.ex`, `examples [group]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, mqtt, cert, bt, gatt, hid, web, fw, device, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
 
 ### System
@@ -113,25 +118,29 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 | `gatt.writelong` | `[conn] <handle> <hex\|text:abc> [offset] [reliable] [more]` | Long write (prepare/execute) |
 | `gatt.subscribe` | `[conn] <handle> [notify\|indicate\|off]` | Set the CCCD (assumed at value handle + 1) |
 | `gatt.listen` | `[seconds\|off]` | Client examples keep listening after they subscribe: notifications are printed parsed and mirrored to the Events pane until `gatt.listen off` unsubscribes. Without arguments it shows the state; with seconds it waits (needed for `gatt.wps` and server examples) |
-| `gatt.client.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `nus`, `sps` or `wit` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
+| `gatt.client.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `ras` (Ranging Service, Channel Sounding), `nus`, `sps` or `wit` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
 | `gatt.send` | `[conn] <nus\|sps> <text>` | Send text to the remote NUS or SPS service |
 | `gatt.credits` | `[conn] <1-127>` | Send SPS credits |
 | `gatt.wps` | `[conn] <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
-| `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `nus` or `sps` |
+| `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `ras`, `nus` or `sps` |
 | `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed) |
 | `gatt.server.list` |  | List the local characteristics defined by the server examples |
 | `gatt.server.set` | `<name\|handle> <hex\|text:abc>` | Set a local characteristic value |
 | `gatt.server.notify` | `[conn] <name\|handle> <data>` | Send a notification |
 | `gatt.server.indicate` | `[conn] <name\|handle> <data>` | Send an indication |
-| `gatt.server.demo` | `[conn] <hrs\|bas\|ess\|aio\|lns\|cts> [seconds]` | Send simulated values once per second |
+| `gatt.server.demo` | `[conn] <hrs\|bas\|ess\|aio\|lns\|cts\|ras> [seconds]` | Send simulated values once per second |
 | `gatt.server.servicechanged` | `[conn] <start> <end>` | Send a Service Changed indication |
 | `gatt.server.error` | `[conn] <read\|write> <att-code>` | Answer a pending read or write with an ATT error |
 | `gatt.server.hostchar` | `<svc-uuid> <char-uuid> <props-hex> [rsec] [wsec]` | Define a host-managed characteristic |
 | `gatt.server.readresp` / `gatt.server.writeresp` | `<conn> <data>` / `<conn>` | Answer a pending host-characteristic read or write |
-| `hid.setup` |  | Define the HID keyboard service (plus battery) and enable Just Works pairing |
+| `hid.setup` | `[auth]` | HID over GATT device (HOGP 1.0): composite keyboard, mouse and media-key report map, boot keyboard and mouse, Battery and Device Information (PnP ID); every HID attribute needs an encrypted link (`auth`: MITM pairing); advertises the HID UUID and appearance |
 | `hid.status` |  | Show HID handles, notification state and protocol mode |
 | `hid.key` | `<key> [ctrl\|shift\|alt\|gui ...]` | Send one key to the connected host (a character, or `enter`, `esc`, `tab`, `backspace`, `space`) |
 | `hid.text` | `<text...>` | Type text on the connected host |
+| `hid.mouse` | `<dx> <dy> [wheel]` | Move the pointer and scroll; large moves are split into steps of 127 |
+| `hid.click` | `[left\|right\|middle] [double]` | Click a mouse button |
+| `hid.media` | `<play\|next\|prev\|stop\|mute\|volup\|voldown\|brightup\|brightdown\|home\|back\|search>` | Send a consumer-control (media) key |
+| `hid.client` | `<conn> [boot] \| off` | HID host: bond if needed, read the report map, subscribe to every input report and print keys, mouse moves and media keys (also to the Events pane) |
 
 ```powershell
 # Client: read a heart rate sensor (connection handle 0 from bt.connect)
@@ -145,6 +154,9 @@ ucxapp COM13 --exec "gatt.client.nus 0" --exec "gatt.send 0 nus hello"
 
 # Use the module as a Bluetooth keyboard
 ucxapp COM13 --exec "hid.setup" --exec "hid.text Hello from NORA"
+
+# Read a BLE keyboard or mouse (HID host)
+ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" --exec "gatt.listen 60"
 ```
 
 ### Wi-Fi
@@ -196,9 +208,38 @@ Passwords given on the command line are visible in the process list and shell hi
 | `net.ntp` | `<status\|on\|off\|server> [args...]` | NTP client: `status`, `on [manual\|auto]`, `off`, `server <0\|1> <host\|->` (`-` removes) |
 | `coap.get` | `<host> <port> [path]` | CoAP GET over UDP via a module socket (confirmable, 3 tries, 2 s each) |
 | `coap.selftest` | | Offline check of CoAP request encoding and response parsing |
+| `tftp.on` | `[rw] [port] [seconds]` | TFTP server (RFC 1350, with `blksize`/`tsize` options) on a module UDP socket, default port 69; serves plain file names from the working folder, read only unless `rw`. Uploads land as `<name>.part` and are renamed when complete. With `seconds` it blocks that long, then stops. No authentication: trusted networks only |
+| `tftp.off` | | Stop the TFTP server |
+| `tftp.status` | | Server port, mode, transfer count and the last transfer |
+| `tftp.get` | `<host> <remote> [local] [port]` | Download a file from a TFTP server |
+| `tftp.put` | `<host> <local> [remote] [port]` | Upload a file to a TFTP server |
+| `tftp.selftest` | | Offline check of TFTP name rules, options and packet encoding |
+| `ft.on` | `[rw] [tcp[:port]] [seconds]` | File transfer server serving plain file names from the working folder; read only unless `rw`. Over BLE: a custom GATT service (`7a3f0001-5c1e-4d2b-9f6a-3e8b2c4d5e6f`, CTRL `...0002`, DATA `...0003`), needs an encrypted link, blocks up to 242 bytes. With `tcp`: a module TCP socket (default port 6970), the same packets framed as `[len u16][channel u8][packet]`, blocks up to 1455 bytes, one client at a time, no authentication (trusted networks only). Go-back-N with a window of 8; every file is checked with CRC-32 and size, uploads land as `<name>.part` and are renamed when verified |
+| `ft.off` | | Stop the file transfer server |
+| `ft.status` | | Server link, mode, transfer count and the last transfer |
+| `ft.get` | `<conn\|host[:port]> <remote> [local] [blk] [resume]` | Download a file from a peer's `ft` server: a BLE connection number, or a host for TCP (blk 16-242 over BLE, default 240; up to 1455 over TCP, the default). An interrupted download keeps `<local>.part`; `resume` continues from it |
+| `ft.put` | `<conn\|host[:port]> <local> [remote] [blk] [resume]` | Upload a file to a peer's `ft` server (needs `rw` there); `resume` continues from the `.part` the server kept |
+| `ft.ls` | `<conn\|host[:port]>` | List the files on a peer's `ft` server |
+| `ft.rm` | `<conn\|host[:port]> <name>` | Delete a file on a peer's `ft` server (needs `rw` there) |
+| `ft.selftest` | | Offline check of the CRC-32, name rules and request encoding |
+| `ancs.on` | | Advertise as `ucx ANCS` with an ANCS service solicitation so an iPhone can pair from Settings > Bluetooth |
+| `ancs.sub` | `[conn]` | Subscribe to the iPhone's Apple Notification Center Service on a connection (default 0); needs a bonded, encrypted link. New notifications print as `[ANCS] added #uid category` |
+| `ancs.off` | | Unsubscribe from the iPhone's notifications |
+| `ancs.list` | | Notifications currently on the phone: uid, category, important flag and available actions |
+| `ancs.show` | `<uid>` | App id, title, subtitle, message, date and action labels of one notification |
+| `ancs.action` | `<uid> pos\|neg` | Positive or negative action, e.g. answer or decline an incoming call |
+| `ancs.selftest` | | Offline check of the ANCS event and attribute parsing and request encoding |
+| `notify.on` | | Phone notifications for Android (no ANCS there) or any app: defines GATT service `7a3f0010-5c1e-4d2b-9f6a-3e8b2c4d5e6f`; a paired companion app writes `<id>\|<app>\|<title>\|<text>` (UTF-8) to Notification `...0011`, shown as `[notify] #id app: title - text` |
+| `notify.off` | | Stop showing phone notifications (the service stays until reboot) |
+| `notify.list` | | The last 16 notifications |
+| `notify.action` | `<id> <action>` | Notify `<id>\|<action>` on Action `...0012` to the phone app, e.g. `dismiss` |
+| `notify.selftest` | | Offline check of the notification format |
 
 ```powershell
 ucxapp COM13 --exec "wifi.profile.auto" --exec "net.dns example.com" --exec "net.ping example.com 3"
+
+# TFTP server with uploads; from a PC: curl -T fw.bin tftp://<module-ip>/  or  tftp -i <module-ip> GET notes.txt
+ucxapp COM13 --exec "wifi.profile.auto" --exec "tftp.on rw"
 ```
 
 ### Sockets
@@ -447,6 +488,11 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `log.save` | `<file>` | Save everything the log shows to a file; the file is written when `log.stop` runs |
 | `log.stop` | | Finish and write the file started by `log.save` |
 | `log.clear` | | Clear the log (in the text UI the Log pane) |
+| `session.record` | `<file.ucx>` | Record every command from now on to a script, with its output as `# ` comments, pauses as `#+` and failures as `#!`; passwords and tokens are written as `${UCX_WIFI_PASS}` / `${UCX_SECRET}`. Send the file to support |
+| `session.stop` | | Stop recording |
+| `session.replay` | `<file.ucx> [all] [stop]` | Run the commands of a recorded session or script (`${NAME}` expanded); firmware, factory reset and removals are skipped unless `all`; `stop` ends at the first failure |
+| `session.selftest` | | Offline check of secret masking and report file names |
+| `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `device.info`, `device.caps`, `device.diagnose`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
 | `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
@@ -460,6 +506,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `device.stack` |
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
+| `app.time` | `[sync [ntp\|http\|module] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| selftest]` | App wall clock in UTC with its source and age. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |
 | `app.sbom` | | Software bill of materials: components, versions, licences and sources |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
 | `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS) |

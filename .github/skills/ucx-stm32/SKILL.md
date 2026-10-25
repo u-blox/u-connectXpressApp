@@ -49,7 +49,7 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 | NORA-W36 RTS / CTS (only with flow control) | PA11 (CTS) / PA12 (RTS) |
 | GND, 3V3 | GND, 3V3 |
 - The shell runs on the ST-Link virtual COM port (USART2, 115200). The F401 runs at 84 MHz, the F446 at 168 MHz, the F103 at 64 MHz.
-- The F103 and G071 (64 MHz Cortex-M0+) get a lite build: device, wifi, sock, sys, app, bt and gatt commands (no net, mqtt, cert or TLS). Scan and GATT discovery tables are small (8 devices, 8 services, 24 characteristics) and Bluetooth company, appearance and characteristic names are shown as numbers only.
+- The F103 and G071 (64 MHz Cortex-M0+) get a lite build: device, wifi, sock, sys, app, bt and gatt commands (no net, mqtt, cert, TLS or `examples`/`<group>.ex`). Scan and GATT discovery tables are small (8 devices, 8 services, 24 characteristics) and Bluetooth company, appearance and characteristic names are shown as numbers only.
 
 ## Use
 - The shell connects to the module at startup; `device.connect [uart] [baud]` reconnects.

@@ -6,7 +6,7 @@
 
 #include "ucxapp_cmd.h"
 
-#define UCXAPP_UI_MAX_GROUPS     24
+#define UCXAPP_UI_MAX_GROUPS     32
 #define UCXAPP_UI_GROUP_LEN      12
 #define UCXAPP_UI_MAX_FIELDS     6
 #define UCXAPP_UI_MAX_GROUP_CMDS 64

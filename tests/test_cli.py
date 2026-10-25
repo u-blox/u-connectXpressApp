@@ -45,6 +45,36 @@ def test_usage_is_printed_for_bad_arguments(app_exe, tmp_path):
     assert "usage: device.connect" in out.stdout
 
 
+def test_long_usage_is_one_alternative_per_line(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "help gnss.bridge", "gnss.bridge")
+    lines = [ln.strip() for ln in out.stdout.splitlines()]
+    for alt in ("tcp [port]", "tls [port] [cert] [clientauth]", "tcpc <host> <port>", "udps <port>",
+                "ble [nus|sps|custom <uuid> [rx tx]]", "uart <port> [baud]", "cell", "off", "status"):
+        assert alt in lines, alt
+        assert f"gnss.bridge {alt}" in lines, alt
+    assert not any("<tcp" in ln for ln in lines)
+
+
+def test_long_usage_without_alternatives_is_one_line(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "help gatt.writelong")
+    lines = [ln.strip() for ln in out.stdout.splitlines()]
+    assert "[conn] <handle> <hex|text:abc> [offset] [reliable] [more]" in lines
+
+
+@pytest.mark.parametrize("command", ["gnss.ex", "wifi.ex", "sock.ex", "examples gatt"])
+def test_examples(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 0
+    assert "Examples for" in out.stdout and " 1. " in out.stdout and "    > " in out.stdout
+
+
+def test_examples_lists_groups_and_rejects_extra_args(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "examples")
+    assert out.returncode == 0
+    for group in ("gnss", "wifi", "bt", "gatt", "sock", "mqtt", "hw"):
+        assert f" {group}" in out.stdout
+    assert _run(app_exe, tmp_path, "COM255", "gnss.ex a b").returncode == 1
+
 @pytest.mark.parametrize("command", ["web.start", "hid.status", "hid.key a", "wifi.ap.status", "gatt.writelong 0 1 00"])
 def test_new_device_commands_need_a_device(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)

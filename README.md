@@ -109,7 +109,7 @@ ucxapp --script examples/automation/production-test.ucx --junit production.xml
 
 ## Commands at a glance
 
-Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arguments: [command reference](COMMANDS.md).
+Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists ready-to-copy command sequences; `gnss.ex` (or `examples gnss`) shows them for one group. Full list with arguments: [command reference](COMMANDS.md).
 
 | Area | Commands |
 |---|---|
@@ -121,7 +121,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 | App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
 | Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
 | GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.*`, `gatt.server.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
-| HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |
+| HID | `hid.setup`, `hid.text`, `hid.key`, `hid.mouse`, `hid.click`, `hid.media` (Bluetooth keyboard, mouse and media keys); `hid.client` (read a BLE keyboard or mouse) |
 | Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
 | Sensors | `gnss.detect`, `gnss.open`, `gnss.status`, `gnss.sats`, `gnss.bridge`, `imu.detect`, `imu.open`, `imu.status`, `imu.bridge` (PC serial sensors, bridged over TCP, UDP or BLE) |
 | Cellular | `cell.detect`, `cell.open`, `cell.status`, `cell.apn`, `cell.attach`, `cell.ping`, `cell.connect`, `cell.bridge`, `cell.at` (a cellular modem on a PC serial port) |

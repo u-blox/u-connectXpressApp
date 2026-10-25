@@ -277,7 +277,7 @@ void ucxapp_ui_release(void)
 /* Module groups follow the AT command manual; host groups go from general tools to peripherals. */
 static const char *const kOrder[] = {
     "at", "device", "log", "stats", "fw", "bt", "gatt", "wifi", "net", "sock", "mqtt", "http", "cert",
-    "app", "utils", "file", "dtls", "coap", "web", "qr",
+    "app", "utils", "file", "dtls", "coap", "tftp", "ft", "web", "qr",
     "gnss", "imu", "cell", "can", "hw", "hid"
 };
 
@@ -298,11 +298,13 @@ static const struct {
     { "mqtt",   "MQTT client on the module" },
     { "http",   "HTTP client on the module" },
     { "cert",   "Certificates and keys stored on the module" },
-    { "app",    "About this app: version, memory, licences" },
+    { "app",    "About this app: version, memory, licences, wall clock" },
     { "utils",  "Host tools: zip, unzip, hashes and app TLS certificates" },
     { "file",   "Files in the app store on this PC or board" },
     { "dtls",   "DTLS client and server over module UDP sockets" },
     { "coap",   "CoAP requests over module UDP sockets" },
+    { "tftp",   "TFTP file server and client over module UDP sockets" },
+    { "ft",     "File transfer over a custom BLE GATT service, CRC-32 checked" },
     { "web",    "Web page to control the app from a browser" },
     { "qr",     "QR codes" },
     { "gnss",   "GNSS receiver: detect, position and bridge" },
@@ -310,6 +312,7 @@ static const struct {
     { "cell",   "Cellular modem" },
     { "can",    "CAN bus controller and bridge" },
     { "hw",     "Board I/O bridge: GPIO, I2C and more" },
+    { "hid",    "Bluetooth HID: keyboard, mouse and media keys, or read a BLE HID device" },
 };
 
 const char *ucxapp_ui_group_help(const char *group)
@@ -325,8 +328,8 @@ const char *ucxapp_ui_group_help(const char *group)
 /* Groups whose work is done by this PC (crypto, local sockets, files, the web UI, peripherals on USB).
  * Every other group sends AT commands that the NORA module executes. */
 static const char *const kHostGroups[] = {
-    "app", "file", "web", "dtls", "coap", "qr", "utils", "gnss", "imu", "cell",
-    "can", "hid"
+    "app", "file", "web", "dtls", "coap", "tftp", "ft", "qr", "utils", "gnss", "imu", "cell",
+    "can"
 };
 
 static void groupOf(const char *name, char *out)
@@ -363,9 +366,6 @@ static void visitGroup(const ucxapp_cmd_t *cmd, void *user)
     char group[UCXAPP_UI_GROUP_LEN];
 
     groupOf(cmd->name, group);
-    if (strcmp(group, "hid") == 0) {
-        return;   /* hidden from the text UI and web page for now; still runnable by typing */
-    }
     for (int i = 0; i < c->count; i++) {
         if (strcmp(c->names[i], group) == 0) {
             return;
@@ -444,17 +444,17 @@ static const char *const kCmdOrder[] = {
     "gatt.credits", "gatt.writelong",
     "gatt.client.hrs", "gatt.client.bas", "gatt.client.dis", "gatt.client.nus", "gatt.client.sps",
     "gatt.client.ess", "gatt.client.cts", "gatt.client.lns", "gatt.client.aio", "gatt.client.wit",
-    "gatt.client.wps", "gatt.wps",
+    "gatt.client.wps", "gatt.client.ras", "gatt.wps",
     "gatt.server.list", "gatt.server.set", "gatt.server.notify", "gatt.server.indicate", "gatt.server.demo",
     "gatt.server.hrs", "gatt.server.bas", "gatt.server.nus", "gatt.server.sps", "gatt.server.ess",
-    "gatt.server.cts", "gatt.server.lns", "gatt.server.aio", "gatt.server.wps",
+    "gatt.server.cts", "gatt.server.lns", "gatt.server.aio", "gatt.server.wps", "gatt.server.ras",
     "wifi.scan", "wifi.connect", "wifi.disconnect", "wifi.status", "wifi.ip", "wifi.rssi", "wifi.profile.auto",
     "wifi.profile.connect", "wifi.profile.add", "wifi.profile.list", "wifi.profile.remove",
     "wifi.ap.enable", "wifi.ap.disable", "wifi.ap.status",
     "net.ping", "net.dns", "net.ntp", "net.iperf",
     "sock.list", "sock.open", "sock.connect", "sock.send", "sock.read", "sock.close", "sock.tls",
     "mqtt.connect", "mqtt.disconnect", "mqtt.subscribe", "mqtt.publish", "mqtt.read", "mqtt.unsubscribe",
-    "app.info", "app.version", "app.memory", "app.uptime",
+    "app.info", "app.version", "app.memory", "app.uptime", "app.time",
     "utils.zip", "utils.unzip", "utils.hash.text", "utils.tls.list", "utils.tls.ca.create",
     "utils.tls.server.create", "utils.tls.client.create", "utils.tls.pem", "utils.tls.remove",
     "file.list", "file.view", "file.hash", "file.remove",

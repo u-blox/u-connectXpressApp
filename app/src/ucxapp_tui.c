@@ -485,9 +485,36 @@ static const ucxapp_cmd_t *hintCommand(void)
     return n > 0 ? ucxapp_cmd_find(name) : NULL;
 }
 
+/* Rows below the panels: bottom border, two hint lines, input. */
+#define TUI_FOOTER 5
+
+/* Split text at the last ' ' or '|' that fits width; the second line keeps the rest. */
+static void outHint2(const char *text, int width, int body)
+{
+    int len = (int)strlen(text), cut = len;
+
+    if (len > width) {
+        cut = width;
+        for (int i = width; i > width / 2; i--) {
+            if (text[i] == ' ' || text[i] == '|') {
+                cut = i;
+                break;
+            }
+        }
+    }
+    {
+        char first[256];
+
+        snprintf(first, sizeof(first), "%.*s", cut, text);
+        outCell(first, width, 0, false);
+    }
+    out("\033[%d;1H", body + 4);
+    outCell(text[cut] == ' ' ? text + cut + 1 : text + cut, width, 0, false);
+}
+
 static void drawFrame(int rows, bool busy)
 {
-    int body = rows - 4;
+    int body = rows - TUI_FOOTER;
     unsigned logLines = lbCount(&gLog), evLines = lbCount(&gEvents);
     unsigned logFirst = logLines > (unsigned)body ? logLines - (unsigned)body : 0u;
     unsigned evFirst = evLines > (unsigned)body ? evLines - (unsigned)body : 0u;
@@ -532,10 +559,12 @@ static void drawFrame(int rows, bool busy)
     outRepeat(G_H, W_EVT);
     out(G_BR);
 
-    /* hint line */
+    /* hint lines */
+    out("\033[%d;1H", body + 4);
+    outCell("", W_CMD + W_LOG + W_EVT + 4, 0, false);
     out("\033[%d;1H", body + 3);
     {
-        char text[256];
+        char text[384];
         const ucxapp_cmd_t *cmd = hintCommand();
 
         if (ucxapp_at_mode_active() && !busy) {
@@ -544,7 +573,7 @@ static void drawFrame(int rows, bool busy)
         } else if (cmd != NULL) {
             snprintf(text, sizeof(text), "[%s] %s%s%s  -  %s", ucxapp_ui_cmd_runs_on(cmd), cmd->name,
                      cmd->usage[0] != '\0' ? " " : "", cmd->usage, cmd->help);
-            outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
+            outHint2(text, W_CMD + W_LOG + W_EVT + 4, body);
         } else if (gListFocus && gSel >= 0 && gSel < entryCount() && entryAt(gSel).isGroup) {
             const char *g = gGroups[entryAt(gSel).gi];
 
@@ -568,11 +597,11 @@ static void drawFrame(int rows, bool busy)
         int avail = 79 - promptLen, start = gInPos >= avail ? gInPos - avail + 1 : 0;
         char view[IN_LEN];
 
-        out("\033[%d;1H\033[1m%s\033[0m", body + 4, atMode ? "\033[96mAT> " : "> ");
+        out("\033[%d;1H\033[1m%s\033[0m", body + 5, atMode ? "\033[96mAT> " : "> ");
         snprintf(view, sizeof(view), "%s", gIn + start);
         outCell(view, avail, busy ? 90 : 0, false);
         if (!gListFocus) {
-            out("\033[%d;%dH\033[?25h", body + 4, promptLen + 1 + gInPos - start);
+            out("\033[%d;%dH\033[?25h", body + 5, promptLen + 1 + gInPos - start);
         }
     }
     fwrite(gFrame, 1, gFrameLen, stdout);
@@ -687,7 +716,7 @@ static bool activateEntry(void)
 /* Returns true to quit. */
 static bool handleKey(int key, int rows)
 {
-    int page = (rows - 4) / 2 > 1 ? (rows - 4) / 2 : 1;
+    int page = (rows - TUI_FOOTER) / 2 > 1 ? (rows - TUI_FOOTER) / 2 : 1;
 
     if (key == 3 || key == UCXAPP_KEY_F10) {
         return true;
@@ -944,7 +973,7 @@ int ucxapp_tui_run(ucxapp_t *app)
             dirty = true;
         }
         {
-            int body = rows - 4;
+            int body = rows - TUI_FOOTER;
 
             int r = rowOfEntry(gSel);
             int top = (r - 1 == 0 || r - 1 == hostHeadingRow()) ? r - 1 : r;   /* keep a heading above its first group */

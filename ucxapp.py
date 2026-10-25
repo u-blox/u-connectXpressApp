@@ -8,6 +8,7 @@ and STM32.
   ucxapp --stm32 --board f767 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
+  ucxapp --coverage                         line coverage of app/src from the offline tests (WSL on Windows)
   ucxapp --doctor                           first-run checks: tools, serial access, modules
   ucxapp --script examples/automation/smoke-test.ucx --junit report.xml
 
@@ -118,6 +119,9 @@ def parse(argv):
     g = p.add_argument_group("tools")
     g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers and IMUs")
     g.add_argument("--test", action="store_true", help="run pytest (with --detect: on the detected hardware)")
+    g.add_argument("--coverage", action="store_true",
+                   help="gcov build (Linux; on Windows inside WSL), run pytest on it and report line coverage of "
+                        "app/src to build/coverage.txt")
     g.add_argument("--selftest", action="store_true", help="check the workspace and the built executables")
     g.add_argument("--doctor", action="store_true",
                    help="--selftest plus Python, serial access and the attached modules (first-run troubleshooting)")
@@ -400,21 +404,76 @@ def wifi_summary():
     if os.environ.get("UCX_WIFI_SSID"):
         password = "set" if os.environ.get("UCX_WIFI_PASS") else "not set"
         return [f"UCX_WIFI_SSID={os.environ['UCX_WIFI_SSID']} (UCX_WIFI_PASS {password})"]
-    if profiles.is_file() and profiles.read_text(errors="replace").strip():
-        names = [line.split("\t")[0] for line in profiles.read_text(errors="replace").splitlines() if "\t" in line]
-        used = last.read_text(errors="replace").strip() if last.is_file() else ""
+    if profiles.is_file() and profiles.read_text(encoding="utf-8", errors="replace").strip():
+        names = [line.split("\t")[0] for line in profiles.read_text(encoding="utf-8", errors="replace").splitlines() if "\t" in line]
+        used = last.read_text(encoding="utf-8", errors="replace").strip() if last.is_file() else ""
         return [f"UCX_WIFI_SSID not set: using saved profiles {', '.join(names)} (wifi.profile.auto"
                 f"{', last used ' + used if used else ''})"]
     return ["none: set UCX_WIFI_SSID and UCX_WIFI_PASS, or run wifi.connect <ssid> <password> once to save a profile"]
 
 
-def run_tests(pytest_args, found):
-    if subprocess.call([sys.executable, "-c", "import pytest"], stderr=subprocess.DEVNULL) != 0:
+def pytest_python():
+    """This Python if it has pytest; on Linux (system Python is often externally managed) else a venv in ~."""
+    if subprocess.call([sys.executable, "-c", "import pytest"], stderr=subprocess.DEVNULL) == 0:
+        return sys.executable
+    venv = Path.home() / ".ucxapp-venv"
+    py = venv / "bin" / "python"
+    if IS_WINDOWS:
         fail(f"pytest missing for {sys.executable}: {sys.executable} -m pip install -r tests/requirements.txt")
+    if not py.exists():
+        check([sys.executable, "-m", "venv", venv], "venv (sudo apt install python3-venv)")
+    if subprocess.call([py, "-c", "import pytest"], stderr=subprocess.DEVNULL) != 0:
+        check([py, "-m", "pip", "install", "-q", "-r", ROOT / "tests" / "requirements.txt"], "pytest install")
+    return str(py)
+
+
+def run_tests(pytest_args, found):
+    py = pytest_python()
     env = dict(os.environ)
     for k, v in found.items():
         env.setdefault(k, v)
-    return subprocess.call([sys.executable, "-m", "pytest", *(pytest_args or ["tests"])], cwd=ROOT, env=env)
+    return subprocess.call([py, "-m", "pytest", *(pytest_args or ["tests"])], cwd=ROOT, env=env)
+
+
+def coverage(pytest_args):
+    """Instrumented Linux build, the offline tests on it, then line coverage per app/src file."""
+    require("cmake", "Install CMake 3.15+.")
+    require("gcov", "Install gcc (gcov comes with it).")
+    bd = build_dir().parent / ("ucxapp-coverage" if str(ROOT).startswith("/mnt/") else "coverage")
+    check(["cmake", "-S", "app", "-B", bd, "-DCMAKE_BUILD_TYPE=Debug", "-DUCXAPP_COVERAGE=ON"], "CMake configure")
+    check(["cmake", "--build", bd, "--target", "ucxapp", "--parallel", str(os.cpu_count() or 4)], "coverage build")
+    for old in bd.rglob("*.gcda"):
+        old.unlink()
+    if not (bd / "ucxapp").is_file():
+        fail(f"instrumented exe not found: {bd / 'ucxapp'}")
+    absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT")}
+    # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
+    pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
+    env = {**absent, "UCX_APP_EXE": str(bd / "ucxapp"), "PYTHONUNBUFFERED": "1"}
+    rc = run_tests(pytest_args, env)
+
+    src = (ROOT / "app" / "src").resolve()
+    files = {}
+    for gcda in bd.rglob("*.gcda"):
+        out = subprocess.run(["gcov", "-n", "-o", str(gcda.parent), str(gcda)], cwd=bd, capture_output=True,
+                             text=True, errors="replace").stdout
+        for name, pct, total in re.findall(r"File '([^']+)'\nLines executed:([\d.]+)% of (\d+)", out):
+            path = Path(name) if Path(name).is_absolute() else (bd / name)
+            if path.resolve().parent == src:
+                files[path.name] = (round(float(pct) * int(total) / 100), int(total))
+    if not files:
+        fail("no coverage data; did the app tests run? (they need the app built and not skipped)")
+    rows = [f"{n:<32} {hit:>6}/{total:<6} {100 * hit / total:6.1f}%"
+            for n, (hit, total) in sorted(files.items(), key=lambda kv: kv[1][0] / kv[1][1])]
+    hit = sum(h for h, _ in files.values())
+    total = sum(t for _, t in files.values())
+    rows.append(f"{'TOTAL':<32} {hit:>6}/{total:<6} {100 * hit / total:6.1f}%")
+    report = ROOT / "build" / "coverage.txt"
+    report.parent.mkdir(exist_ok=True)
+    report.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    print("\n".join(rows))
+    print("Report:", report)
+    return rc
 
 
 # ---- STM32 ----
@@ -961,7 +1020,7 @@ def main(argv):
         return run_script(exe, args.script, extra, args.junit)
     if args.everything:
         return everything(args)
-    if args.linux and IS_WINDOWS:
+    if (args.linux or args.coverage) and IS_WINDOWS:
         require("wsl", "Install WSL with: wsl --install")
         forward = [a for a in parsed_argv if a != "--linux"]
         if "--" in argv:
@@ -969,6 +1028,8 @@ def main(argv):
         return subprocess.call(["wsl", "--cd", str(ROOT), "--", "python3", "ucxapp.py", *forward])
     if args.stm32:
         return stm32(args, extra)
+    if args.coverage:
+        return coverage(extra)
     found = {}
     if args.detect or args.test:
         # Detection and tests use the development exe, never an older signed one.

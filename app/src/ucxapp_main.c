@@ -17,6 +17,7 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_system.h"
+#include "u_cx_error_codes.h"
 #include "u_port.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -62,6 +63,7 @@ static bool connectModule(const char *port)
         ucxapp_print("warning: could not enable extended error codes\n");
     }
     gConnected = true;
+    ucxapp_caps_reset();
     return true;
 }
 
@@ -203,8 +205,14 @@ static void printJsonResult(const char *command, int rc)
     ucxapp_print_json_string(command);
     ucxapp_print(",\"success\":%s,\"code\":\"%s\"", rc == UCXAPP_OK ? "true" : "false", ucxapp_err_code(rc));
     if (rc != UCXAPP_OK) {
+        int32_t mod = ucxapp_last_module_error();
+        const char *modName = mod != 0 ? uCxGetErrorName(mod) : NULL;
+
         ucxapp_print(",\"error\":");
         ucxapp_print_json_string(error != NULL ? error : ucxapp_err_code(rc));
+        if (modName != NULL) {
+            ucxapp_print(",\"moduleError\":{\"code\":%d,\"name\":\"%s\"}", (int)mod, modName);
+        }
     }
     ucxapp_print(",\"output\":[");
     for (int i = 0; i < count; i++) {
@@ -379,6 +387,12 @@ int main(int argc, char *argv[])
     ucxapp_register_tls_cmds();
     ucxapp_register_dtls_cmds();
     ucxapp_register_coap_cmds();
+    ucxapp_register_tftp_cmds();
+    ucxapp_register_ft_cmds();
+    ucxapp_register_ancs_cmds();
+    ucxapp_register_notify_cmds();
+    ucxapp_register_session_cmds();
+    ucxapp_register_time_cmds();
     ucxapp_register_can_cmds();
     ucxapp_register_fw_cmds();
     ucxapp_register_gatt_cmds();
@@ -390,6 +404,7 @@ int main(int argc, char *argv[])
     ucxapp_register_hw_cmds();
     ucxapp_register_hid_cmds();
     ucxapp_register_web_cmds();
+    ucxapp_register_examples_cmds();
 
     ucxapp_t app = { NULL };
     int rc = 0;
@@ -431,6 +446,7 @@ int main(int argc, char *argv[])
     } else if (rc == 0 && shellMode) {
         ucxapp_shell_run(&app);
     }
+    ucxapp_session_end();
     {
         char stopLine[] = "web.stop";
         ucxapp_cmd_exec(&app, stopLine);

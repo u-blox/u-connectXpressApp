@@ -94,11 +94,14 @@ python -m pip install pytest ruff
 
 # Hardware tests on the detected modules, GNSS receiver and IMU
 .\ucxapp --detect --test tests/hardware
+
+# Line coverage of app/src from the offline tests (gcov build in WSL), report in build/coverage.txt
+.\ucxapp --coverage
 ```
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
 
-New code goes into `app/src/` as separate command modules.
+New code goes into `app/src/` as separate command modules. Add worked examples for new commands to `kExamples` in `app/src/ucxapp_cmds_examples.c` (shown by `<group>.ex`). Long usage strings with top-level `|` alternatives are printed one alternative per line by `help`.
 
 ```powershell
 # Workspace and executable checks

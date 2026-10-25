@@ -70,7 +70,9 @@ else()
     list(APPEND UCXAPP_STM32_SOURCES
         ${APP_SRC}/ucxapp_cmds_mqtt.c
         ${APP_SRC}/ucxapp_cmds_net.c
+        ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
+        ${APP_SRC}/ucxapp_cmds_examples.c
     )
 endif()
 

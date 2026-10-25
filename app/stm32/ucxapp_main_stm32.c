@@ -465,7 +465,9 @@ static void appTask(void *arg)
 #ifndef UCXAPP_LITE
     ucxapp_register_mqtt_cmds();
     ucxapp_register_net_cmds();
+    ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
+    ucxapp_register_examples_cmds();
 #endif
 
     if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {

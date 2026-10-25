@@ -39,6 +39,12 @@ uint32_t ucxapp_platform_tick_ms(void)
     return (uint32_t)((uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u);
 }
 
+bool ucxapp_platform_clock_adjust(int64_t deltaSeconds)
+{
+    (void)deltaSeconds;
+    return false;
+}
+
 bool ucxapp_platform_key_pressed(void)
 {
     fd_set fds;

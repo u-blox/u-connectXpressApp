@@ -65,9 +65,9 @@ static void linkDownUrc(struct uCxHandle *h, int32_t wlan, int32_t reason)
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_DOWN);
 }
 static void sockConnectedUrc(struct uCxHandle *h, int32_t s)                           { (void)h; evt("sock: %d connected", (int)s); ucxapp_events_signal(URC_FLAG_SOCK_CONNECTED); }
-static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
-static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_stream_on_data(s); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
-static void sockIncomingUrc(struct uCxHandle *h, int32_t s, uSockIpAddress_t *ip, int32_t listenSock) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_stream_on_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
+static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_ft_on_sock_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
+static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_stream_on_data(s); ucxapp_ft_on_sock_data(s); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
+static void sockIncomingUrc(struct uCxHandle *h, int32_t s, uSockIpAddress_t *ip, int32_t listenSock) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_stream_on_incoming(s, listenSock); ucxapp_ft_on_sock_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
 static void spsConnectedUrc(struct uCxHandle *h, int32_t c)                            { (void)h; evt("sps: connected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_CONNECTED); }
 static void spsDisconnectedUrc(struct uCxHandle *h, int32_t c)                         { (void)h; evt("sps: disconnected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_DISCONNECTED); }
 static void spsDataUrc(struct uCxHandle *h, int32_t c, int32_t n)                      { (void)h; evt("sps: %d bytes on conn %d", (int)n, (int)c); ucxapp_stream_on_sps_data(); ucxapp_events_signal(URC_FLAG_SPS_DATA); }

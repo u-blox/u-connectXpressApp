@@ -19,7 +19,8 @@ Always use `--detect` (or `gnss.detect`, `imu.detect`, `--list-modules`, `--list
 - Connect an EVK (FTDI USB). The app auto-detects the COM port, or pass it: `ucxapp COM13`.
 - Script: `ucxapp COM13 --exec "device.info" --exec "wifi.scan"` (exit code 1 on first failure).
 - Firmware update: `--exec "fw.flash <file>"`.
-- Type `help` in the shell for all commands; see `COMMANDS.md`.
+- Type `help` in the shell for all commands; see `COMMANDS.md`. `examples` lists worked examples, `<group>.ex` (e.g. `gnss.ex`, `wifi.ex`) shows one group.
+- `.\ucxapp --coverage` runs the offline app tests on a gcov build in WSL and writes line coverage to `build/coverage.txt`.
 
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).

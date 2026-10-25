@@ -63,7 +63,7 @@ def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
 
 
 @pytest.mark.two_devices
-@pytest.mark.parametrize("key", ["hrs", "cts", "ess", "lns", "aio", "bas", "sps", "wps"])
+@pytest.mark.parametrize("key", ["hrs", "cts", "ess", "lns", "aio", "bas", "sps", "wps", "ras"])
 def test_gatt_example_server_and_client_between_two_modules(app_exe, port_a, port_b, key):
     """A serves the example service; B discovers it, runs the matching client example and listens."""
     proc, seen, lines = _gatt_server(app_exe, port_a, key)

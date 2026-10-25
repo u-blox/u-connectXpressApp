@@ -9,9 +9,10 @@
 #define UCXAPP_ERR_USAGE         (-101)
 #define UCXAPP_ERR_NOT_CONNECTED (-102)
 #define UCXAPP_ERR_FAILED        (-103)
+#define UCXAPP_ERR_UNSUPPORTED   (-104)
 
 #define UCXAPP_MAX_ARGS    8
-#define UCXAPP_MAX_PACKS   32
+#define UCXAPP_MAX_PACKS   40
 
 /* Command needs a connected module (app->ucx != NULL). */
 #define UCXAPP_CMD_NEEDS_DEVICE  0x01
@@ -35,7 +36,14 @@ bool ucxapp_cmd_register(const ucxapp_cmd_t *table, size_t count);
 /* Tokenize a line in place (whitespace separated, "double quotes" group) and run it. */
 int ucxapp_cmd_exec(ucxapp_t *app, char *line);
 
+/* Called before (done false) and after (done true, with rc) every command; argv is as typed. NULL removes it. */
+typedef void (*ucxapp_recorder_fn_t)(const ucxapp_cmd_t *cmd, int argc, char *argv[], bool done, int rc);
+void ucxapp_cmd_set_recorder(ucxapp_recorder_fn_t fn);
+
 void ucxapp_cmd_print_help(const char *prefix);
+
+/* Usage split into one top-level alternative per line, each prefixed by indent. */
+void ucxapp_print_usage_lines(const char *indent, const char *usage);
 
 /* Every command as a JSON array (name, usage, help, needsDevice, danger); "help --json". */
 void ucxapp_cmd_print_json(const char *prefix);
@@ -43,8 +51,14 @@ void ucxapp_cmd_print_json(const char *prefix);
 /* JSON string literal of s, with quotes and escapes. */
 void ucxapp_print_json_string(const char *s);
 
-/* Stable name of a command result: "OK", "USAGE", "NOT_CONNECTED", "UNKNOWN_CMD", "FAILED". */
+/* Stable name of a command result: "OK", "USAGE", "NOT_CONNECTED", "UNKNOWN_CMD", "UNSUPPORTED", "FAILED". */
 const char *ucxapp_err_code(int rc);
+
+/* Module error code of the last command (the last one passed to ucxapp_errname), 0 if none. */
+int32_t ucxapp_last_module_error(void);
+
+/* Forget the cached module model; call after (re)connecting. */
+void ucxapp_caps_reset(void);
 
 /* One aligned memory row, same look for module stacks and app memory:
    "<kind>:<name>  <sizeLabel>: <size>  used: <used>  usage(%): <pct>". size 0 prints "?". */
@@ -97,6 +111,13 @@ void ucxapp_register_wifi_cmds(void);
 void ucxapp_register_sock_cmds(void);
 void ucxapp_register_dtls_cmds(void);    /* dtls.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_coap_cmds(void);    /* coap.* (host only, empty in UCXAPP_LITE builds) */
+void ucxapp_register_tftp_cmds(void);    /* tftp.* (host only, empty in UCXAPP_LITE builds) */
+void ucxapp_register_ft_cmds(void);      /* ft.* BLE file transfer (host only) */
+void ucxapp_register_ancs_cmds(void);    /* ancs.* iPhone notifications (host only) */
+void ucxapp_register_notify_cmds(void);  /* notify.* phone notifications over a custom GATT service (host only) */
+void ucxapp_register_session_cmds(void); /* session.* record/replay and prod.test (host only) */
+void ucxapp_session_end(void);           /* close a running session.record at exit */
+void ucxapp_register_time_cmds(void);    /* app.time */
 void ucxapp_register_can_cmds(void);     /* can.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_net_cmds(void);
 void ucxapp_register_sys_cmds(void);
@@ -119,6 +140,7 @@ void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_
 bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
+void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
 
 /* Raw AT: ucxapp_at_send runs one command (AT prefix optional); in AT mode ucxapp_cmd_exec sends every line, 'back' leaves it. */
 int ucxapp_at_send(ucxapp_t *app, const char *cmd);
@@ -147,6 +169,17 @@ bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char 
 int ucxapp_gatt_server_ensure(ucxapp_t *app, const char *key);   /* defines a predefined profile once, e.g. "bas" */
 void ucxapp_gatt_ensure_advertising(ucxapp_t *app);
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+bool ucxapp_hid_client_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+bool ucxapp_ft_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+bool ucxapp_notify_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+bool ucxapp_ft_client_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+/* Socket URCs for ft over TCP (ucxapp_cmds_ft.c). */
+void ucxapp_ft_on_sock_data(int32_t sock);
+void ucxapp_ft_on_sock_closed(int32_t sock);
+void ucxapp_ft_on_sock_incoming(int32_t sock, int32_t listenSock);
+bool ucxapp_ancs_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+/* Value handle of a 128-bit characteristic on a connected peer (discovers once per connection). */
+bool ucxapp_gatt_client_find128(ucxapp_t *app, int32_t conn, const uint8_t uuid[16], int32_t *handle);
 void ucxapp_gatt_server_read(int32_t conn, int32_t handle);
 bool ucxapp_gatt_notify_nus(ucxapp_t *app, const uint8_t *data, size_t len);   /* Nordic UART TX on the newest connection */
 /* Defines a service with one notify (tx) and one write (rx) characteristic; once per module restart. */

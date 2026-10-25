@@ -7,6 +7,25 @@
 
 #include "u_cx_error_codes.h"
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
+#include "u_cx_general.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+static int32_t gModErr;
+static const void *gCapsFor;
+static bool gCapsWifi = true;
+static ucxapp_recorder_fn_t gRecorder;
+
+void ucxapp_cmd_set_recorder(ucxapp_recorder_fn_t fn)
+{
+    gRecorder = fn;
+}
+
 typedef struct {
     const ucxapp_cmd_t *table;
     size_t count;
@@ -51,8 +70,48 @@ const char *ucxapp_errname(int32_t code)
     if (name == NULL) {
         return "";
     }
+    gModErr = code;
     snprintf(text, sizeof(text), ": %s", name);
     return text;
+}
+
+int32_t ucxapp_last_module_error(void)
+{
+    return gModErr;
+}
+
+void ucxapp_caps_reset(void)
+{
+    gCapsFor = NULL;
+}
+
+static bool needsWifi(const char *name)
+{
+    static const char *const kGroups[] = { "wifi.", "sock.", "mqtt.", "http.", "net.", "cert.", "tftp.", "web.",
+                                           "coap.", "dtls." };
+
+    for (size_t i = 0; i < sizeof(kGroups) / sizeof(kGroups[0]); i++) {
+        if (strncmp(name, kGroups[i], strlen(kGroups[i])) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Model is asked once per connection; an unknown model is not blocked. */
+static bool moduleHasWifi(ucxapp_t *app)
+{
+    if (gCapsFor != (const void *)app->ucx) {
+        const char *text = NULL;
+
+        gCapsWifi = true;
+        if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
+            gCapsWifi = strstr(text, "B26") == NULL;
+        }
+        uCxEnd(app->ucx);
+        gCapsFor = app->ucx;
+    }
+    return gCapsWifi;
 }
 
 bool ucxapp_parse_int(const char *s, int32_t *out)
@@ -152,6 +211,47 @@ int ucxapp_cmd_complete(const char *prefix, char *out, size_t size)
     return count;
 }
 
+/* Print usage one top-level alternative per line ("a|b" or "<a|b>"), each line prefixed by indent. */
+void ucxapp_print_usage_lines(const char *indent, const char *usage)
+{
+    size_t len = strlen(usage);
+    const char *p = usage;
+    const char *end = usage + len;
+    int depth = 0;
+
+    if (len > 2 && usage[0] == '<' && usage[len - 1] == '>') {
+        const char *q = usage;
+
+        do {
+            depth += (*q == '<' || *q == '[') - (*q == '>' || *q == ']');
+            q++;
+        } while (depth > 0 && q < end);
+        if (q == end) {   /* one <...> around everything */
+            p++;
+            end--;
+        }
+        depth = 0;
+    }
+    for (const char *q = p; q <= end; q++) {
+        if (q == end || (*q == '|' && depth == 0)) {
+            const char *a = p, *b = q;
+
+            while (a < b && *a == ' ') {
+                a++;
+            }
+            while (b > a && b[-1] == ' ') {
+                b--;
+            }
+            ucxapp_print("%s%.*s\n", indent, (int)(b - a), a);
+            p = q + 1;
+        } else if (*q == '<' || *q == '[') {
+            depth++;
+        } else if (*q == '>' || *q == ']') {
+            depth--;
+        }
+    }
+}
+
 void ucxapp_cmd_print_help(const char *prefix)
 {
     size_t prefixLen = prefix != NULL ? strlen(prefix) : 0;
@@ -163,7 +263,12 @@ void ucxapp_cmd_print_help(const char *prefix)
             if (strncmp(c->name, prefix != NULL ? prefix : "", prefixLen) != 0) {
                 continue;
             }
-            ucxapp_print("  %-16s %-24s %s\n", c->name, c->usage, c->help);
+            if (strlen(c->usage) > 24) {
+                ucxapp_print("  %-16s %-24s %s\n", c->name, "", c->help);
+                ucxapp_print_usage_lines("                     ", c->usage);
+            } else {
+                ucxapp_print("  %-16s %-24s %s\n", c->name, c->usage, c->help);
+            }
             any = true;
         }
     }
@@ -238,6 +343,7 @@ const char *ucxapp_err_code(int rc)
     case UCXAPP_ERR_UNKNOWN_CMD:   return "UNKNOWN_CMD";
     case UCXAPP_ERR_USAGE:         return "USAGE";
     case UCXAPP_ERR_NOT_CONNECTED: return "NOT_CONNECTED";
+    case UCXAPP_ERR_UNSUPPORTED:   return "UNSUPPORTED";
     default:                       return "FAILED";
     }
 }
@@ -501,13 +607,36 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         ucxapp_print("ERROR: not connected to a module\n");
         return UCXAPP_ERR_NOT_CONNECTED;
     }
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && needsWifi(cmd->name) && !moduleHasWifi(app)) {
+        ucxapp_print("ERROR: %s needs Wi-Fi; this module has Bluetooth LE only (see device.caps)\n", cmd->name);
+        return UCXAPP_ERR_UNSUPPORTED;
+    }
 
     int result;
+    char *typed[UCXAPP_MAX_ARGS];
+    int typedCount = argc;
+    ucxapp_recorder_fn_t rec = gRecorder;
 
+    memcpy(typed, argv, (size_t)argc * sizeof(argv[0]));
+    if (rec != NULL) {
+        rec(cmd, typedCount, typed, false, 0);
+    }
+    gModErr = 0;
     insertCurrentHandle(cmd, &argc, argv);
     result = cmd->run(app, argc, argv);
     if (result == UCXAPP_ERR_USAGE) {
-        ucxapp_print("usage: %s %s\n", cmd->name, cmd->usage);
+        if (strlen(cmd->usage) > 24) {
+            char indent[48];
+
+            snprintf(indent, sizeof(indent), "  %s ", cmd->name);
+            ucxapp_print("usage: %s\n", cmd->name);
+            ucxapp_print_usage_lines(indent, cmd->usage);
+        } else {
+            ucxapp_print("usage: %s %s\n", cmd->name, cmd->usage);
+        }
+    }
+    if (rec != NULL) {
+        rec(cmd, typedCount, typed, true, result);
     }
     return result;
 }

@@ -71,6 +71,12 @@ uint32_t ucxapp_platform_tick_ms(void)
     return (uint32_t)GetTickCount64();
 }
 
+bool ucxapp_platform_clock_adjust(int64_t deltaSeconds)
+{
+    (void)deltaSeconds;
+    return false;
+}
+
 bool ucxapp_platform_key_pressed(void)
 {
     return _kbhit() != 0;

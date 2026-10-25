@@ -32,6 +32,9 @@ uint32_t ucxapp_platform_tick_ms(void);
 /** Blocks the calling thread (not available on the STM32 backend). */
 void ucxapp_platform_sleep_ms(uint32_t ms);
 
+/** Shifts the clock that time() reads by deltaSeconds; false if the OS owns the clock (PC builds). */
+bool ucxapp_platform_clock_adjust(int64_t deltaSeconds);
+
 /** True if a key press is waiting. */
 bool ucxapp_platform_key_pressed(void);
 

@@ -94,6 +94,12 @@ if(NOT WIN32)
     src/ucxapp_cmds_dtls.c
     src/ucxapp_dtls.c
     src/ucxapp_cmds_coap.c
+    src/ucxapp_cmds_tftp.c
+    src/ucxapp_cmds_ft.c
+    src/ucxapp_cmds_ancs.c
+    src/ucxapp_cmds_notify.c
+    src/ucxapp_cmds_session.c
+    src/ucxapp_cmds_time.c
     src/ucxapp_cmds_can.c
     src/ucxapp_cmds_fw.c
     src/ucxapp_cmds_gatt.c
@@ -106,6 +112,7 @@ if(NOT WIN32)
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
     src/ucxapp_cmds_hid.c
+    src/ucxapp_cmds_examples.c
     third-party/qrcodegen/qrcodegen.c
 
     src/ucxapp_platform_posix.c
@@ -126,6 +133,9 @@ if(NOT WIN32)
   if(UCXAPP_COVERAGE)
     target_compile_options(ucxapp PRIVATE --coverage -O0 -g)
     target_link_options(ucxapp PRIVATE --coverage)
+    # Keep the instrumented exe out of app/bin so it never replaces the normal build.
+    set_target_properties(ucxapp PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+                                            RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR})
   endif()
 
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
@@ -193,6 +203,12 @@ add_executable(ucxapp
   src/ucxapp_cmds_dtls.c
   src/ucxapp_dtls.c
   src/ucxapp_cmds_coap.c
+  src/ucxapp_cmds_tftp.c
+  src/ucxapp_cmds_ft.c
+  src/ucxapp_cmds_ancs.c
+  src/ucxapp_cmds_notify.c
+  src/ucxapp_cmds_session.c
+  src/ucxapp_cmds_time.c
   src/ucxapp_cmds_can.c
   src/ucxapp_cmds_fw.c
   src/ucxapp_cmds_gatt.c
@@ -205,6 +221,7 @@ add_executable(ucxapp
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c
   src/ucxapp_cmds_hid.c
+  src/ucxapp_cmds_examples.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
   ucxapp.rc

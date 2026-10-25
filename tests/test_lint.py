@@ -1,5 +1,7 @@
 """Static checks: ruff for Python, shellcheck for shell scripts and CI bash steps."""
 
+import fnmatch
+import os
 import re
 import shutil
 import subprocess
@@ -12,7 +14,11 @@ SKIP_DIRS = {"u-connectClient", "build", ".git", "node_modules", "third-party"}
 
 
 def _files(pattern):
-    return sorted(p for p in ROOT.rglob(pattern) if not SKIP_DIRS.intersection(p.relative_to(ROOT).parts))
+    found = []
+    for top, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]  # prune: walking build/ is very slow on /mnt
+        found += (Path(top) / n for n in fnmatch.filter(names, pattern))
+    return sorted(found)
 
 
 def _run(cmd):

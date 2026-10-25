@@ -17,7 +17,7 @@ ENTRY = re.compile(
 
 NEW_COMMANDS = (
     "web.start", "web.stop", "web.status",
-    "hid.setup", "hid.status", "hid.key", "hid.text",
+    "hid.setup", "hid.status", "hid.key", "hid.text", "hid.mouse", "hid.click", "hid.media", "hid.client",
     "utils.qr.text", "utils.qr.wifi", "utils.qr.geo", "utils.zip", "utils.unzip",
     "gnss.detect", "gnss.open", "gnss.close", "gnss.status", "gnss.sats", "gnss.log", "gnss.send",
     "gnss.restart", "gnss.rate", "gnss.bridge",
@@ -29,6 +29,7 @@ NEW_COMMANDS = (
     "wifi.profile.auto", "wifi.regdomain",
     "gatt.writelong", "gatt.wps", "file.hash",
     "bt.defaults", "bt.bonds", "bt.unbond",
+    "ft.on", "ft.off", "ft.status", "ft.get", "ft.put", "ft.ls", "ft.rm", "ft.selftest", "app.time",
 )
 
 
@@ -41,7 +42,7 @@ def registered_commands():
 
 def _doc_name(name):
     # The reference documents the per-service examples as gatt.client.<svc>.
-    return re.sub(r"^(gatt\.(?:client|server)\.)(?:hrs|cts|ess|lns|aio|bas|dis|nus|sps|wit|wps)$", r"\1<svc>", name)
+    return re.sub(r"^(gatt\.(?:client|server)\.)(?:hrs|cts|ess|lns|aio|bas|dis|nus|sps|wit|wps|ras)$", r"\1<svc>", name)
 
 
 def test_command_scan_finds_the_new_packs():

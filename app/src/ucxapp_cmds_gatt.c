@@ -324,6 +324,19 @@ static const chr_t *findChar128(const uint8_t *uuid)
     return NULL;
 }
 
+bool ucxapp_gatt_client_find128(ucxapp_t *app, int32_t conn, const uint8_t uuid[16], int32_t *handle)
+{
+    if (ensureCache(app, conn) != UCXAPP_OK) {
+        return false;
+    }
+    const chr_t *c = findChar128(uuid);
+    if (c == NULL) {
+        return false;
+    }
+    *handle = c->handle;
+    return true;
+}
+
 static const chr_t *findCharByHandle(int32_t handle)
 {
     for (int i = 0; i < gChrCount; i++) {
@@ -396,16 +409,27 @@ static void parseHum(const uint8_t *d, size_t n)
     ucxapp_print("[ESS] Humidity: %.2f %%\n", (uint16_t)(d[0] | (d[1] << 8)) / 100.0);
 }
 
+/* Location and Speed (GSS): the flags say which optional fields precede Location. */
 static void parseLoc(const uint8_t *d, size_t n)
 {
-    if (n < 10) {
+    if (n < 2) {
         ucxapp_print("[LNS] invalid length %u\n", (unsigned)n);
         return;
     }
-    int32_t lat = (int32_t)((uint32_t)d[2] | ((uint32_t)d[3] << 8) | ((uint32_t)d[4] << 16) | ((uint32_t)d[5] << 24));
-    int32_t lon = (int32_t)((uint32_t)d[6] | ((uint32_t)d[7] << 8) | ((uint32_t)d[8] << 16) | ((uint32_t)d[9] << 24));
-    ucxapp_print("[LNS] lat=%.7f lon=%.7f (flags 0x%04X)\n", lat / 1e7, lon / 1e7,
-                 (unsigned)(d[0] | (d[1] << 8)));
+    unsigned flags = (unsigned)(d[0] | (d[1] << 8));
+    size_t off = 2 + ((flags & 0x01) ? 2 : 0) + ((flags & 0x02) ? 3 : 0);
+    if (!(flags & 0x04)) {
+        ucxapp_print("[LNS] no location (flags 0x%04X)\n", flags);
+        return;
+    }
+    if (n < off + 8) {
+        ucxapp_print("[LNS] invalid length %u\n", (unsigned)n);
+        return;
+    }
+    const uint8_t *p = d + off;
+    int32_t lat = (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
+    int32_t lon = (int32_t)((uint32_t)p[4] | ((uint32_t)p[5] << 8) | ((uint32_t)p[6] << 16) | ((uint32_t)p[7] << 24));
+    ucxapp_print("[LNS] lat=%.7f lon=%.7f (flags 0x%04X)\n", lat / 1e7, lon / 1e7, flags);
 }
 
 static void parseAioDigital(const uint8_t *d, size_t n)
@@ -435,6 +459,27 @@ static void parseBattery(const uint8_t *d, size_t n)
         return;
     }
     ucxapp_print("[BAS] Battery Level: %u %%\n", d[0] > 100 ? 100u : (unsigned)d[0]);
+}
+
+static void parseRasFeatures(const uint8_t *d, size_t n)
+{
+    if (n < 4) {
+        ucxapp_print("[RAS] invalid features length %u\n", (unsigned)n);
+        return;
+    }
+    uint32_t f = (uint32_t)d[0] | ((uint32_t)d[1] << 8) | ((uint32_t)d[2] << 16) | ((uint32_t)d[3] << 24);
+    ucxapp_print("[RAS] Features 0x%08lX: real-time %s, retrieve lost segments %s, abort %s, filtering %s\n",
+                 (unsigned long)f, (f & 1u) ? "yes" : "no", (f & 2u) ? "yes" : "no", (f & 4u) ? "yes" : "no",
+                 (f & 8u) ? "yes" : "no");
+}
+
+static void parseRasCounter(const char *what, const uint8_t *d, size_t n)
+{
+    if (n < 2) {
+        ucxapp_print("[RAS] invalid %s length %u\n", what, (unsigned)n);
+        return;
+    }
+    ucxapp_print("[RAS] %s: ranging counter %u\n", what, (unsigned)(d[0] | (d[1] << 8)));
 }
 
 static void parseCredits(const uint8_t *d, size_t n)
@@ -517,6 +562,9 @@ static void printValue(const chr_t *c, const uint8_t *d, size_t n)
         case 0x2A56: parseAioDigital(d, n); return;
         case 0x2A58: parseAioAnalog(d, n); return;
         case 0x2A19: parseBattery(d, n); return;
+        case 0x2C14: parseRasFeatures(d, n); return;
+        case 0x2C18: parseRasCounter("Data Ready", d, n); return;
+        case 0x2C19: parseRasCounter("Data Overwritten", d, n); return;
         case 0x2A23:
             ucxapp_print("[DIS] System ID: ");
             for (size_t i = 0; i < n; i++) {
@@ -554,6 +602,10 @@ static void printValue(const chr_t *c, const uint8_t *d, size_t n)
 /* Called from the URC task for GATT notifications and indications. */
 void ucxapp_gatt_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
+    if (ucxapp_ft_client_notification(conn, handle, data, len) || ucxapp_ancs_notification(conn, handle, data, len) ||
+        ucxapp_hid_client_notification(conn, handle, data, len)) {
+        return;
+    }
     const chr_t *c = gCacheConn == conn ? findCharByHandle(handle) : NULL;
 
     if (c == NULL) {
@@ -780,6 +832,8 @@ typedef struct {
     const uint8_t *u128;
 } example_t;
 
+/* Spec links are at the server tables below; DIS 1.2:
+ * https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/DIS_v1.2/out/en/index-en.html */
 static const example_t kExamples[] = {
     { "hrs", "Heart Rate",               0x180D, NULL },
     { "cts", "Current Time",             0x1805, NULL },
@@ -788,6 +842,7 @@ static const example_t kExamples[] = {
     { "aio", "Automation IO",            0x1815, NULL },
     { "bas", "Battery",                  0x180F, NULL },
     { "dis", "Device Information",       0x180A, NULL },
+    { "ras", "Ranging (Channel Sounding)", 0x185B, NULL },
     { "nus", "Nordic UART",              0,      kNusSvc },
     { "sps", "u-blox Serial Port",       0,      kSpsSvc },
     { "wps", "Wi-Fi Provisioning",        0,      kWpsSvc },
@@ -989,27 +1044,46 @@ typedef struct {
     const uint8_t *u128;
     const srvChar_t *chars;
     size_t nChars;
+    bool encrypt;           /* every characteristic needs an encrypted link */
 } srvProfile_t;
 
+/* HRS 1.0: https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/HRS_v1.0/out/en/index-en.html */
 static const srvChar_t kHrsChars[] = {
     { "hrs.measurement", 0x2A37, NULL, PROP_NOTIFY, 2, { 0x00, 60 }, 20, 0, false, NULL },
 };
+/* BAS 1.1: https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/BAS_v1.1/out/en/index-en.html */
 static const srvChar_t kBasChars[] = {
     { "bas.level", 0x2A19, NULL, PROP_READ | PROP_NOTIFY, 1, { 100 }, 1, 0, false, NULL },
 };
+/* ESS 1.0.1: https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/ESS_v1.0.1/out/en/index-en.html */
 static const srvChar_t kEssChars[] = {
     { "ess.temperature", 0x2A6E, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x29, 0x09 }, 2, 0, false, NULL },
     { "ess.humidity",    0x2A6F, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x94, 0x11 }, 2, 0, false, NULL },
 };
+/* AIOS 1.0: https://www.bluetooth.com/specifications/specs/automation-io-service-1-0/
+ * Digital carries the mandatory Number of Digitals descriptor, added in cmdServerSetup. */
 static const srvChar_t kAioChars[] = {
     { "aio.digital", 0x2A56, NULL, PROP_READ | PROP_WRITE | PROP_NOTIFY, 1, { 0x00 }, 1, 0, false, NULL },
     { "aio.analog",  0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0xF4, 0x01 }, 2, 0, false, NULL },
 };
+/* LNS 1.0 (PDF only): https://www.bluetooth.com/specifications/specs/location-and-navigation-service-1-0/
+ * LN Feature is mandatory; Location and Speed is notify-only. */
 static const srvChar_t kLnsChars[] = {
-    { "lns.location", 0x2A67, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 2, false, NULL },
+    { "lns.feature",  0x2A6A, NULL, PROP_READ, 4, { 0x04, 0x00, 0x00, 0x00 }, 4, 0, false, NULL },
+    { "lns.location", 0x2A67, NULL, PROP_NOTIFY, 10, { 0 }, 10, 2, false, NULL },
 };
+/* CTS 1.1: https://www.bluetooth.com/specifications/specs/current-time-service-1-1/ */
 static const srvChar_t kCtsChars[] = {
     { "cts.time", 0x2A2B, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 1, false, NULL },
+};
+/* RAS 1.0: https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/RAS_v1.0/out/en/index-en.html
+ * Mandatory characteristics only (On-demand mode, no optional features); ranging data needs a CS radio. */
+static const srvChar_t kRasChars[] = {
+    { "ras.features",    0x2C14, NULL, PROP_READ, 4, { 0x00, 0x00, 0x00, 0x00 }, 4, 0, false, NULL },
+    { "ras.ondemand",    0x2C16, NULL, PROP_NOTIFY | PROP_INDICATE, 1, { 0x00 }, 244, 0, false, NULL },
+    { "ras.control",     0x2C17, NULL, PROP_WRITE_NR | PROP_INDICATE, 1, { 0x00 }, 20, 0, false, NULL },
+    { "ras.ready",       0x2C18, NULL, PROP_READ | PROP_NOTIFY | PROP_INDICATE, 2, { 0x00, 0x00 }, 2, 0, false, NULL },
+    { "ras.overwritten", 0x2C19, NULL, PROP_READ | PROP_NOTIFY | PROP_INDICATE, 2, { 0x00, 0x00 }, 2, 0, false, NULL },
 };
 static const srvChar_t kNusChars[] = {
     { "nus.tx", 0, kNusTx, PROP_NOTIFY,   1, { 0x00 }, 244, 0, false, NULL },
@@ -1027,7 +1101,9 @@ static const srvChar_t kWpsChars[] = {
 };
 
 #define PROFILE(key, title, u16, u128, chars) \
-    { key, title, u16, u128, chars, sizeof(chars) / sizeof((chars)[0]) }
+    { key, title, u16, u128, chars, sizeof(chars) / sizeof((chars)[0]), false }
+#define PROFILE_ENC(key, title, u16, u128, chars) \
+    { key, title, u16, u128, chars, sizeof(chars) / sizeof((chars)[0]), true }
 
 static const srvProfile_t kProfiles[] = {
     PROFILE("hrs", "Heart Rate",              0x180D, NULL,    kHrsChars),
@@ -1036,6 +1112,7 @@ static const srvProfile_t kProfiles[] = {
     PROFILE("aio", "Automation IO",           0x1815, NULL,    kAioChars),
     PROFILE("lns", "Location and Navigation", 0x1819, NULL,    kLnsChars),
     PROFILE("cts", "Current Time",            0x1805, NULL,    kCtsChars),
+    PROFILE_ENC("ras", "Ranging (Channel Sounding)", 0x185B, NULL, kRasChars),
     PROFILE("nus", "Nordic UART",             0,      kNusSvc, kNusChars),
     PROFILE("sps", "u-blox Serial Port",      0,      kSpsSvc, kSpsChars),
     PROFILE("wps", "Wi-Fi Provisioning",      0,      kWpsSvc, kWpsChars),
@@ -1086,7 +1163,7 @@ static void buildCtsTime(uint8_t out[10])
 
 static void buildLocation(uint8_t out[10])
 {
-    put16(out, 0x0003);
+    put16(out, 0x0084);           /* Location Present, Position Status OK */
     put32(out + 2, 557174228u);   /* 55.7174228 deg */
     put32(out + 6, 132137795u);   /* 13.2137795 deg */
 }
@@ -1190,13 +1267,23 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
         r = uCxGattServerCharDefine6(app->ucx,
                                      c->u128 ? c->u128 : uuid16, c->u128 ? 16 : 2,
                                      &props, 1,
-                                     U_GATT_SERVER_READ_SECURITY_NONE,
-                                     c->writeUnauth ? U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED
-                                                    : U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                     p->encrypt ? U_GATT_SERVER_READ_SECURITY_UNAUTHENTICATED
+                                                : U_GATT_SERVER_READ_SECURITY_NONE,
+                                     (c->writeUnauth || p->encrypt) ? U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED
+                                                                    : U_GATT_SERVER_WRITE_SECURITY_NONE,
                                      init, (int32_t)initLen, c->maxLen, &rsp);
         if (r != 0) {
             ucxapp_print("ERROR: cannot add %s (%d%s)\n", c->name, (int)r, ucxapp_errname(r));
             return UCXAPP_ERR_FAILED;
+        }
+        if (c->u16 == 0x2A56) {
+            static const uint8_t kNumDigitalsUuid[2] = { 0x29, 0x09 };
+            static const uint8_t kNumDigitals = 4;   /* 2 bits per digital, one octet */
+            int32_t dh;
+            if (uCxGattServerDescriptorDefine4(app->ucx, kNumDigitalsUuid, 2, U_GATT_SERVER_READ_SECURITY_NONE,
+                                               U_GATT_SERVER_WRITE_SECURITY_NONE, &kNumDigitals, 1, &dh) != 0) {
+                ucxapp_print("WARNING: cannot add Number of Digitals descriptor\n");
+            }
         }
         gSrv[gSrvCount].name = c->name;
         gSrv[gSrvCount].value = rsp.value_handle;
@@ -1342,6 +1429,10 @@ static bool demoTick(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t
     } else if (strcmp(p->key, "cts") == 0) {
         buildCtsTime(d);
         ok = notifyNamed(app, conn, "cts.time", d, 10);
+    } else if (strcmp(p->key, "ras") == 0) {
+        const srvRec_t *s = findSrv("ras.ready");
+        put16(d, (unsigned)(t & 0x0FFF));
+        ok = s != NULL && uCxGattServerSendIndication(app->ucx, conn, s->value, d, 2) == 0;
     }
     return ok;
 }
@@ -1400,7 +1491,8 @@ static volatile int gWpsTail;
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     ucxapp_stats_add(UCXAPP_STATS_GATT, 0, len);
-    if (ucxapp_hid_server_write(conn, handle, data, len)) {
+    if (ucxapp_ft_server_write(conn, handle, data, len) || ucxapp_hid_server_write(conn, handle, data, len) ||
+        ucxapp_notify_server_write(conn, handle, data, len)) {
         return;
     }
     const srvRec_t *ctrl = findSrv("wps.ctrl");
@@ -1712,6 +1804,7 @@ EXAMPLE_CMDS(bas)
 EXAMPLE_CMDS(nus)
 EXAMPLE_CMDS(sps)
 EXAMPLE_CMDS(wps)
+EXAMPLE_CMDS(ras)
 
 static int cmdClientEx_wit(ucxapp_t *app, int argc, char *argv[])
 {
@@ -1986,6 +2079,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.client.aio", "[conn]", "Automation IO client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_aio },
     { "gatt.client.bas", "[conn]", "Battery client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_bas },
     { "gatt.client.dis", "[conn]", "Device Information client: discover and read", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_dis },
+    { "gatt.client.ras", "[conn]", "Ranging Service (Channel Sounding) client: read features, subscribe to ranging data", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_ras },
     { "gatt.client.nus", "[conn]", "Nordic UART client: discover and subscribe (send with gatt.send)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_nus },
     { "gatt.client.sps", "[conn] [flow]", "u-blox Serial Port client: discover and subscribe (flow: SPS credits)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_sps },
     { "gatt.client.wit", "[conn]", "WitMotion IMU client: subscribe and print acceleration, gyro and angles", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wit },
@@ -1998,6 +2092,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.lns", "[seconds]", "Location and Navigation server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_lns },
     { "gatt.server.aio", "[seconds]", "Automation IO server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
     { "gatt.server.bas", "[seconds]", "Battery server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_bas },
+    { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
     { "gatt.server.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
     { "gatt.server.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands for that long", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
@@ -2013,7 +2108,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.set",      "<name|handle> <hex|text:abc>",    "Set a local characteristic value",                              UCXAPP_CMD_NEEDS_DEVICE, cmdServerSet },
     { "gatt.server.notify",   "[conn] <name|handle> <hex|text:abc>", "Send a notification to a connected client",                UCXAPP_CMD_NEEDS_DEVICE, cmdServerNotify },
     { "gatt.server.indicate", "[conn] <name|handle> <hex|text:abc>", "Send an indication to a connected client",                 UCXAPP_CMD_NEEDS_DEVICE, cmdServerIndicate },
-    { "gatt.server.demo",     "[conn] <hrs|bas|ess|aio|lns|cts> [seconds]", "Send simulated values once per second",           UCXAPP_CMD_NEEDS_DEVICE, cmdServerDemo },
+    { "gatt.server.demo",     "[conn] <hrs|bas|ess|aio|lns|cts|ras> [seconds]", "Send simulated values once per second",           UCXAPP_CMD_NEEDS_DEVICE, cmdServerDemo },
 };
 
 void ucxapp_register_gatt_cmds(void)

@@ -29,6 +29,15 @@ configure_file(
   @ONLY
 )
 
+# Web page served by web.start: app/web/index.html as a byte array (string literals hit MSVC length limits)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html _ucx_page HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _ucx_page "${_ucx_page}")
+string(REGEX REPLACE "(0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,)" "\\1\n" _ucx_page "${_ucx_page}")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp
+  "/* Generated from app/web/index.html by CMake; do not edit. */\nstatic const unsigned char kPageBytes[] = {\n${_ucx_page}0x00\n};\n#define kPage ((const char *)kPageBytes)\n")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h COPYONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html)
+
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -102,6 +111,8 @@ if(NOT WIN32)
     src/ucxapp_cmds_time.c
     src/ucxapp_cmds_can.c
     src/ucxapp_cmds_fw.c
+    src/ucxapp_cmds_ymodem.c
+    src/ucxapp_ymodem.c
     src/ucxapp_cmds_gatt.c
     src/ucxapp_cmds_qr.c
     src/ucxapp_cmds_utils.c
@@ -211,6 +222,8 @@ add_executable(ucxapp
   src/ucxapp_cmds_time.c
   src/ucxapp_cmds_can.c
   src/ucxapp_cmds_fw.c
+  src/ucxapp_cmds_ymodem.c
+  src/ucxapp_ymodem.c
   src/ucxapp_cmds_gatt.c
   src/ucxapp_cmds_qr.c
   src/ucxapp_cmds_utils.c

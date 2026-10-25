@@ -17,8 +17,10 @@ Windows: ucxapp.cmd calls this script. Linux: ./ucxapp.py or python3 ucxapp.py.
 """
 
 import argparse
+import binascii
 import concurrent.futures
 import glob
+import hashlib
 import json
 import os
 import platform
@@ -113,6 +115,9 @@ def parse(argv):
     g.add_argument("--recover", action="store_true", help="same as --erase (unlocks a stuck target)")
     g.add_argument("--flash", action="store_true", help="flash the built image over ST-Link")
     g.add_argument("--log", nargs="?", const="", metavar="PORT", help="console on the ST-Link VCP")
+    g.add_argument("--put", metavar="FILE", help="copy a file to the board over the console (YMODEM, file.recv)")
+    g.add_argument("--get", metavar="FILE", help="copy a file from the board over the console (YMODEM, file.send)")
+    g.add_argument("--port", metavar="PORT", help="console port for --put/--get (default: the ST-Link VCP)")
     g = p.add_argument_group("run")
     g.add_argument("--signed", action="store_true", help="run app/release/ucxapp-signed.exe")
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
@@ -666,6 +671,193 @@ def stm32_log(port):
     return subprocess.call([sys.executable, "-m", "serial.tools.miniterm", port, "115200"])
 
 
+# ---- YMODEM over the STM32 console (file.recv / file.send on the board) ----
+
+YM_SOH, YM_STX, YM_EOT, YM_ACK, YM_NAK, YM_CAN, YM_C = 0x01, 0x02, 0x04, 0x06, 0x15, 0x18, ord("C")
+
+
+def ymodem_packet(seq, data, size=1024):
+    data = bytes(data).ljust(size, b"\x1a")
+    seq &= 0xFF
+    return (bytes([YM_STX if size == 1024 else YM_SOH, seq, 0xFF - seq]) + data
+            + binascii.crc_hqx(data, 0).to_bytes(2, "big"))
+
+
+def ymodem_header(name, size):
+    body = f"{name}\0{size}".encode() if name else b""
+    return ymodem_packet(0, body.ljust(128, b"\0"), 128)
+
+
+def _ym_wait(ser, wanted, seconds):
+    """wanted or NAK; other bytes are skipped; None on timeout."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        b = ser.read(1)
+        if b and b[0] in (wanted, YM_NAK):
+            return b[0]
+        if b and b[0] in (YM_CAN, 0x03):
+            raise RuntimeError("cancelled by the board")
+    return None
+
+
+def _ym_send_packet(ser, pkt):
+    for _ in range(10):
+        ser.write(pkt)
+        if _ym_wait(ser, YM_ACK, 10) == YM_ACK:
+            return
+    ser.write(bytes([YM_CAN] * 5))
+    raise RuntimeError("no ACK from the board")
+
+
+def ymodem_send(ser, name, data, progress=None):
+    if _ym_wait(ser, YM_C, 60) != YM_C:
+        raise RuntimeError("the board did not start the transfer")
+    _ym_send_packet(ser, ymodem_header(name, len(data)))
+    if _ym_wait(ser, YM_C, 10) != YM_C:
+        raise RuntimeError("the board did not ask for data")
+    for seq, off in enumerate(range(0, len(data), 1024), start=1):
+        chunk = data[off:off + 1024]
+        _ym_send_packet(ser, ymodem_packet(seq, chunk, 128 if len(chunk) <= 128 else 1024))
+        if progress:
+            progress(off + len(chunk), len(data))
+    _ym_send_packet(ser, bytes([YM_EOT]))
+    if _ym_wait(ser, YM_C, 10) == YM_C:
+        _ym_send_packet(ser, ymodem_header("", 0))
+
+
+def _ym_read_packet(ser):
+    """(seq, data), 'eot', 'bad' or None on timeout."""
+    end = time.monotonic() + 1
+    while True:
+        b = ser.read(1)
+        if not b:
+            if time.monotonic() >= end:
+                return None
+            continue
+        if b[0] == YM_EOT:
+            return "eot"
+        if b[0] == YM_CAN:
+            raise RuntimeError("cancelled by the board")
+        if b[0] in (YM_SOH, YM_STX):
+            break
+    n = 128 if b[0] == YM_SOH else 1024
+    rest = ser.read(n + 4)
+    if len(rest) < n + 4 or rest[0] != 0xFF - rest[1]:
+        return "bad"
+    if rest[2 + n:] != binascii.crc_hqx(rest[2:2 + n], 0).to_bytes(2, "big"):
+        return "bad"
+    return rest[0], rest[2:2 + n]
+
+
+def ymodem_recv(ser, progress=None):
+    """(name, data) of one file."""
+    name, size, out, seq = None, -1, bytearray(), 0
+    expect_header, after_eot, errors = True, False, 0
+    ser.write(bytes([YM_C]))
+    while True:
+        p = _ym_read_packet(ser)
+        if p is None or p == "bad":
+            errors += 1
+            if errors >= (60 if name is None else 10):
+                ser.write(bytes([YM_CAN] * 5))
+                raise RuntimeError("timeout" if p is None else "too many bad blocks")
+            ser.write(bytes([YM_C if expect_header and p is None else YM_NAK]))
+            continue
+        if p == "eot":
+            ser.write(bytes([YM_ACK]))
+            if not expect_header:
+                ser.write(bytes([YM_C]))
+                expect_header, after_eot = True, True
+            continue
+        pseq, data = p
+        if expect_header:
+            if pseq != 0:
+                ser.write(bytes([YM_NAK]))
+                continue
+            ser.write(bytes([YM_ACK]))
+            fields = data.split(b"\0")
+            if after_eot:
+                return name, bytes(out)
+            if not fields[0]:
+                raise RuntimeError("the board sent no file")
+            name = fields[0].decode(errors="replace")
+            digits = fields[1].split(b" ")[0] if len(fields) > 1 else b""
+            size = int(digits) if digits.isdigit() else -1
+            ser.write(bytes([YM_C]))
+            expect_header, seq, errors = False, 1, 0
+            continue
+        if pseq == (seq - 1) & 0xFF:
+            ser.write(bytes([YM_ACK]))
+            continue
+        if pseq != seq:
+            ser.write(bytes([YM_CAN] * 5))
+            raise RuntimeError(f"block {pseq} out of order (expected {seq})")
+        out += data
+        if size >= 0:
+            del out[size:]
+        seq, errors = (seq + 1) & 0xFF, 0
+        ser.write(bytes([YM_ACK]))
+        if progress:
+            progress(len(out), size)
+
+
+def _ym_progress(done, total):
+    print(f"\r  {done} / {total if total >= 0 else '?'} bytes", end="", flush=True)
+
+
+def stm32_console_port(port):
+    try:
+        from serial.tools import list_ports as lp
+    except ImportError:
+        fail("--put/--get need pyserial: python -m pip install pyserial")
+    if port:
+        return port
+    found = [p.device for p in lp.comports() if classify(p.vid, p.pid, p.description or "") == "STM32 console"]
+    if not found:
+        fail("no ST-Link console found, pass it: --port COM5")
+    return found[0]
+
+
+def stm32_transfer(args):
+    import serial
+
+    port = stm32_console_port(args.port)
+    path = Path(args.put or args.get)
+    if args.put and not path.is_file():
+        fail(f"{path} not found")
+    command = f"file.recv {path.name}" if args.put else f"file.send {path.name}"
+    with serial.Serial(port, 115200, timeout=1) as ser:
+        ser.write(b"\r")
+        time.sleep(0.3)
+        ser.reset_input_buffer()
+        ser.write(command.encode() + b"\r")
+        text = b""
+        end = time.monotonic() + 10
+        while b"ymodem: ready" not in text or not text.endswith(b"\n"):
+            text += ser.read(1)
+            if b"ERROR" in text and text.endswith(b"\n") or time.monotonic() > end:
+                fail(f"{port}: {command} did not start: {text.decode(errors='replace').strip()}")
+        try:
+            if args.put:
+                data = path.read_bytes()
+                ymodem_send(ser, path.name, data, _ym_progress)
+            else:
+                _, data = ymodem_recv(ser, _ym_progress)
+                path.write_bytes(data)
+        except RuntimeError as e:
+            print()
+            fail(f"{command}: {e}")
+        print()
+        reply = b""
+        end = time.monotonic() + 5
+        while not re.search(rb"(file\.(recv|send): .*|ERROR.*)\r?\n", reply) and time.monotonic() < end:
+            reply += ser.read(1)
+    reply = reply.decode(errors="replace").strip()
+    print(reply.splitlines()[-1] if reply else "(no reply from the board)")
+    print(f"{path}: {len(data)} bytes, sha256 {hashlib.sha256(data).hexdigest()}")
+    return 0 if "ERROR" not in reply else 1
+
+
 ALL_PROBLEM = re.compile(r"warning( C\d+)?:|error( C\d+| MSB\d+)?:|undefined reference|overflowed|FAILED:"
                          r"|CMake Error|^ERROR:")
 
@@ -791,8 +983,13 @@ def stm32(args, extra):
     if extra:
         fail(f"unknown STM32 argument(s): {' '.join(extra)}")
     if not (args.clean or args.build or args.rebuild or args.erase or args.recover or args.flash
-            or args.log is not None):
-        fail("--stm32 needs --build, --rebuild, --clean, --erase, --recover, --flash or --log")
+            or args.log is not None or args.put or args.get):
+        fail("--stm32 needs --build, --rebuild, --clean, --erase, --recover, --flash, --log, --put or --get")
+    if args.put and args.get:
+        fail("use --put or --get, not both")
+    if (args.put or args.get) and not (args.clean or args.build or args.rebuild or args.erase or args.recover
+                                       or args.flash or args.log is not None):
+        return stm32_transfer(args)
     stm32_tools()
     if args.board == "all":
         return stm32_all(args)
@@ -824,6 +1021,12 @@ def stm32(args, extra):
         print(f"Flashing {name} via ST-Link {sn}")
         check([prog, "-c", "port=SWD", f"sn={sn}", "mode=UR", "reset=HWrst", "-d", image, "0x08000000", "-v",
                "-rst"], "flash")
+    if args.put or args.get:
+        if args.flash:
+            time.sleep(3)   # let the board boot and mount its files
+        rc = stm32_transfer(args)
+        if rc or args.log is None:
+            return rc
     if args.log is not None:
         return stm32_log(args.log)
     return 0

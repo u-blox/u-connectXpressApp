@@ -143,7 +143,7 @@ static int captureReadline(char *buf, size_t size)
     return ucxapp_io_stdio.readline(buf, size);
 }
 
-static const ucxapp_io_t gCaptureIo = { captureWrite, captureReadline };
+static const ucxapp_io_t gCaptureIo = { captureWrite, captureReadline, NULL, NULL };
 
 /* "Key name:   value" -> "key_name"; false for lines that are not a key/value pair. */
 static bool jsonKey(const char *line, char *key, size_t size, const char **value)
@@ -397,6 +397,7 @@ int main(int argc, char *argv[])
     ucxapp_register_time_cmds();
     ucxapp_register_can_cmds();
     ucxapp_register_fw_cmds();
+    ucxapp_register_ymodem_cmds();
     ucxapp_register_gatt_cmds();
     ucxapp_register_qr_cmds();
     ucxapp_register_utils_cmds();

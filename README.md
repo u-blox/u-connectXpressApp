@@ -152,7 +152,7 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 436 KB | 2048 KB | 21% | 287 KB | 512 KB | 56% |
+| `h753` | NUCLEO-H753ZI | 441 KB | 2048 KB | 22% | 287 KB | 512 KB | 56% |
 | `f767` | NUCLEO-F767ZI | 422 KB | 2048 KB | 21% | 299 KB | 368 KB | 81% |
 | `f439` | NUCLEO-F439ZI | 425 KB | 2048 KB | 21% | 105 KB | 192 KB | 55% |
 | `f407` | STM32F4DISCOVERY | 423 KB | 1024 KB | 41% | 105 KB | 128 KB | 82% |

@@ -19,4 +19,4 @@ static int stdioReadline(char *buf, size_t size)
     return (int)len;
 }
 
-const ucxapp_io_t ucxapp_io_stdio = { stdioWrite, stdioReadline };
+const ucxapp_io_t ucxapp_io_stdio = { stdioWrite, stdioReadline, NULL, NULL };

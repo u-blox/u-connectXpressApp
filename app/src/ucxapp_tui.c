@@ -800,7 +800,7 @@ static void nullWrite(const char *text, size_t len)
     (void)len;
 }
 
-static const ucxapp_io_t kNullIo = { nullWrite, NULL };
+static const ucxapp_io_t kNullIo = { nullWrite, NULL, NULL, NULL };
 
 /* Moves new log bytes, events and the exit status of finished commands into the panes. */
 static bool pumpStreams(uint32_t *logCur, uint32_t *evCur, uint32_t *doneSeen)

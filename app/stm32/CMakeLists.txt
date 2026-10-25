@@ -73,6 +73,8 @@ else()
         ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
         ${APP_SRC}/ucxapp_cmds_examples.c
+        ${APP_SRC}/ucxapp_cmds_ymodem.c
+        ${APP_SRC}/ucxapp_ymodem.c
     )
 endif()
 

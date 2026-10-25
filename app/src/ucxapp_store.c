@@ -238,3 +238,18 @@ bool ucxapp_store_remove(const char *name)
 {
     return gOps->remove(name);
 }
+
+void *ucxapp_store_open_read(const char *name)
+{
+    return openForRead(name);
+}
+
+int32_t ucxapp_store_read(void *handle, uint8_t *buf, size_t len)
+{
+    return gOps->read(handle, buf, len);
+}
+
+void ucxapp_store_close(void *handle)
+{
+    gOps->close(handle);
+}

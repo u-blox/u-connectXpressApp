@@ -35,6 +35,11 @@ void ucxapp_io_set(const ucxapp_io_t *io)
     gIo = io;
 }
 
+const ucxapp_io_t *ucxapp_io_get(void)
+{
+    return gIo;
+}
+
 void ucxapp_print(const char *fmt, ...)
 {
     char buf[UCXAPP_PRINT_BUF_SIZE];

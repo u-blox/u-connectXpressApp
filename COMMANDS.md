@@ -501,6 +501,9 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `file.view` | `<file> [lines]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |
+| `file.recv` | `[name]` | Receive a file over the console with YMODEM (1K blocks, CRC-16) and store it under its own name or `name`; STM32 console only (Tera Term, ExtraPuTTY, `sz`, `ucxapp --stm32 --put`) |
+| `file.send` | `<file>` | Send a file over the console with YMODEM; STM32 console only (Tera Term, ExtraPuTTY, `rz`, `ucxapp --stm32 --get`) |
+| `file.selftest` | | Offline check of the YMODEM encoder and decoder (CRC-16, 1K and 128-byte blocks, retry) |
 | `stats.show` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web] [rx\|tx]` | Payload bytes sent and received per channel; `stats.show tcp rx` prints just the number |
 | `stats.clear` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web]` | Reset one channel's counters, or all |
 | `app.info` | | About this app: maker, platform and links |

@@ -87,7 +87,28 @@ static int consoleReadline(char *buf, size_t size)
     }
 }
 
-static const ucxapp_io_t gConsoleIo = { consoleWrite, consoleReadline };
+static int consoleGetByte(int timeoutMs)
+{
+    uint8_t c;
+    TickType_t start = xTaskGetTickCount();
+
+    for (;;) {
+        if (exampleConsoleUartRead(&c, 0) == 1) {
+            return c;
+        }
+        if ((int)((xTaskGetTickCount() - start) * portTICK_PERIOD_MS) >= timeoutMs) {
+            return -1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+static void consolePutRaw(const uint8_t *data, size_t len)
+{
+    exampleConsoleUartWrite(data, len);
+}
+
+static const ucxapp_io_t gConsoleIo = { consoleWrite, consoleReadline, consoleGetByte, consolePutRaw };
 
 /* ---- RAM-backed store (profiles are lost at reset) ------------------------ */
 
@@ -469,6 +490,7 @@ static void appTask(void *arg)
     ucxapp_register_net_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
+    ucxapp_register_ymodem_cmds();
     ucxapp_register_examples_cmds();
 #endif
 

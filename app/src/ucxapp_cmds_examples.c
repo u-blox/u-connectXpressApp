@@ -179,12 +179,26 @@ static const example_t kExamples[] = {
       "log.level all\nlog.save session.txt\n# ...reproduce...\nlog.stop" },
     { "file", "Look at local files",
       "file.list\nfile.view session.txt 20\nfile.hash sha256 session.txt" },
+    { "file", "Copy files to and from an STM32 board over its console (YMODEM)",
+      "file.recv\n# ...start the YMODEM upload in Tera Term, or: ucxapp --stm32 --put fw.bin\nfile.hash sha256 fw.bin\n"
+      "file.send fw.bin\n# ...start the YMODEM download, or: ucxapp --stm32 --get fw.bin" },
     { "utils", "Handy tools",
       "utils.qr.wifi MyNetwork MyPassword\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
 };
 
 #define EX_COUNT (sizeof(kExamples) / sizeof(kExamples[0]))
 #define GROUP_MAX 40
+
+bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines)
+{
+    if (index >= EX_COUNT) {
+        return false;
+    }
+    *group = kExamples[index].group;
+    *title = kExamples[index].title;
+    *lines = kExamples[index].lines;
+    return true;
+}
 
 static ucxapp_cmd_t gCmds[GROUP_MAX + 1];
 static char gNames[GROUP_MAX][24];

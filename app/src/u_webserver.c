@@ -119,7 +119,7 @@ static uHttpMethod_t parse_method(const char *method_str)
 /**
  * Parse HTTP request from raw buffer
  */
-static bool parse_request(const char *raw, uHttpRequest_t *request)
+static bool parse_request(const char *raw, int32_t raw_len, uHttpRequest_t *request)
 {
     memset(request, 0, sizeof(*request));
     
@@ -165,10 +165,38 @@ static bool parse_request(const char *raw, uHttpRequest_t *request)
     if (body_start) {
         body_start += 4;
         request->body = body_start;
-        request->body_length = (int32_t)strlen(body_start);
+        request->body_length = raw_len - (int32_t)(body_start - raw);
     }
     
     return true;
+}
+
+/**
+ * True once the headers and the Content-Length body have arrived, or the buffer is full.
+ */
+static bool request_ready(const char *raw, int32_t raw_len)
+{
+    static const char kLen[] = "content-length:";
+    const char *end = strstr(raw, "\r\n\r\n");
+    long body = 0;
+
+    if (end == NULL) {
+        return false;
+    }
+    for (const char *p = raw; p < end; p++) {
+        if (p != raw && p[-1] != '\n') {
+            continue;
+        }
+        size_t i = 0;
+        while (kLen[i] != '\0' && tolower((unsigned char)p[i]) == kLen[i]) {
+            i++;
+        }
+        if (kLen[i] == '\0') {
+            body = strtol(p + i, NULL, 10);
+            break;
+        }
+    }
+    return raw_len >= (int32_t)(end - raw) + 4 + body || raw_len >= U_WEBSERVER_MAX_REQUEST_SIZE - 1;
 }
 
 /**
@@ -195,7 +223,10 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
         case 201: status_text = "Created"; break;
         case 204: status_text = "No Content"; break;
         case 400: status_text = "Bad Request"; break;
+        case 403: status_text = "Forbidden"; break;
         case 404: status_text = "Not Found"; break;
+        case 409: status_text = "Conflict"; break;
+        case 428: status_text = "Precondition Required"; break;
         case 500: status_text = "Internal Server Error"; break;
         default: status_text = "Unknown"; break;
     }
@@ -357,7 +388,7 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     snprintf(response.content_type, sizeof(response.content_type), "text/plain");
     response.body = "Not Found";
     
-    bool parsed = parse_request(client->rx_buffer, &request);
+    bool parsed = parse_request(client->rx_buffer, client->rx_length, &request);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Request: %s %s", 
                   request.method == 1 ? "GET" : request.method == 2 ? "POST" : "?", 
@@ -554,8 +585,8 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
         
-        // Check for complete HTTP request (ends with "\r\n\r\n")
-        if (strstr(client->rx_buffer, "\r\n\r\n")) {
+        // Check for complete HTTP request (headers plus Content-Length body)
+        if (request_ready(client->rx_buffer, client->rx_length)) {
             client->request_complete = true;
             handle_client_request(g_server_instance, client);
         }
@@ -1195,7 +1226,7 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
             ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)n);
             client->rx_length += n;
             client->rx_buffer[client->rx_length] = '\0';
-            if (!client->request_complete && strstr(client->rx_buffer, "\r\n\r\n")) {
+            if (!client->request_complete && request_ready(client->rx_buffer, client->rx_length)) {
                 client->request_complete = true;
                 handle_client_request(server, client);
             }
@@ -1210,8 +1241,8 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
         
-        // Check for complete HTTP request (ends with "\r\n\r\n")
-        if (strstr(client->rx_buffer, "\r\n\r\n")) {
+        // Check for complete HTTP request (headers plus Content-Length body)
+        if (request_ready(client->rx_buffer, client->rx_length)) {
             client->request_complete = true;
             handle_client_request(server, client);
         }
@@ -1253,8 +1284,8 @@ void uWebServerHandleBinaryData(uWebServer_t *server, struct uCxHandle *puCxHand
     client->rx_length += (int32_t)copy_len;
     client->rx_buffer[client->rx_length] = '\0';
     
-    // Check for complete HTTP request (ends with "\r\n\r\n")
-    if (strstr(client->rx_buffer, "\r\n\r\n")) {
+    // Check for complete HTTP request (headers plus Content-Length body)
+    if (request_ready(client->rx_buffer, client->rx_length)) {
         client->request_complete = true;
         handle_client_request(server, client);
     }

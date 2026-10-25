@@ -79,6 +79,9 @@ int ucxapp_cmd_complete(const char *prefix, char *out, size_t size);
 /* Exact name lookup; NULL if unknown. */
 const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
 
+/* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
+bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
+
 /* Read-eval loop on the IO layer. Returns on "exit"/"quit" or end of input. */
 void ucxapp_shell_run(ucxapp_t *app);
 
@@ -129,6 +132,7 @@ void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);
 void ucxapp_register_tls_cmds(void);     /* tls.* local CA and certificates (ucxapp_cmds_tls.c) */
 void ucxapp_register_fw_cmds(void);
+void ucxapp_register_ymodem_cmds(void);  /* file.send, file.recv over the console (not in UCXAPP_LITE builds) */
 void ucxapp_register_gatt_cmds(void);
 void ucxapp_register_qr_cmds(void);
 void ucxapp_register_gnss_cmds(void);    /* gnss.* (ucxapp_cmds_gnss.c) */

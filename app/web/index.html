@@ -1,0 +1,211 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>u-connectXpressApp</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--ac:#2f6fed;--bd:#2b3648;--bg2:#0a0d12;--mut:#8fa3bf}
+body{margin:0;font:14px system-ui,-apple-system,'Segoe UI',sans-serif;background:#0f1419;color:#d6dde6}
+header{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.55rem 1rem;background:linear-gradient(90deg,#1a2230,#162033);border-bottom:2px solid var(--ac)}
+h1{margin:0;font-size:1.05rem;font-weight:600;letter-spacing:.02em}.logo{height:1.9rem;width:auto;background:#fff;border-radius:6px;padding:.25rem .5rem}
+#st,.chip{font-size:.78rem;padding:.1rem .55rem;border-radius:1rem;background:#2a2410;color:#f2c94c}#st.ok,.chip.on{background:#12301f;color:#6fcf97}#st.bad{background:#3a1717;color:#eb5757}
+.chip.off{background:#1a2130;color:var(--mut)}#state{display:flex;gap:.3rem;flex-wrap:wrap}
+#busy{margin-left:auto;font-size:.85rem;color:#f2994a;display:flex;align-items:center;gap:.4rem}
+#busy:not(:empty)::before{content:'';width:.8rem;height:.8rem;border:2px solid #f2994a;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+main{display:grid;grid-template-columns:19rem 3fr 2fr;gap:.6rem;padding:.6rem;height:calc(100vh - 11rem)}
+.pane{display:flex;flex-direction:column;min-height:0}.pane h2{margin:0 0 .3rem;color:var(--mut);font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}
+#out,#ev,#side{flex:1;overflow:auto;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:.5rem}
+#out,#ev{font:13px/1.4 Consolas,monospace}.bb,.e{white-space:pre-wrap;word-break:break-word}
+.blk{border-left:3px solid var(--bd);padding-left:.5rem;margin-bottom:.4rem}.bh{display:flex;gap:.6rem;align-items:center;color:#8fb4ff;font-weight:600}
+.badge{font-size:.72rem;padding:0 .45rem;border-radius:1rem;background:#2a2410;color:#f2c94c;font-weight:400}.badge.ok{background:#12301f;color:#6fcf97}.badge.bad{background:#3a1717;color:#eb5757}
+.note{color:var(--mut);font-style:italic}.scan{cursor:pointer}.scan:hover{background:#1b2a44}
+.fk{color:#6b7a90}.fr{color:#eb5757}.fg{color:#6fcf97}.fy{color:#f2c94c}.fb{color:#56a0f2}.fm{color:#bb86fc}.fc{color:#56ccf2}.fw{color:#fff}.bo{font-weight:700}
+.e.wifi,.e.net,.e.sock{color:#6fcf97}.e.mqtt{color:#bb86fc}.e.bt,.e.gatt,.e.sps{color:#f2c94c}.e.http,.e.ping{color:#56ccf2}
+footer{padding:0 .6rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+#cmd,#flt{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:var(--bg2);color:#d6dde6;border:1px solid var(--bd);border-radius:6px}
+#flt{flex:none;margin-bottom:.3rem;padding:.3rem .5rem}
+#hint{padding:.2rem .6rem;min-height:1.2rem;font:12px Consolas,monospace;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button{padding:.4rem .8rem;background:#233047;color:#d6dde6;border:1px solid var(--bd);border-radius:6px;cursor:pointer;transition:background .15s}
+button:hover{background:#2d3f5e}button:disabled{opacity:.45;cursor:wait}#run{background:var(--ac);border-color:var(--ac)}button.dg{background:#4a1d1d;border-color:#7a2e2e}
+#cmd:focus,#flt:focus,.c input:focus{outline:none;border-color:var(--ac)}
+summary:focus-visible,button:focus-visible,#out:focus-visible,#ev:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+label{color:var(--mut);font-size:.85rem;display:flex;align-items:center;gap:.2rem}
+#keys{padding:.3rem .6rem;font:12px Consolas,monospace;color:var(--mut);background:var(--bg2);border-top:1px solid var(--bd)}
+summary{cursor:pointer;padding:.25rem;font-weight:600;text-transform:uppercase;font-size:.8rem;color:var(--mut)}
+.wh{font-weight:700;margin:8px 0 2px;color:#888}
+.c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0;border-bottom:1px solid #1d2635}
+.c b{width:100%;font:12px Consolas,monospace;color:#8fb4ff;cursor:help}.c.dgr b{color:#eb5757}
+.c input,.c select{flex:1;min-width:4rem;padding:.25rem;background:#0f1419;color:#d6dde6;border:1px solid var(--bd);border-radius:4px}.c button{padding:.25rem .6rem}
+.exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid #1d2635}.ex i{color:var(--mut)}
+.ex code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#d6dde6;padding:1px 4px}.ex code:hover{background:#1b2a44}.ex code.n{color:#6b7a90;cursor:default}
+dialog{background:#141b26;color:#d6dde6;border:1px solid var(--bd);border-radius:8px;min-width:24rem;max-width:90vw}
+dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem 0}
+.frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid #1d2635}.frow span:first-child{flex:1;font-family:Consolas,monospace}
+#fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
+@media(max-width:800px){main{grid-template-columns:1fr;height:auto}#out,#ev,#side{height:35vh}}
+</style></head><body>
+<header><svg class="logo" viewBox="0 0 1024 400" role="img" aria-label="u-blox">
+<circle cx="200" cy="200" r="190" fill="#e60000"/><circle cx="165" cy="130" r="32" fill="#fff"/>
+<g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="300">
+<text x="205" y="325" fill="#fff" textLength="190">u</text>
+<text x="410" y="325" fill="#1b1b1b" textLength="600">blox</text></g></svg>
+<h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="state"></span><span id="busy"></span>
+<button id="files">Files</button><button id="clr">Clear</button></header>
+<main><div class="pane"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands">
+<div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
+<div class="pane"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
+<div class="pane"><h2>Events</h2><div id="ev"></div></div></main>
+<footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
+<input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
+<button id="run">Run</button></footer><div id="hint"></div><div id="keys"></div>
+<dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
+<div class="frow"><input type="file" id="up"><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
+<script>
+const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),hint=$('hint'),
+ T=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('t')||sessionStorage.getItem('t')||'',
+ K={'X-Token':T},CM={},LOG_MAX=300000,UP_CHUNK=768,DL_CHUNK=16384;
+sessionStorage.setItem('t',T);history.replaceState(null,'',location.pathname);
+let H=[];try{H=JSON.parse(localStorage.getItem('ucxh')||'[]')}catch(x){}
+let hi=H.length,busy=false,cur=null,free=null,pend='',total=0,fg='',bold=0;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e},
+ stick=e=>e.scrollTop+e.clientHeight>=e.scrollHeight-20,
+ api=(u,o)=>fetch(u,Object.assign({headers:K},o||{})),
+ enc=encodeURIComponent;
+
+/* ---- log: one block per command, ANSI colours as spans ---- */
+function block(title){const b=el('div','blk'),body=el('div','bb');
+ if(title){const h=el('div','bh');h.appendChild(el('span','',title));b.badge=el('span','badge','running');h.appendChild(b.badge);b.appendChild(h)}
+ b.appendChild(body);b.body=body;out.appendChild(b);return b}
+function trim(){while(total>LOG_MAX&&out.children.length>2){const f=out.children[1];if(f===cur||f===free)break;total-=f.textContent.length;f.remove();$('trim').hidden=false}}
+const COL={30:'k',31:'r',32:'g',33:'y',34:'b',35:'m',36:'c',37:'w',90:'k',91:'r',92:'g',93:'y',94:'b',95:'m',96:'c',97:'w'};
+function sgr(p){(p||'0').split(';').forEach(n=>{n=+n;if(!n){fg='';bold=0}else if(n===1)bold=1;else if(n===22)bold=0;else if(n===39)fg='';else if(COL[n])fg=COL[n]})}
+function put(tgt,x){x=x.replace(/[\x00-\x08\x0b-\x1f\x7f]/g,'');if(!x)return;total+=x.length;
+ const cls=(fg?'f'+fg:'')+(bold?' bo':'');
+ if(cls){tgt.appendChild(el('span',cls,x));return}
+ const l=tgt.lastChild;if(l&&l.nodeType===3&&l.length<4000)l.appendData(x);else tgt.appendChild(document.createTextNode(x))}
+function add(t){t=pend+t;pend='';const m=t.match(/\x1b(\[[0-9;?]*)?$/);if(m){pend=m[0];t=t.slice(0,m.index)}
+ if(!t)return;const s=stick(out),tgt=(cur||free||(free=block(''))).body,re=/\x1b\[([0-9;?]*)([A-Za-z])/g;let i=0,r;
+ while((r=re.exec(t))){put(tgt,t.slice(i,r.index));if(r[2]==='m')sgr(r[1]);i=re.lastIndex}
+ put(tgt,t.slice(i));trim();if(s)out.scrollTop=out.scrollHeight}
+function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight}
+function addEv(t){const s=stick(ev),d=el('div','e '+t.split(':')[0],new Date().toLocaleTimeString()+'  '+t);ev.appendChild(d);
+ while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight}
+function clearAll(){Array.from(out.children).slice(1).forEach(c=>{if(c!==cur)c.remove()});$('trim').hidden=true;total=0;free=null;ev.textContent=''}
+function scanLinks(b){const lines=b.body.textContent.split('\n');b.body.textContent='';
+ lines.forEach((l,i)=>{const m=l.match(/^\s*(\d+)\s{2}(.+?)\s+[0-9A-F]{2}(:[0-9A-F]{2}){5}/);
+  if(m){const d=el('div','scan',l);d.title='Click to connect to '+m[2].trim();d.onclick=()=>{cmd.value='wifi.connect '+m[1]+' ';cmd.focus();showHint()};b.body.appendChild(d)}
+  else b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))})}
+function setBusy(c){busy=!!c;$('busy').textContent=c?'running '+c:'';document.querySelectorAll('.c button,#run').forEach(b=>b.disabled=busy)}
+
+/* ---- running commands ---- */
+async function run(c,a,raw,yes){c=c.trim();if(!c)return;
+ if(!a&&$('at').checked&&!/^at(\s|$)/i.test(c))c='at '+c;
+ if(busy){note('busy: '+$('busy').textContent);return}
+ a=a?a.slice():null;if(a)while(a.length&&!a[a.length-1])a.pop();
+ const sh=c+(a&&a.length?' '+a.join(' '):'');
+ if(!yes){if(H[H.length-1]!==sh){H.push(sh);if(H.length>100)H.shift();localStorage.setItem('ucxh',JSON.stringify(H))}hi=H.length}
+ let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
+ free=null;const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);out.scrollTop=out.scrollHeight;
+ const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
+ try{const r=await api(u,{method:'POST'});
+  if(r.status===428){b.remove();cur=null;setBusy('');if(confirm('Run "'+sh+'"? It changes or deletes data on the device.'))run(c,a,raw,1);return}
+  if(r.status===409)fail('busy: another command is running');else if(!r.ok)fail('error '+r.status)}
+ catch(x){fail('send failed')}}
+function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
+ b.badge.className='badge '+(rc?'bad':'ok');b.badge.textContent=(rc?'exit '+rc:'ok')+', '+((Date.now()-b.t0)/1000).toFixed(1)+' s';
+ if(/^wifi\.scan/.test(b.cmd))scanLinks(b)}
+
+/* ---- command line: history, Tab completion, usage hint ---- */
+let ht=0;
+function find(q,prefix){return api('/api/find?q='+enc(q)+(prefix?'&p=1':'')).then(r=>r.json()).then(cs=>{cs.forEach(c=>CM[c.n]=c);return cs})}
+function showHint(){clearTimeout(ht);if($('at').checked){hint.textContent='AT mode: every line goes to the module as an AT command';return}
+ const n=cmd.value.trim().split(/\s+/)[0],c=CM[n];
+ if(c){hint.textContent=c.n+' '+c.u+'   '+c.h;return}hint.textContent='';
+ if(n.length>2)ht=setTimeout(()=>find(n,1).then(()=>{if(CM[n]&&cmd.value.trim().split(/\s+/)[0]===n)showHint()}).catch(()=>{}),300)}
+async function complete(){const v=cmd.value;if(!v||/\s/.test(v))return;
+ const names=(await find(v,1)).map(c=>c.n).filter(n=>n.startsWith(v));
+ if(!names.length){hint.textContent='no command starts with '+v;return}
+ let p=names[0];names.forEach(x=>{while(!x.startsWith(p))p=p.slice(0,-1)});
+ if(names.length===1){cmd.value=p+' ';showHint()}else{cmd.value=p;hint.textContent=names.join('  ')}}
+function submit(){const v=cmd.value;cmd.value='';hint.textContent='';run(v)}
+$('run').onclick=submit;$('clr').onclick=clearAll;$('at').onchange=()=>{cmd.placeholder=$('at').checked?'AT command, e.g. AT+GMM':'command, e.g. wifi.scan (Tab completes, Up/Down history)';showHint();cmd.focus()};
+cmd.oninput=showHint;
+cmd.onkeydown=e=>{if(e.key==='Enter')submit();
+ else if(e.key==='Tab'){e.preventDefault();complete().catch(()=>{})}
+ else if(e.key==='ArrowUp'&&hi>0){cmd.value=H[--hi];e.preventDefault();showHint()}
+ else if(e.key==='ArrowDown'){hi=Math.min(hi+1,H.length);cmd.value=H[hi]||'';showHint()}};
+
+/* ---- command panel ---- */
+const DF={url:'http://example.com',host:'example.com',port:'80',count:'4',topic:'test/ucx',text:'hello',
+ lat:'59.3293',lon:'18.0686',file:'download.bin',key:'a',command:'AT',seconds:'10'};
+function dv(n,k){return n==='sock.bind'&&k==='port'?'5000':DF[k.replace(/[.]+$/,'')]||''}
+function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),raw=!c.f,f=c.f||(c.u?[['args',1,'']]:[]),ins=[];
+ b.title=c.h+'  '+c.u;d.appendChild(b);
+ f.forEach(x=>{let e;if(x[2]){e=el('select');if(x[1])e.add(new Option('',''));x[2].split('|').forEach(v=>e.add(new Option(v,v)))}
+  else{e=el('input');e.placeholder=x[0];e.title=c.u;if(!x[1])e.value=dv(c.n,x[0])}ins.push(e);d.appendChild(e)});
+ const g=el('button',c.d?'dg':'','Run');g.title=c.h+(c.d?' (asks before running)':'');g.disabled=busy;
+ g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}
+function examples(g,d,btn){api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{btn.remove();const wrap=el('div');
+ xs.forEach(x=>{const w=el('div','ex');w.appendChild(el('i','',x.t));
+  x.l.split('\n').forEach(l=>{const c=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){c.title='Put in the command line';c.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}w.appendChild(c)});
+  wrap.appendChild(w)});d.insertBefore(wrap,d.children[1]||null)})}
+let ft=0;
+$('flt').oninput=()=>{clearTimeout(ft);ft=setTimeout(()=>{const q=$('flt').value.trim(),res=$('res');
+ if(q.length<2){res.hidden=true;$('grp').hidden=false;return}
+ find(q).then(cs=>{res.textContent='';cs.forEach(c=>res.appendChild(mk(c)));if(!cs.length)res.appendChild(el('div','note','no match'));res.hidden=false;$('grp').hidden=true})},250)};
+
+/* ---- files ---- */
+const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
+function listFiles(){const fl=$('fl');api('/api/files').then(r=>r.json()).then(fs=>{fl.textContent='';
+ if(!fs.length)fl.appendChild(el('div','note','no files'));
+ fs.forEach(f=>{const r=el('div','frow'),dl=el('button','','Download'),rm=el('button','dg','Delete');
+  r.appendChild(el('span','',f.n));r.appendChild(el('span','note',size(f.s)));
+  dl.onclick=()=>download(f.n);rm.onclick=()=>{$('fd').close();run('file.remove',[f.n],0)};
+  r.appendChild(dl);r.appendChild(rm);fl.appendChild(r)})}).catch(()=>{fl.textContent='listing failed'})}
+async function download(n){const parts=[];let o=0;
+ for(;;){const r=await api('/api/file?n='+enc(n)+'&o='+o);if(!r.ok){$('fst').textContent='download failed: '+r.status;return}
+  const b=await r.arrayBuffer();parts.push(b);o+=b.byteLength;$('fst').textContent=n+': '+size(o);if(b.byteLength<DL_CHUNK)break}
+ const a=el('a');a.href=URL.createObjectURL(new Blob(parts));a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+$('up').onchange=async()=>{const f=$('up').files[0];if(!f)return;const buf=new Uint8Array(await f.arrayBuffer());let o=0;
+ do{const last=o+UP_CHUNK>=buf.length,r=await api('/api/upload?n='+enc(f.name)+'&o='+o+(last?'&e=1':''),
+  {method:'POST',headers:Object.assign({'Content-Type':'application/octet-stream'},K),body:buf.subarray(o,o+UP_CHUNK)});
+  if(!r.ok){$('fst').textContent='upload failed: '+r.status;return}o+=UP_CHUNK;$('fst').textContent=f.name+': '+size(Math.min(o,buf.length))+' of '+size(buf.length)}
+ while(o<buf.length);$('up').value='';listFiles()};
+$('files').onclick=()=>{$('fst').textContent='';$('fd').showModal();listFiles()};
+$('fref').onclick=listFiles;$('fclose').onclick=()=>$('fd').close();
+
+/* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
+function events(){const es=new EventSource('/events');
+ es.onopen=()=>{st.textContent='live';st.className='ok'};
+ es.onerror=()=>{st.textContent='disconnected';st.className='bad'};
+ es.addEventListener('out',e=>add(JSON.parse(e.data)));
+ es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));
+ es.addEventListener('state',e=>{const s=$('state');s.textContent='';JSON.parse(e.data).split(' | ').forEach(p=>
+  s.appendChild(el('span','chip '+(/( -|down|\?)$/.test(p)?'off':'on'),p)))});
+ es.addEventListener('done',e=>finish(+e.data))}
+api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
+ if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
+ let mh=0,hh=0;const side=$('grp');gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
+  if(w==='module'&&!mh){mh=1;side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}
+  if(w==='host'&&!hh){hh=1;side.appendChild(el('div','wh','HOST: runs on this PC'))}
+  const d=el('details'),s=el('summary','',g);let l=0;d.appendChild(s);
+  d.ontoggle=()=>{if(d.open&&!l){l=1;api('/api/commands?g='+enc(g)).then(r=>r.json()).then(cs=>{
+   if(ex){const b=el('button','exb','Examples');b.onclick=()=>examples(g,d,b);d.appendChild(b)}
+   cs.forEach(c=>d.appendChild(mk(c)))})}};
+  side.appendChild(d)})}).catch(()=>{});
+
+/* ---- keyboard ---- */
+$('keys').textContent='/ command   Tab complete   Up/Down select   Enter open or run   Left/Right fold   PgUp/PgDn log   End bottom   Ctrl-L clear   Esc back';
+function nav(){return Array.from(document.querySelectorAll('#side summary, #side .c button')).filter(e=>e.offsetParent!==null)}
+function moveFocus(d){const L=nav();if(!L.length)return;let i=L.indexOf(document.activeElement);
+ i=i<0?(d>0?0:L.length-1):Math.max(0,Math.min(L.length-1,i+d));L[i].focus();L[i].scrollIntoView({block:'nearest'})}
+document.onkeydown=e=>{const t=e.target,typing=['INPUT','SELECT','TEXTAREA'].includes(t.tagName);
+ if(e.ctrlKey&&e.key.toLowerCase()==='l'){e.preventDefault();clearAll();return}
+ if(typing){if(e.key==='Escape'){t.blur();const f=nav()[0];if(f)f.focus();e.preventDefault()}return}
+ if(e.key==='/'){cmd.focus();e.preventDefault()}
+ else if(e.key==='ArrowDown'){moveFocus(1);e.preventDefault()}
+ else if(e.key==='ArrowUp'){moveFocus(-1);e.preventDefault()}
+ else if(e.key==='ArrowRight'&&t.tagName==='SUMMARY'){t.parentElement.open=true;e.preventDefault()}
+ else if(e.key==='ArrowLeft'){const d=t.closest('details');if(d){d.open=false;d.querySelector('summary').focus()}e.preventDefault()}
+ else if(e.key==='PageUp'){out.scrollTop-=out.clientHeight*0.8;e.preventDefault()}
+ else if(e.key==='PageDown'){out.scrollTop+=out.clientHeight*0.8;e.preventDefault()}
+ else if(e.key==='End'){out.scrollTop=out.scrollHeight;e.preventDefault()}};
+</script></body></html>

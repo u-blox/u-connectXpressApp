@@ -1,4 +1,4 @@
-"""The embedded web page (kPage in ucxapp_cmds_web.c): static checks and an optional browser run."""
+"""The web page (app/web/index.html, served by ucxapp_cmds_web.c): static checks and an optional browser run."""
 
 import json
 import re
@@ -10,14 +10,13 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "app" / "src" / "ucxapp_cmds_web.c"
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "app" / "src" / "ucxapp_cmds_web.c"
+PAGE_FILE = ROOT / "app" / "web" / "index.html"
 
 
 def load_page():
-    text = SRC.read_text(encoding="utf-8")
-    block = text[text.index("static const char kPage[] ="):]
-    block = block[: block.index('";') + 1]
-    return "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block)).encode().decode("unicode_escape")
+    return PAGE_FILE.read_text(encoding="utf-8")
 
 
 PAGE = load_page()
@@ -26,6 +25,18 @@ SCRIPT = PAGE[PAGE.index("<script>") + 8: PAGE.index("</script>")]
 
 def test_page_is_a_complete_document():
     assert PAGE.startswith("<!doctype html>") and PAGE.rstrip().endswith("</html>")
+
+
+def test_page_is_ascii_and_fits_one_response():
+    data = PAGE.encode("utf-8")
+    assert data.isascii()
+    assert len(data) < 36000   # U_WEBSERVER_MAX_RESPONSE_SIZE is 40960 including headers
+
+
+def test_page_is_built_into_the_app():
+    cmake = (ROOT / "app" / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "web/index.html" in cmake and "ucxapp_webpage.h" in cmake
+    assert '#include "ucxapp_webpage.h"' in SRC.read_text(encoding="utf-8")
 
 
 def test_script_ids_exist_in_the_markup():
@@ -81,7 +92,8 @@ class Mock(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            for name, data in (("out", '"ready\\n"'), ("evt", '"wifi:link up"')):
+            for name, data in (("out", '"ready\\n\\u001b[92mgreen\\u001b[0m\\n"'), ("evt", '"wifi:link up"'),
+                               ("state", '"Wi-Fi up | BLE -"')):
                 self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
             self.wfile.flush()
             self.server.stop.wait(5)
@@ -113,6 +125,9 @@ def test_page_in_a_browser(server):
         page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
         page.wait_for_selector("#st.ok")
         assert "ready" in page.inner_text("#out")
+        assert page.inner_text("#out .fg") == "green"
+        assert "\x1b" not in page.inner_text("#out")
+        assert page.inner_text(".chip.on") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
         assert "wifi:link up" in page.inner_text("#ev")
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
@@ -126,4 +141,6 @@ def test_page_in_a_browser(server):
                 break
             page.wait_for_timeout(100)
         assert any("cmd=wifi.connect" in u and "a0=stenmo" in u and "a1=secret" in u for u in server.posted)
+        assert "wifi.connect stenmo secret" in page.inner_text(".blk .bh")
+        assert page.is_disabled("#run")
         browser.close()

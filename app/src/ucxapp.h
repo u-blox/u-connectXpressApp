@@ -27,11 +27,15 @@ typedef struct {
 typedef struct {
     void (*write)(const char *text, size_t len);
     int (*readline)(char *buf, size_t size);   /* length without newline, -1 on EOF */
+    /* Optional raw byte access for binary transfers (YMODEM); NULL where the console is not a serial line. */
+    int (*getbyte)(int timeoutMs);             /* byte, or -1 on timeout */
+    void (*putraw)(const uint8_t *data, size_t len);
 } ucxapp_io_t;
 
 extern const ucxapp_io_t ucxapp_io_stdio;      /* ucxapp_io_stdio.c (PC targets) */
 
 void ucxapp_io_set(const ucxapp_io_t *io);
+const ucxapp_io_t *ucxapp_io_get(void);
 
 /* Extra consumers of everything ucxapp_print() writes (e.g. web servers). Called on any thread; must not block. */
 typedef void (*ucxapp_sink_fn_t)(const char *text, size_t len);

@@ -405,7 +405,8 @@ def wifi_summary():
         password = "set" if os.environ.get("UCX_WIFI_PASS") else "not set"
         return [f"UCX_WIFI_SSID={os.environ['UCX_WIFI_SSID']} (UCX_WIFI_PASS {password})"]
     if profiles.is_file() and profiles.read_text(encoding="utf-8", errors="replace").strip():
-        names = [line.split("\t")[0] for line in profiles.read_text(encoding="utf-8", errors="replace").splitlines() if "\t" in line]
+        text = profiles.read_text(encoding="utf-8", errors="replace")
+        names = [line.split("\t")[0] for line in text.splitlines() if "\t" in line]
         used = last.read_text(encoding="utf-8", errors="replace").strip() if last.is_file() else ""
         return [f"UCX_WIFI_SSID not set: using saved profiles {', '.join(names)} (wifi.profile.auto"
                 f"{', last used ' + used if used else ''})"]

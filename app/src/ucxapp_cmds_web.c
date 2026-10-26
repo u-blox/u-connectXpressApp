@@ -673,6 +673,13 @@ static bool fileName(const uHttpRequest_t *req, char *name)
     return true;
 }
 
+static bool isKey(const char *name)
+{
+    size_t n = strlen(name);
+
+    return n >= 4 && (strcmp(name + n - 4, ".key") == 0 || strcmp(name + n - 4, ".KEY") == 0);
+}
+
 static uint32_t queryOffset(const uHttpRequest_t *req)
 {
     char v[16];
@@ -732,6 +739,11 @@ static void routeFile(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
         uWebServerSendError(resp, 404, "no such file");
         return;
     }
+    if (isKey(name)) {
+        ucxapp_store_close(h);
+        uWebServerSendError(resp, 403, "private keys are not downloadable");
+        return;
+    }
     for (skip = queryOffset(req); skip > 0;) {
         int32_t r = ucxapp_store_read(h, gFileBuf, skip < DL_CHUNK ? skip : DL_CHUNK);
         if (r <= 0) {
@@ -774,6 +786,10 @@ static void routeUpload(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
     }
     if (!fileName(req, name)) {
         uWebServerSendError(resp, 400, "bad file name");
+        return;
+    }
+    if (!gHttps && (isKey(name) || strncmp(name, "tls-", 4) == 0)) {
+        uWebServerSendError(resp, 403, "keys and certificates need https (web.start https)");
         return;
     }
     if (off == 0) {

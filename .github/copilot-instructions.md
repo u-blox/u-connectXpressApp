@@ -22,6 +22,12 @@ The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `u
 
 Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux and the three STM32 images).
 
+## Scope and priorities
+
+- A feature belongs in ucxapp only if it demonstrates, tests, automates or integrates a u-connectXpress capability. GNSS, IMU and cellular stay supporting actors (bridges, demos); no generic serial terminal, file manager or IoT platform features.
+- Prefer making existing commands solid (tests, docs, error messages) over adding new ones.
+- Keep the web UI a thin view of the command layer; logic goes into C commands so the TUI, `--exec` and the web share it.
+
 ## Use the same scripts every time
 
 - Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. `--detect --test tests/hardware` runs the hardware tests (split per area: device, wifi, net, ble, bridges) on what it found.

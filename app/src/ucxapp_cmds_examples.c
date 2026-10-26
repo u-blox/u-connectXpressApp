@@ -54,6 +54,10 @@ static const example_t kExamples[] = {
       "cert.upload ca ca.pem ca\nwifi.peap CorpNet alice - ca" },
     { "wifi", "Watch the signal while walking around",
       "wifi.rssi 30 1" },
+    { "wifi", "Hotel or guest Wi-Fi with a login page",
+      "wifi.connect HotelGuest\nwifi.portal check\nwifi.portal login room=101 surname=Smith\n"
+      "# test on the PC: py -3 tests/harness/captive_portal.py --room\n"
+      "# then: wifi.portal login http://192.168.1.10:8080/generate_204 room=101 surname=Smith" },
 
     { "net", "Is the internet reachable?",
       "net.dns u-blox.com\nnet.ping u-blox.com 4\ndevice.diagnose" },
@@ -64,6 +68,8 @@ static const example_t kExamples[] = {
 
     { "http", "Fetch a page and download a file",
       "http.get https://www.u-blox.com 200\nhttp.download https://example.com/file.bin file.bin\nfile.hash sha256 file.bin" },
+    { "http", "Post form data",
+      "http.post http://httpbin.org/post name=ucx&value=1" },
 
     { "sock", "TCP client",
       "sock.open tcp\nsock.connect example.com 80\nsock.send \"GET / HTTP/1.0\\r\\n\\r\\n\"\nsock.read\nsock.close" },

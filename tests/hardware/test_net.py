@@ -2,12 +2,13 @@
 
 import queue
 import re
+import socket
 import subprocess
 import threading
 import time
 
 import pytest
-from hwutil import _args, _background, _close_listeners, _finish, _run, _wifi_connect_command
+from hwutil import _args, _background, _close_listeners, _finish, _join_wifi, _run, _wifi_connect_command
 
 
 @pytest.mark.two_devices
@@ -86,6 +87,86 @@ def test_http_download_saves_a_file(app_exe, port_a, tmp_path):
     assert out.returncode == 0, out.stdout
     assert "bytes saved" in out.stdout, out.stdout
     assert b"Example Domain" in target.read_bytes()
+
+
+@pytest.mark.hardware
+def test_wifi_portal_logs_in_to_fake_hotel_page(app_exe, port_a):
+    """tests/harness/captive_portal.py on this PC stands in for a hotel login page; http.post is exercised too."""
+    from harness.captive_portal import serve
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 53))
+        pc_ip = s.getsockname()[0]
+    server = serve(0, "0.0.0.0", cookie=True, room=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    probe = f"http://{pc_ip}:{server.server_address[1]}/generate_204"
+    try:
+        out = _run(app_exe, port_a, _wifi_connect_command(), f"wifi.portal check {probe}",
+                   f"wifi.portal login {probe} room=101 surname=Smith",
+                   f"http.post http://{pc_ip}:{server.server_address[1]}/login accept=no", timeout=180)
+    finally:
+        server.shutdown()
+    if "no answer from" in out.stdout:
+        pytest.skip("module cannot reach this PC (firewall or another network)")
+    assert "login page:" in out.stdout, out.stdout
+    assert "answered 204" in out.stdout, out.stdout
+    assert "HTTP/1.0 403" in out.stdout, out.stdout   # http.post without the terms accepted
+
+
+@pytest.mark.hardware
+def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
+    """web.start https with a local-CA certificate; the PC trusts the CA, uploads, lists and downloads a file."""
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    wifi = _wifi_connect_command(tmp_path)
+    ip_a, _ = _join_wifi(app_exe, port_a, wifi)
+    made = _run(app_exe, port_a, "utils.tls.ca.create", f"utils.tls.server.create server {ip_a}", cwd=tmp_path)
+    assert made.returncode == 0, made.stdout
+    proc = subprocess.Popen(_args(app_exe, port_a, wifi, "web.start 8443 hw-token https server") + ["--shell"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            errors="replace", cwd=tmp_path)
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
+    ctx = ssl.create_default_context(cafile=str(tmp_path / "tls-ca.crt"))
+    base = f"https://{ip_a}:8443"
+
+    def call(path, data=None):
+        req = urllib.request.Request(base + path, data, {"X-Token": "hw-token"}, method="POST" if data else "GET")
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=20) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    try:
+        deadline, started = time.time() + 90, False
+        while time.time() < deadline and not started:
+            try:
+                started = "web server on" in lines.get(timeout=1)
+            except queue.Empty:
+                pass
+        assert started, "web.start https did not come up"
+        try:
+            status, _ = call("/api/files")
+        except OSError as e:
+            pytest.skip(f"this PC cannot reach the module at {ip_a}: {e}")
+        assert status == 200
+        payload = bytes(range(256)) * 4
+        assert call("/api/upload?n=hw.bin&o=0&e=1", payload)[0] == 200
+        assert b'"hw.bin"' in call("/api/files")[1]
+        status, body = call("/api/file?n=hw.bin&o=0")
+        assert status == 200 and body == payload
+        assert call("/api/file?n=tls-server.key&o=0")[0] == 403   # private keys never leave the device
+        assert call("/api/file?n=tls-ca.crt&o=0")[0] == 200
+    finally:
+        proc.stdin.write("web.stop\nexit\n")
+        proc.stdin.flush()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 @pytest.mark.hardware

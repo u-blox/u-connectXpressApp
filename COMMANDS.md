@@ -300,6 +300,9 @@ Known firmware behaviour: on NORA-W36 an MQTT publish made while a subscription 
 |---|---|---|
 | `http.get` | `<url> [show_bytes]` | GET over HTTP or HTTPS (scheme optional, default HTTP); prints the status line and up to `show_bytes` (default 512) of the body |
 | `http.download` | `<url> <file>` | Download to a file, following up to 5 redirects in the app (the module firmware does not); needs a 2xx response, checks `Content-Length` when present, deletes the file on failure |
+| `http.post` | `<url> <body> [content_type]` | POST a body (default `application/x-www-form-urlencoded`), prints the status line and up to 512 bytes of the reply |
+| `wifi.portal` | `<check\|login> [probe_url] [field=value ...]` | Hotel/guest Wi-Fi login page (captive portal). `check` fetches `http://connectivitycheck.gstatic.com/generate_204` (or `probe_url`): 204 = online, a redirect or a page = login page in the way. `login` loads the login page (keeping its cookie), fills in its first `<form>` (hidden fields, checkboxes ticked, your `field=value` overrides), submits it and checks again. Pages built by JavaScript or with a captcha need a browser. Test with `tests/harness/captive_portal.py` |
+| `wifi.portal.form` | `<html_file> <page_url> [field=value ...]` | Shows what `wifi.portal login` would submit for a saved login page (method, resolved action URL, url-encoded body, field names); no module needed. Use it to check a real hotel page saved from a browser |
 
 ```powershell
 ucxapp COM13 --exec "wifi.profile.auto" --exec "http.get https://example.com 300"
@@ -514,7 +517,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `app.time` | `[sync [ntp\|http\|module] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| selftest]` | App wall clock in UTC with its source and age. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |
 | `app.sbom` | | Software bill of materials: components, versions, licences and sources |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
-| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS) |
+| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS). Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 

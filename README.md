@@ -1,8 +1,20 @@
 # u-connectXpressApp
 
-**Talk to your u-connectXpress module in one line.** Scan Wi-Fi, join a network, open sockets, publish over MQTT, fetch HTTPS pages, pair Bluetooth devices and update firmware, from an interactive shell, a script or a web page. The same commands run on Windows, Linux and on an STM32 board.
+**Develop, test and automate u-connectXpress applications from your PC or an STM32 board.**
 
-One command set from development to production: interactive shell, web console, CI scripts with JSON output, diagnostics, firmware update and an embedded host.
+```powershell
+ucxapp wifi.scan
+ucxapp wifi.connect MySsid MyPassword
+ucxapp mqtt.publish test/ucx hello
+```
+
+**Platforms:** Windows | Linux | STM32
+
+| Connect | Build | Develop | Maintain |
+|---|---|---|---|
+| Wi-Fi, Bluetooth LE, TCP/UDP, TLS | HTTP, MQTT, GATT, SPS | Shell, scripts, CI, web UI, STM32 | Device info, certificates, firmware |
+
+The same commands work in the interactive shell, in `--exec` scripts, in the browser and on an STM32 board: learn a command by hand, then automate exactly that.
 
 ```
    Shell / TUI      Web UI       --exec / --json / --script (CI, production test)
@@ -18,7 +30,19 @@ One command set from development to production: interactive shell, web console, 
 
 Every interface runs the same commands, so what works in the shell works in a script, in the browser and on an STM32 board.
 
-Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetooth LE). NORA-W40 is not supported yet.
+### Supported modules
+
+| Capability | NORA-W36 | NORA-B26 | NORA-W40, W56, W57 |
+|---|:-:|:-:|:-:|
+| Device, firmware update | yes | yes | not yet |
+| Bluetooth LE, GATT, SPS, HID | yes | yes | not yet |
+| Wi-Fi, sockets, TLS, HTTP, MQTT | yes | - | not yet |
+
+The app asks the connected module what it can do (`device.caps`) and blocks commands it does not support.
+
+### Scope
+
+A feature belongs in ucxapp only if it demonstrates, tests, automates or integrates a u-connectXpress capability. GNSS, IMU and cellular are there to feed data through the module (bridges, demos), not to become applications of their own.
 
 | Windows | Linux | STM32 firmware |
 |---|---|---|

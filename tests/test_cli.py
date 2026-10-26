@@ -104,6 +104,34 @@ def test_web_stop_and_status_work_without_device(app_exe, tmp_path):
     assert "web server: stopped" in out.stdout
 
 
+def test_dash_without_devices(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "dash", "dash watch 2")
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.count("ucxapp dash") == 3
+    for area in ("WIFI", "BLE", "GNSS", "CELL", "IMU"):
+        assert area in out.stdout
+    assert "not connected" in out.stdout
+
+
+@pytest.mark.parametrize("command", ["dash now", "dash watch 0", "dash watch 1 2", "gnss.watch 0"])
+def test_dash_and_gnss_watch_reject_bad_arguments(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "usage:" in out.stdout
+
+
+def test_gnss_watch_needs_a_receiver(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "gnss.watch 1")
+    assert out.returncode == 1
+    assert "no receiver open" in out.stdout
+
+
+def test_device_use_bad_port_fails(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "device.use COM254")
+    assert out.returncode == 1
+    assert "cannot open COM254" in out.stdout
+
+
 def test_qr_text_needs_no_device(app_exe, tmp_path):
     out = _run(
         app_exe, tmp_path, "COM255",

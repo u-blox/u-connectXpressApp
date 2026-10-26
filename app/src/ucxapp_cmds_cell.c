@@ -476,6 +476,46 @@ bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
     return true;
 }
 
+bool ucxapp_cell_dash(char *out, size_t size)
+{
+    char resp[RESP_SIZE];
+    char v[160];
+    int n = 0;
+
+    out[0] = '\0';
+    if (!gOpen) {
+        return false;
+    }
+    if (gDataMode || gStream != NULL) {
+        snprintf(out, size, "%s on %s", gDataMode ? "data link" : "AT bridge", gPort);
+        return true;
+    }
+    if (atCmd("AT+CEREG?", resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, "+CEREG:", v, sizeof(v))) {
+        const char *comma = strchr(v, ',');
+        n = snprintf(out, size, "%s", regText(comma ? atoi(comma + 1) : atoi(v)));
+    }
+    if (n >= 0 && (size_t)n < size && atCmd("AT+COPS?", resp, sizeof(resp), 3000, 0) == AT_OK &&
+        field(resp, "+COPS:", v, sizeof(v))) {
+        char *q = strchr(v, '"');
+        char *e = q != NULL ? strchr(q + 1, '"') : NULL;
+        if (e != NULL) {
+            *e = '\0';
+            n += snprintf(out + n, size - (size_t)n, "  %s", q + 1);
+        }
+    }
+    if (n >= 0 && (size_t)n < size && atCmd("AT+CSQ", resp, sizeof(resp), 2000, 0) == AT_OK &&
+        field(resp, "+CSQ:", v, sizeof(v))) {
+        int rssi = atoi(v);
+        if (rssi >= 0 && rssi < 99) {
+            (void)snprintf(out + n, size - (size_t)n, "  %d dBm", -113 + 2 * rssi);
+        }
+    }
+    if (out[0] == '\0') {
+        snprintf(out, size, "no answer on %s", gPort);
+    }
+    return true;
+}
+
 /* cell.connect <host> <port> [tcp|udp]: Quectel transparent socket (AT+QIOPEN, access mode 2). */
 static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
 {

@@ -417,6 +417,32 @@ size_t ucxapp_imu_summary(char *out, size_t size)
     return n > 0 ? (size_t)n : 0;
 }
 
+bool ucxapp_imu_dash(char *out, size_t size)
+{
+    ucxapp_stream_t *s = gStream;
+    imu_t v;
+
+    out[0] = '\0';
+    if (s == NULL) {
+        return false;
+    }
+    ucxapp_stream_lock(s);
+    memcpy(&v, &gImu, sizeof(v));
+    ucxapp_stream_unlock(s);
+    const char *name = v.proto == PROTO_BNO ? "BNO055" : v.proto == PROTO_WIT ? "WIT" : "?";
+    if (v.frames == 0 || ucxapp_platform_tick_ms() - v.lastMs > 2000u) {
+        snprintf(out, size, "%s  no data on %s", name, ucxapp_stream_port(s));
+    } else if (v.hasAngle) {
+        snprintf(out, size, "%s  roll %.0f  pitch %.0f  yaw %.0f deg", name, v.angle[0], v.angle[1], v.angle[2]);
+    } else if (v.hasAccel) {
+        snprintf(out, size, "%s  |a| %.2f g", name,
+                 sqrt(v.accel[0] * v.accel[0] + v.accel[1] * v.accel[1] + v.accel[2] * v.accel[2]));
+    } else {
+        snprintf(out, size, "%s  %u frames", name, (unsigned)v.frames);
+    }
+    return true;
+}
+
 /* BNO055 does not stream: set NDOF fusion mode once, then request one burst per poll. */
 static void onPoll(void *ctx, ucxapp_stream_t *s)
 {

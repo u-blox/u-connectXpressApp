@@ -40,6 +40,10 @@ bool ucxapp_stream_bridge_tls(ucxapp_stream_t *s, ucxapp_t *app, int32_t port, c
 bool ucxapp_stream_bridge_udp(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, int32_t local);
 /* TCP client that reconnects when the link drops. */
 bool ucxapp_stream_bridge_tcp_connect(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port);
+/* NTRIP v1 client: corrections from the caster go to the device, its latest GGA goes up every ggaSeconds;
+ * ble also sends the device stream to a BLE Nordic UART client (RTK rover with a phone). */
+bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *mount,
+                                const char *user, const char *pass, int32_t ggaSeconds, bool ble);
 /* u-blox Serial Port Service over BLE. */
 bool ucxapp_stream_bridge_sps(ucxapp_stream_t *s, ucxapp_t *app);
 bool ucxapp_stream_bridge_ble(ucxapp_stream_t *s, ucxapp_t *app);

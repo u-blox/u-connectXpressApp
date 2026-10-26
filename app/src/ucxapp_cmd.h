@@ -104,6 +104,8 @@ void ucxapp_register_device_cmds(void);
 
 /** Free NORA EVK AT ports found on this host; returns the count written to names. */
 int ucxapp_find_modules(char names[][32], int maxNames);
+/* Serial port of the active module, "" when none (host builds). */
+const char *ucxapp_device_port(void);
 /* True for ports a detector should not probe: virtual, Bluetooth, labelled, unavailable or NORA ports. */
 bool ucxapp_port_skip(const ucxapp_serial_port_t *sp);
 /* True when USB ID or description say u-blox GNSS (VID 1546, "GNSS", "F9P", "ZED-", ...). */
@@ -137,8 +139,10 @@ void ucxapp_register_gatt_cmds(void);
 void ucxapp_register_qr_cmds(void);
 void ucxapp_register_gnss_cmds(void);    /* gnss.* (ucxapp_cmds_gnss.c) */
 void ucxapp_register_imu_cmds(void);     /* imu.* (ucxapp_cmds_imu.c) */
+void ucxapp_register_bridge_cmds(void);  /* bridge.list, bridge.off over all sources (ucxapp_stream.c) */
 void ucxapp_register_hw_cmds(void);      /* hw.* GPIO/I2C/SPI/ADC/PWM/CAN (ucxapp_cmds_hw.c) */
 void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
+void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
 void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_utils.c) */
 
 /* Built-in zip extraction (stored and deflate); prints each file. */
@@ -204,6 +208,10 @@ bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len);
 size_t ucxapp_gatt_summary(char *out, size_t size);
 size_t ucxapp_gnss_summary(char *out, size_t size);
 size_t ucxapp_imu_summary(char *out, size_t size);
+/* One dash line body; false when that device is not open. */
+bool ucxapp_gnss_dash(char *out, size_t size);
+bool ucxapp_cell_dash(char *out, size_t size);
+bool ucxapp_imu_dash(char *out, size_t size);
 
 /* QR rendering (ucxapp_cmds_qr.c): any text, or a Wi-Fi join payload (security WPA, WEP or nopass). */
 bool ucxapp_qr_print(const char *text);

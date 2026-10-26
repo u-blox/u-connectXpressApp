@@ -276,9 +276,10 @@ void ucxapp_ui_release(void)
 
 /* Module groups follow the AT command manual; host groups go from general tools to peripherals. */
 static const char *const kOrder[] = {
-    "at", "device", "log", "stats", "fw", "bt", "gatt", "wifi", "net", "sock", "mqtt", "http", "cert",
-    "app", "utils", "file", "dtls", "coap", "tftp", "ft", "web", "qr",
-    "gnss", "imu", "cell", "can", "hw", "hid"
+    "at", "device", "log", "stats", "fw", "bt", "gatt", "hid", "ancs", "notify", "wifi", "net", "sock", "mqtt", "http",
+    "cert",
+    "app", "dash", "session", "prod", "utils", "file", "dtls", "coap", "tftp", "ft", "web", "qr",
+    "bridge", "gnss", "imu", "cell", "can", "hw"
 };
 
 static const struct {
@@ -313,6 +314,12 @@ static const struct {
     { "can",    "CAN bus controller and bridge" },
     { "hw",     "Board I/O bridge: GPIO, I2C and more" },
     { "hid",    "Bluetooth HID: keyboard, mouse and media keys, or read a BLE HID device" },
+    { "ancs",   "Apple notifications from a bonded iPhone (GATT client)" },
+    { "notify", "Receive phone notifications over a custom GATT service (Android or any app)" },
+    { "bridge", "All running bridges (gnss, imu, cell, can, hw): list and stop" },
+    { "dash",   "One status card for the module and every attached peripheral" },
+    { "session", "Record commands to a .ucx script and replay it" },
+    { "prod",   "Production test with per-unit reports" },
 };
 
 const char *ucxapp_ui_group_help(const char *group)
@@ -329,7 +336,7 @@ const char *ucxapp_ui_group_help(const char *group)
  * Every other group sends AT commands that the NORA module executes. */
 static const char *const kHostGroups[] = {
     "app", "file", "web", "dtls", "coap", "tftp", "ft", "qr", "utils", "gnss", "imu", "cell",
-    "can"
+    "can", "bridge", "dash", "session", "prod"
 };
 
 static void groupOf(const char *name, char *out)

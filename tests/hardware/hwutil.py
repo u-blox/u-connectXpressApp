@@ -26,13 +26,21 @@ def _args(exe, port, *commands):
 
 
 def _run(exe, port, *commands, timeout=120, cwd=None):
-    return subprocess.run(_args(exe, port, *commands), capture_output=True, text=True, timeout=timeout,
-                          errors="replace", cwd=cwd)
+    out = subprocess.run(_args(exe, port, *commands), capture_output=True, text=True, timeout=timeout,
+                         errors="replace", cwd=cwd)
+    if "could not disable echo" in out.stdout and "could not enable extended error codes" in out.stdout:
+        pytest.exit(f"module on {port} does not answer AT commands: power-cycle it and run again\n{out.stdout[-300:]}",
+                    returncode=3)
+    return out
 
 
 def _start_server(exe, port):
-    return subprocess.Popen(_args(exe, port, "hid.setup", "gatt.listen 40"), stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
+    """A freshly rebooted module A advertising the HID service (a second hid.setup needs a reboot)."""
+    _run(exe, port, "device.reboot")
+    time.sleep(5)
+    proc, _, _ = _background(exe, port, "hid.setup", "gatt.listen 40", ready=r"HID service active")
+    time.sleep(2)
+    return proc
 
 
 def _wifi_connect_command(cwd=None):

@@ -35,7 +35,7 @@ def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
         assert host, "module A did not print its web URL"
         request = "sock.send 0 GET /api/groups?t={} HTTP/1.0\\r\\n\\r\\n"
         out = _run(app_exe, port_b, wifi,
-                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("abc123"), "sock.read 0 120 10",
+                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("abc123"), "sock.read 0 1000 10",
                    "sock.close 0",
                    "sock.open tcp", f"sock.connect 0 {host} 80", request.format("wrong"), "sock.read 0 120 10",
                    "sock.close 0", timeout=240)
@@ -129,7 +129,7 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
                             errors="replace", cwd=tmp_path)
     lines = queue.Queue()
     threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
-    ctx = ssl.create_default_context(cafile=str(tmp_path / "tls-ca.crt"))
+    ctx = None
     base = f"https://{ip_a}:8443"
 
     def call(path, data=None):
@@ -141,6 +141,7 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
             return e.code, e.read()
 
     try:
+        ctx = ssl.create_default_context(cafile=str(tmp_path / "storage" / "tls-ca.crt"))
         deadline, started = time.time() + 90, False
         while time.time() < deadline and not started:
             try:
@@ -161,11 +162,11 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
         assert call("/api/file?n=tls-server.key&o=0")[0] == 403   # private keys never leave the device
         assert call("/api/file?n=tls-ca.crt&o=0")[0] == 200
     finally:
-        proc.stdin.write("web.stop\nexit\n")
-        proc.stdin.flush()
         try:
+            proc.stdin.write("web.stop\nexit\n")
+            proc.stdin.flush()
             proc.wait(timeout=30)
-        except subprocess.TimeoutExpired:
+        except (OSError, subprocess.TimeoutExpired):
             proc.kill()
 
 

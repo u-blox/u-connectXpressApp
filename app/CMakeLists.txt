@@ -122,6 +122,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_hw.c
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
+    src/ucxapp_cmds_dash.c
     src/ucxapp_cmds_hid.c
     src/ucxapp_cmds_examples.c
     third-party/qrcodegen/qrcodegen.c
@@ -233,6 +234,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_hw.c
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c
+  src/ucxapp_cmds_dash.c
   src/ucxapp_cmds_hid.c
   src/ucxapp_cmds_examples.c
   ${PORT_OS_SRC}

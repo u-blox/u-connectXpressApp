@@ -11,14 +11,34 @@ typedef struct {
 } example_t;
 
 static const example_t kExamples[] = {
+    { "bridge", "Sensor hub: GNSS to the PC over Wi-Fi, IMU to a phone over BLE",
+      "wifi.profile.auto\ngnss.open\nimu.open\ngnss.bridge tcp\nimu.bridge ble nus\nbridge.list" },
+    { "bridge", "Asset tracker: GNSS over cellular, CAN over Wi-Fi",
+      "cell.open COM30\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.open\ngnss.bridge cell\n"
+      "can.bridge udp 192.168.1.10 6000\nbridge.list" },
+    { "bridge", "RTK rover: NTRIP in over Wi-Fi, position out over BLE",
+      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\nbridge.list" },
+    { "bridge", "Remote modem console over Wi-Fi",
+      "wifi.profile.auto\ncell.open COM30\ncell.bridge tcp 7000\n# telnet <module-ip> 7000 and type AT commands" },
+    { "bridge", "Stop everything",
+      "bridge.list\nbridge.off" },
+
     { "gnss", "First fix check",
       "gnss.open\ngnss.status\ngnss.sats" },
+    { "gnss", "Watch the fix come in (time to first fix)",
+      "gnss.open\ngnss.restart cold\ngnss.watch 60" },
     { "gnss", "u-center or gpsd on the PC over Wi-Fi",
       "wifi.connect MyNetwork MyPassword\ngnss.bridge tcp\n# connect u-center / gpsd to <module-ip>:2947" },
     { "gnss", "Phone app over BLE",
       "gnss.bridge ble nus\n# open nRF Connect or a Serial Bluetooth Terminal app and connect" },
     { "gnss", "Stream to a server or chart plotter",
       "gnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udp 192.168.1.10 10110" },
+    { "gnss", "RTK / PPP corrections from an NTRIP caster (PointPerfect, RTK2go)",
+      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 EU ${NTRIP_USER} ${NTRIP_PASS}\n"
+      "gnss.bridge status\ngnss.watch 60" },
+    { "gnss", "RTK rover: corrections over Wi-Fi, position to a phone over BLE",
+      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\n"
+      "# connect a GNSS app (e.g. SW Maps) to the module's Nordic UART service" },
     { "gnss", "Secure remote access (TLS)",
       "utils.tls.server.create gnss 192.168.1.50\ngnss.bridge tls 2948 gnss" },
     { "gnss", "Log a drive test",

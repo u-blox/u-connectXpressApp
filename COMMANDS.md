@@ -63,6 +63,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 | `device.factory` | `<confirm>` | Reset the module to factory settings (erases Wi-Fi, Bluetooth and certificate settings) and reboot; the word `confirm` is required |
 | `device.connect` | `[port]` | Connect to the module (default: saved port). Windows only |
 | `device.disconnect` | | Disconnect. Windows only |
+| `device.use` | `<port>` | Switch the active module to another serial port; the current one is released (and kept if the new one fails). One module is active at a time |
 | `fw.download` | `[latest [file]]` or `<url> <file> [sha256]` | With no arguments (same as `latest`) looks up the newest u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip (Windows only); flash it with `fw.flash`. With a URL: download via the module (follows redirects), print SHA-256, delete the file on mismatch |
 | `fw.update` | `[force] [baud]` | Compares the module firmware with the newest GitHub release for its family; if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Download needs Windows |
 | `fw.bootloader` | `<port> <file.bin\|file.zip> [baud]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `device.disconnect` first |
@@ -379,11 +380,12 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `gnss.close` | | Close the receiver |
 | `gnss.status` | | Fix, position, time, satellites, DOP, receiver version and counters |
 | `gnss.sats` | | Satellites with elevation, azimuth, signal strength and used flag |
+| `gnss.watch` | `[seconds]` | Live card once a second: fix bars, used/seen satellites as dots, HDOP bars with a rating, position, UTC time and time to first fix since `gnss.open`. Default 10 s, any key stops |
 | `gnss.log` | `<file\|off>` | Record the raw receiver stream to a file |
 | `gnss.send` | `<hex..\|$NMEA\|ubx cls id [hex]>` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
 | `gnss.restart` | `<hot\|warm\|cold>` | Restart the receiver (UBX-CFG-RST) |
 | `gnss.rate` | `<hz>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
-| `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the receiver stream. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
+| `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|ntrip <host> <port> <mount> [user pass] [ble]\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the receiver stream. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `ntrip` is an NTRIP v1 client (plain TCP, e.g. PointPerfect Flex/Live on port 2101 or RTK2go): corrections (RTCM or SPARTN) go to the receiver and its latest GGA goes to the caster every 10 s; `ble` also sends the corrected NMEA to a phone over BLE Nordic UART (RTK rover); keep credentials out of scripts with `${NTRIP_USER}` `${NTRIP_PASS}`, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
 | `imu.detect` | `[port]` | Find a WitMotion or Bosch BNO055 IMU |
 | `imu.open` | `[port] [baud] [wit\|bno055]` | Open an IMU; detects port, baud and type when omitted |
 | `imu.close` | | Close the IMU |
@@ -392,6 +394,15 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `imu.send` | `<hex..>` | Send raw bytes (WitMotion configuration frames) |
 | `imu.rate` | `<hz>` | WitMotion output rate (0.2 to 200 Hz) |
 | `imu.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the IMU stream, same modes as `gnss.bridge` |
+
+### Bridges
+
+Each source has its own bridge (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `can.bridge`, `hw.bridge`), and they run at the same time.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `bridge.list` | | Every open source and where its bridge goes |
+| `bridge.off` | | Stop every running bridge |
 
 ### Cellular modules
 
@@ -412,6 +423,12 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 | `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (`off` returns to command mode) |
 | `cell.connect` | `<host> <port> [tcp\|udp]` | Open a transparent socket through the modem. Vendor paths: u-blox (default, `AT+USOCR`/`AT+USOCO`), Quectel (`AT+QIOPEN` access mode 2), SIMCom (`AT+CIPMODE=1`, `AT+CIPOPEN`), Telit (`AT#SGACT`, `AT#SD`), Nordic nRF91 (`AT#XSOCKET`, `AT#XCONNECT`). The modem's UART then carries the payload: bridge to it with `gnss.bridge cell` or `imu.bridge cell` |
 | `cell.disconnect` | | Stop the bridge using the link first; sends `+++` after the guard time and closes the socket |
+
+### Dashboard
+
+| Command | Arguments | Description |
+|---|---|---|
+| `dash` | `[watch [seconds]]` | One card with a line each for Wi-Fi (SSID, RSSI, IP), BLE (links, GATT listen), GNSS (fix, satellites, HDOP), cellular (registration, operator, signal) and IMU (angles or acceleration). Filled dot = active. Each line shows the port; other NORA modules found on USB are listed as `standby (device.use <port>)` and GNSS receivers found by their USB descriptor but not opened as `found, not open`. `watch` refreshes every second (default 10 s, any key stops). Works without a module; Wi-Fi and BLE then show `no module` |
 
 Custom BLE service: `ble custom <uuid>` defines a 128-bit service with a write characteristic (RX, bytes go to the
 receiver) and a notify characteristic (TX). With only the service UUID, RX and TX are the service UUID with the fourth

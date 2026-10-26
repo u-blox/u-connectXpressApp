@@ -33,6 +33,12 @@ static uCxHandle_t gUcxHandle;
 static char gRxBuffer[8192];
 static char gUrcBuffer[4096];
 static bool gConnected;
+static char gPortName[32];
+
+const char *ucxapp_device_port(void)
+{
+    return gConnected ? gPortName : "";
+}
 
 static bool connectModule(const char *port)
 {
@@ -65,6 +71,7 @@ static bool connectModule(const char *port)
     ucxapp_adopt_connections(&gUcxHandle);
     ucxapp_udp_reset_limit();
     gConnected = true;
+    snprintf(gPortName, sizeof(gPortName), "%s", port);
     ucxapp_caps_reset();
     return true;
 }
@@ -107,9 +114,37 @@ static int cmdDeviceDisconnect(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* device.use <port>: make another module the active one (the current one is released). */
+static int cmdDeviceUse(ucxapp_t *app, int argc, char *argv[])
+{
+    char previous[sizeof(gPortName)];
+
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gConnected && strcmp(gPortName, argv[1]) == 0) {
+        ucxapp_print("%s is already the active module\n", argv[1]);
+        return UCXAPP_OK;
+    }
+    snprintf(previous, sizeof(previous), "%s", gConnected ? gPortName : "");
+    app->ucx = NULL;
+    disconnectModule();
+    if (!connectModule(argv[1])) {
+        if (previous[0] != '\0' && connectModule(previous)) {
+            app->ucx = &gUcxHandle;
+            ucxapp_print("still using %s\n", previous);
+        }
+        return UCXAPP_ERR_FAILED;
+    }
+    app->ucx = &gUcxHandle;
+    ucxapp_print("active module: %s\n", argv[1]);
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gConnectCmds[] = {
     { "device.connect",    "<port>", "Connect to the module on a serial port", 0, cmdDeviceConnect },
     { "device.disconnect", "",       "Disconnect from the module",             0, cmdDeviceDisconnect },
+    { "device.use",        "<port>", "Switch the active module to the one on another serial port (see dash for the ones found)", 0, cmdDeviceUse },
 };
 
 static void printUsage(const char *prog)
@@ -404,6 +439,8 @@ int main(int argc, char *argv[])
     ucxapp_register_gnss_cmds();
     ucxapp_register_cell_cmds();
     ucxapp_register_imu_cmds();
+    ucxapp_register_bridge_cmds();
+    ucxapp_register_dash_cmds();
     ucxapp_register_hw_cmds();
     ucxapp_register_hid_cmds();
     ucxapp_register_web_cmds();

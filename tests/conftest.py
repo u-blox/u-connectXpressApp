@@ -49,17 +49,35 @@ def _ports():
 
 
 @functools.lru_cache(maxsize=None)
-def _source(name):
-    """(port, baud) of the GNSS receiver or IMU, or None."""
+def _found(name):
+    """(port, baud, details) of the GNSS receiver or IMU, or None; details is empty when set by UCX_*."""
     key = f"UCX_{name.upper()}_PORT"
     if key in os.environ:
         port = os.environ[key]
-        return (port, os.environ.get(f"UCX_{name.upper()}_BAUD", "")) if port else None
+        return (port, os.environ.get(f"UCX_{name.upper()}_BAUD", ""), "") if port else None
     sys.path.insert(0, str(ROOT))
     import ucxapp
 
-    found = (ucxapp.find_gnss if name == "gnss" else ucxapp.find_imu)(_exe())
+    return (ucxapp.find_gnss if name == "gnss" else ucxapp.find_imu)(_exe())
+
+
+def _source(name):
+    """(port, baud) of the GNSS receiver or IMU, or None."""
+    found = _found(name)
     return found[:2] if found else None
+
+
+def _found_text(name):
+    """'ZED-F9P on COM20 at 115200 baud' (model when the receiver reported one)."""
+    found = _found(name)
+    if not found:
+        return "none"
+    port, baud, details = found
+    model = details
+    if name == "gnss":  # "NMEA + UBX, ZED-F9P, PROTVER 27.12, FW HPG 1.32"
+        parts = details.split(", ")
+        model = parts[1] if len(parts) > 1 and not parts[1].startswith(("PROTVER", "FW")) else ""
+    return f"{model + ' on ' if model else ''}{port} at {baud} baud"
 
 
 @functools.lru_cache(maxsize=None)
@@ -132,8 +150,8 @@ def pytest_collection_modifyitems(config, items):
     ports = [p for p in (hw["a"], hw["b"]) if p]
     with concurrent.futures.ThreadPoolExecutor() as pool:
         modules = ", ".join(pool.map(_describe, ports)) or "none"
-    gnss = f"{hw['gnss'][0]} at {hw['gnss'][1]} baud" if hw["gnss"] else "none"
-    imu = f"{hw['imu'][0]} at {hw['imu'][1]} baud" if hw["imu"] else "none"
+    gnss = _found_text("gnss") if hw["gnss"] else "none"
+    imu = _found_text("imu") if hw["imu"] else "none"
     reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu}", bold=True)
     reporter.write_line(f"Starting {run} hardware test(s) using what was found")
     sys.path.insert(0, str(ROOT))

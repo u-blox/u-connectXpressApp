@@ -626,6 +626,8 @@ static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *
 static ucxapp_stream_t *gStream;
 static parser_t gP;
 static gnss_t gSnap;
+static uint32_t gOpenMs;
+static uint32_t gFixMs;   /* first 2D/3D fix since gnss.open, 0 = none yet */
 
 static void onData(void *ctx, const uint8_t *data, size_t n)
 {
@@ -673,6 +675,10 @@ static void snapshot(void)
     ucxapp_stream_lock(gStream);
     memcpy(&gSnap, &gP.st, sizeof(gSnap));
     ucxapp_stream_unlock(gStream);
+    if (gFixMs == 0 && gSnap.fixType >= 2 && gSnap.hasPos) {
+        gFixMs = ucxapp_platform_tick_ms();
+        gFixMs += gFixMs == 0 ? 1u : 0u;
+    }
 }
 
 static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
@@ -714,6 +720,8 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         }
     }
     memset(&gP, 0, sizeof(gP));
+    gOpenMs = ucxapp_platform_tick_ms();
+    gFixMs = 0;
     gStream = ucxapp_stream_open(port, baud, &cfg);
     if (gStream == NULL) {
         ucxapp_print("ERROR: cannot open %s\n", port);
@@ -817,6 +825,141 @@ static int cmdSats(ucxapp_t *app, int argc, char *argv[])
         }
     }
     ucxapp_print("%d satellite(s)\n", shown);
+    return UCXAPP_OK;
+}
+
+#define U8_FULL  "\xE2\x96\x88"
+#define U8_LIGHT "\xE2\x96\x91"
+#define U8_DOT   "\xE2\x97\x8F"
+#define U8_RING  "\xE2\x97\x8B"
+#define U8_HLINE "\xE2\x95\x90"
+#define U8_VLINE "\xE2\x95\x91"
+#define CARD_SATS 16
+
+/* HDOP 1..5 bars: <1 ideal, <2 excellent, <5 good, <10 moderate, else poor. */
+static int hdopLevel(double h)
+{
+    return h <= 0.0 ? 0 : h < 1.0 ? 5 : h < 2.0 ? 4 : h < 5.0 ? 3 : h < 10.0 ? 2 : 1;
+}
+
+static void countSats(uint32_t now, int *used, int *seen)
+{
+    *used = 0;
+    *seen = 0;
+    for (int i = 0; i < gSnap.nsat; i++) {
+        if (gSnap.sats[i].cno > 0) {
+            (*seen)++;
+            *used += satUsed(&gSnap, &gSnap.sats[i], now) ? 1 : 0;
+        }
+    }
+    if (gSnap.satsUsed > *used) {
+        *used = gSnap.satsUsed;
+    }
+    if (*seen < *used) {
+        *seen = *used;
+    }
+}
+
+bool ucxapp_gnss_dash(char *out, size_t size)
+{
+    static const char *const kFix[] = { "no fix", "DR", "2D", "3D" };
+    uint32_t now = ucxapp_platform_tick_ms();
+    int used;
+    int seen;
+
+    out[0] = '\0';
+    if (gStream == NULL) {
+        return false;
+    }
+    snapshot();
+    if (gSnap.lastMs == 0 || now - gSnap.lastMs > 3000u) {
+        snprintf(out, size, "no data on %s", ucxapp_stream_port(gStream));
+        return true;
+    }
+    countSats(now, &used, &seen);
+    snprintf(out, size, "%s  %d/%d sats  HDOP %.1f", kFix[gSnap.fixType & 3], used, seen, gSnap.hdop);
+    return true;
+}
+
+static void printCard(void)
+{
+    static const char *const kFix[] = { "no fix", "dead reckoning", "2D", "3D" };
+    static const char *const kLevel[] = { "?", "poor", "moderate", "good", "excellent", "ideal" };
+    static const char *const kBar[] = { "\xE2\x96\x81", "\xE2\x96\x82", "\xE2\x96\x83", "\xE2\x96\x85",
+                                        "\xE2\x96\x87" };
+    uint32_t now = ucxapp_platform_tick_ms();
+    int fix = gSnap.fixType & 3;
+    int used;
+    int seen;
+    int level = hdopLevel(gSnap.hdop);
+
+    countSats(now, &used, &seen);
+    ucxapp_print(U8_HLINE U8_HLINE U8_HLINE " GNSS ");
+    for (int i = 0; i < 30; i++) {
+        ucxapp_print(U8_HLINE);
+    }
+    ucxapp_print("\n");
+    if (gSnap.lastMs == 0 || now - gSnap.lastMs > 3000u) {
+        ucxapp_print(U8_VLINE " no data from the receiver on %s\n", ucxapp_stream_port(gStream));
+    } else {
+        ucxapp_print(U8_VLINE " FIX   %s%s%s %-14s", fix >= 1 ? U8_FULL : U8_LIGHT, fix >= 2 ? U8_FULL : U8_LIGHT,
+                     fix >= 3 ? U8_FULL : U8_LIGHT, kFix[fix]);
+        if (gFixMs != 0) {
+            ucxapp_print(" TTFF %u s\n", (unsigned)((gFixMs - gOpenMs) / 1000u));
+        } else {
+            ucxapp_print(" searching %u s\n", (unsigned)((now - gOpenMs) / 1000u));
+        }
+        ucxapp_print(U8_VLINE " SATS  ");
+        for (int i = 0; i < seen && i < CARD_SATS; i++) {
+            ucxapp_print(i < used ? U8_DOT : U8_RING);
+        }
+        ucxapp_print("%s %d used / %d seen\n", seen > CARD_SATS ? "+" : "", used, seen);
+        ucxapp_print(U8_VLINE " HDOP  %.1f ", gSnap.hdop);
+        for (int i = 0; i < 5; i++) {
+            ucxapp_print(i < level ? kBar[i] : " ");
+        }
+        ucxapp_print(" %s\n", kLevel[level]);
+        if (gSnap.hasPos) {
+            ucxapp_print(U8_VLINE " POS   %.7f %c  %.7f %c  alt %.1f m\n", fabs(gSnap.lat), gSnap.lat < 0 ? 'S' : 'N',
+                         fabs(gSnap.lon), gSnap.lon < 0 ? 'W' : 'E', gSnap.alt);
+        }
+        if (gSnap.hasTime) {
+            ucxapp_print(U8_VLINE " TIME  %04d-%02d-%02d %02d:%02d:%02d UTC\n", gSnap.hasDate ? gSnap.year : 0,
+                         gSnap.month, gSnap.day, gSnap.hour, gSnap.min, gSnap.sec);
+        }
+    }
+    for (int i = 0; i < 39; i++) {
+        ucxapp_print(U8_HLINE);
+    }
+    ucxapp_print("\n");
+}
+
+/* gnss.watch [seconds]: the card once a second; any key stops it early. */
+static int cmdWatch(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t seconds = 10;
+    (void)app;
+
+    if (argc > 2 || (argc == 2 && (!ucxapp_parse_int(argv[1], &seconds) || seconds < 1 || seconds > 3600))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    for (int32_t s = 0; s < seconds; s++) {
+        snapshot();
+        printCard();
+        if (s + 1 == seconds) {
+            break;
+        }
+        for (int t = 0; t < 20; t++) {
+            if (ucxapp_platform_key_pressed()) {
+                (void)ucxapp_platform_get_key();
+                return UCXAPP_OK;
+            }
+            ucxapp_platform_sleep_ms(50);
+        }
+    }
     return UCXAPP_OK;
 }
 
@@ -945,6 +1088,12 @@ static int cmdRestart(ucxapp_t *app, int argc, char *argv[])
     }
     size_t n = buildFrame(buf, 0x06, 0x04, pl, sizeof(pl));
     ucxapp_print("%s start requested\n", argv[1]);
+    gOpenMs = ucxapp_platform_tick_ms();
+    gFixMs = 0;
+    ucxapp_stream_lock(gStream);
+    gP.st.fixType = 0;
+    gP.st.hasPos = false;
+    ucxapp_stream_unlock(gStream);
     return ucxapp_stream_write(gStream, buf, n) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
@@ -974,6 +1123,20 @@ static int cmdRate(ucxapp_t *app, int argc, char *argv[])
 
 static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 {
+    int32_t port;
+
+    if (argc >= 2 && strcasecmp(argv[1], "ntrip") == 0) {
+        bool ble = argc > 5 && strcasecmp(argv[argc - 1], "ble") == 0;
+        int n = argc - (ble ? 1 : 0);
+        if ((n != 5 && n != 7) || !ucxapp_parse_int(argv[3], &port) || port < 1 || port > 65535) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        return ucxapp_stream_bridge_ntrip(gStream, app, argv[2], port, argv[4], n == 7 ? argv[5] : "",
+                                          n == 7 ? argv[6] : "", 10, ble) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    }
     if (argc < 2 || argc > 6) {
         return UCXAPP_ERR_USAGE;
     }
@@ -989,11 +1152,12 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.close", "", "Close the receiver", 0, cmdClose },
     { "gnss.status", "", "Fix, position, time, satellites and counters", 0, cmdStatus },
     { "gnss.sats", "", "Satellites in view with elevation, azimuth and signal strength", 0, cmdSats },
+    { "gnss.watch", "[seconds]", "Live card once a second (fix, satellites, HDOP, position, time to first fix); default 10 s, any key stops", 0, cmdWatch },
     { "gnss.log", "<file|off>", "Record the raw receiver stream (NMEA/UBX) to a file", 0, cmdLog },
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
-    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

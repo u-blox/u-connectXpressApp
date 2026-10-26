@@ -518,47 +518,55 @@ loadExternal:
     return true;
 }
 
-// Helper function to get FTDI device info using FTD2XX library
-static bool getFtdiDeviceInfo(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+#define FTDI_TABLE_MAX 32
+static struct {
+    LONG comPort;
+    char description[64];
+} gFtdiTable[FTDI_TABLE_MAX];
+static int gFtdiCount;
+
+// Open each FTDI device once per listing; repeated FT_Open/FT_Close storms can crash flaky USB drivers
+static void loadFtdiTable(void)
 {
     DWORD numDevs = 0;
-    FT_STATUS status;
-    
+
+    gFtdiCount = 0;
+    // FT_Open on a busy VCP channel has bugchecked PCs (0x139); SetupAPI gives the same names, so D2XX is opt-in
+    const char *optIn = getenv("UCX_FTD2XX");
+    if (optIn == NULL || strcmp(optIn, "1") != 0 || !initFtd2xxLibrary() || gpFT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY) != FT_OK) {
+        return;
+    }
+    for (DWORD i = 0; i < numDevs && gFtdiCount < FTDI_TABLE_MAX; i++) {
+        char description[256];
+        FT_HANDLE ftHandle;
+        LONG comPortNumber = -1;
+
+        if (gpFT_ListDevices((PVOID)(DWORD_PTR)i, description, FT_LIST_BY_INDEX | FT_OPEN_BY_DESCRIPTION) != FT_OK ||
+            gpFT_Open((int)i, &ftHandle) != FT_OK) {
+            continue;
+        }
+        FT_STATUS status = gpFT_GetComPortNumber(ftHandle, &comPortNumber);
+        gpFT_Close(ftHandle);
+        if (status == FT_OK && comPortNumber > 0) {
+            gFtdiTable[gFtdiCount].comPort = comPortNumber;
+            snprintf(gFtdiTable[gFtdiCount].description, sizeof(gFtdiTable[0].description), "%s", description);
+            gFtdiCount++;
+        }
+    }
+}
+
+// Helper function to get FTDI device info from the table built by loadFtdiTable()
+static bool getFtdiDeviceInfo(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+{
     // Initialize outputs
     deviceDesc[0] = '\0';
     portLabel[0] = '\0';
-    
-    // Initialize library if not already done
-    if (!initFtd2xxLibrary()) {
-        return false;
-    }
-    
-    // Get number of devices
-    status = gpFT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY);
-    if (status != FT_OK || numDevs == 0) {
-        return false;
-    }
-    
-    // Enumerate devices and find the one with matching COM port
-    for (DWORD i = 0; i < numDevs; i++) {
-        char description[256];
-        
-        // Get device description by index
-        status = gpFT_ListDevices((PVOID)(DWORD_PTR)i, description, FT_LIST_BY_INDEX | FT_OPEN_BY_DESCRIPTION);
-        if (status != FT_OK) {
-            continue;
-        }
-        
-        // Try to open the device to get its COM port number
-        FT_HANDLE ftHandle;
-        status = gpFT_Open(i, &ftHandle);
-        if (status == FT_OK) {
-            LONG comPortNumber = -1;
-            status = gpFT_GetComPortNumber(ftHandle, &comPortNumber);
-            
-            gpFT_Close(ftHandle);
-            
-            if (status == FT_OK && comPortNumber > 0) {
+
+    for (int i = 0; i < gFtdiCount; i++) {
+        const char *description = gFtdiTable[i].description;
+        LONG comPortNumber = gFtdiTable[i].comPort;
+        {
+            {
                 char comPortStr[16];
                 snprintf(comPortStr, sizeof(comPortStr), "COM%ld", comPortNumber);
                 
@@ -829,6 +837,7 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
     int count = 0;
 
     if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        loadFtdiTable();
         for (DWORD index = 0; count < maxPorts; index++) {
             char valueName[256];
             DWORD valueNameSize = sizeof(valueName);
@@ -851,10 +860,13 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
 
             char fullName[48];
             snprintf(fullName, sizeof(fullName), "\\\\.\\%s", port->name);
-            HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-            if (hPort != INVALID_HANDLE_VALUE) {
-                CloseHandle(hPort);
-                port->available = true;
+            // Opening a Bluetooth SPP port starts a radio connection attempt; never probe those
+            if (strstr(valueName, "BthModem") == NULL) {
+                HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+                if (hPort != INVALID_HANDLE_VALUE) {
+                    CloseHandle(hPort);
+                    port->available = true;
+                }
             }
 
             if (!getFtdiDeviceInfo(port->name, port->desc, sizeof(port->desc), port->label, sizeof(port->label)) &&

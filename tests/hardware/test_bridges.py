@@ -51,11 +51,12 @@ def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, so
     bridge = f"{source}.bridge tls 2947 server" + (" clientauth" if clientauth else "")
     proc, _ = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source),
                             [wifi], bridge, cwd=tmp_path)
-    upload = [f"cert.upload ca {tmp_path / 'tls-ca.crt'} ucxtestca"]
+    store = tmp_path / "storage"
+    upload = [f"cert.upload ca {store / 'tls-ca.crt'} ucxtestca"]
     tls = "sock.tls ucxtestca"
     if clientauth:
-        upload += [f"cert.upload client {tmp_path / 'tls-rover.crt'} ucxtestrover",
-                   f"cert.upload key {tmp_path / 'tls-rover.key'} ucxtestroverkey"]
+        upload += [f"cert.upload client {store / 'tls-rover.crt'} ucxtestrover",
+                   f"cert.upload key {store / 'tls-rover.key'} ucxtestroverkey"]
         tls += " ucxtestrover ucxtestroverkey"
     try:
         _run(app_exe, port_b, "cert.remove ucxtestca", "cert.remove ucxtestrover", "cert.remove ucxtestroverkey")
@@ -96,10 +97,12 @@ def test_bridge_over_ble_between_two_modules(app_exe, port_a, port_b, source, re
 def test_can_bridge_record_reaches_other_module(app_exe, wifi_peers, port_a, port_b):
     """A bridges CAN over UDP and loops one emulated frame; B receives one 17-byte record."""
     ip_b = wifi_peers[port_b][0]
-    proc, seen, lines = _background(app_exe, port_b, "sock.open udp", "sock.bind 0 7008", "sock.recvfrom 0 600 20",
+    wifi = _wifi_connect_command()
+    proc, seen, lines = _background(app_exe, port_b, wifi, "sock.open udp", "sock.bind 0 7008",
+                                    "sock.recvfrom 0 600 20",
                                     "sock.close 0", ready="bound to port 7008")
     try:
-        bridge = subprocess.Popen(_args(app_exe, port_a, f"can.bridge udp {ip_b} 7008") + ["--shell"],
+        bridge = subprocess.Popen(_args(app_exe, port_a, wifi, f"can.bridge udp {ip_b} 7008") + ["--shell"],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                   errors="replace")
         try:

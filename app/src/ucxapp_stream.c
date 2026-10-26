@@ -89,6 +89,19 @@ struct ucxapp_stream {
     int32_t spsConn;
     ucxapp_tls_server_t *tlsSrv;   /* BR_TCP server with TLS; NULL for plain TCP */
     ucxapp_tls_conn_t *tls[MAX_CLIENTS];
+    bool ntrip;                    /* BR_TCP client speaking NTRIP v1 to a caster */
+    bool ntripFailed;              /* caster refused: no reconnect */
+    bool ntripStreaming;           /* response header passed */
+    bool ntripBle;                 /* also send the receiver stream to a BLE Nordic UART client */
+    char ntripMount[64];
+    char ntripReq[400];
+    char ntripHdr[256];
+    size_t ntripHdrLen;
+    char nmea[100];                /* NMEA line being assembled from the receiver */
+    size_t nmeaLen;
+    char gga[100];                 /* latest GGA, sent to the caster */
+    uint32_t ggaPeriodMs;
+    uint32_t nextGga;
 };
 
 static ucxapp_stream_t *gStreams[MAX_STREAMS];
@@ -343,8 +356,78 @@ static bool connectOnce(ucxapp_stream_t *s)
         (void)uCxSocketClose(ucx, sock);
         return false;
     }
+    if (s->ntrip) {
+        s->ntripStreaming = false;
+        s->ntripHdrLen = 0;
+        if (uCxSocketWrite(ucx, sock, (const uint8_t *)s->ntripReq, (int32_t)strlen(s->ntripReq)) < 0) {
+            (void)uCxSocketClose(ucx, sock);
+            return false;
+        }
+    }
     s->clients[s->nClients++] = sock;
     return true;
+}
+
+/* Response header from the caster: "ICY 200 OK" (v1) or "HTTP/1.x 200"; returns bytes of buf used by it, -1 on refusal. */
+static int32_t ntripHeader(ucxapp_stream_t *s, const uint8_t *buf, int32_t n)
+{
+    for (int32_t i = 0; i < n; i++) {
+        char *h = s->ntripHdr;
+        size_t len;
+
+        if (s->ntripHdrLen + 1 >= sizeof(s->ntripHdr)) {
+            ucxapp_print("ERROR: NTRIP caster sent no valid response\n");
+            return -1;
+        }
+        h[s->ntripHdrLen++] = (char)buf[i];
+        h[s->ntripHdrLen] = '\0';
+        len = s->ntripHdrLen;
+        if (len < 2 || h[len - 2] != '\r' || h[len - 1] != '\n') {
+            continue;
+        }
+        if (strstr(h, "\r\n") == h + len - 2) {   /* status line complete */
+            bool ok = strncmp(h, "ICY 200", 7) == 0 || (strncmp(h, "HTTP/1.", 7) == 0 && strncmp(h + 8, " 200", 4) == 0);
+            if (!ok) {
+                h[len - 2] = '\0';
+                ucxapp_print("ERROR: NTRIP caster refused /%s: %s%s\n", s->ntripMount, h,
+                             strncmp(h, "SOURCETABLE", 11) == 0 ? " (unknown mountpoint)"
+                             : strstr(h, " 401") != NULL    ? " (wrong user name or password)" : "");
+                return -1;
+            }
+            if (h[0] == 'I') {
+                s->ntripStreaming = true;
+                return i + 1;
+            }
+        } else if (len >= 4 && h[len - 4] == '\r' && h[len - 3] == '\n') {
+            s->ntripStreaming = true;
+            return i + 1;
+        }
+    }
+    return n;
+}
+
+/* Keeps the last GGA sentence of the receiver stream for the caster. */
+static void ntripScan(ucxapp_stream_t *s, const uint8_t *d, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        char c = (char)d[i];
+
+        if (c == '$') {
+            s->nmeaLen = 0;
+        }
+        if (s->nmeaLen + 3 >= sizeof(s->nmea)) {
+            s->nmeaLen = 0;
+            continue;
+        }
+        s->nmea[s->nmeaLen++] = c;
+        if (c == '\n') {
+            s->nmea[s->nmeaLen] = '\0';
+            if (s->nmeaLen > 7 && s->nmea[0] == '$' && strncmp(s->nmea + 3, "GGA,", 4) == 0) {
+                memcpy(s->gga, s->nmea, s->nmeaLen + 1);
+            }
+            s->nmeaLen = 0;
+        }
+    }
 }
 
 static void tcpService(ucxapp_stream_t *s)
@@ -383,7 +466,7 @@ static void tcpService(ucxapp_stream_t *s)
             (void)uCxSocketClose(s->app->ucx, acc[i]);
         }
     }
-    if (s->connectHost[0] != '\0' && s->nClients == 0 && ucxapp_platform_tick_ms() >= s->nextRetry) {
+    if (s->connectHost[0] != '\0' && !s->ntripFailed && s->nClients == 0 && ucxapp_platform_tick_ms() >= s->nextRetry) {
         s->nextRetry = ucxapp_platform_tick_ms() + RECONNECT_MS;
         (void)connectOnce(s);
     }
@@ -482,9 +565,24 @@ static void pullInbound(ucxapp_stream_t *s)
                 if (n <= 0) {
                     break;
                 }
-                (void)ucxapp_stream_write(s, buf, (size_t)n);
-                s->received += (uint32_t)n;
                 ucxapp_stats_add(UCXAPP_STATS_TCP, 0, (size_t)n);
+                int32_t skip = 0;
+                if (s->ntrip && !s->ntripStreaming) {
+                    skip = ntripHeader(s, buf, n);
+                    if (skip < 0) {
+                        s->ntripFailed = true;
+                        dropClient(s, c, true);
+                        break;
+                    }
+                    if (s->ntripStreaming) {
+                        ucxapp_print("NTRIP: streaming corrections from /%s\n", s->ntripMount);
+                        s->nextGga = 0;
+                    }
+                }
+                if (n > skip) {
+                    (void)ucxapp_stream_write(s, buf + skip, (size_t)(n - skip));
+                    s->received += (uint32_t)(n - skip);
+                }
             }
         }
     } else if (s->bridge == BR_UDP) {
@@ -533,6 +631,25 @@ static void senderLoop(void *arg)
         if (s->rxPending || (s->tlsSrv != NULL && s->nClients > 0)) {
             s->rxPending = false;
             pullInbound(s);   /* TLS polls: records can wait in the module without a new URC */
+        }
+        if (s->ntrip) {
+            while ((n = ringGet(s, chunk, sizeof(chunk))) > 0) {
+                ntripScan(s, chunk, n);
+                if (s->ntripBle && ucxapp_handle_current(UCXAPP_HANDLE_CONN) >= 0) {
+                    for (size_t off = 0; off < n; off += BLE_CHUNK_MIN) {
+                        size_t piece = n - off < BLE_CHUNK_MIN ? n - off : BLE_CHUNK_MIN;
+                        if (ucxapp_gatt_notify_nus(s->app, chunk + off, piece)) {
+                            ucxapp_stats_add(UCXAPP_STATS_GATT, piece, 0);
+                        }
+                    }
+                }
+            }
+            if (s->ntripStreaming && s->nClients > 0 && s->gga[0] != '\0' &&
+                (int32_t)(ucxapp_platform_tick_ms() - s->nextGga) >= 0) {
+                s->nextGga = ucxapp_platform_tick_ms() + s->ggaPeriodMs;
+                deliver(s, (const uint8_t *)s->gga, strlen(s->gga));
+            }
+            continue;
         }
         while (!s->senderStop && (n = ringGet(s, chunk, sizeof(chunk))) > 0) {
             if (s->bridge == BR_BLE && ucxapp_handle_current(UCXAPP_HANDLE_CONN) < 0) {
@@ -597,6 +714,12 @@ static bool bridgeBegin(ucxapp_stream_t *s, ucxapp_t *app, int kind)
     s->received = 0;
     s->rxPending = false;
     s->connectHost[0] = '\0';
+    s->ntrip = false;
+    s->ntripFailed = false;
+    s->ntripStreaming = false;
+    s->ntripBle = false;
+    s->gga[0] = '\0';
+    s->nmeaLen = 0;
     s->udpListen = false;
     s->udpPort = 0;
     s->spsConn = -1;
@@ -690,6 +813,76 @@ bool ucxapp_stream_bridge_tcp_connect(ucxapp_stream_t *s, ucxapp_t *app, const c
         return false;
     }
     ucxapp_print("%s bridge: connected to %s:%d, reconnects if the link drops\n", s->cfg.kind, host, (int)port);
+    return true;
+}
+
+static void base64(const char *in, char *out, size_t size)
+{
+    static const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len = strlen(in);
+    size_t o = 0;
+
+    for (size_t i = 0; i < len && o + 5 < size; i += 3) {
+        uint32_t v = (uint32_t)(uint8_t)in[i] << 16;
+        v |= i + 1 < len ? (uint32_t)(uint8_t)in[i + 1] << 8 : 0;
+        v |= i + 2 < len ? (uint32_t)(uint8_t)in[i + 2] : 0;
+        out[o++] = kB64[(v >> 18) & 63];
+        out[o++] = kB64[(v >> 12) & 63];
+        out[o++] = i + 1 < len ? kB64[(v >> 6) & 63] : '=';
+        out[o++] = i + 2 < len ? kB64[v & 63] : '=';
+    }
+    out[o] = '\0';
+}
+
+bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *mount,
+                                const char *user, const char *pass, int32_t ggaSeconds, bool ble)
+{
+    char cred[200];
+    char auth[280] = "";
+
+    if (strlen(host) >= sizeof(s->connectHost) || strlen(mount) >= sizeof(s->ntripMount) ||
+        strlen(user) + strlen(pass) + 2 > sizeof(cred)) {
+        ucxapp_print("ERROR: host, mountpoint or credentials too long\n");
+        return false;
+    }
+    if (!bridgeBegin(s, app, BR_TCP)) {
+        return false;
+    }
+    if (ble && ucxapp_gatt_server_ensure(app, "nus") != UCXAPP_OK) {
+        ucxapp_stream_bridge_stop(s);
+        return false;
+    }
+    s->ntripBle = ble;
+    if (ble) {
+        ucxapp_gatt_ensure_advertising(app);
+    }
+    if (user[0] != '\0') {
+        snprintf(cred, sizeof(cred), "%s:%s", user, pass);
+        base64(cred, auth, sizeof(auth));
+        memset(cred, 0, sizeof(cred));
+    }
+    snprintf(s->ntripMount, sizeof(s->ntripMount), "%s", mount[0] == '/' ? mount + 1 : mount);
+    snprintf(s->ntripReq, sizeof(s->ntripReq),
+             "GET /%s HTTP/1.0\r\nUser-Agent: NTRIP ucxapp\r\nAccept: */*\r\n%s%s%sConnection: close\r\n\r\n",
+             s->ntripMount, auth[0] ? "Authorization: Basic " : "", auth, auth[0] ? "\r\n" : "");
+    memset(auth, 0, sizeof(auth));
+    s->ntrip = true;
+    s->ggaPeriodMs = (uint32_t)ggaSeconds * 1000u;
+    snprintf(s->connectHost, sizeof(s->connectHost), "%s", host);
+    s->connectPort = port;
+    s->tcpPort = port;
+    if (!connectOnce(s)) {
+        ucxapp_print("ERROR: cannot connect to %s:%d (is Wi-Fi connected?)\n", host, (int)port);
+        ucxapp_stream_bridge_stop(s);
+        return false;
+    }
+    s->nextRetry = ucxapp_platform_tick_ms() + RECONNECT_MS;
+    if (!bridgeRun(s)) {
+        return false;
+    }
+    ucxapp_print("%s bridge: NTRIP client to %s:%d/%s, GGA every %d s, corrections go to the receiver%s\n", s->cfg.kind,
+                 host, (int)port, s->ntripMount, (int)ggaSeconds,
+                 ble ? "; corrected NMEA to BLE Nordic UART clients" : "");
     return true;
 }
 
@@ -850,6 +1043,7 @@ void ucxapp_stream_bridge_stop(ucxapp_stream_t *s)
     s->nClients = 0;
     s->listenSock = -1;
     s->udpSock = -1;
+    memset(s->ntripReq, 0, sizeof(s->ntripReq));
     ucxapp_stream_lock(s);
     free(s->ring);
     s->ring = NULL;
@@ -902,12 +1096,82 @@ bool ucxapp_stream_bridge_active(const ucxapp_stream_t *s)
     return s->bridge != BR_NONE;
 }
 
+static int openStreams(ucxapp_stream_t *out[MAX_STREAMS])
+{
+    int n = 0;
+
+    regLock();
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        if (gStreams[i] != NULL) {
+            out[n++] = gStreams[i];
+        }
+    }
+    regUnlock();
+    return n;
+}
+
+static int cmdBridgeList(ucxapp_t *app, int argc, char *argv[])
+{
+    ucxapp_stream_t *s[MAX_STREAMS];
+    int n = openStreams(s);
+
+    (void)app;
+    (void)argc;
+    (void)argv;
+    if (n == 0) {
+        ucxapp_print("no sources open (gnss.open, imu.open, cell.open, can.bridge, hw.bridge)\n");
+    }
+    for (int i = 0; i < n; i++) {
+        ucxapp_print("%-5s %-12s ", s[i]->cfg.kind != NULL ? s[i]->cfg.kind : "?", s[i]->port);
+        ucxapp_stream_bridge_status(s[i]);
+    }
+    return UCXAPP_OK;
+}
+
+static int cmdBridgeOff(ucxapp_t *app, int argc, char *argv[])
+{
+    ucxapp_stream_t *s[MAX_STREAMS];
+    int n = openStreams(s);
+    int stopped = 0;
+
+    (void)app;
+    (void)argc;
+    (void)argv;
+    for (int i = 0; i < n; i++) {
+        if (ucxapp_stream_bridge_active(s[i])) {
+            ucxapp_stream_bridge_stop(s[i]);
+            stopped++;
+        }
+    }
+    ucxapp_print("%d bridge(s) stopped\n", stopped);
+    return UCXAPP_OK;
+}
+
+static const ucxapp_cmd_t kBridgeCmds[] = {
+    { "bridge.list", "", "Every open source (gnss, imu, cell, can, hw) and where its bridge goes", 0, cmdBridgeList },
+    { "bridge.off", "", "Stop every running bridge", 0, cmdBridgeOff },
+};
+
+void ucxapp_register_bridge_cmds(void)
+{
+    (void)ucxapp_cmd_register(kBridgeCmds, sizeof(kBridgeCmds) / sizeof(kBridgeCmds[0]));
+}
+
 void ucxapp_stream_bridge_status(ucxapp_stream_t *s)
 {
     static const char *const kName[] = { "off", "TCP server", "UDP", "BLE Nordic UART", "UART", "BLE SPS" };
 
     if (s->bridge == BR_NONE) {
         ucxapp_print("bridge: off\n");
+        return;
+    }
+    if (s->ntrip) {
+        ucxapp_print("bridge: NTRIP %s:%d/%s, %s, %u bytes of corrections\n", s->connectHost, (int)s->connectPort,
+                     s->ntripMount, s->ntripFailed ? "refused by the caster"
+                                    : s->nClients == 0 ? "reconnecting"
+                                    : !s->ntripStreaming ? "waiting for the caster"
+                                    : s->gga[0] == '\0' ? "streaming, no GGA from the receiver yet" : "streaming",
+                     (unsigned)s->received);
         return;
     }
     ucxapp_print("bridge: %s", s->bridge == BR_TCP && s->connectHost[0] ? "TCP client"

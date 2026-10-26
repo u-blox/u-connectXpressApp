@@ -40,7 +40,13 @@ dialog{background:#141b26;color:#d6dde6;border:1px solid var(--bd);border-radius
 dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem 0}
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid #1d2635}.frow span:first-child{flex:1;font-family:Consolas,monospace}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
-@media(max-width:800px){main{grid-template-columns:1fr;height:auto}#out,#ev,#side{height:35vh}}
+#tabs{display:none}
+@media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;overflow-x:auto;flex-wrap:nowrap}
+ #busy{margin-left:0}#keys{display:none}
+ #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1}#tabs button.on{background:var(--ac);border-color:var(--ac)}
+ main{display:block;height:auto;padding:.4rem}.pane{display:none;height:calc(100dvh - 13rem)}.pane.on{display:flex}.pane h2{display:none}
+ footer{position:sticky;bottom:0;background:#0f1419;padding:.4rem}#cmd,#flt,.c input,.c select{font-size:16px}
+ button{min-height:2.4rem}.c button{min-height:2.2rem}#hint{white-space:normal}}
 </style></head><body>
 <header><svg class="logo" viewBox="0 0 1024 400" role="img" aria-label="u-blox">
 <circle cx="200" cy="200" r="190" fill="#e60000"/><circle cx="165" cy="130" r="32" fill="#fff"/>
@@ -49,10 +55,11 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <text x="410" y="325" fill="#1b1b1b" textLength="600">blox</text></g></svg>
 <h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="state"></span><span id="busy"></span>
 <button id="files">Files</button><button id="clr">Clear</button></header>
-<main><div class="pane"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands">
+<nav id="tabs"><button data-p="pc">Commands</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
+<main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands">
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
-<div class="pane"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
-<div class="pane"><h2>Events</h2><div id="ev"></div></div></main>
+<div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
+<div class="pane" id="pe"><h2>Events</h2><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <button id="run">Run</button></footer><div id="hint"></div><div id="keys"></div>
@@ -103,7 +110,7 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  const sh=c+(a&&a.length?' '+a.join(' '):'');
  if(!yes){if(H[H.length-1]!==sh){H.push(sh);if(H.length>100)H.shift();localStorage.setItem('ucxh',JSON.stringify(H))}hi=H.length}
  let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
- free=null;const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);out.scrollTop=out.scrollHeight;
+ free=null;const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
  try{const r=await api(u,{method:'POST'});
   if(r.status===428){b.remove();cur=null;setBusy('');if(confirm('Run "'+sh+'"? It changes or deletes data on the device.'))run(c,a,raw,1);return}
@@ -144,9 +151,10 @@ function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),
  const g=el('button',c.d?'dg':'','Run');g.title=c.h+(c.d?' (asks before running)':'');g.disabled=busy;
  g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}
 function examples(g,d,btn){api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{btn.remove();const wrap=el('div');
- xs.forEach(x=>{const w=el('div','ex');w.appendChild(el('i','',x.t));
+ xs.forEach((x,i)=>{const w=el('div','ex'),rb=el('button','exb','Run all');w.appendChild(el('i','',x.t));
+  rb.title='Runs the lines in order and stops at the first error ('+g+'.ex '+(i+1)+')';rb.onclick=()=>run(g+'.ex',[String(i+1)],1);
   x.l.split('\n').forEach(l=>{const c=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){c.title='Put in the command line';c.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}w.appendChild(c)});
-  wrap.appendChild(w)});d.insertBefore(wrap,d.children[1]||null)})}
+  w.appendChild(rb);wrap.appendChild(w)});d.insertBefore(wrap,d.children[1]||null)})}
 let ft=0;
 $('flt').oninput=()=>{clearTimeout(ft);ft=setTimeout(()=>{const q=$('flt').value.trim(),res=$('res');
  if(q.length<2){res.hidden=true;$('grp').hidden=false;return}
@@ -193,6 +201,8 @@ api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (pri
   side.appendChild(d)})}).catch(()=>{});
 
 /* ---- keyboard ---- */
+function tab(p){document.querySelectorAll('.pane,#tabs button').forEach(e=>e.classList.toggle('on',e.id===p||e.dataset.p===p))}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.p));
 $('keys').textContent='/ command   Tab complete   Up/Down select   Enter open or run   Left/Right fold   PgUp/PgDn log   End bottom   Ctrl-L clear   Esc back';
 function nav(){return Array.from(document.querySelectorAll('#side summary, #side .c button')).filter(e=>e.offsetParent!==null)}
 function moveFocus(d){const L=nav();if(!L.length)return;let i=L.indexOf(document.activeElement);

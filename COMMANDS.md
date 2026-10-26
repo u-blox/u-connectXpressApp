@@ -45,7 +45,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
 | `examples` | `[group]` | List the groups that have examples, or show one group's examples |
-| `<group>.ex`, `examples [group]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, mqtt, cert, bt, gatt, hid, web, fw, device, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed |
+| `<group>.ex [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, mqtt, cert, bt, gatt, hid, web, fw, device, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.ex 1`); the web page's "Run all" uses this |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
 
 ### System

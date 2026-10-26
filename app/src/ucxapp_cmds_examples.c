@@ -223,20 +223,68 @@ static void printGroup(const char *group)
             p += len + (e != NULL);
         }
     }
+    if (n > 0) {
+        ucxapp_print("\nRun one with %s.ex <number> (stops at the first error)\n", group);
+    }
+}
+
+/* Runs example number n of a group line by line; stops at the first error or at a dangerous command. */
+static int runExample(ucxapp_t *app, const char *group, int n)
+{
+    int k = 0;
+
+    for (size_t i = 0; i < EX_COUNT; i++) {
+        const char *p = kExamples[i].lines;
+
+        if (strcmp(kExamples[i].group, group) != 0 || ++k != n) {
+            continue;
+        }
+        ucxapp_print("Running %s example %d: %s\n", group, n, kExamples[i].title);
+        while (*p != '\0') {
+            const char *e = strchr(p, '\n');
+            int len = e != NULL ? (int)(e - p) : (int)strlen(p);
+            char line[256], word[48];
+            const ucxapp_cmd_t *c;
+
+            snprintf(line, sizeof(line), "%.*s", len, p);
+            p += len + (e != NULL);
+            if (line[0] == '#' || line[0] == '\0') {
+                continue;
+            }
+            snprintf(word, sizeof(word), "%.*s", (int)strcspn(line, " "), line);
+            c = ucxapp_cmd_find(word);
+            if (c != NULL && (c->flags & UCXAPP_CMD_DANGER)) {
+                ucxapp_print("stopped before '%s': it changes or deletes data, run it by hand\n", line);
+                return UCXAPP_ERR_FAILED;
+            }
+            ucxapp_print("> %s\n", line);
+            int rc = ucxapp_cmd_exec(app, line);
+            if (rc != UCXAPP_OK) {
+                ucxapp_print("stopped: '%s' failed (%d); edit the placeholders and run the rest by hand\n", line, rc);
+                return rc;
+            }
+        }
+        return UCXAPP_OK;
+    }
+    ucxapp_print("no example %d for %s (see %s.ex)\n", n, group, group);
+    return UCXAPP_ERR_USAGE;
 }
 
 static int cmdExamples(ucxapp_t *app, int argc, char *argv[])
 {
     char group[16];
     const char *dot = strchr(argv[0], '.');
+    int32_t num = 0;
 
-    (void)app;
-    if (argc > 2) {
-        return UCXAPP_ERR_USAGE;
-    }
     if (dot == NULL) {
-        if (argc == 2) {
+        if (argc > 3 || (argc == 3 && !ucxapp_parse_int(argv[2], &num))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (argc >= 2) {
             snprintf(group, sizeof(group), "%s", argv[1]);
+            if (num > 0) {
+                return runExample(app, group, (int)num);
+            }
             printGroup(group);
             return UCXAPP_OK;
         }
@@ -249,7 +297,13 @@ static int cmdExamples(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("\n");
         return UCXAPP_OK;
     }
+    if (argc > 2 || (argc == 2 && !ucxapp_parse_int(argv[1], &num))) {
+        return UCXAPP_ERR_USAGE;
+    }
     snprintf(group, sizeof(group), "%.*s", (int)(dot - argv[0]), argv[0]);
+    if (num > 0) {
+        return runExample(app, group, (int)num);
+    }
     printGroup(group);
     return UCXAPP_OK;
 }
@@ -279,9 +333,9 @@ void ucxapp_register_examples_cmds(void)
             continue;
         }
         snprintf(gNames[n], sizeof(gNames[n]), "%s.ex", g);
-        gCmds[n] = (ucxapp_cmd_t){ gNames[n], "", "Real-world scenarios with ready-to-type commands", 0, cmdExamples };
+        gCmds[n] = (ucxapp_cmd_t){ gNames[n], "[number]", "Real-world scenarios with ready-to-type commands; with a number, run that example", 0, cmdExamples };
         n++;
     }
-    gCmds[n] = (ucxapp_cmd_t){ "examples", "[group]", "List the groups with examples, or show one group's examples", 0, cmdExamples };
+    gCmds[n] = (ucxapp_cmd_t){ "examples", "[group] [number]", "List the groups with examples, show one group's examples, or run one", 0, cmdExamples };
     (void)ucxapp_cmd_register(gCmds, n + 1);
 }

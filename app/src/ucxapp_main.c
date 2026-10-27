@@ -23,7 +23,7 @@
 #pragma warning(pop)
 #endif
 
-#define MAX_EXEC 64
+#define MAX_EXEC 1024
 #define MAX_POS 16
 #define UART_BAUD 115200
 
@@ -62,10 +62,20 @@ static bool connectModule(const char *port)
     ucxapp_events_init();
     ucxapp_urc_register(&gUcxHandle);
 
-    if (uCxSystemSetEchoOff(&gUcxHandle) != 0) {
+    bool echoOk = uCxSystemSetEchoOff(&gUcxHandle) == 0;
+    if (!echoOk) {
         ucxapp_print("warning: could not disable echo\n");
     }
     if (uCxSystemSetExtendedError(&gUcxHandle, U_SYS_EXTENDED_ERRORS_ON) != 0) {
+        if (!echoOk) {
+            /* Without this every later command waits for its own timeout and the run looks hung. */
+            ucxapp_print("ERROR: module on %s does not answer AT commands (power-cycle it)\n", port);
+            ucxapp_events_deinit();
+            uCxAtClientClose(&gAtClient);
+            uCxAtClientDeinit(&gAtClient);
+            uPortDeinit();
+            return false;
+        }
         ucxapp_print("warning: could not enable extended error codes\n");
     }
     ucxapp_adopt_connections(&gUcxHandle);
@@ -114,7 +124,7 @@ static int cmdDeviceDisconnect(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* device.use <port>: make another module the active one (the current one is released). */
+/* dev.use <port>: make another module the active one (the current one is released). */
 static int cmdDeviceUse(ucxapp_t *app, int argc, char *argv[])
 {
     char previous[sizeof(gPortName)];
@@ -142,15 +152,15 @@ static int cmdDeviceUse(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gConnectCmds[] = {
-    { "device.connect",    "<port>", "Connect to the module on a serial port", 0, cmdDeviceConnect },
-    { "device.disconnect", "",       "Disconnect from the module",             0, cmdDeviceDisconnect },
-    { "device.use",        "<port>", "Switch the active module to the one on another serial port (see dash for the ones found)", 0, cmdDeviceUse },
+    { "dev.connect",       "<port>", "Connect to the module on a serial port", 0, cmdDeviceConnect },
+    { "dev.disconnect",    "",       "Disconnect from the module",             0, cmdDeviceDisconnect },
+    { "dev.use",           "<port>", "Switch the active module to the one on another serial port (see dash for the ones found)", 0, cmdDeviceUse },
 };
 
 static void printUsage(const char *prog)
 {
     ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
-    ucxapp_print("  a command can also be given directly: %s [port] device.info (no spaces inside the command)\n", prog);
+    ucxapp_print("  a command can also be given directly: %s [port] dev.info (no spaces inside the command)\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
@@ -345,7 +355,7 @@ static void listPorts(void)
 int main(int argc, char *argv[])
 {
     const char *port = NULL;
-    const char *execCmds[MAX_EXEC];
+    static const char *execCmds[MAX_EXEC];
     int execCount = 0;
     bool shellMode = false;
     bool tuiMode = false;
@@ -359,7 +369,11 @@ int main(int argc, char *argv[])
     ucxapp_store_set_dir("storage/");
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--exec") == 0 && i + 1 < argc && execCount < MAX_EXEC) {
+        if (strcmp(argv[i], "--exec") == 0 && i + 1 < argc) {
+            if (execCount >= MAX_EXEC) {
+                ucxapp_print("ERROR: more than %d --exec commands; use --shell with the commands on stdin\n", MAX_EXEC);
+                return 2;
+            }
             execCmds[execCount++] = argv[++i];
         } else if (strcmp(argv[i], "--shell") == 0) {
             shellMode = true;
@@ -467,7 +481,7 @@ int main(int argc, char *argv[])
     }
     if (port != NULL) {
         char line[128];
-        snprintf(line, sizeof(line), "device.connect %s", port);
+        snprintf(line, sizeof(line), "dev.connect %s", port);
         if (runLine(&app, line, json) != UCXAPP_OK && !json) {
             ucxapp_print("continuing without a device\n");
         }

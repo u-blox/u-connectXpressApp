@@ -52,7 +52,7 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - The F103 and G071 (64 MHz Cortex-M0+) get a lite build: device, wifi, sock, sys, app, bt and gatt commands (no net, mqtt, cert, TLS or `examples`/`<group>.ex`). Scan and GATT discovery tables are small (8 devices, 8 services, 24 characteristics) and Bluetooth company, appearance and characteristic names are shown as numbers only.
 
 ## Use
-- The shell connects to the module at startup; `device.connect [uart] [baud]` reconnects.
+- The shell connects to the module at startup; `dev.connect [uart] [baud]` reconnects.
 - `bridge [baud]` makes the board a transparent console-to-module bridge (AT debugging, XMODEM updates). Press Ctrl-] with 1 s of silence before and after to return to the shell.
 - Command list: `COMMANDS.md`.
 

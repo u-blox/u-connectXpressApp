@@ -33,6 +33,7 @@ Customer-facing skills for each target are in `.github/skills/`. Releases are bu
 - Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. `--detect --test tests/hardware` runs the hardware tests (split per area: device, wifi, net, ble, bridges) on what it found.
 - Do not write one-off probe, port-scan or test scripts (no temporary `.ps1`/`.py` files, no ad-hoc loops over COM ports). If the launcher, the app detectors (`gnss.detect`, `imu.detect`, `cell.detect`, `--list-modules`, `--list-ports`) or the tests miss something, improve them and add a test in `tests/`.
 - New launcher features go into `ucxapp.py`, never into the `.cmd` callers.
+- Do not create or run VS Code tasks (`tasks.json`) to run commands; run them in the terminal.
 
 ## Building
 
@@ -106,6 +107,12 @@ python -m pip install pytest ruff
 ```
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
+
+**Coverage goal: 100% of `app/src`** (currently 49.3%, see `build/coverage.txt`). Stability comes before new features: every change should raise coverage or keep it level, and new code ships with tests that cover it. Lowest files first: `ucxapp_urc.c`, `ucxapp_events.c`, `ucxapp_adv.c`, `ucxapp_ui.c` and `u_webserver.c` (0%), then gatt, hid, bt, net, sock, fw, device, cert, mqtt, web and tui. Reach module-only code offline through recorded AT and URC traffic, malformed input and the `tests/test_stress.py` style. Code that only real hardware can reach is covered by `tests/hardware`. Stress tests (`-m stress`) check that nothing leaks (sockets, links, memory) after long runs.
+
+**Tests must pass 100%**, offline and hardware alike. A failing test is a bug to fix in the app or the test (state left over from an earlier test, a race, a wrong timeout) before anything is committed or released. Never hide a failure with `skip`, `xfail`, a looser assert or a retry loop; a test may only skip when its hardware or setting is missing. A test that passes alone but fails in the full run is a cleanup bug: every test must start from a known state (reboot the modules it uses).
+
+Visual feedback matters, but keep it short: `pyproject.toml` makes pytest print one line per test with its `[ NN%]` progress, short tracebacks and a failures-only summary. Do not add `-q` (it turns this back into bare dots), and do not add `-vv`, `-s` or `-rs` (they flood the output with detail and skip reasons) unless you are debugging one test. Long-running commands and scripts should likewise show what they are doing and how far along they are, in a line or two per step rather than a wall of text.
 
 New code goes into `app/src/` as separate command modules. Add worked examples for new commands to `kExamples` in `app/src/ucxapp_cmds_examples.c` (shown by `<group>.ex`). Long usage strings with top-level `|` alternatives are printed one alternative per line by `help`.
 

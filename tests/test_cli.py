@@ -21,7 +21,7 @@ def _run(app_exe, tmp_path, port, *commands, timeout=60):
 def test_help_lists_command_packs(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "help")
     assert out.returncode == 0
-    for name in ("device.info", "wifi.scan", "wifi.connect", "sock.open", "device.connect",
+    for name in ("dev.info", "wifi.scan", "wifi.connect", "sock.open", "dev.connect",
                  "net.ping", "net.dns", "http.get", "mqtt.connect", "mqtt.publish",
                  "bt.scan", "bt.connect", "at"):
         assert name in out.stdout
@@ -40,9 +40,9 @@ def test_device_command_without_device_fails(app_exe, tmp_path):
 
 
 def test_usage_is_printed_for_bad_arguments(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "device.connect a b")
+    out = _run(app_exe, tmp_path, "COM255", "dev.connect a b")
     assert out.returncode == 1
-    assert "usage: device.connect" in out.stdout
+    assert "usage: dev.connect" in out.stdout
 
 
 def test_long_usage_is_one_alternative_per_line(app_exe, tmp_path):
@@ -127,7 +127,7 @@ def test_gnss_watch_needs_a_receiver(app_exe, tmp_path):
 
 
 def test_device_use_bad_port_fails(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "device.use COM254")
+    out = _run(app_exe, tmp_path, "COM255", "dev.use COM254")
     assert out.returncode == 1
     assert "cannot open COM254" in out.stdout
 
@@ -266,16 +266,6 @@ def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
     assert "<ssid> <user> <password|-> <ca> [1.2|1.3|any]" in out.stdout
     assert "wifi.eap CorpNet ca client key" in out.stdout
     assert "wifi.peap CorpNet alice - ca" in out.stdout
-
-
-@pytest.mark.hardware
-def test_device_info_and_wifi_status(app_exe, tmp_path, port_a):
-    out = _run(app_exe, tmp_path, port_a, "device.info", "wifi.status", "sock.list")
-    assert out.returncode == 0, out.stdout
-    assert "Model:" in out.stdout
-    assert "NORA-W36" in out.stdout
-    assert "wifi:" in out.stdout
-    assert "socket(s)" in out.stdout
 
 
 @pytest.mark.parametrize("command", [
@@ -534,6 +524,28 @@ def _run_in(app_exe, cwd, *commands):
 def _store(cwd):
     """The app keeps certificates in storage/ under its working directory."""
     return cwd / "storage"
+
+
+def test_mbedtls_selftest_passes(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "utils.tls.selftest")
+    assert out.returncode == 0, out.stdout
+    assert "FAILED" not in out.stdout, out.stdout
+    for name in ("sha256", "aes", "gcm", "ecp"):
+        assert re.search(rf"\b{name}\s+passed", out.stdout), out.stdout
+
+
+def test_app_log_settings_survive_restart_and_defaults_clears_them(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "app.log.level all")
+    assert out.returncode == 0, out.stdout
+    assert "at=1" in (_store(tmp_path) / "ucxapp.log").read_text()
+    out = _run_in(app_exe, tmp_path, "app.log.events.off")
+    assert out.returncode == 0, out.stdout
+    text = (_store(tmp_path) / "ucxapp.log").read_text()
+    assert "at=1" in text and "events=0" in text
+    out = _run_in(app_exe, tmp_path, "app.defaults confirm")
+    assert out.returncode == 0, out.stdout
+    assert "removed ucxapp.log" in out.stdout
+    assert not (_store(tmp_path) / "ucxapp.log").exists()
 
 
 def _handshake(ca, cert, key, hostname, client_cert=None):

@@ -7,6 +7,8 @@ import time
 import pytest
 from hwutil import _args, _assert_ping, _run, _wifi_connect_command
 
+pytestmark = pytest.mark.wifi
+
 
 @pytest.mark.hardware
 def test_wifi_scan_finds_networks(app_exe, port_a):
@@ -57,11 +59,11 @@ def test_wifi_regdomain_set_and_read_back(app_exe, port_a, tmp_path):
 
 @pytest.mark.hardware
 def test_access_point_enable_status_disable(app_exe, port_a):
-    out = _run(app_exe, port_a, "device.reboot")
+    out = _run(app_exe, port_a, "dev.reboot")
     assert out.returncode == 0, out.stdout
-    time.sleep(5)
+    time.sleep(1)
     out = _run(app_exe, port_a, "wifi.ap.enable ucxtest-ap 12345678 6", "wifi.ap.status", "wifi.ap.disable",
-               "device.reboot")
+               "dev.reboot")
     assert out.returncode == 0, out.stdout
     assert "ucxtest-ap" in out.stdout, out.stdout
     assert "0 station(s)" in out.stdout, out.stdout
@@ -92,7 +94,7 @@ def test_wifi_ping_between_modules_both_directions(app_exe, wifi_peers, port_a, 
 
 @pytest.mark.hardware
 def test_status_commands_over_wifi(app_exe, port_a):
-    out = _run(app_exe, port_a, _wifi_connect_command(), "device.status", "wifi.rssi 2 1", "wifi.ip",
+    out = _run(app_exe, port_a, _wifi_connect_command(), "dev.status", "wifi.rssi 2 1", "wifi.ip",
                "net.ntp status", "sock.list", "stats.show", timeout=180)
     assert out.returncode == 0, out.stdout
     assert "NTP client:" in out.stdout, out.stdout

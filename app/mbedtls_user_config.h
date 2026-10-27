@@ -8,5 +8,5 @@
 #define MBEDTLS_ECP_FIXED_POINT_OPTIM 1
 #define MBEDTLS_ECP_NIST_OPTIM
 
-/* Built-in mbedTLS self tests are never called; the app has its own (dtls/hash.selftest). */
-#undef MBEDTLS_SELF_TEST
+/* Built-in mbedTLS self tests, run by utils.tls.selftest. */
+#define MBEDTLS_SELF_TEST

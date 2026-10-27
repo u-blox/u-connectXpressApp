@@ -193,7 +193,7 @@ static int cmdFwBootloader(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (app->ucx != NULL) {
-        ucxapp_print("ERROR: disconnect first (device.disconnect); the port is in use\n");
+        ucxapp_print("ERROR: disconnect first (dev.disconnect); the port is in use\n");
         return UCXAPP_ERR_FAILED;
     }
     if (!resolveImage(argv[2], binPath, sizeof(binPath))) {

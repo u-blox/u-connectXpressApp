@@ -1,5 +1,6 @@
-"""Helpers shared by the hardware tests (real NORA-W36 modules; a second module is the peer, never the PC)."""
+"""Helpers shared by the hardware tests (real NORA modules; a second module is the peer, never the PC)."""
 
+import functools
 import os
 import queue
 import re
@@ -26,20 +27,44 @@ def _args(exe, port, *commands):
 
 
 def _run(exe, port, *commands, timeout=120, cwd=None):
-    out = subprocess.run(_args(exe, port, *commands), capture_output=True, text=True, timeout=timeout,
-                         errors="replace", cwd=cwd)
-    if "could not disable echo" in out.stdout and "could not enable extended error codes" in out.stdout:
+    try:
+        out = subprocess.run(_args(exe, port, *commands), capture_output=True, text=True, timeout=timeout,
+                             errors="replace", cwd=cwd, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:
+        partial = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        pytest.fail(f"no result from {port} after {timeout} s running {list(commands)}\n--- output so far ---\n"
+                    f"{partial[-2000:]}", pytrace=False)
+    if "does not answer AT commands" in out.stdout:
         pytest.exit(f"module on {port} does not answer AT commands: power-cycle it and run again\n{out.stdout[-300:]}",
                     returncode=3)
     return out
 
 
+@functools.lru_cache(maxsize=None)
+def _caps(exe, port):
+    """dev.caps of the module as {'wi-fi': 'yes', 'bluetooth le': 'yes', ...}; empty if it does not answer."""
+    out = subprocess.run(_args(exe, port, "dev.caps"), capture_output=True, text=True, timeout=60,
+                         errors="replace", stdin=subprocess.DEVNULL).stdout
+    return {k.strip().lower(): v.strip().lower() for k, v in re.findall(r"^([A-Za-z][\w -]*):\s+(\S+)\s*$", out, re.M)}
+
+
+def _has_wifi(exe, port):
+    """From dev.caps; a module that does not answer counts as Wi-Fi so its tests fail instead of hiding."""
+    return _caps(str(exe), port).get("wi-fi", "yes") == "yes"
+
+
+def _reboot(exe, *ports):
+    """Reboots the modules in parallel; dev.reboot already waits for the startup event."""
+    procs = [subprocess.Popen(_args(exe, port, "dev.reboot"), stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL) for port in ports]
+    for proc in procs:
+        proc.wait(timeout=60)
+
+
 def _start_server(exe, port):
     """A freshly rebooted module A advertising the HID service (a second hid.setup needs a reboot)."""
-    _run(exe, port, "device.reboot")
-    time.sleep(5)
+    _reboot(exe, port)
     proc, _, _ = _background(exe, port, "hid.setup", "gatt.listen 40", ready=r"HID service active")
-    time.sleep(2)
     return proc
 
 
@@ -77,6 +102,8 @@ def _assert_ping(out, target):
 
 def _close_listeners(exe, port):
     """Close TCP listeners left on the module by an earlier run, they keep the bridge port bound."""
+    if not _has_wifi(exe, port):
+        return
     handles = re.findall(r"socket (\d+): TCP, listening", _run(exe, port, "sock.list").stdout)
     if handles:
         _run(exe, port, *[f"sock.close {handle}" for handle in handles])
@@ -84,14 +111,16 @@ def _close_listeners(exe, port):
 
 def _reset_module(exe, port):
     """Close sockets, BLE links and Wi-Fi, reboot, and check the module comes back with no sockets or links."""
-    socks = re.findall(r"socket (\d+):", _run(exe, port, "sock.list").stdout)
+    wifi = _has_wifi(exe, port)
+    socks = re.findall(r"socket (\d+):", _run(exe, port, "sock.list").stdout) if wifi else []
     conns = re.findall(r"connection (\d+):", _run(exe, port, "bt.list").stdout)
-    _run(exe, port, *[f"sock.close {h}" for h in socks], *[f"bt.disconnect {h}" for h in conns], "wifi.disconnect")
-    out = _run(exe, port, "device.reboot", timeout=60)
+    cleanup = [*[f"sock.close {h}" for h in socks], *[f"bt.disconnect {h}" for h in conns]]
+    if cleanup or wifi:
+        _run(exe, port, *cleanup, *(["wifi.disconnect"] if wifi else []))
+    out = _run(exe, port, "dev.reboot", timeout=60)
     assert "module rebooted" in out.stdout, f"reset of {port} failed:\n{out.stdout}"
-    time.sleep(5)
-    out = _run(exe, port, "sock.list", "bt.list")
-    clean = "0 socket(s)" in out.stdout and "0 connection(s)" in out.stdout
+    out = _run(exe, port, *(["sock.list"] if wifi else []), "bt.list")
+    clean = (not wifi or "0 socket(s)" in out.stdout) and "0 connection(s)" in out.stdout
     assert clean, f"{port} not clean after reset:\n{out.stdout}"
 
 
@@ -160,8 +189,10 @@ def _background(exe, port, *commands, ready, timeout=60, cwd=None):
     pytest.fail(f"'{ready}' not seen: {''.join(seen)[-400:]}")
 
 
-def _finish(proc, seen, lines, timeout=90):
-    """Waits for the background app to end and returns everything it printed."""
+def _finish(proc, seen, lines, timeout=90, stop=False):
+    """Waits for the background app to end (or ends it at once with stop) and returns everything it printed."""
+    if stop:
+        proc.kill()
     try:
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -172,9 +203,9 @@ def _finish(proc, seen, lines, timeout=90):
     return "".join(seen)
 
 
-def _gatt_server(exe, port, key, seconds=40):
-    """A fresh module A serving one example service under GATT_NAME."""
-    _run(exe, port, "device.reboot")
-    time.sleep(5)
+def _gatt_server(exe, port, key, seconds=40, peer=None):
+    """A fresh module A serving one example service under GATT_NAME; a peer is rebooted too so no old link,
+    subscription or client state carries over from the previous test."""
+    _reboot(exe, port, *([peer] if peer else []))
     return _background(exe, port, f'at +UBTLN="{GATT_NAME}"', f"gatt.server.{key} {seconds}",
                        ready=r"^(serving|simulating) ")

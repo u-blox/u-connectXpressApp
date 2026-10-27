@@ -12,7 +12,8 @@ ENTRY = re.compile(r'\{\s*"([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)",\s*"[^\n]*?(UCXAPP_
 
 # Destructive, interactive or needing extra hardware; covered by hand.
 UNTESTED = {
-    "device.factory": "erases the module",
+    "dev.factory": "erases the module",
+    "at.reset": "alias of dev.reboot (same handler), tested there",
     "fw.flash": "rewrites the firmware",
     "fw.download": "large download",
     "bt.confirm": "needs a pairing peer waiting for an answer",

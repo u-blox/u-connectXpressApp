@@ -38,7 +38,7 @@ Every interface runs the same commands, so what works in the shell works in a sc
 | Bluetooth LE, GATT, SPS, HID | yes | yes | not yet |
 | Wi-Fi, sockets, TLS, HTTP, MQTT | yes | - | not yet |
 
-The app asks the connected module what it can do (`device.caps`) and blocks commands it does not support.
+The app asks the connected module what it can do (`dev.caps`) and blocks commands it does not support.
 
 ### Scope
 
@@ -53,7 +53,7 @@ Download ready-made builds from the [Releases page](https://github.com/u-blox/u-
 ## Try it in 30 seconds
 
 ```powershell
-ucxapp device.info
+ucxapp dev.info
 ```
 
 Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
@@ -104,8 +104,8 @@ Clients trust `tls-ca.crt`; another module connects with `cert.upload ca tls-ca.
 
 **Machine-readable output**: `--json` prints one JSON object per command with `success`, a stable `code` (`OK`, `USAGE`, `NOT_CONNECTED`, `UNKNOWN_CMD`, `FAILED`), the `error` text, the `output` lines and the `Key: value` lines as `data`.
 ```powershell
-ucxapp --json device.info
-{"command":"device.info","success":true,"code":"OK","output":[...],"data":{"manufacturer":"u-blox","model":"NORA-W36","firmware_version":"3.1.0"}}
+ucxapp --json dev.info
+{"command":"dev.info","success":true,"code":"OK","output":[...],"data":{"manufacturer":"u-blox","model":"NORA-W36","firmware_version":"3.1.0"}}
 ```
 `help --json` lists every command with its arguments and whether it needs a module or is destructive (`danger`).
 
@@ -119,7 +119,7 @@ $env:UCX_WIFI_PASS = "..."; ucxapp --exec 'wifi.connect MySsid ${UCX_WIFI_PASS}'
 ucxapp --script examples/automation/production-test.ucx --junit production.xml
 ```
 
-**Support report**: `device.caps` shows what the module and this build can do; `device.diagnose` checks the module, Wi-Fi, DNS, internet and certificates and ends with PASS or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
+**Support report**: `dev.caps` shows what the module and this build can do; `dev.diagnose` checks the module, Wi-Fi, DNS, internet and certificates and ends with PASS or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
 
 ## Highlights
 
@@ -137,7 +137,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 
 | Area | Commands |
 |---|---|
-| Device | `device.info`, `device.reboot`, `device.factory confirm`, `at <raw AT command>` |
+| Device | `dev.info`, `dev.reboot`, `dev.factory confirm`, `at <raw AT command>` |
 | Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |

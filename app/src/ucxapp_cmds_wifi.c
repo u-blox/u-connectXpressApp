@@ -982,7 +982,8 @@ static void printIpField(const char *label, uSockIpAddress_t *ip)
 {
     char str[40];
 
-    if (uCxIpAddressToString(ip, str, sizeof(str)) > 0) {
+    if ((ip->type == U_SOCK_ADDRESS_TYPE_V4 || ip->type == U_SOCK_ADDRESS_TYPE_V6) &&
+        uCxIpAddressToString(ip, str, sizeof(str)) > 0) {
         ucxapp_print("%s=%s\n", label, str);
     }
 }
@@ -995,6 +996,7 @@ static int cmdWifiIp(ucxapp_t *app, int argc, char *argv[])
 
     if (argc == 1) {
         uCxWifiStationGetIpConfig_t cfg;
+        memset(&cfg, 0xFF, sizeof(cfg));   /* a reply without +UWSIP leaves cfg untouched */
         if (uCxWifiStationGetIpConfig(ucx, 0, &cfg) != 0) {
             return UCXAPP_ERR_FAILED;
         }

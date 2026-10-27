@@ -11,12 +11,52 @@
 #include <string.h>
 
 #define AT_MAX_LEN 256
+#define LOG_SETTINGS_FILE "ucxapp.log"
 
 static bool gLogAt;
 static bool gLogWarn = true;
 static bool gLogEvents;
 static bool gWarnLocked, gWarnSaved;
 static ucxapp_store_writer_t *gSaveWriter;
+
+/* Host settings files; app.defaults removes them all. */
+static const char *const kSettingsFiles[] = {
+    LOG_SETTINGS_FILE, "ucxapp.wifi", "ucxapp.wifilast", "ucxapp.regdomain", "ucxapp.ble", "ucxapp.blelast"
+};
+
+static void saveLogSettings(void)
+{
+    char text[48];
+    int n = snprintf(text, sizeof(text), "at=%d\nwarn=%d\nevents=%d\n", gLogAt, gWarnLocked ? gWarnSaved : gLogWarn,
+                     gLogEvents);
+
+    ucxapp_store_save(LOG_SETTINGS_FILE, text, (size_t)n);
+}
+
+static void loadLogSettings(void)
+{
+    size_t len;
+    char *data = (char *)ucxapp_store_load(LOG_SETTINGS_FILE, &len);
+
+    if (data == NULL) {
+        return;
+    }
+    for (char *p = data; p < data + len;) {
+        char *e = memchr(p, '\n', (size_t)(data + len - p));
+        size_t n = e != NULL ? (size_t)(e - p) : (size_t)(data + len - p);
+        bool on = n > 0 && p[n - 1] == '1';
+
+        if (n > 3 && strncmp(p, "at=", 3) == 0) {
+            gLogAt = on;
+        } else if (n > 5 && strncmp(p, "warn=", 5) == 0) {
+            gLogWarn = on;
+        } else if (n > 7 && strncmp(p, "events=", 7) == 0) {
+            gLogEvents = on;
+        }
+        p += n + 1;
+    }
+    free(data);
+}
 
 bool ucxappLogWarnEnabled(void)
 {
@@ -69,6 +109,7 @@ static int cmdLogAtOn(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     gLogAt = true;
+    saveLogSettings();
     ucxapp_print("AT log on\n");
     return UCXAPP_OK;
 }
@@ -80,6 +121,7 @@ static int cmdLogAtOff(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     gLogAt = false;
+    saveLogSettings();
     ucxapp_print("AT log off\n");
     return UCXAPP_OK;
 }
@@ -91,6 +133,7 @@ static int setWarn(bool on)
         return UCXAPP_ERR_FAILED;
     }
     gLogWarn = on;
+    saveLogSettings();
     ucxapp_print("warning log %s\n", on ? "on" : "off");
     return UCXAPP_OK;
 }
@@ -114,6 +157,7 @@ static int cmdLogEventsOn(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     gLogEvents = true;
+    saveLogSettings();
     ucxapp_print("event log on\n");
     return UCXAPP_OK;
 }
@@ -125,6 +169,7 @@ static int cmdLogEventsOff(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     gLogEvents = false;
+    saveLogSettings();
     ucxapp_print("event log off\n");
     return UCXAPP_OK;
 }
@@ -143,7 +188,11 @@ static int cmdLogLevel(ucxapp_t *app, int argc, char *argv[])
     }
     gLogAt = all;
     gLogEvents = all;
+    if (gWarnLocked) {
+        gWarnSaved = warn;
+    }
     gLogWarn = warn && !gWarnLocked;
+    saveLogSettings();
     ucxapp_print("log level %s (warnings %s, AT trace %s, events %s)\n", argv[1], gLogWarn ? "on" : "off",
                  gLogAt ? "on" : "off", gLogEvents ? "on" : "off");
     return UCXAPP_OK;
@@ -163,7 +212,7 @@ static int cmdLogSave(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (gSaveWriter != NULL) {
-        ucxapp_print("ERROR: already saving the log (log.stop ends it)\n");
+        ucxapp_print("ERROR: already saving the log (app.log.stop ends it)\n");
         return UCXAPP_ERR_FAILED;
     }
     gSaveWriter = ucxapp_store_begin(argv[1]);
@@ -175,7 +224,7 @@ static int cmdLogSave(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot save the log to %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("saving the log to %s (the file appears when you run log.stop)\n", argv[1]);
+    ucxapp_print("saving the log to %s (the file appears when you run app.log.stop)\n", argv[1]);
     return UCXAPP_OK;
 }
 
@@ -204,6 +253,28 @@ static int cmdLogClear(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_print("\033[2J\033[H");
+    return UCXAPP_OK;
+}
+
+static int cmdAppDefaults(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc != 2 || strcmp(argv[1], "confirm") != 0) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (size_t i = 0; i < sizeof(kSettingsFiles) / sizeof(kSettingsFiles[0]); i++) {
+        if (ucxapp_store_exists(kSettingsFiles[i]) && ucxapp_store_remove(kSettingsFiles[i])) {
+            ucxapp_print("removed %s\n", kSettingsFiles[i]);
+        }
+    }
+    gLogAt = false;
+    gLogEvents = false;
+    if (gWarnLocked) {
+        gWarnSaved = true;
+    } else {
+        gLogWarn = true;
+    }
+    ucxapp_print("app settings back to defaults (the module keeps its own; see dev.factory)\n");
     return UCXAPP_OK;
 }
 
@@ -566,16 +637,17 @@ static int cmdStatsClear(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gSysCmds[] = {
     { "at", "[command]", "Send a raw AT command (AT prefix optional); with no command, enter AT mode where every line is sent as typed", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
-    { "log.at.on", "", "Show the AT TX/RX trace", 0, cmdLogAtOn },
-    { "log.at.off", "", "Hide the AT TX/RX trace (default)", 0, cmdLogAtOff },
-    { "log.warn.on", "", "Show library warnings (not in the text UI)", 0, cmdLogWarnOn },
-    { "log.warn.off", "", "Hide library warnings", 0, cmdLogWarnOff },
-    { "log.events.on", "", "Also print module events in the log", 0, cmdLogEventsOn },
-    { "log.events.off", "", "Keep module events out of the log (default)", 0, cmdLogEventsOff },
-    { "log.level", "<off|warn|all>", "off: nothing extra; warn: warnings; all: warnings, AT trace and events", 0, cmdLogLevel },
-    { "log.save", "<file>", "Save everything the log shows to a file (written when log.stop runs)", 0, cmdLogSave },
-    { "log.stop", "", "Finish and write the log file started by log.save", 0, cmdLogStop },
-    { "log.clear", "", "Clear the log", 0, cmdLogClear },
+    { "app.log.at.on", "", "Show the AT TX/RX trace (remembered)", 0, cmdLogAtOn },
+    { "app.log.at.off", "", "Hide the AT TX/RX trace (default, remembered)", 0, cmdLogAtOff },
+    { "app.log.warn.on", "", "Show library warnings (not in the text UI, remembered)", 0, cmdLogWarnOn },
+    { "app.log.warn.off", "", "Hide library warnings (remembered)", 0, cmdLogWarnOff },
+    { "app.log.events.on", "", "Also print module events in the log (remembered)", 0, cmdLogEventsOn },
+    { "app.log.events.off", "", "Keep module events out of the log (default, remembered)", 0, cmdLogEventsOff },
+    { "app.log.level", "<off|warn|all>", "off: nothing extra; warn: warnings; all: warnings, AT trace and events (remembered)", 0, cmdLogLevel },
+    { "app.log.save", "<file>", "Save everything the log shows to a file (written when app.log.stop runs)", 0, cmdLogSave },
+    { "app.log.stop", "", "Finish and write the log file started by app.log.save", 0, cmdLogStop },
+    { "app.log.clear", "", "Clear the log", 0, cmdLogClear },
+    { "app.defaults", "<confirm>", "Forget all app settings (log, Wi-Fi and BLE profiles, last used, region); type 'confirm' to proceed", UCXAPP_CMD_DANGER, cmdAppDefaults },
     { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
     { "utils.hash.text", "<md5|sha256> <text...>", "Print the hash of a text", 0, cmdHashText },
     { "utils.hash.selftest", "", "Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors", 0, cmdHashSelftest },
@@ -589,5 +661,6 @@ static const ucxapp_cmd_t gSysCmds[] = {
 void ucxapp_register_sys_cmds(void)
 {
     U_CX_MUTEX_CREATE(gStatsLock);
+    loadLogSettings();
     ucxapp_cmd_register(gSysCmds, sizeof(gSysCmds) / sizeof(gSysCmds[0]));
 }

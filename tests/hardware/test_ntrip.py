@@ -8,6 +8,8 @@ import threading
 import pytest
 from hwutil import _run, _wifi_connect_command
 
+pytestmark = pytest.mark.wifi
+
 MOUNT = "UCXTEST"
 USER, PASS = "rover", "s3cret"
 RTCM = bytes([0xD3, 0x00, 0x13]) + bytes(19) + bytes(3)   # an empty RTCM3 frame, enough to count bytes

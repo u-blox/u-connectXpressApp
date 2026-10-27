@@ -1,0 +1,52 @@
+# vucx profile: a NORA-W36 that says OK to everything it does not know, with Wi-Fi, a BLE peer,
+# a heart rate service on the peer and a GATT server. Used to drive whole command groups.
+include: [wifi.yaml]
+default: ["OK"]
+commands:
+  "AT+UBTD*":
+    - '+UBTD:C0FFEE001122p,-50,"vucx-hrs",0,020106030D18'
+    - '+UBTD:C0FFEE001133r,-70,"",0,020106'
+    - "OK"
+  "AT+UBTCL": ["+UBTCL:0,C0FFEE001122p", "OK"]
+  "AT+UBTBDL": ["+UBTBDL:C0FFEE001144p", "OK"]
+  "AT+UBTRSS=*": ["+UBTRSS:-55", "OK"]
+  "AT+UBTCST=*": ["+UBTCST:0,23", "OK"]
+  "AT+UBTPHYR=*": ["+UBTPHYR:0,2,2", "OK"]
+  "AT+UBTM?": ["+UBTM:3", "OK"]
+  "AT+UBTLN?": ['+UBTLN:"vucx"', "OK"]
+  "AT+UBTIOC?": ["+UBTIOC:0", "OK"]
+  "AT+UBTBSM?": ["+UBTBSM:0", "OK"]
+  "AT+UBTPM?": ["+UBTPM:1", "OK"]
+  "AT+UBTGPSD=*":
+    - "+UBTGPSD:0,1,5,1800"
+    - "+UBTGPSD:0,16,32,180D"
+    - "OK"
+  "AT+UBTGPSDU=*": ["+UBTGPSDU:0,16,32", "OK"]
+  "AT+UBTGSCD=*":
+    - "+UBTGSCD:0,17,10,18,2A37"
+    - "+UBTGSCD:0,20,02,21,2A38"
+    - "OK"
+  "AT+UBTGCDD=*": ["+UBTGCDD:0,18,19,2902", "OK"]
+  "AT+UBTGR=*": ["+UBTGR:0,18,0048", "OK"]
+  "AT+UBTGRU=*": ["+UBTGRU:0,18,0048", "OK"]
+  "AT+UBTGS=*": ["+UBTGS:40", "OK"]
+  "AT+UBTGC=*": ["+UBTGC:42,43", "OK"]
+  "AT+UBTGHCC=*": ["+UBTGHCC:44,45", "OK"]
+  "AT+UBTGD=*": ["+UBTGD:46", "OK"]
+  "AT+USYLA=*": ["+USYLA:C0FFEE001144", "OK"]
+  "AT+USYTU?": ["+USYTU:0000000065000000", "OK"]
+  "AT+USYEC?": ["+USYEC:0", "OK"]
+  "AT+USYUS?": ["+USYUS:115200,1", "OK"]
+  "AT+CSGT?": ['+CSGT:1,"+STARTUP"', "OK"]
+urcs:
+  "AT+UBTC=*": ["+UEBTC:0,C0FFEE001122p"]
+  "AT+UBTDC=*": ["+UEBTDC:0"]
+  "AT+UBTGW=*": ["+UEBTGCN:0,18,0048"]
+  "AT+UWAPA*": ["+UEWAPU", "+UEWAPNU"]
+  "AT+UWAPD*": ["+UEWAPD"]
+  "AT+UMQC=*": ["+UEMQC:0"]
+  "AT+UMQS=*": ["+UEMQSC:0,0"]
+  "AT+UMQDC=*": ["+UEMQDC:0,0"]
+  "AT+UDGP=*": ["+UEDGP:1,32,12", "+UEDGPC:4,4,12,10,14"]
+  # a host connects and enables notifications (every characteristic gets CCCD 43)
+  "AT+UBTGSA": ["+UEBTC:0,C0FFEE001122p", "+UEBTGCW:0,43,0100,0"]

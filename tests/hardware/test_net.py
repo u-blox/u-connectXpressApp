@@ -8,16 +8,16 @@ import threading
 import time
 
 import pytest
-from hwutil import _args, _background, _close_listeners, _finish, _join_wifi, _run, _wifi_connect_command
+from hwutil import _args, _background, _close_listeners, _finish, _join_wifi, _reboot, _run, _wifi_connect_command
+
+pytestmark = pytest.mark.wifi
 
 
 @pytest.mark.two_devices
 def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
     """Module A hosts the web server (a TCP listener); module B opens a raw TCP socket to it."""
     wifi = _wifi_connect_command()
-    for port in (port_a, port_b):
-        _run(app_exe, port, "device.reboot")
-    time.sleep(5)
+    _reboot(app_exe, port_a, port_b)
     args = _args(app_exe, port_a, wifi, "web.start 80 abc123") + ["--shell"]
     server = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                               errors="replace")
@@ -54,8 +54,7 @@ def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
 @pytest.mark.hardware
 def test_udp_socket_opens_and_closes(app_exe, port_a):
     wifi = _wifi_connect_command()
-    _run(app_exe, port_a, "device.reboot")
-    time.sleep(5)
+    _reboot(app_exe, port_a)
     out = _run(app_exe, port_a, wifi, "sock.open udp", "sock.list", "sock.close 0",
                timeout=120)
     assert out.returncode == 0, out.stdout
@@ -68,7 +67,7 @@ def test_mqtt_publish_is_received_back(app_exe, port_a):
     topic = f"ucxapp/test/{int(time.time())}"
     out = _run(app_exe, port_a, wifi, "mqtt.connect", f"mqtt.subscribe {topic} 0",
                f"mqtt.publish {topic} hello-mqtt", "mqtt.read 10", f"mqtt.unsubscribe {topic}", "mqtt.disconnect",
-               timeout=180)
+               timeout=90)
     if "connect failed" in out.stdout or "timeout waiting for the broker" in out.stdout:
         pytest.skip("public MQTT broker unreachable")
     assert out.returncode == 0, out.stdout

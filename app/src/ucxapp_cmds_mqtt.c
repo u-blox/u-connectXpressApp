@@ -184,9 +184,11 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
         const char *topic = NULL;
         int32_t n = uCxMqttReadBegin(app->ucx, MQTT_ID, buf, MQTT_MAX_PAYLOAD, &topic);
         if (n < 0 && received > 0) {
+            uCxEnd(app->ucx);
             break;   /* queue drained: the module answers ERROR:11 */
         }
         if (n < 0) {
+            uCxEnd(app->ucx);
             ucxapp_print("ERROR: read failed (%d%s)\n", (int)n, ucxapp_errname(n));
             return UCXAPP_ERR_FAILED;
         }

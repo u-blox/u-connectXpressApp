@@ -354,7 +354,7 @@ void ucxapp_ui_release(void)
 
 /* Module groups follow the AT command manual; host groups go from general tools to peripherals. */
 static const char *const kOrder[] = {
-    "at", "device", "log", "stats", "fw", "bt", "gatt", "hid", "ancs", "notify", "wifi", "net", "sock", "mqtt", "http",
+    "at", "dev", "stats", "fw", "bt", "gatt", "hid", "ancs", "notify", "wifi", "net", "sock", "mqtt", "http",
     "cert",
     "app", "dash", "session", "prod", "utils", "file", "dtls", "coap", "tftp", "ft", "web", "qr",
     "bridge", "gnss", "imu", "cell", "can", "hw"
@@ -365,8 +365,7 @@ static const struct {
     const char *help;
 } kGroupHelp[] = {
     { "at",     "Raw AT commands and the AT terminal" },
-    { "device", "Module info, settings, reboot, factory reset and diagnostics" },
-    { "log",    "Module log output" },
+    { "dev",    "Module info, settings, reboot, factory reset and diagnostics" },
     { "stats",  "Module statistics" },
     { "fw",     "Module firmware: download, bootloader, flash and update from GitHub" },
     { "bt",     "Bluetooth LE: scan, advertise, connect and bond" },
@@ -518,9 +517,9 @@ const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd)
 
 /* Display order inside a group: most used first. Unlisted commands follow in registration order. */
 static const char *const kCmdOrder[] = {
-    "device.info", "device.status", "device.reboot", "device.uptime", "device.diagnose", "device.caps",
-    "device.stack", "device.crash", "device.factory",
-    "log.level", "log.save", "log.stop", "log.clear",
+    "dev.info", "dev.status", "dev.reboot", "dev.uptime", "dev.diagnose", "dev.caps",
+    "dev.stack", "dev.crash", "dev.factory",
+    "app.log.level", "app.log.save", "app.log.stop", "app.log.clear", "app.defaults",
     "fw.update", "fw.download", "fw.flash", "fw.bootloader",
     "bt.scan", "bt.connect", "bt.disconnect", "bt.list", "bt.bonds", "bt.profile.connect", "bt.profile.auto",
     "bt.profile.add", "bt.profile.list", "bt.profile.remove", "bt.pairing", "bt.security", "bt.iocap",

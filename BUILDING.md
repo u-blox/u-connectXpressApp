@@ -39,7 +39,7 @@ git submodule update --init u-connectClient
 
 ```powershell
 .\ucxapp                 # build if needed and run (auto-detects a NORA EVK)
-.\ucxapp COM13 --exec "device.info"   # arguments the launcher does not know go to the app
+.\ucxapp COM13 --exec "dev.info"   # arguments the launcher does not know go to the app
 .\ucxapp --debug         # debug build
 .\ucxapp --update        # update the u-connectClient submodule
 .\ucxapp --clean         # clean build artifacts

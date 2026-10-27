@@ -8,14 +8,14 @@ commands can run in a PC console, a Linux terminal or a UART shell on an embedde
 
 ```powershell
 # One-shot: run commands in order, stop at the first failure (exit code 1)
-ucxapp COM13 --exec "device.info" --exec "wifi.scan"
+ucxapp COM13 --exec "dev.info" --exec "wifi.scan"
 
 # Interactive shell
 ucxapp COM13 --shell
 
 # A single command can be given directly (no spaces, no quotes), port optional
-ucxapp COM13 device.info
-ucxapp device.info
+ucxapp COM13 dev.info
+ucxapp dev.info
 ```
 
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
@@ -45,34 +45,34 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
 | `examples` | `[group]` | List the groups that have examples, or show one group's examples |
-| `<group>.ex [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, mqtt, cert, bt, gatt, hid, web, fw, device, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.ex 1`); the web page's "Run all" uses this |
+| `<group>.ex [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, mqtt, cert, bt, gatt, hid, web, fw, dev, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.ex 1`); the web page's "Run all" uses this |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
-| `at.reset` | | Reboot the module (`AT+CPWROFF`); same as `device.reboot` |
-| `at.factory` | `<confirm>` | Factory reset (`AT+USYFR`) and reboot; same as `device.factory`, the word `confirm` is required |
+| `at.reset` | | Reboot the module (`AT+CPWROFF`); same as `dev.reboot` |
+| `at.factory` | `<confirm>` | Factory reset (`AT+USYFR`) and reboot; same as `dev.factory`, the word `confirm` is required |
 
 ### System
 
 | Command | Arguments | Description |
 |---|---|---|
-| `device.info` | | Manufacturer, model, firmware version |
-| `device.caps` | | Capabilities: model, firmware, Wi-Fi, Bluetooth LE, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support |
-| `device.uptime` | | Time since the module started, counted from its last `+STARTUP` |
-| `device.stack` | | Developer: stack size, used bytes and usage % of every module task |
-| `device.crash` | | Developer: last crash info stored in module flash; reading it clears it |
-| `device.diagnose` | `[host]` | Support report: `device.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates; ends with `Result: PASS` or `FAIL` |
-| `device.status` | | Overview: module info, Wi-Fi state and IP, open sockets, BLE connections, certificates |
-| `device.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
-| `device.factory` | `<confirm>` | Reset the module to factory settings (erases Wi-Fi, Bluetooth and certificate settings) and reboot; the word `confirm` is required |
-| `device.connect` | `[port]` | Connect to the module (default: saved port). Windows only |
-| `device.disconnect` | | Disconnect. Windows only |
-| `device.use` | `<port>` | Switch the active module to another serial port; the current one is released (and kept if the new one fails). One module is active at a time |
+| `dev.info` | | Manufacturer, model, firmware version |
+| `dev.caps` | | Capabilities: model, firmware, Wi-Fi, Bluetooth LE, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support |
+| `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
+| `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |
+| `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it |
+| `dev.diagnose` | `[host]` | Support report: `dev.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates; ends with `Result: PASS` or `FAIL` |
+| `dev.status` | | Overview: module info, Wi-Fi state and IP, open sockets, BLE connections, certificates |
+| `dev.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
+| `dev.factory` | `<confirm>` | Reset the module to factory settings (erases Wi-Fi, Bluetooth and certificate settings) and reboot; the word `confirm` is required |
+| `dev.connect` | `[port]` | Connect to the module (default: saved port). Windows only |
+| `dev.disconnect` | | Disconnect. Windows only |
+| `dev.use` | `<port>` | Switch the active module to another serial port; the current one is released (and kept if the new one fails). One module is active at a time |
 | `fw.download` | `[latest [file]]` or `<url> <file> [sha256]` | With no arguments (same as `latest`) looks up the newest u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip (Windows only); flash it with `fw.flash`. With a URL: download via the module (follows redirects), print SHA-256, delete the file on mismatch |
 | `fw.update` | `[force] [baud]` | Compares the module firmware with the newest GitHub release for its family; if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Download needs Windows |
-| `fw.bootloader` | `<port> <file.bin\|file.zip> [baud]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `device.disconnect` first |
+| `fw.bootloader` | `<port> <file.bin\|file.zip> [baud]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `dev.disconnect` first |
 | `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (built-in unzip), and only the `.bin` inside is flashed |
 
 ```powershell
-ucxapp COM13 --exec "device.info"
+ucxapp COM13 --exec "dev.info"
 ucxapp COM13 --exec "fw.download latest" --exec "fw.flash NORA-W36X-3.1.0.zip"
 ucxapp COM13 --exec "at +GMR"
 ```
@@ -355,6 +355,7 @@ app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No
 | `utils.tls.list` | | Certificates with subject, issuer and validity |
 | `utils.tls.pem` | `<name> [key]` | Print a certificate, or its key, in PEM (copy `utils.tls.pem ca` to clients) |
 | `utils.tls.remove` | `<name>` | Remove a certificate and its key |
+| `utils.tls.selftest` | | Run the mbedTLS built-in known-answer tests (hashes, AES/GCM/CCM, ChaCha20-Poly1305, DRBGs, bignum, RSA, ECP), one line per algorithm with its time |
 
 ```powershell
 ucxapp COM13 --shell
@@ -430,7 +431,7 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 
 | Command | Arguments | Description |
 |---|---|---|
-| `dash` | `[watch [seconds]]` | One card with a line each for Wi-Fi (SSID, RSSI, IP), BLE (links, GATT listen), GNSS (fix, satellites, HDOP), cellular (registration, operator, signal) and IMU (angles or acceleration). Filled dot = active. Each line shows the port; other NORA modules found on USB are listed as `standby (device.use <port>)` and GNSS receivers found by their USB descriptor but not opened as `found, not open`. `watch` refreshes every second (default 10 s, any key stops). Works without a module; Wi-Fi and BLE then show `no module` |
+| `dash` | `[watch [seconds]]` | One card with a line each for Wi-Fi (SSID, RSSI, IP), BLE (links, GATT listen), GNSS (fix, satellites, HDOP), cellular (registration, operator, signal) and IMU (angles or acceleration). Filled dot = active. Each line shows the port; other NORA modules found on USB are listed as `standby (dev.use <port>)` and GNSS receivers found by their USB descriptor but not opened as `found, not open`. `watch` refreshes every second (default 10 s, any key stops). Works without a module; Wi-Fi and BLE then show `no module` |
 
 Custom BLE service: `ble custom <uuid>` defines a 128-bit service with a write characteristic (RX, bytes go to the
 receiver) and a notify characteristic (TX). With only the service UUID, RX and TX are the service UUID with the fourth
@@ -502,21 +503,24 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `utils.qr.geo` | `<lat> <lon>` | Print a location QR code |
 | `utils.zip` | `<archive.zip> <file> [file...]` | Create a zip archive from up to 6 files (deflate; no device needed) |
 | `utils.unzip` | `<archive.zip> [dir]` | Extract a zip archive, default into the current directory (no device needed) |
-| `log.at.on` | | Show the AT TX/RX trace |
-| `log.at.off` | | Hide the AT TX/RX trace (default) |
-| `log.warn.on` | | Show library warnings such as `Unexpected data` (refused in the text UI, where they would garble the screen) |
-| `log.warn.off` | | Hide library warnings |
-| `log.events.on` | | Also print module events (Wi-Fi, Bluetooth, MQTT ...) in the log as `[event] ...` |
-| `log.events.off` | | Keep events out of the log (default); they still show in the Events pane |
-| `log.level` | `<off\|warn\|all>` | One switch: `off` hides warnings, AT trace and events; `warn` shows warnings only; `all` shows warnings, AT trace and events |
-| `log.save` | `<file>` | Save everything the log shows to a file; the file is written when `log.stop` runs |
-| `log.stop` | | Finish and write the file started by `log.save` |
-| `log.clear` | | Clear the log (in the text UI the Log pane) |
+| `app.log.at.on` | | Show the AT TX/RX trace |
+| `app.log.at.off` | | Hide the AT TX/RX trace (default) |
+| `app.log.warn.on` | | Show library warnings such as `Unexpected data` (refused in the text UI, where they would garble the screen) |
+| `app.log.warn.off` | | Hide library warnings |
+| `app.log.events.on` | | Also print module events (Wi-Fi, Bluetooth, MQTT ...) in the log as `[event] ...` |
+| `app.log.events.off` | | Keep events out of the log (default); they still show in the Events pane |
+| `app.log.level` | `<off\|warn\|all>` | One switch: `off` hides warnings, AT trace and events; `warn` shows warnings only; `all` shows warnings, AT trace and events |
+| `app.log.save` | `<file>` | Save everything the log shows to a file; the file is written when `app.log.stop` runs |
+| `app.log.stop` | | Finish and write the file started by `app.log.save` |
+| `app.log.clear` | | Clear the log (in the text UI the Log pane) |
+| `app.defaults` | `<confirm>` | Forget all app settings: log switches, Wi-Fi and BLE profiles, last used profile and Wi-Fi region (the module keeps its own; see `dev.factory`) |
+
+The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches are saved in `ucxapp.log` in the store and restored at the next start or reboot.
 | `session.record` | `<file.ucx>` | Record every command from now on to a script, with its output as `# ` comments, pauses as `#+` and failures as `#!`; passwords and tokens are written as `${UCX_WIFI_PASS}` / `${UCX_SECRET}`. Send the file to support |
 | `session.stop` | | Stop recording |
 | `session.replay` | `<file.ucx> [all] [stop]` | Run the commands of a recorded session or script (`${NAME}` expanded); firmware, factory reset and removals are skipped unless `all`; `stop` ends at the first failure |
 | `session.selftest` | | Offline check of secret masking and report file names |
-| `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `device.info`, `device.caps`, `device.diagnose`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
+| `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `dev.info`, `dev.caps`, `dev.diagnose`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
 | `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
@@ -530,7 +534,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `stats.clear` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web]` | Reset one channel's counters, or all |
 | `app.info` | | About this app: maker, platform and links |
 | `app.complete` | `<prefix>` | Show what Tab would complete a typed start of a command to, e.g. `app.complete wifi.sc` prints `1 match: wifi.scan` (for scripts and tests) |
-| `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `device.stack` |
+| `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `dev.stack` |
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
 | `app.time` | `[sync [ntp\|http\|module] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| selftest]` | App wall clock in UTC with its source and age. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |

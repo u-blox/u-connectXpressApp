@@ -1,0 +1,10 @@
+# Basic vucx profile: identity, reboot with startup event.
+identity:
+  manufacturer: u-blox
+  model: NORA-W36
+  version: 3.5.0-0
+  serial: "0123456789"
+commands:
+  "AT+CPWROFF": ["OK"]
+urcs:
+  "AT+CPWROFF": ["+STARTUP"]

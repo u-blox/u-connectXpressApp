@@ -79,6 +79,9 @@ int ucxapp_cmd_complete(const char *prefix, char *out, size_t size);
 /* Exact name lookup; NULL if unknown. */
 const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
 
+/** False for Bluetooth LE only modules (NORA-B26); the Wi-Fi command groups are blocked on them. */
+bool ucxapp_module_has_wifi(ucxapp_t *app);
+
 /* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
 
@@ -128,7 +131,7 @@ void ucxapp_register_can_cmds(void);     /* can.* (host only, empty in UCXAPP_LI
 void ucxapp_register_net_cmds(void);
 void ucxapp_register_sys_cmds(void);
 void ucxapp_register_app_cmds(void);     /* app.* (ucxapp_cmds_app.c) */
-bool ucxappLogEventsEnabled(void);   /* log.events.on: URC events are also printed to the log */
+bool ucxappLogEventsEnabled(void);   /* app.log.events.on: URC events are also printed to the log */
 void ucxapp_register_mqtt_cmds(void);
 void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);
@@ -151,7 +154,7 @@ void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
 void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
 
-/* Reboots the module and restores the session settings (device.reboot). */
+/* Reboots the module and restores the session settings (dev.reboot). */
 bool ucxapp_module_reboot(ucxapp_t *app);
 
 /* AT+USORFB that adapts to the module's read limit (FW 3.2 allows 1000 bytes, newer firmware 1460). */

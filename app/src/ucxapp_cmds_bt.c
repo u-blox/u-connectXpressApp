@@ -119,12 +119,23 @@ static int scanDevices(ucxapp_t *app)
         }
         if (i == count) {
             if (count == BT_SCAN_MAX_DEVICES) {
-                continue;
+                /* List full: a nearby device replaces the weakest one, so it is never lost in a busy room. */
+                int weakest = 0;
+                for (int j = 1; j < count; j++) {
+                    if (gLastScan[j].rssi < gLastScan[weakest].rssi) {
+                        weakest = j;
+                    }
+                }
+                if (dev.rssi <= gLastScan[weakest].rssi) {
+                    continue;
+                }
+                i = weakest;
+            } else {
+                count++;
             }
-            memset(&gLastScan[count], 0, sizeof(gLastScan[count]));
-            gLastScan[count].addr = dev.bd_addr;
-            gLastScan[count].rssi = dev.rssi;
-            count++;
+            memset(&gLastScan[i], 0, sizeof(gLastScan[i]));
+            gLastScan[i].addr = dev.bd_addr;
+            gLastScan[i].rssi = dev.rssi;
         }
         e = &gLastScan[i];
         if (dev.rssi > e->rssi) {

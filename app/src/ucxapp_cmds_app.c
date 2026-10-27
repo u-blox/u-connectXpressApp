@@ -20,6 +20,8 @@
 #define APP_PLATFORM "Windows"
 #elif defined(U_PORT_POSIX)
 #define APP_PLATFORM "Linux"
+#elif defined(__ZEPHYR__)
+#define APP_PLATFORM "Zephyr"
 #else
 #define APP_PLATFORM "STM32 FreeRTOS"
 #endif
@@ -57,6 +59,7 @@ typedef struct {
     const char *notice;   /* full text for app.license, NULL if the name says it all */
 } component_t;
 
+#if HOSTED || !defined(__ZEPHYR__)
 static const char kMit[] =
     "Permission is hereby granted, free of charge, to any person obtaining a copy of\n"
     "this software and associated documentation files (the \"Software\"), to deal in\n"
@@ -73,6 +76,7 @@ static const char kMit[] =
     "  liability, whether in an action of contract, tort or otherwise, arising from,\n"
     "  out of or in connection with the Software or the use or other dealings in the\n"
     "  Software.\n";
+#endif
 
 #if HOSTED
 static const char kZlib[] =
@@ -116,7 +120,9 @@ static const component_t kComponents[] = {
     { "FTDI D2XX", "-", "FTDI driver licence", "ftd2xx64.dll, FTDI port names and reset",
       "https://ftdichip.com/drivers/d2xx-drivers/", NULL },
 #endif
-#if !HOSTED
+#if !HOSTED && defined(__ZEPHYR__)
+    { "Zephyr RTOS", "-", "Apache-2.0", "kernel and drivers", "https://www.zephyrproject.org", kApache },
+#elif !HOSTED
     { "STM32Cube HAL", "-", "BSD-3-Clause", "board support", "https://github.com/STMicroelectronics", NULL },
     { "FreeRTOS", "-", "MIT", "kernel", "https://www.freertos.org", kMit },
 #endif
@@ -216,7 +222,7 @@ static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Same row look as device.stack: app RAM/heap/flash (disk on hosts), then task stacks on the RTOS. */
+/* Same row look as dev.stack: app RAM/heap/flash (disk on hosts), then task stacks on the RTOS. */
 static int cmdMemory(ucxapp_t *app, int argc, char *argv[])
 {
     ucxapp_mem_t rows[16];
@@ -256,7 +262,7 @@ static int cmdComplete(ucxapp_t *app, int argc, char *argv[])
 static const ucxapp_cmd_t gAppCmds[] = {
     { "app.complete", "<prefix>", "Show what Tab would complete a typed start of a command to (for scripts and tests)", 0, cmdComplete },
     { "app.info", "", "About this app: maker, platform and links", 0, cmdInfo },
-    { "app.memory", "", "App RAM, heap and flash (disk on PC) use; task stacks on STM32. Same look as device.stack", 0, cmdMemory },
+    { "app.memory", "", "App RAM, heap and flash (disk on PC) use; task stacks on STM32. Same look as dev.stack", 0, cmdMemory },
     { "app.version", "", "App version, build time, platform and compiler", 0, cmdVersion },
     { "app.uptime", "", "Time since the app started (days hh:mm:ss)", 0, cmdUptime },
     { "app.sbom", "", "Software bill of materials: components, versions and licences", 0, cmdSbom },

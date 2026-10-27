@@ -1,12 +1,131 @@
 /* tls.* - local CA and certificates for the app's own TLS servers (stream bridge, web server). */
 
+#define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
+
 #include "ucxapp_cmd.h"
+#include "ucxapp_platform.h"
 #include "ucxapp_store.h"
 #include "ucxapp_tls.h"
+
+#include "mbedtls/build_info.h"
+#include "mbedtls/base64.h"
+#include "mbedtls/private/aes.h"
+#include "mbedtls/private/bignum.h"
+#include "mbedtls/private/ccm.h"
+#include "mbedtls/private/chacha20.h"
+#include "mbedtls/private/chachapoly.h"
+#include "mbedtls/private/cmac.h"
+#include "mbedtls/private/ctr_drbg.h"
+#include "mbedtls/private/ecp.h"
+#include "mbedtls/private/gcm.h"
+#include "mbedtls/private/hmac_drbg.h"
+#include "mbedtls/private/md5.h"
+#include "mbedtls/private/poly1305.h"
+#include "mbedtls/private/rsa.h"
+#include "mbedtls/private/sha1.h"
+#include "mbedtls/private/sha256.h"
+#include "mbedtls/private/sha3.h"
+#include "mbedtls/private/sha512.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static const struct {
+    const char *name;
+    int (*run)(int verbose);
+} kSelfTests[] = {
+#if defined(MBEDTLS_SELF_TEST)
+#if defined(MBEDTLS_MD5_C)
+    { "md5", mbedtls_md5_self_test },
+#endif
+#if defined(MBEDTLS_SHA1_C)
+    { "sha1", mbedtls_sha1_self_test },
+#endif
+#if defined(MBEDTLS_SHA224_C)
+    { "sha224", mbedtls_sha224_self_test },
+#endif
+#if defined(MBEDTLS_SHA256_C)
+    { "sha256", mbedtls_sha256_self_test },
+#endif
+#if defined(MBEDTLS_SHA384_C)
+    { "sha384", mbedtls_sha384_self_test },
+#endif
+#if defined(MBEDTLS_SHA512_C)
+    { "sha512", mbedtls_sha512_self_test },
+#endif
+#if defined(MBEDTLS_SHA3_C)
+    { "sha3", mbedtls_sha3_self_test },
+#endif
+#if defined(MBEDTLS_AES_C)
+    { "aes", mbedtls_aes_self_test },
+#endif
+#if defined(MBEDTLS_GCM_C) && defined(MBEDTLS_AES_C)
+    { "gcm", mbedtls_gcm_self_test },
+#endif
+#if defined(MBEDTLS_CCM_C) && defined(MBEDTLS_AES_C)
+    { "ccm", mbedtls_ccm_self_test },
+#endif
+#if defined(MBEDTLS_CMAC_C)
+    { "cmac", mbedtls_cmac_self_test },
+#endif
+#if defined(MBEDTLS_CHACHA20_C)
+    { "chacha20", mbedtls_chacha20_self_test },
+#endif
+#if defined(MBEDTLS_POLY1305_C)
+    { "poly1305", mbedtls_poly1305_self_test },
+#endif
+#if defined(MBEDTLS_CHACHAPOLY_C)
+    { "chacha20-poly1305", mbedtls_chachapoly_self_test },
+#endif
+#if defined(MBEDTLS_BASE64_C)
+    { "base64", mbedtls_base64_self_test },
+#endif
+#if defined(MBEDTLS_BIGNUM_C)
+    { "mpi", mbedtls_mpi_self_test },
+#endif
+#if defined(MBEDTLS_RSA_C)
+    { "rsa", mbedtls_rsa_self_test },
+#endif
+#if defined(MBEDTLS_CTR_DRBG_C)
+    { "ctr_drbg", mbedtls_ctr_drbg_self_test },
+#endif
+#if defined(MBEDTLS_HMAC_DRBG_C)
+    { "hmac_drbg", mbedtls_hmac_drbg_self_test },
+#endif
+#if defined(MBEDTLS_ECP_C)
+    { "ecp", mbedtls_ecp_self_test },
+#endif
+#endif /* MBEDTLS_SELF_TEST */
+    { NULL, NULL }
+};
+
+/* Runs the mbedTLS built-in known-answer tests quietly and prints one line per algorithm. */
+static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
+{
+    int failed = 0;
+    int count = 0;
+    (void)app;
+    (void)argv;
+
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (size_t i = 0; kSelfTests[i].name != NULL; i++) {
+        uint32_t start = ucxapp_platform_tick_ms();
+        int r = kSelfTests[i].run(0);
+        ucxapp_print("  %-18s %s  (%u ms)\n", kSelfTests[i].name, r == 0 ? "passed" : "FAILED",
+                     (unsigned)(ucxapp_platform_tick_ms() - start));
+        failed += r != 0;
+        count++;
+    }
+    if (count == 0) {
+        ucxapp_print("ERROR: mbedTLS was built without MBEDTLS_SELF_TEST\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("mbedTLS self test: %d of %d passed\n", count - failed, count);
+    return failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
 
 static int cmdCaCreate(ucxapp_t *app, int argc, char *argv[])
 {
@@ -141,6 +260,7 @@ static const ucxapp_cmd_t gTlsCmds[] = {
     { "utils.tls.list",          "",                        "List the app certificates", 0, cmdList },
     { "utils.tls.pem",           "<name> [key]",            "Print a certificate (or its key) in PEM", 0, cmdPem },
     { "utils.tls.remove",        "<name>",                  "Remove a certificate and its key", UCXAPP_CMD_DANGER, cmdRemove },
+    { "utils.tls.selftest",      "",                        "Run the mbedTLS built-in known-answer tests (hashes, ciphers, DRBGs, bignum, RSA, ECP)", 0, cmdSelftest },
 };
 
 void ucxapp_register_tls_cmds(void)

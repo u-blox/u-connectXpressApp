@@ -174,6 +174,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
         memset(&header, 0, sizeof(header));
         if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_HDR_CHUNK, &header)) {
             ucxapp_print("ERROR: cannot read HTTP headers\n");
+            uCxEnd(app->ucx);
             goto done;
         }
         more = header.more_to_read != 0;
@@ -295,6 +296,7 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char 
         memset(&header, 0, sizeof(header));
         if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_HDR_CHUNK, &header)) {
             ucxapp_print("ERROR: cannot read HTTP headers\n");
+            uCxEnd(app->ucx);
             goto done;
         }
         more = header.more_to_read != 0;
@@ -479,6 +481,7 @@ static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const
         memset(&header, 0, sizeof(header));
         if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_HDR_CHUNK, &header)) {
             ucxapp_print("ERROR: cannot read HTTP headers\n");
+            uCxEnd(app->ucx);
             goto done;
         }
         more = header.more_to_read != 0;

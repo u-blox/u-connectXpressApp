@@ -1,0 +1,58 @@
+# vucx profile: NORA-W36 with Wi-Fi station and sockets (one network, one TCP socket).
+identity:
+  manufacturer: u-blox
+  model: NORA-W36
+  version: 3.5.0-0
+  serial: "0123456789"
+commands:
+  "AT+CPWROFF": ["OK"]
+  "AT+UWSSC*":
+    - '+UWSSC:AABBCCDDEEF0,"vucx-net",6,-45,8,8,8'
+    - '+UWSSC:AABBCCDDEEF1,"vucx-far",36,-80,0,0,0'
+    - "OK"
+  "AT+UWSCP=*": ["OK"]
+  "AT+UWSSW=*": ["OK"]
+  "AT+UWSIPD=*": ["OK"]
+  "AT+UWSC=*": ["OK"]
+  "AT+UWSDC": ["OK"]
+  "AT+UWSST=0": ['+UWSST:0,"vucx-net"', "OK"]
+  "AT+UWSST=1": ["+UWSST:1,AABBCCDDEEF0", "OK"]
+  "AT+UWSST=2": ["+UWSST:2,6", "OK"]
+  "AT+UWSST=3": ["+UWSST:3,2", "OK"]
+  "AT+UWSST=4": ["+UWSST:4,-45", "OK"]
+  "AT+UWSST=*": ['+UWSST:0,"vucx-net"', "OK"]
+  "AT+UWSNST=1": ["+UWSNST:1,255.255.255.0", "OK"]
+  "AT+UWSNST=2": ["+UWSNST:2,192.168.1.1", "OK"]
+  "AT+UWSNST=*": ["+UWSNST:0,192.168.1.50", "OK"]
+  "AT+UWSIP=*": ["+UWSIP:0,1,192.168.1.50,255.255.255.0,192.168.1.1,8.8.8.8,0.0.0.0", "OK"]
+  "AT+UWSROE?": ["+UWSROE:1", "OK"]
+  "AT+UWRD?": ["+UWRD:0", "OK"]
+  "AT+UWAPCP?": ['+UWAPCP:"vucxap",6', "OK"]
+  "AT+UWAPS?": ["+UWAPS:1,0", "OK"]
+  "AT+UWAPNST?":
+    - "+UWAPNST:0,192.168.0.1"
+    - "+UWAPNST:1,255.255.255.0"
+    - "OK"
+  "AT+UWAPCS?": ["+UWAPCS:AABBCCDDEE01", "OK"]
+  "AT+UWSNST?":
+    - "+UWSNST:0,192.168.1.50"
+    - "+UWSNST:1,255.255.255.0"
+    - "+UWSNST:2,192.168.1.1"
+    - "+UWSNST:3,192.168.1.1"
+    - "+UWSNST:4,0.0.0.0"
+    - "OK"
+  "AT+USOCR=*": ["+USOCR:0", "OK"]
+  "AT+USOC=*": ["OK"]
+  "AT+USOCL=*": ["OK"]
+  "AT+USOST?": ["+USOST:0,6,2", "OK"]
+  "AT+USOST=*": ["+USOST:0,6,2", "OK"]
+  "AT+USOH=*": ["+USOH:93.184.216.34", "OK"]
+  "AT+USECL?": ['+USECL:0,"myca"', '+USECL:1,"client"', '+USECL:2,"key"', "OK"]
+  'AT+USECD="myca",0': ["+USECD:0,00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF", "OK"]
+  'AT+USECD="myca",1': ["+USECD:1,1024", "OK"]
+  'AT+USECD="myca",*': ["+USECD:2,323032363031303130303030303030", "OK"]
+urcs:
+  "AT+CPWROFF": ["+STARTUP"]
+  "AT+UWSC=*": ["+UEWLU:0,AABBCCDDEEF0,6", "+UEWSNU"]
+  "AT+UWSDC": ["+UEWLD:0,0"]
+  "AT+USOC=*": ["+UESOC:0"]

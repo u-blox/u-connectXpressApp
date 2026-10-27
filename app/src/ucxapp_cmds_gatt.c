@@ -1233,7 +1233,6 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
     }
 
     ucxapp_bt_security_defaults(app);
-    ensureAdvertising(app);
 
     uint8_t svcUuid16[2] = { (uint8_t)(p->u16 >> 8), (uint8_t)(p->u16 & 0xFF) };
     int32_t r = p->u128 ? uCxGattServerServiceDefine(app->ucx, p->u128, 16, &svcHandle)
@@ -1299,6 +1298,7 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     gSrvDone |= 1u << idx;
+    ensureAdvertising(app);
     ucxapp_print("%s service active; connect a client, or use gatt.server.demo\n", p->title);
     return UCXAPP_OK;
 }

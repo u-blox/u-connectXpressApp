@@ -7,7 +7,7 @@ import threading
 import time
 
 import pytest
-from hwutil import DEVICE_NAME, GATT_NAME, _args, _finish, _gatt_server, _run, _start_server, _stop
+from hwutil import DEVICE_NAME, GATT_NAME, _args, _finish, _gatt_server, _reboot, _run, _start_server, _stop
 
 
 @pytest.mark.hardware
@@ -47,7 +47,7 @@ def test_hid_and_gatt_server_definitions(app_exe, port_a):
 
 @pytest.mark.hardware
 def test_gatt_server_example_runs_and_stops(app_exe, port_a):
-    out = _run(app_exe, port_a, "gatt.server.nus 3", "device.reboot")
+    out = _run(app_exe, port_a, "gatt.server.nus 3", "dev.reboot")
     assert out.returncode == 0, out.stdout
 
 
@@ -66,21 +66,20 @@ def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
 @pytest.mark.parametrize("key", ["hrs", "cts", "ess", "lns", "aio", "bas", "sps", "wps", "ras"])
 def test_gatt_example_server_and_client_between_two_modules(app_exe, port_a, port_b, key):
     """A serves the example service; B discovers it, runs the matching client example and listens."""
-    proc, seen, lines = _gatt_server(app_exe, port_a, key)
+    proc, seen, lines = _gatt_server(app_exe, port_a, key, peer=port_b)
     extra = ["gatt.wps status"] if key == "wps" else ["gatt.client.dis"]
     try:
         out = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.services", "gatt.chars",
                    f"gatt.client.{key}", *extra, "gatt.listen 5", "bt.disconnect", timeout=240)
     finally:
-        _finish(proc, seen, lines)
-    assert out.returncode == 0, out.stdout
+        server = _finish(proc, seen, lines, stop=True)
+    assert out.returncode == 0, f"client:\n{out.stdout}\nserver:\n{server}"
 
 
 @pytest.mark.two_devices
 def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
     """A serves SPS from a shell and pushes values; B reads, writes, sends and grants credits."""
-    _run(app_exe, port_a, "device.reboot")
-    time.sleep(5)
+    _reboot(app_exe, port_a, port_b)
     server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.sps",
                                     "gatt.server.bas") + ["--shell"],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -120,8 +119,7 @@ def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
 @pytest.mark.two_devices
 def test_gatt_server_indication_between_two_modules(app_exe, port_a, port_b):
     """B enables indications on A's SPS FIFO; A sends one and B receives it."""
-    _run(app_exe, port_a, "device.reboot")
-    time.sleep(5)
+    _reboot(app_exe, port_a, port_b)
     server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.sps",
                                     "gatt.server.list") + ["--shell"],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -175,7 +173,7 @@ def test_gatt_server_indication_between_two_modules(app_exe, port_a, port_b):
 @pytest.mark.two_devices
 def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
     """B uses the raw handle commands on A's Battery service."""
-    proc, seen, lines = _gatt_server(app_exe, port_a, "bas")
+    proc, seen, lines = _gatt_server(app_exe, port_a, "bas", peer=port_b)
     try:
         chars = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.chars", timeout=240)
         handle = re.search(r"handle\s+(0x[0-9a-f]+|\d+)\s+\S*\s+0x2a19\b", chars.stdout, re.I)
@@ -188,7 +186,7 @@ def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
         write_long = _run(app_exe, port_b, f"gatt.writelong {h} 01")
         _run(app_exe, port_b, "bt.disconnect")
     finally:
-        _finish(proc, seen, lines)
+        _finish(proc, seen, lines, stop=True)
     assert out.returncode == 0, out.stdout
     assert re.search(r"\b(100|level)\b", out.stdout, re.I), out.stdout
     for w in (write, write_long):

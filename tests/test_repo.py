@@ -65,9 +65,9 @@ def test_launcher_flags(argv, flags):
 
 
 def test_launcher_passes_unknown_and_raw_args_to_the_app():
-    args, extra, _ = _launcher().parse(["COM13", "--exec", "device.info", "--", "--build"])
+    args, extra, _ = _launcher().parse(["COM13", "--exec", "dev.info", "--", "--build"])
     assert not args.build
-    assert extra == ["COM13", "--exec", "device.info", "--build"]
+    assert extra == ["COM13", "--exec", "dev.info", "--build"]
 
 
 @pytest.mark.parametrize(

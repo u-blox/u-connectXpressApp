@@ -31,22 +31,22 @@ def test_json_result_per_command(app_exe):
 
 def test_json_codes(app_exe):
     assert _json(app_exe, "no.such.command")[1][0]["code"] == "UNKNOWN_CMD"
-    assert _json(app_exe, "device.connect")[1][0]["code"] == "USAGE"
+    assert _json(app_exe, "dev.connect")[1][0]["code"] == "USAGE"
 
 
 def test_help_json_lists_metadata(app_exe):
-    out = subprocess.run([str(app_exe), "--offline", "--exec", "help --json device."], capture_output=True,
+    out = subprocess.run([str(app_exe), "--offline", "--exec", "help --json dev."], capture_output=True,
                          text=True, timeout=60, errors="replace", stdin=subprocess.DEVNULL)
     cmds = {c["name"]: c for c in json.loads(out.stdout[out.stdout.index("["):])}
-    assert cmds["device.factory"]["danger"] and cmds["device.factory"]["needsDevice"]
-    assert not cmds["device.info"]["danger"]
-    assert "device.caps" in cmds and "device.diagnose" in cmds
+    assert cmds["dev.factory"]["danger"] and cmds["dev.factory"]["needsDevice"]
+    assert not cmds["dev.info"]["danger"]
+    assert "dev.caps" in cmds and "dev.diagnose" in cmds
 
 
 def test_env_expansion(app_exe):
-    env = {**os.environ, "UCX_TEST_PREFIX": "device."}
+    env = {**os.environ, "UCX_TEST_PREFIX": "dev."}
     _, res = _json(app_exe, "help ${UCX_TEST_PREFIX}", env=env)
-    assert res[0]["success"] and any("device.info" in line for line in res[0]["output"])
+    assert res[0]["success"] and any("dev.info" in line for line in res[0]["output"])
     assert res[0]["command"] == "help ${UCX_TEST_PREFIX}"
     _, res = _json(app_exe, "help ${UCX_TEST_UNSET_VAR}", env=env)
     assert not res[0]["success"] and "UCX_TEST_UNSET_VAR" in res[0]["error"]

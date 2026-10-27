@@ -34,7 +34,7 @@ def test_record_then_replay(app_exe, tmp_path):
 
 
 def test_replay_skips_danger_commands(app_exe, tmp_path):
-    (tmp_path / "d.ucx").write_text("# test\ndevice.factory confirm\nutils.hash.text md5 a\n", encoding="utf-8")
+    (tmp_path / "d.ucx").write_text("# test\ndev.factory confirm\nutils.hash.text md5 a\n", encoding="utf-8")
     out = _run_in(app_exe, tmp_path, "session.replay d.ucx")
     assert "skipped: changes the module for good" in out.stdout, out.stdout
     assert "replayed 1 command(s), 0 failed" in out.stdout, out.stdout

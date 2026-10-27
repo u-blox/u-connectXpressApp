@@ -1,0 +1,30 @@
+# vucx profile: a cellular modem (u-blox SARA-like) for cell.* commands.
+identity:
+  manufacturer: u-blox
+  model: SARA-R510M8S
+  version: 03.15
+  serial: "351234567890123"
+default: ["OK"]
+commands:
+  "ATI": ["Manufacturer: u-blox", "Model: SARA-R510M8S", "OK"]
+  "AT+CGMI": ["u-blox", "OK"]
+  "AT+CGMM": ["SARA-R510M8S", "OK"]
+  "AT+CGMR": ["03.15", "OK"]
+  "AT+CGSN": ["351234567890123", "OK"]
+  "AT+CIMI": ["240011234567890", "OK"]
+  "AT+CCID": ["+CCID: 89460112345678901234", "OK"]
+  "AT+CPIN?": ["+CPIN: READY", "OK"]
+  "AT+CSQ": ["+CSQ: 20,99", "OK"]
+  "AT+CESQ": ["+CESQ: 99,99,255,255,20,50", "OK"]
+  "AT+CREG?": ["+CREG: 0,1", "OK"]
+  "AT+CEREG?": ["+CEREG: 0,1", "OK"]
+  "AT+CGREG?": ["+CGREG: 0,1", "OK"]
+  "AT+COPS?": ['+COPS: 0,0,"vucx telecom",7', "OK"]
+  "AT+CGATT?": ["+CGATT: 1", "OK"]
+  "AT+CGACT?": ["+CGACT: 1,1", "OK"]
+  "AT+CGDCONT?": ['+CGDCONT: 1,"IP","internet","10.0.0.5",0,0', "OK"]
+  "AT+CGPADDR*": ['+CGPADDR: 1,"10.0.0.5"', "OK"]
+  "AT+UPING=*": ["OK"]
+  "AT+USOCR=*": ["+USOCR: 0", "OK"]
+urcs:
+  "AT+UPING=*": ['+UUPING: 1,32,"example.com","93.184.216.34",55,20']

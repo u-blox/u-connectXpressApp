@@ -79,7 +79,7 @@ typedef struct {
     int satsUsed, satsView;
     int year, month, day, hour, min, sec;
     bool hasDate, hasTime;
-    char sw[48], hw[16], mod[24], proto[16];
+    char sw[48], hw[16], mod[24], proto[16], ext[96];
     uint32_t nmea, ubx, bad;
     uint32_t lastMs;
     sat_t sats[MAX_SATS];
@@ -327,12 +327,17 @@ static void ubxFrame(parser_t *p)
     } else if (p->cls == 0x0A && p->id == 0x04 && p->len >= 40) {   /* MON-VER */
         snprintf(s->sw, sizeof(s->sw), "%.30s", (const char *)d);
         snprintf(s->hw, sizeof(s->hw), "%.10s", (const char *)d + 30);
+        s->ext[0] = '\0';
         for (uint32_t o = 40; o + 30 <= p->len; o += 30) {
             const char *e = (const char *)d + o;
+            size_t used = strlen(s->ext);
+            /* u-blox 7 and older write "PROTVER 14.00", later ones "PROTVER=18.00". */
             if (strncmp(e, "MOD=", 4) == 0) {
                 snprintf(s->mod, sizeof(s->mod), "%.20s", e + 4);
-            } else if (strncmp(e, "PROTVER=", 8) == 0) {
+            } else if (strncmp(e, "PROTVER", 7) == 0 && (e[7] == '=' || e[7] == ' ')) {
                 snprintf(s->proto, sizeof(s->proto), "%.12s", e + 8);
+            } else if (e[0] != '\0' && used + 4 < sizeof(s->ext)) {
+                snprintf(s->ext + used, sizeof(s->ext) - used, "%s%.30s", used > 0 ? ", " : "", e);
             }
         }
     }
@@ -520,15 +525,47 @@ static void raiseBaud(const char *port, int32_t *baud, parser_t *p)
     }
 }
 
+/* Receiver generation from the MON-VER hardware version. */
+static const char *generation(const char *hw)
+{
+    static const struct {
+        const char *hw;
+        const char *name;
+    } kGen[] = {
+        { "00040005", "u-blox 5" }, { "00040006", "u-blox 6" }, { "00040007", "u-blox 6" },
+        { "00070000", "u-blox 7" }, { "00080000", "u-blox M8" }, { "00190000", "u-blox F9" },
+        { "000A0000", "u-blox M10" }, { "00200000", "u-blox F10" },
+    };
+
+    for (size_t i = 0; i < sizeof(kGen) / sizeof(kGen[0]); i++) {
+        if (strcmp(hw, kGen[i].hw) == 0) {
+            return kGen[i].name;
+        }
+    }
+    return "";
+}
+
 static void describe(const parser_t *p)
 {
     const gnss_t *s = &p->st;
+    const char *gen = generation(s->hw);
 
-    ucxapp_print("%s%s%s%s%s%s%s%s%s%s",
-                 s->nmea > 0 ? "NMEA" : "", (s->nmea > 0 && s->ubx > 0) ? " + " : "", s->ubx > 0 ? "UBX" : "",
-                 s->mod[0] != '\0' ? ", " : "", s->mod,
-                 s->proto[0] != '\0' ? ", PROTVER " : "", s->proto,
-                 s->sw[0] != '\0' ? ", FW " : "", s->sw, "");
+    ucxapp_print("%s%s%s", s->nmea > 0 ? "NMEA" : "", (s->nmea > 0 && s->ubx > 0) ? " + " : "", s->ubx > 0 ? "UBX" : "");
+    if (gen[0] != '\0' || s->mod[0] != '\0') {
+        ucxapp_print(", %s%s%s", gen, gen[0] != '\0' && s->mod[0] != '\0' ? " " : "", s->mod);
+    }
+    if (s->hw[0] != '\0') {
+        ucxapp_print(", HW %s", s->hw);
+    }
+    if (s->sw[0] != '\0') {
+        ucxapp_print(", FW %s", s->sw);
+    }
+    if (s->proto[0] != '\0') {
+        ucxapp_print(", PROTVER %s", s->proto);
+    }
+    if (s->ext[0] != '\0') {
+        ucxapp_print(", %s", s->ext);
+    }
 }
 
 typedef struct {
@@ -774,8 +811,11 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("Messages:  %u NMEA, %u UBX, %u bad%s\n", (unsigned)gSnap.nmea, (unsigned)gSnap.ubx, (unsigned)gSnap.bad,
                  gSnap.lastMs == 0 ? " (no data yet)" : (now - gSnap.lastMs > 3000u ? " (stalled)" : ""));
     if (gSnap.mod[0] != '\0' || gSnap.sw[0] != '\0') {
-        ucxapp_print("Receiver:  %s %s, FW %s, HW %s, PROTVER %s\n", gSnap.mod[0] ? "u-blox" : "", gSnap.mod,
+        ucxapp_print("Receiver:  %s %s, FW %s, HW %s, PROTVER %s\n", generation(gSnap.hw), gSnap.mod,
                      gSnap.sw, gSnap.hw, gSnap.proto);
+        if (gSnap.ext[0] != '\0') {
+            ucxapp_print("           %s\n", gSnap.ext);
+        }
     }
     ucxapp_print("Fix:       %s%s\n", kFix[gSnap.fixType & 3], gSnap.hasPos ? "" : " (no position)");
     if (gSnap.hasPos) {

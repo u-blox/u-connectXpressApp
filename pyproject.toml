@@ -8,6 +8,10 @@ select = ["E", "F", "W", "I", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# One line per test with [ NN%] progress; short tracebacks; summary of failures only (not the skips).
+addopts = "-v --tb=short -rfE"
+# A test still running after 10 minutes is hung: dump every thread's stack so the hang shows where it is.
+faulthandler_timeout = 600
 
 [tool.coverage.run]
 source = ["tests"]

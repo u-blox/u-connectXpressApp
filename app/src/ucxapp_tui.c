@@ -890,7 +890,7 @@ static bool submitLine(void)
     }
     gHistPos = gHistCount;
     gLogScroll = 0;
-    if (strcmp(line, "clear") == 0 || strcmp(line, "log.clear") == 0) {
+    if (strcmp(line, "clear") == 0 || strcmp(line, "app.log.clear") == 0) {
         gLog.total = 0;
         gLog.curLen = gLog.curCols = 0;
         setInput("");

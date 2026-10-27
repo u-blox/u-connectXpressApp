@@ -20,6 +20,7 @@ from hwutil import (
 
 
 @pytest.mark.two_devices
+@pytest.mark.wifi
 @pytest.mark.parametrize("source", SOURCES)
 def test_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, request):
     """A bridges the source over TCP on Wi-Fi; B connects a socket and reads the stream."""
@@ -38,6 +39,7 @@ def test_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, r
 
 
 @pytest.mark.two_devices
+@pytest.mark.wifi
 @pytest.mark.parametrize("source", SOURCES)
 @pytest.mark.parametrize("clientauth", [False, True], ids=["server-auth", "mutual-auth"])
 def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, clientauth, request, tmp_path):
@@ -94,6 +96,7 @@ def test_bridge_over_ble_between_two_modules(app_exe, port_a, port_b, source, re
 
 
 @pytest.mark.two_devices
+@pytest.mark.wifi
 def test_can_bridge_record_reaches_other_module(app_exe, wifi_peers, port_a, port_b):
     """A bridges CAN over UDP and loops one emulated frame; B receives one 17-byte record."""
     ip_b = wifi_peers[port_b][0]

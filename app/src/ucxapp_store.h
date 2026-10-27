@@ -31,6 +31,9 @@ typedef struct {
 
 typedef struct ucxapp_store_writer ucxapp_store_writer_t;
 
+/** RAM backend for embedded targets without a file system (ucxapp_store_ram.c); files are lost at reset. */
+extern const ucxapp_store_ops_t ucxapp_store_ram;
+
 /** Install a backend; NULL restores the stdio default. */
 void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops);
 

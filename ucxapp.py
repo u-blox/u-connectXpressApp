@@ -3,7 +3,7 @@
 and STM32.
 
   ucxapp                                    build if needed and start the app (this OS)
-  ucxapp COM13 --exec "device.info"
+  ucxapp COM13 --exec "dev.info"
   ucxapp --linux                            Linux build; on Windows it runs inside WSL
   ucxapp --stm32 --board f767 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
@@ -376,11 +376,11 @@ def detect(exe, ports=None):
     print("NORA modules" + (" (--ports):" if ports else ":"))
     env.update(port_env(modules))
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "device.info", timeout=30), modules))
+        infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=30), modules))
     for port, info in zip(modules, infos, strict=True):
         m = re.search(r"\b(NORA-[A-Z0-9]+[\w-]*)", info)
         v = re.search(r"Firmware Version:\s*(\S+)", info)
-        print(f"  {port:<14} {m.group(1) + (f' ({v.group(1)})' if v else '') if m else '(no answer to device.info)'}")
+        print(f"  {port:<14} {m.group(1) + (f' ({v.group(1)})' if v else '') if m else '(no answer to dev.info)'}")
     if not modules:
         print("  none")
 
@@ -433,7 +433,7 @@ def wifi_summary():
 
 def pytest_python():
     """This Python if it has pytest; on Linux (system Python is often externally managed) else a venv in ~."""
-    if subprocess.call([sys.executable, "-c", "import pytest"], stderr=subprocess.DEVNULL) == 0:
+    if subprocess.call([sys.executable, "-c", "import pytest, yaml"], stderr=subprocess.DEVNULL) == 0:
         return sys.executable
     venv = Path.home() / ".ucxapp-venv"
     py = venv / "bin" / "python"
@@ -441,7 +441,7 @@ def pytest_python():
         fail(f"pytest missing for {sys.executable}: {sys.executable} -m pip install -r tests/requirements.txt")
     if not py.exists():
         check([sys.executable, "-m", "venv", venv], "venv (sudo apt install python3-venv)")
-    if subprocess.call([py, "-c", "import pytest"], stderr=subprocess.DEVNULL) != 0:
+    if subprocess.call([py, "-c", "import pytest, yaml"], stderr=subprocess.DEVNULL) != 0:
         check([py, "-m", "pip", "install", "-q", "-r", ROOT / "tests" / "requirements.txt"], "pytest install")
     return str(py)
 
@@ -469,6 +469,7 @@ def coverage(pytest_args):
         fail(f"instrumented exe not found: {bd / 'ucxapp'}")
     absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT")}
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
+    partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
     env = {**absent, "UCX_APP_EXE": str(bd / "ucxapp"), "PYTHONUNBUFFERED": "1"}
     rc = run_tests(pytest_args, env)
@@ -489,7 +490,7 @@ def coverage(pytest_args):
     hit = sum(h for h, _ in files.values())
     total = sum(t for _, t in files.values())
     rows.append(f"{'TOTAL':<32} {hit:>6}/{total:<6} {100 * hit / total:6.1f}%")
-    report = ROOT / "build" / "coverage.txt"
+    report = ROOT / "build" / ("coverage_partial.txt" if partial else "coverage.txt")
     report.parent.mkdir(exist_ok=True)
     report.write_text("\n".join(rows) + "\n", encoding="utf-8")
     print("\n".join(rows))
@@ -1130,8 +1131,8 @@ def doctor():
     if not modules:
         print("[WARNING] no NORA module found: check the USB cable, the EVK power and the FTDI driver")
     for port in modules:
-        res = json_results(app_output(exe, port, "--json", "--exec", "device.caps", timeout=30))
-        caps = next((r for r in res if r["command"] == "device.caps"), None)
+        res = json_results(app_output(exe, port, "--json", "--exec", "dev.caps", timeout=30))
+        caps = next((r for r in res if r["command"] == "dev.caps"), None)
         if caps and caps["success"]:
             d = caps.get("data", {})
             print(f"[OK] {port}: {d.get('model', '?')} firmware {d.get('firmware', '?')}, Wi-Fi {d.get('wi_fi', '?')}")
@@ -1192,7 +1193,7 @@ def run_script(exe, path, app_args, junit=None):
     r = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     results = json_results(r.stdout)
-    if results and results[0]["command"].startswith("device.connect") and not steps[0][0].startswith("device.connect"):
+    if results and results[0]["command"].startswith("dev.connect") and not steps[0][0].startswith("dev.connect"):
         connect = results.pop(0)
         if not connect["success"]:
             print(f"connect: {connect.get('error', '')}")
@@ -1264,6 +1265,9 @@ def main(argv):
             # Empty = detected as absent, so the tests do not probe the ports again.
             for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT"):
                 found.setdefault(key, "")
+        if not (args.detect or args.ports) and "hardware" not in " ".join(extra):
+            # Plain --test is offline; hardware tests run only with --detect or --ports.
+            extra = [*(extra or ["tests"]), "--ignore=tests/hardware"]
         forced = {"UCX_PORT_A": "", "UCX_PORT_B": "", **port_env(args.ports)} if args.ports else None
         return run_tests(extra, {**found, "UCX_APP_EXE": str(exe)}, forced)
     return host(args, extra)

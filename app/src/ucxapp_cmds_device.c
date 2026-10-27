@@ -66,7 +66,7 @@ static int cmdDeviceStatus(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Wait for +STARTUP so device.uptime is exact, then restore the session settings the reboot cleared. */
+/* Wait for +STARTUP so dev.uptime is exact, then restore the session settings the reboot cleared. */
 static void waitStartup(ucxapp_t *app)
 {
     if (!ucxapp_events_wait(URC_FLAG_STARTUP, 10)) {
@@ -139,7 +139,7 @@ static int cmdDeviceUptime(ucxapp_t *app, int argc, char *argv[])
     /* The module has no uptime command; the app times it from the last +STARTUP it saw. */
     ucxapp_print("%s%u days %02u:%02u:%02u%s\n", exact ? "" : "at least ", (unsigned)(s / 86400),
                  (unsigned)(s / 3600 % 24), (unsigned)(s / 60 % 60), (unsigned)(s % 60),
-                 exact ? "" : " (no +STARTUP seen since connect; device.reboot gives an exact count)");
+                 exact ? "" : " (no +STARTUP seen since connect; dev.reboot gives an exact count)");
     return UCXAPP_OK;
 }
 
@@ -278,9 +278,11 @@ static int cmdDeviceDiagnose(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     snprintf(host, sizeof(host), "%s", argc == 2 ? argv[1] : "u-blox.com");
-    diagRun(app, "device", "device.caps", &failed);
-    diagRun(app, "uptime", "device.uptime", &failed);
-    if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+    diagRun(app, "device", "dev.caps", &failed);
+    diagRun(app, "uptime", "dev.uptime", &failed);
+    if (!ucxapp_module_has_wifi(app)) {
+        ucxapp_print("Check %-11s no Wi-Fi on this module (network and certificate checks skipped)\n", "wifi");
+    } else if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
         char line[128];
         diagRun(app, "wifi", "wifi.status", &failed);
         snprintf(line, sizeof(line), "net.dns %s", host);
@@ -290,23 +292,25 @@ static int cmdDeviceDiagnose(ucxapp_t *app, int argc, char *argv[])
     } else {
         ucxapp_print("Check %-11s not connected (network checks skipped)\n", "wifi");
     }
-    diagRun(app, "certificates", "cert.list", &failed);
+    if (ucxapp_module_has_wifi(app)) {
+        diagRun(app, "certificates", "cert.list", &failed);
+    }
     ucxapp_print("Result:           %s (%d failed)\n", failed == 0 ? "PASS" : "FAIL", failed);
     return failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
 static const ucxapp_cmd_t gDeviceCmds[] = {
-    { "device.caps", "", "Module capabilities: model, firmware, Wi-Fi, Bluetooth LE and the features this build has", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
-    { "device.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
-    { "device.reboot", "", "Reboot the module (clears GATT services and connections); use as the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
-    { "device.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
-    { "at.reset", "", "Reboot the module (AT+CPWROFF), same as device.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
-    { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as device.factory; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
-    { "device.info", "", "Show manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
-    { "device.status", "", "Overview: module info, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
-    { "device.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
-    { "device.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
-    { "device.crash", "", "Developer: last crash info stored in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
+    { "dev.caps", "", "Module capabilities: model, firmware, Wi-Fi, Bluetooth LE and the features this build has", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
+    { "dev.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
+    { "dev.reboot", "", "Reboot the module (clears GATT services and connections); use as the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
+    { "dev.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
+    { "at.reset", "", "Reboot the module (AT+CPWROFF), same as dev.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
+    { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as dev.factory; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
+    { "dev.info", "", "Show manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
+    { "dev.status", "", "Overview: module info, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
+    { "dev.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
+    { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
+    { "dev.crash", "", "Developer: last crash info stored in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
 };
 
 int ucxapp_find_modules(char names[][UCXAPP_PLATFORM_PORT_NAME_LEN], int maxNames)

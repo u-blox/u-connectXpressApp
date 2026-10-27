@@ -10,21 +10,31 @@ from hwutil import _run
 
 @pytest.mark.hardware
 def test_connects_and_reports_model(app_exe, port_a):
-    out = _run(app_exe, port_a, "device.info")
+    out = _run(app_exe, port_a, "dev.info")
     assert out.returncode == 0, out.stdout
     assert re.search(r"NORA-(W36|B2\d)", out.stdout), out.stdout
 
 
 @pytest.mark.hardware
+def test_device_info_and_wifi_status(app_exe, port_a):
+    out = _run(app_exe, port_a, "dev.info", "wifi.status", "sock.list")
+    assert out.returncode == 0, out.stdout
+    assert "Model:" in out.stdout
+    assert "NORA-W36" in out.stdout
+    assert "wifi:" in out.stdout
+    assert "socket(s)" in out.stdout
+
+
+@pytest.mark.hardware
 def test_uptime_counts_from_reboot(app_exe, port_a):
-    out = _run(app_exe, port_a, "device.reboot", "device.uptime", timeout=60)
+    out = _run(app_exe, port_a, "dev.reboot", "dev.uptime", timeout=60)
     assert out.returncode == 0, out.stdout
     assert re.search(r"^0 days 00:00:\d\d$", out.stdout, re.M), out.stdout
 
 
 @pytest.mark.hardware
 def test_diagnostic_commands_run(app_exe, port_a):
-    out = _run(app_exe, port_a, "device.caps", "device.stack", "device.crash", "device.diagnose", timeout=120)
+    out = _run(app_exe, port_a, "dev.caps", "dev.stack", "dev.crash", "dev.diagnose", timeout=120)
     assert out.returncode == 0, out.stdout
     assert "ERROR" not in out.stdout, out.stdout
 
@@ -43,6 +53,7 @@ def test_imu_detect_probes_usb_uart_adapters(app_exe):
 
 
 @pytest.mark.hardware
+@pytest.mark.wifi
 def test_raw_at_and_cert_list(app_exe, port_a):
     out = _run(app_exe, port_a, "at +GMM", "cert.list")
     assert out.returncode == 0, out.stdout
@@ -50,6 +61,7 @@ def test_raw_at_and_cert_list(app_exe, port_a):
 
 
 @pytest.mark.hardware
+@pytest.mark.wifi
 def test_certificate_upload_info_and_remove(app_exe, port_a, tmp_path):
     x509 = pytest.importorskip("cryptography.x509")
     import datetime

@@ -26,6 +26,8 @@ set(UCXAPP_STM32_SOURCES
     ${APP_SRC}/ucxapp_io.c
     ${APP_SRC}/ucxapp_events.c
     ${APP_SRC}/ucxapp_store.c
+    ${APP_SRC}/ucxapp_store_ram.c
+    ${APP_SRC}/ucxapp_stubs_embedded.c
     ${APP_SRC}/ucx_obfuscate.c
     ${APP_SRC}/ucxapp_hash.c
     ${APP_SRC}/ucxapp_cmd.c

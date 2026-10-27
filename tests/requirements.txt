@@ -1,5 +1,6 @@
 pytest
 pytest-cov
+pyyaml
 ruff
 cryptography
 pyserial; sys_platform == "win32"

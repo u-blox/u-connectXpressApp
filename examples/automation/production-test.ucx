@@ -1,9 +1,9 @@
 # Production test for a NORA-W36: identity, Wi-Fi, network, MQTT, Bluetooth LE.
 # Set UCX_WIFI_SSID and UCX_WIFI_PASS first (the password never appears in the report).
 #   ucxapp --script examples/automation/production-test.ucx --junit production.xml
-device.info
+dev.info
 expect Model:\s+NORA-W36
-device.caps
+dev.caps
 expect Wi-Fi:\s+yes
 wifi.connect ${UCX_WIFI_SSID} ${UCX_WIFI_PASS}
 wifi.status
@@ -13,5 +13,5 @@ mqtt.connect
 mqtt.publish ucxapp/production hello
 mqtt.disconnect
 bt.scan
-device.diagnose
+dev.diagnose
 expect Result:\s+PASS

@@ -46,13 +46,13 @@ static void line(const char *name, bool active, const char *who, const char *tex
     ucxapp_print(U8_VLINE " %-5s %s %-8s %s\n", name, active ? U8_DOT : U8_RING, who, text);
 }
 
-/* Other modules are not opened (the AT link is single); point the user at device.use. */
+/* Other modules are not opened (the AT link is single); point the user at dev.use. */
 static void otherModules(const char *area, bool first)
 {
     char text[64];
 
     for (int i = 0; i < gOtherCount; i++) {
-        snprintf(text, sizeof(text), "standby (device.use %s)", gOthers[i]);
+        snprintf(text, sizeof(text), "standby (dev.use %s)", gOthers[i]);
         line(first && i == 0 ? area : "", false, gOthers[i], text);
     }
 }

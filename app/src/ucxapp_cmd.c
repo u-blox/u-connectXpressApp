@@ -54,6 +54,12 @@ static const ucxapp_cmd_t *findCmd(const char *name)
             }
         }
     }
+    /* Old name kept working for existing scripts. */
+    if (strncmp(name, "device.", 7) == 0) {
+        char alt[64];
+        snprintf(alt, sizeof(alt), "dev.%s", name + 7);
+        return findCmd(alt);
+    }
     return NULL;
 }
 
@@ -99,7 +105,7 @@ static bool needsWifi(const char *name)
 }
 
 /* Model is asked once per connection; an unknown model is not blocked. */
-static bool moduleHasWifi(ucxapp_t *app)
+bool ucxapp_module_has_wifi(ucxapp_t *app)
 {
     if (gCapsFor != (const void *)app->ucx) {
         const char *text = NULL;
@@ -629,8 +635,8 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         ucxapp_print("ERROR: not connected to a module\n");
         return UCXAPP_ERR_NOT_CONNECTED;
     }
-    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && needsWifi(cmd->name) && !moduleHasWifi(app)) {
-        ucxapp_print("ERROR: %s needs Wi-Fi; this module has Bluetooth LE only (see device.caps)\n", cmd->name);
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && needsWifi(cmd->name) && !ucxapp_module_has_wifi(app)) {
+        ucxapp_print("ERROR: %s needs Wi-Fi; this module has Bluetooth LE only (see dev.caps)\n", cmd->name);
         return UCXAPP_ERR_UNSUPPORTED;
     }
 
@@ -646,6 +652,16 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     gModErr = 0;
     insertCurrentHandle(cmd, &argc, argv);
     result = cmd->run(app, argc, argv);
+    /* A background thread (web server, bridges) may be mid-command; only a Begin that never ends is a leak. */
+    for (int i = 0; i < 200 && app->ucx != NULL && app->ucx->pAtClient->executingCmd; i++) {
+        U_CX_PORT_SLEEP_MS(10);
+    }
+    if (app->ucx != NULL && app->ucx->pAtClient->executingCmd) {
+        /* A Begin without End (some generated u-connectClient getters skip it on a parse error) keeps the AT
+         * mutex locked and the next command would block forever. */
+        ucxapp_print("warning: %s left an AT command open; closed it\n", cmd->name);
+        uCxAtClientCmdEnd(app->ucx->pAtClient);
+    }
     if (result == UCXAPP_ERR_USAGE) {
         if (strlen(cmd->usage) > 24) {
             char indent[48];

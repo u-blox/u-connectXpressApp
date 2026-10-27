@@ -80,7 +80,7 @@ static const example_t kExamples[] = {
       "# then: wifi.portal login http://192.168.1.10:8080/generate_204 room=101 surname=Smith" },
 
     { "net", "Is the internet reachable?",
-      "net.dns u-blox.com\nnet.ping u-blox.com 4\ndevice.diagnose" },
+      "net.dns u-blox.com\nnet.ping u-blox.com 4\ndev.diagnose" },
     { "net", "Correct time from NTP",
       "net.ntp server 0 pool.ntp.org\nnet.ntp on\nnet.ntp status" },
     { "net", "Throughput with iperf on the PC",
@@ -145,16 +145,16 @@ static const example_t kExamples[] = {
       "utils.tls.server.create web 192.168.1.50\nweb.start 443 mytoken https web" },
 
     { "fw", "Update to the newest firmware",
-      "device.info\nfw.update\ndevice.info" },
+      "dev.info\nfw.update\ndev.info" },
     { "fw", "Flash a given file",
       "fw.flash NORA-W36X-3.5.0.zip" },
     { "fw", "Rescue a module stuck in bootloader",
-      "device.disconnect\nfw.bootloader COM13 NORA-W36X-3.5.0.zip" },
+      "dev.disconnect\nfw.bootloader COM13 NORA-W36X-3.5.0.zip" },
 
-    { "device", "Support report",
-      "device.info\ndevice.status\ndevice.diagnose" },
-    { "device", "Start clean",
-      "device.factory confirm" },
+    { "dev", "Support report",
+      "dev.info\ndev.status\ndev.diagnose" },
+    { "dev", "Start clean",
+      "dev.factory confirm" },
 
     { "cell", "Cellular data link",
       "cell.detect\ncell.open COM30\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
@@ -201,8 +201,8 @@ static const example_t kExamples[] = {
     { "dtls", "Secure UDP echo",
       "dtls.client 192.168.1.10 4433 hello\ndtls.server 4433" },
 
-    { "log", "Capture a session for a bug report",
-      "log.level all\nlog.save session.txt\n# ...reproduce...\nlog.stop" },
+    { "app", "Capture a session for a bug report",
+      "app.log.level all\napp.log.save session.txt\n# ...reproduce...\napp.log.stop" },
     { "file", "Look at local files",
       "file.list\nfile.view session.txt 20\nfile.hash sha256 session.txt" },
     { "file", "Copy files to and from an STM32 board over its console (YMODEM)",

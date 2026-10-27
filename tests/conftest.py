@@ -5,8 +5,9 @@ two-module tests, and a GNSS receiver or IMU adds the tests and bridges that nee
 
 Environment (an empty value means "not attached", as set by `ucxapp --detect --test`):
   UCX_APP_EXE   path to the exe (default: app/bin/ucxapp.exe, app/bin/ucxapp on Linux)
-  UCX_PORT_A    COM port of the first NORA-W36 (default: first FTDI port found)
-  UCX_PORT_B    COM port of the second NORA-W36 (default: second FTDI port found)
+  UCX_PORT_A    COM port of the first NORA module (default: first FTDI port found)
+  UCX_PORT_B    COM port of the second NORA module (default: second FTDI port found)
+Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (NORA-B26).
   UCX_GNSS_PORT, UCX_GNSS_BAUD   GNSS receiver (default: what gnss.detect finds)
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
 """
@@ -24,6 +25,28 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = ROOT / "app" / "bin" / ("ucxapp.exe" if sys.platform == "win32" else "ucxapp")
 HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu")
+
+
+FAILURE_LOG = ROOT / "build" / "test_failures.log"
+
+
+def pytest_runtest_logreport(report):
+    """Append every failed or errored test to build/test_failures.log, kept across runs to spot flaky tests."""
+    if not report.failed:
+        return
+    import datetime
+
+    message = report.longreprtext.strip().splitlines()
+    reason = message[-1][:200] if message else ""
+    FAILURE_LOG.parent.mkdir(exist_ok=True)
+    stamp = datetime.datetime.now().isoformat(timespec="seconds")
+    # The full report (with the app output) goes next to the one-line log, one file per failure.
+    details = FAILURE_LOG.parent / "test_failures"
+    details.mkdir(exist_ok=True)
+    name = re.sub(r"[^\w.-]+", "_", report.nodeid.split("::", 1)[-1])
+    (details / f"{stamp.replace(':', '')}_{name}.txt").write_text(report.longreprtext, encoding="utf-8")
+    with FAILURE_LOG.open("a", encoding="utf-8") as log:
+        log.write(f"{stamp}\t{report.when}\t{report.nodeid}\t{reason}\n")
 
 
 def _exe():
@@ -82,9 +105,9 @@ def _found_text(name):
 
 @functools.lru_cache(maxsize=None)
 def _describe(port):
-    """'NORA-W36 (3.5.0) on COM155' from device.info, or just the port if it does not answer."""
+    """'NORA-W36 (3.5.0) on COM155' from dev.info, or just the port if it does not answer."""
     try:
-        out = subprocess.run([str(_exe()), port, "--exec", "device.info"], capture_output=True, text=True,
+        out = subprocess.run([str(_exe()), port, "--exec", "dev.info"], capture_output=True, text=True,
                              timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
     except (OSError, subprocess.TimeoutExpired):
         return port
@@ -98,15 +121,19 @@ def _describe(port):
 def pytest_configure(config):
     for marker in (
         "app: runs the built ucxapp.exe (Windows only, no hardware needed)",
-        "hardware: needs a NORA-W36 on UCX_PORT_A",
-        "two_devices: needs NORA-W36 modules on both UCX_PORT_A and UCX_PORT_B",
+        "hardware: needs a NORA module on UCX_PORT_A",
+        "two_devices: needs NORA modules on both UCX_PORT_A and UCX_PORT_B",
+        "wifi: every module the test uses needs Wi-Fi (dev.caps); skipped on Bluetooth LE only modules",
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
+        "stress: long repeated runs; only with -m stress",
     ):
         config.addinivalue_line("markers", marker)
 
 
 def _skip_reason(item, exe, hw):
+    if item.get_closest_marker("stress") and "stress" not in (item.config.option.markexpr or ""):
+        return "stress test: select with -m stress"
     needs_app = any(item.get_closest_marker(m) for m in ("app", *HARDWARE_MARKERS))
     if not needs_app:
         return None
@@ -121,6 +148,14 @@ def _skip_reason(item, exe, hw):
     for name in ("gnss", "imu"):
         if item.get_closest_marker(name) and not hw[name]:
             return f"no {name.upper()} found (set UCX_{name.upper()}_PORT)"
+    if item.get_closest_marker("wifi"):
+        sys.path.insert(0, str(ROOT / "tests" / "hardware"))
+        from hwutil import _has_wifi
+
+        used = [hw["a"]] + ([hw["b"]] if "port_b" in getattr(item, "fixturenames", ()) else [])
+        for port in filter(None, used):
+            if not _has_wifi(exe, port):
+                return f"no Wi-Fi on {port} (dev.caps)"
     return None
 
 

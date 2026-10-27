@@ -172,7 +172,7 @@ static int cmdRecord(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_cmd_set_recorder(recCommand);
-    ucxapp_print("recording to %s (session.stop to finish; log.at.on adds the AT trace)\n", argv[1]);
+    ucxapp_print("recording to %s (session.stop to finish; app.log.at.on adds the AT trace)\n", argv[1]);
     return UCXAPP_OK;
 }
 
@@ -301,7 +301,7 @@ static void reportSink(const char *text, size_t len)
 
 static int runBuiltIn(ucxapp_t *app, int *count)
 {
-    static const char *const kChecks[] = { "device.info", "device.caps", "device.diagnose" };
+    static const char *const kChecks[] = { "dev.info", "dev.caps", "dev.diagnose" };
     char line[64];
     int failed = 0;
 
@@ -428,7 +428,7 @@ static const ucxapp_cmd_t gSessionCmds[] = {
     { "session.stop",     "",                      "Stop recording",                                                   0, cmdStop },
     { "session.replay",   "<file.ucx> [all] [stop]", "Run the commands of a recorded session or script; firmware, factory reset and removals only with 'all'; 'stop' ends at the first failure", 0, cmdReplay },
     { "session.selftest", "",                      "Offline check of secret masking and report file names",           0, cmdSelftest },
-    { "prod.test",        "[script.ucx|-] [dir]",  "Production test: run a script (or '-' for device.info, device.caps and device.diagnose) and write <dir>/<serial>_<date>.txt plus a line in <dir>/report.csv (default dir: reports)", UCXAPP_CMD_NEEDS_DEVICE, cmdProdTest },
+    { "prod.test",        "[script.ucx|-] [dir]",  "Production test: run a script (or '-' for dev.info, dev.caps and dev.diagnose) and write <dir>/<serial>_<date>.txt plus a line in <dir>/report.csv (default dir: reports)", UCXAPP_CMD_NEEDS_DEVICE, cmdProdTest },
 };
 
 void ucxapp_register_session_cmds(void)

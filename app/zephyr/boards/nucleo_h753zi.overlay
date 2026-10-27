@@ -1,0 +1,16 @@
+/* NORA-W36 on the Arduino header CN10 (same wiring as the FreeRTOS build):
+ * module TX -> D0 = PB7 (USART1_RX), module RX <- D1 = PB6 (USART1_TX).
+ * The shell stays on the ST-Link virtual COM port (USART3, zephyr,console). */
+
+/ {
+	aliases {
+		ucxapp-module = &usart1;
+	};
+};
+
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};

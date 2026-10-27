@@ -763,7 +763,14 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
     if (post) {
         s = httpRequest(app, next, form, "application/x-www-form-urlencoded", gCookie);
     } else {
-        snprintf(page, sizeof(page), "%s%c%s", next, strchr(next, '?') != NULL ? '&' : '?', form);
+        size_t urlLen = strlen(next) + 1 + strlen(form);
+        if (urlLen >= sizeof(page)) {
+            ucxapp_print("ERROR: the login form URL is too long (%u bytes)\n", (unsigned)urlLen);
+            return UCXAPP_ERR_FAILED;
+        }
+        memcpy(page, next, strlen(next));
+        page[strlen(next)] = strchr(next, '?') != NULL ? '&' : '?';
+        memcpy(&page[strlen(next) + 1], form, strlen(form) + 1);
         s = httpRequest(app, page, NULL, NULL, gCookie);
     }
     if (s < 0) {

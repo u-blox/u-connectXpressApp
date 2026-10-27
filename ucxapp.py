@@ -5,7 +5,8 @@ and STM32.
   ucxapp                                    build if needed and start the app (this OS)
   ucxapp COM13 --exec "dev.info"
   ucxapp --linux                            Linux build; on Windows it runs inside WSL
-  ucxapp --stm32 --board f767 --build --flash --log
+  ucxapp --stm32-freertos --board f767 --build --flash --log
+  ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
   ucxapp --ports COM13,COM24 --test tests/hardware   tests on these modules (A, B, ...), no probing
@@ -98,7 +99,10 @@ def parse(argv):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     g = p.add_argument_group("target (default: this OS)")
     g.add_argument("--linux", action="store_true", help="Linux build; on Windows run it inside WSL")
-    g.add_argument("--stm32", action="store_true", help="STM32 Nucleo firmware")
+    g.add_argument("--stm32-freertos", "--stm32", dest="stm32", action="store_true",
+                   help="FreeRTOS firmware for STM32 boards (--stm32 is the old name)")
+    g.add_argument("--stm32-zephyr", action="store_true",
+                   help="Zephyr firmware for STM32 boards (west; ZEPHYR_BASE, UCXAPP_ZEPHYR_MODULES)")
     g.add_argument("--board", default="h753", choices=[*BOARDS, "all"],
                    help="STM32 board (default h753)")
     g = p.add_argument_group("build")
@@ -552,7 +556,7 @@ def stm32_build(board, family, hal_dir, portdir, bd):
              f"git -C u-connectClient submodule update --init ports/extra/{portdir}/{hal_dir}")
     if not (bd / "build.ninja").exists():
         toolchain = ROOT / "u-connectClient" / "cmake" / "arm-none-eabi-gcc.cmake"
-        check(["cmake", "-G", "Ninja", "-S", ROOT / "app" / "stm32", "-B", bd,
+        check(["cmake", "-G", "Ninja", "-S", ROOT / "app" / "stm32_freertos", "-B", bd,
                f"-DCMAKE_TOOLCHAIN_FILE={toolchain.as_posix()}", f"-DSTM32_BOARD={board}",
                f"-DSTM32_HAL_PATH={Path(hal).as_posix()}", "-DCMAKE_BUILD_TYPE=Release"], "CMake configure")
     check(["cmake", "--build", bd], "STM32 build")
@@ -618,8 +622,9 @@ def record_usage(results, quiet=False):
     MEMORY_DOC.parent.mkdir(exist_ok=True)
     MEMORY_DOC.write_text(
         "# STM32 flash and RAM usage\n\n"
-        "Updated by `ucxapp --stm32 --build` (Release builds). RAM includes the static FreeRTOS heap\n"
-        "(`configTOTAL_HEAP_SIZE`, set per board in `app/stm32/CMakeLists.txt`), so free RAM is the headroom left\n"
+        "Updated by `ucxapp --stm32-freertos --build` (Release builds). RAM includes the static FreeRTOS heap\n"
+        "(`configTOTAL_HEAP_SIZE`, set per board in `app/stm32_freertos/CMakeLists.txt`), so free RAM is the "
+        "headroom left\n"
         "after that heap. Flash is code, read-only data and the initial values of `.data`.\n\n"
         "| Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |\n"
         "|---|---|---|---|---|---|---|---|\n" + table + "\n", encoding="utf-8")
@@ -678,7 +683,8 @@ def host_row(key, usage):
 def stm32_log(port):
     if IS_WINDOWS:
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-               str(ROOT / "app" / "stm32" / "stm32tool.ps1"), "-Action", "log", *(["-Port", port] if port else [])]
+               str(ROOT / "app" / "stm32_freertos" / "stm32tool.ps1"), "-Action", "log",
+               *(["-Port", port] if port else [])]
         return subprocess.call(cmd, cwd=ROOT)
     port = port or next(iter(sorted(glob.glob("/dev/serial/by-id/*STLINK*") + glob.glob("/dev/serial/by-id/*STM*"))),
                         None)
@@ -1000,7 +1006,7 @@ def stm32(args, extra):
         fail(f"unknown STM32 argument(s): {' '.join(extra)}")
     if not (args.clean or args.build or args.rebuild or args.erase or args.recover or args.flash
             or args.log is not None or args.put or args.get):
-        fail("--stm32 needs --build, --rebuild, --clean, --erase, --recover, --flash, --log, --put or --get")
+        fail("--stm32-freertos needs --build, --rebuild, --clean, --erase, --recover, --flash, --log, --put or --get")
     if args.put and args.get:
         fail("use --put or --get, not both")
     if (args.put or args.get) and not (args.clean or args.build or args.rebuild or args.erase or args.recover
@@ -1028,21 +1034,67 @@ def stm32(args, extra):
     if args.erase or args.recover:
         check([programmer(), "-c", "port=SWD", "mode=UR", "reset=HWrst", "-e", "all"], "erase")
     if args.flash:
-        if not image.exists():
-            fail(f"{image.relative_to(ROOT)} missing, add --build")
-        prog = programmer()
-        sn = find_stlink(prog, name)
-        if sn is None:
-            fail(f"no ST-Link found for {name}")
-        print(f"Flashing {name} via ST-Link {sn}")
-        check([prog, "-c", "port=SWD", f"sn={sn}", "mode=UR", "reset=HWrst", "-d", image, "0x08000000", "-v",
-               "-rst"], "flash")
+        stm32_flash(name, image)
     if args.put or args.get:
         if args.flash:
             time.sleep(3)   # let the board boot and mount its files
         rc = stm32_transfer(args)
         if rc or args.log is None:
             return rc
+    if args.log is not None:
+        return stm32_log(args.log)
+    return 0
+
+
+def stm32_flash(name, image):
+    if not image.exists():
+        fail(f"{image.relative_to(ROOT)} missing, add --build")
+    prog = programmer()
+    sn = find_stlink(prog, name)
+    if sn is None:
+        fail(f"no ST-Link found for {name}")
+    print(f"Flashing {name} via ST-Link {sn}")
+    check([prog, "-c", "port=SWD", f"sn={sn}", "mode=UR", "reset=HWrst", "-d", image, "0x08000000", "-v",
+           "-rst"], "flash")
+
+
+def zephyr_env():
+    """ZEPHYR_BASE and extra modules; defaults to the newest NCS under C:/ncs and C:/ncs/extra/hal_stm32."""
+    if not os.environ.get("ZEPHYR_BASE"):
+        bases = sorted(glob.glob("C:/ncs/v*/zephyr" if IS_WINDOWS else os.path.expanduser("~/*/zephyr")))
+        if not bases:
+            fail("ZEPHYR_BASE not set and no Zephyr tree found (C:/ncs/v*/zephyr)")
+        os.environ["ZEPHYR_BASE"] = bases[-1]
+    modules = os.environ.get("UCXAPP_ZEPHYR_MODULES")
+    if modules is None:
+        hal = Path(os.environ["ZEPHYR_BASE"]).parent.parent / "extra" / "hal_stm32"
+        modules = hal.as_posix() if (hal / "zephyr" / "module.yml").is_file() else ""
+    require("west", "Install the Zephyr or nRF Connect SDK toolchain (pip install west)")
+    return modules
+
+
+def zephyr(args, extra):
+    if extra:
+        fail(f"unknown Zephyr argument(s): {' '.join(extra)}")
+    if not (args.clean or args.build or args.rebuild or args.flash or args.log is not None):
+        fail("--stm32-zephyr needs --build, --rebuild, --clean, --flash or --log")
+    boards = sorted(p.stem for p in (ROOT / "app" / "zephyr" / "boards").glob("*.overlay"))
+    board, name = BOARDS[args.board][:2] if args.board in BOARDS else (args.board, args.board)
+    if board not in boards:
+        fail(f"--stm32-zephyr supports {', '.join(boards)} (app/zephyr/boards)")
+    bd = Path("build") / f"zephyr_{args.board}"
+    image = ROOT / bd / "zephyr" / "zephyr.bin"
+    if args.clean or args.rebuild:
+        shutil.rmtree(ROOT / bd, ignore_errors=True)
+        print("Cleaned", bd)
+    if args.build or args.rebuild:
+        modules = zephyr_env()
+        # Relative paths: west fails when the source and the current directory are on different drives.
+        check(["west", "build", "--no-sysbuild", "-p", "auto", "-b", board, "-d", bd.as_posix(), "app/zephyr",
+               *(["--", f"-DEXTRA_ZEPHYR_MODULES={modules}"] if modules else [])], "Zephyr build")
+        print("Built", image.relative_to(ROOT))
+    if args.flash:
+        stm32_flash(name, image)
     if args.log is not None:
         return stm32_log(args.log)
     return 0
@@ -1068,7 +1120,7 @@ def selftest():
     errors = 0
     for rel in ("u-connectClient/src", "u-connectClient/inc", "u-connectClient/ucx_api/generated",
                 "u-connectClient/src/u_cx_at_client.c", "app/src/ucxapp_main.c", "app/CMakeLists.txt",
-                "app/stm32/CMakeLists.txt", "README.md"):
+                "app/stm32_freertos/CMakeLists.txt", "app/zephyr/CMakeLists.txt", "README.md"):
         ok = (ROOT / rel).exists()
         errors += not ok
         print(f"[{'OK' if ok else 'ERROR'}] {rel}")
@@ -1250,6 +1302,8 @@ def main(argv):
         return subprocess.call(["wsl", "--cd", str(ROOT), "--", "python3", "ucxapp.py", *forward])
     if args.stm32:
         return stm32(args, extra)
+    if args.stm32_zephyr:
+        return zephyr(args, extra)
     if args.coverage:
         return coverage(extra)
     found = {}

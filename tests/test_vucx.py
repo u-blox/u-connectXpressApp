@@ -157,7 +157,8 @@ def nora():
 def test_command_group_runs_against_module(app_exe, nora, group):
     # net: three HTTP requests each wait 15 s for a response event the profile does not send
     out = _shell(app_exe, nora.port, SCENARIOS[group], timeout=90 if group == "net" else 30, log=nora.log)
-    assert out.returncode in (0, 1), f"rc={out.returncode}\n{out.stdout[-3000:]}\n{out.stderr[-2000:]}\nlast AT: {nora.log[-10:]}"
+    assert out.returncode in (0, 1), (f"rc={out.returncode}\n{out.stdout[-3000:]}\n{out.stderr[-2000:]}\n"
+                                      f"last AT: {nora.log[-10:]}")
     assert len(nora.log) > 3, nora.log
 
 

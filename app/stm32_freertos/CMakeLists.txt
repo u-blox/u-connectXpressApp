@@ -3,7 +3,7 @@ project(u-connectXpressApp-stm32 C ASM)
 
 # Cross build of the command layer for STM32 boards. Configure with
 #   -DCMAKE_TOOLCHAIN_FILE=<repo>/u-connectClient/cmake/arm-none-eabi-gcc.cmake -DSTM32_BOARD=nucleo_h753zi
-# (ucxapp.py --stm32 does this).
+# (ucxapp.py --stm32-freertos does this).
 
 set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
 include(../../u-connectClient/u-connectClient.cmake)
@@ -21,8 +21,8 @@ include(../../u-connectClient/cmake/stm32.cmake)
 
 set(APP_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 set(UCXAPP_STM32_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_main_stm32.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_platform_stm32.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_main_freertos.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_platform_freertos.c
     ${APP_SRC}/ucxapp_io.c
     ${APP_SRC}/ucxapp_events.c
     ${APP_SRC}/ucxapp_store.c

@@ -163,7 +163,7 @@ git submodule update --init --recursive third-party/mbedtls
 .\ucxapp             # builds on first run, then starts the shell
 ```
 
-Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32 --build --flash --log`.
+Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`).
 Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
 
 ## Memory footprint

@@ -55,6 +55,8 @@ def test_old_launchers_forward_to_the_python_launcher():
         (["clean", "release"], {"clean"}),
         (["sign", "ABC123"], set()),
         (["--stm32", "--board", "f767", "--build", "--flash", "--log"], {"stm32", "build", "flash"}),
+        (["--stm32-freertos", "--build"], {"stm32", "build"}),
+        (["--stm32-zephyr", "--board", "h753", "--build", "--flash"], {"stm32_zephyr", "build", "flash"}),
     ],
 )
 def test_launcher_flags(argv, flags):

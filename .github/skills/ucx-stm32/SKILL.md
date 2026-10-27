@@ -11,10 +11,11 @@ description: Build, flash and use u-connectXpressApp as firmware on NUCLEO-H753Z
 
 ## Build, flash, log
 ```powershell
-.\ucxapp --stm32 --board h753 --build --flash --log   # h753 (default), f767, f439, f407, f401, f446, f103, g071 or all
+.\ucxapp --stm32-freertos --board h753 --build --flash --log   # h753 (default), f767, f439, f407, f401, f446, f103, g071 or all
+.\ucxapp --stm32-zephyr --board h753 --build --flash --log       # Zephyr build, H753 only so far
 ```
-Only official ST NUCLEO and Discovery boards are supported.
-On Linux: `./ucxapp.py --stm32 ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
+Only official ST NUCLEO and Discovery boards are supported. `--stm32` still works as the old name of `--stm32-freertos`.
+On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
 
 Files (Wi-Fi profiles, certificates) live in a littlefs file system in the top two flash sectors on H753, F767, F439 and F407, so they survive reset and reflash (`--erase` wipes them; `file.format yes` erases them from the shell). The other boards keep files in RAM only. Fetch littlefs once with `git submodule update --init third-party/littlefs`.
 

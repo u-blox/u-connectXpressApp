@@ -62,7 +62,7 @@ def test_every_source_file_is_built_by_both_targets():
     cmake = (APP / "CMakeLists.txt").read_text(encoding="utf-8")
     platform_only = {"ucxapp_platform_win.c", "ucxapp_platform_posix.c"}
     embedded_only = {"ucxapp_store_ram.c", "ucxapp_stubs_embedded.c"}
-    embedded = {t: (APP / t / "CMakeLists.txt").read_text(encoding="utf-8") for t in ("stm32", "zephyr")}
+    embedded = {t: (APP / t / "CMakeLists.txt").read_text(encoding="utf-8") for t in ("stm32_freertos", "zephyr")}
     for src in sorted(SRC.glob("*.c")):
         count = len(re.findall(rf"src/{re.escape(src.name)}\b", cmake))
         if src.name in embedded_only:
@@ -75,7 +75,8 @@ def test_every_source_file_is_built_by_both_targets():
 
 
 def test_zephyr_builds_every_command_source_of_the_stm32_build():
-    stm32 = set(re.findall(r"\$\{APP_SRC\}/(\S+\.c)", (APP / "stm32" / "CMakeLists.txt").read_text(encoding="utf-8")))
+    freertos = (APP / "stm32_freertos" / "CMakeLists.txt").read_text(encoding="utf-8")
+    stm32 = set(re.findall(r"\$\{APP_SRC\}/(\S+\.c)", freertos))
     zephyr = set(re.findall(r"\$\{APP_SRC\}/(\S+\.c)", (APP / "zephyr" / "CMakeLists.txt").read_text(encoding="utf-8")))
     assert stm32 and not stm32 - zephyr, f"missing from app/zephyr/CMakeLists.txt: {sorted(stm32 - zephyr)}"
 

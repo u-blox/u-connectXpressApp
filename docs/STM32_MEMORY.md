@@ -1,7 +1,7 @@
 # STM32 flash and RAM usage
 
-Updated by `ucxapp --stm32 --build` (Release builds). RAM includes the static FreeRTOS heap
-(`configTOTAL_HEAP_SIZE`, set per board in `app/stm32/CMakeLists.txt`), so free RAM is the headroom left
+Updated by `ucxapp --stm32-freertos --build` (Release builds). RAM includes the static FreeRTOS heap
+(`configTOTAL_HEAP_SIZE`, set per board in `app/stm32_freertos/CMakeLists.txt`), so free RAM is the headroom left
 after that heap. Flash is code, read-only data and the initial values of `.data`.
 
 | Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |

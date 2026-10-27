@@ -33,7 +33,8 @@ git submodule update --init u-connectClient
 |---|---|
 | Windows | `.\ucxapp` |
 | Linux | `./ucxapp.py` (from Windows: `.\ucxapp --linux` runs it in WSL) |
-| STM32 | `.\ucxapp --stm32` |
+| STM32 (FreeRTOS) | `.\ucxapp --stm32-freertos` |
+| STM32 (Zephyr) | `.\ucxapp --stm32-zephyr` |
 
 ### Windows
 
@@ -63,12 +64,16 @@ cmake --build build/windows --config Release
 
 ```powershell
 # Build, flash over the ST-Link and open the console on its virtual COM port (default board: H753)
-.\ucxapp --stm32 --build --flash --log
+.\ucxapp --stm32-freertos --build --flash --log
 
 # Select another board: h753 (default), f767, f439, f407, f401, f446, f103, g071, or all (parallel build, logs in build/all_*.log)
-.\ucxapp --stm32 --board f767 --build --flash --log
+.\ucxapp --stm32-freertos --board f767 --build --flash --log
 
-# Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
+# Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help (--stm32 is the old name of --stm32-freertos)
+
+# Zephyr build (NUCLEO-H753ZI): west + ZEPHYR_BASE (default: newest C:/ncs/v*/zephyr),
+# extra modules in UCXAPP_ZEPHYR_MODULES (default: C:/ncs/extra/hal_stm32)
+.\ucxapp --stm32-zephyr --board h753 --build --flash --log
 ```
 
 The module is wired to USART1 (H753) or USART6 (F767, F439); the shell runs on the ST-Link VCP. On the STM32F4DISCOVERY (f407) the module is on

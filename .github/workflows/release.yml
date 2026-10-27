@@ -89,7 +89,7 @@ jobs:
         run: git clone --depth 1 --branch ${{ matrix.ref }} --recurse-submodules --shallow-submodules https://github.com/STMicroelectronics/${{ matrix.repo }} "$RUNNER_TEMP/hal"
       - name: Build
         run: |
-          cmake -G Ninja -S app/stm32 -B build/stm32 \
+          cmake -G Ninja -S app/stm32_freertos -B build/stm32 \
             -DCMAKE_TOOLCHAIN_FILE=$PWD/u-connectClient/cmake/arm-none-eabi-gcc.cmake \
             -DSTM32_BOARD=${{ matrix.board }} -DSTM32_HAL_PATH="$RUNNER_TEMP/hal" \
             -DCMAKE_BUILD_TYPE=Release

@@ -8,6 +8,7 @@ and STM32.
   ucxapp --stm32 --board f767 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
+  ucxapp --ports COM13,COM24 --test tests/hardware   tests on these modules (A, B, ...), no probing
   ucxapp --coverage                         line coverage of app/src from the offline tests (WSL on Windows)
   ucxapp --doctor                           first-run checks: tools, serial access, modules
   ucxapp --script examples/automation/smoke-test.ucx --junit report.xml
@@ -117,7 +118,9 @@ def parse(argv):
     g.add_argument("--log", nargs="?", const="", metavar="PORT", help="console on the ST-Link VCP")
     g.add_argument("--put", metavar="FILE", help="copy a file to the board over the console (YMODEM, file.recv)")
     g.add_argument("--get", metavar="FILE", help="copy a file from the board over the console (YMODEM, file.send)")
-    g.add_argument("--port", metavar="PORT", help="console port for --put/--get (default: the ST-Link VCP)")
+    g.add_argument("--port", "--ports", dest="ports", metavar="PORT[,PORT...]",
+                   help="module ports in order A,B,C... for --detect/--test (no probing); the first one for the "
+                        "app and --script; with --put/--get the console port (default: the ST-Link VCP)")
     g = p.add_argument_group("run")
     g.add_argument("--signed", action="store_true", help="run app/release/ucxapp-signed.exe")
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
@@ -138,6 +141,12 @@ def parse(argv):
     g.add_argument("--sign", metavar="THUMBPRINT", help="sign the Release exe into app/release (Windows)")
     g.add_argument("--release", action="store_true", help="run scripts/release.py with the remaining arguments")
     args, extra = p.parse_known_args(argv)
+    if args.ports is not None:
+        args.ports = [x.strip() for x in args.ports.split(",") if x.strip()]
+        if not args.ports:
+            p.error("--ports needs at least one port")
+        if len(args.ports) > 26:
+            p.error("--ports takes at most 26 ports (A..Z)")
     return args, extra + raw, argv
 
 
@@ -356,17 +365,16 @@ def find_imu(exe):
     return (m.group(1), m.group(3), m.group(2)) if m else None
 
 
-def detect(exe):
-    """Prints what is attached and returns the matching UCX_* test variables."""
+def detect(exe, ports=None):
+    """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search."""
     env = {}
     print("Serial ports:")
     for name, desc, role in list_ports(exe):
         print(f"  {name:<14} {role:<22} {desc}")
 
-    modules = module_ports(app_output(exe, "--list-modules", timeout=30))
-    print("NORA modules:")
-    for i, port in enumerate(modules[:2]):
-        env["UCX_PORT_" + "AB"[i]] = port
+    modules = ports or module_ports(app_output(exe, "--list-modules", timeout=30))
+    print("NORA modules" + (" (--ports):" if ports else ":"))
+    env.update(port_env(modules))
     with concurrent.futures.ThreadPoolExecutor() as pool:
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "device.info", timeout=30), modules))
     for port, info in zip(modules, infos, strict=True):
@@ -402,6 +410,11 @@ def detect(exe):
     return env
 
 
+def port_env(ports):
+    """UCX_PORT_A, UCX_PORT_B, ... in the given order."""
+    return {f"UCX_PORT_{chr(ord('A') + i)}": port for i, port in enumerate(ports[:26])}
+
+
 def wifi_summary():
     """Lines saying which Wi-Fi the hardware tests will join."""
     profiles = ROOT / "storage" / "ucxapp.wifi"
@@ -433,11 +446,13 @@ def pytest_python():
     return str(py)
 
 
-def run_tests(pytest_args, found):
+def run_tests(pytest_args, found, forced=None):
+    """found fills in what the environment leaves unset; forced (--ports) always wins."""
     py = pytest_python()
     env = dict(os.environ)
     for k, v in found.items():
         env.setdefault(k, v)
+    env.update(forced or {})
     return subprocess.call([py, "-m", "pytest", *(pytest_args or ["tests"])], cwd=ROOT, env=env)
 
 
@@ -821,7 +836,7 @@ def stm32_console_port(port):
 def stm32_transfer(args):
     import serial
 
-    port = stm32_console_port(args.port)
+    port = stm32_console_port(args.ports[0] if args.ports else None)
     path = Path(args.put or args.get)
     if args.put and not path.is_file():
         fail(f"{path} not found")
@@ -1209,6 +1224,8 @@ def run_script(exe, path, app_args, junit=None):
 
 def main(argv):
     args, extra, parsed_argv = parse(argv)
+    if args.ports and not (args.detect or args.test or args.put or args.get):
+        extra = [args.ports[0], *extra]
     if args.release:
         return subprocess.call([sys.executable, str(ROOT / "scripts" / "release.py"), *extra], cwd=ROOT)
     if args.update:
@@ -1241,13 +1258,14 @@ def main(argv):
         if stale(exe):
             host_build(["Debug" if args.debug else "Release"])
         if args.detect:
-            found = detect(exe)
+            found = detect(exe, args.ports)
             if not args.test:
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.
             for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT"):
                 found.setdefault(key, "")
-        return run_tests(extra, {**found, "UCX_APP_EXE": str(exe)})
+        forced = {"UCX_PORT_A": "", "UCX_PORT_B": "", **port_env(args.ports)} if args.ports else None
+        return run_tests(extra, {**found, "UCX_APP_EXE": str(exe)}, forced)
     return host(args, extra)
 
 

@@ -220,9 +220,9 @@ static bool needSub(void)
 
 static int cmdOn(ucxapp_t *app, int argc, char *argv[])
 {
-    /* Flags, 128-bit service solicitation for ANCS (little endian), short name. */
-    static const uint8_t kAdv[] = { 0x02, 0x01, 0x06,
-                                    0x11, 0x15, 0xD0, 0x00, 0x2D, 0x12, 0x1E, 0x4B, 0x0F, 0xA4,
+    /* 128-bit service solicitation for ANCS (little endian), short name; the module adds the flags itself and
+     * takes at most 28 bytes for a connectable advertiser. */
+    static const uint8_t kAdv[] = { 0x11, 0x15, 0xD0, 0x00, 0x2D, 0x12, 0x1E, 0x4B, 0x0F, 0xA4,
                                     0x99, 0x4E, 0xCE, 0xB5, 0x31, 0xF4, 0x05, 0x79,
                                     0x09, 0x09, 'u', 'c', 'x', ' ', 'A', 'N', 'C', 'S' };
 
@@ -231,8 +231,9 @@ static int cmdOn(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_bt_security_defaults(app);
-    if (uCxBluetoothSetLegacyAdvertiseDataAndType1(app->ucx, kAdv, sizeof(kAdv)) != 0) {
-        ucxapp_print("ERROR: cannot set the ANCS advertisement\n");
+    int32_t r = uCxBluetoothSetLegacyAdvertiseDataAndType1(app->ucx, kAdv, sizeof(kAdv));
+    if (r != 0) {
+        ucxapp_print("ERROR: cannot set the ANCS advertisement (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_gatt_ensure_advertising(app);

@@ -68,6 +68,82 @@ void ucxapp_ui_wifi_set(bool up)
     gWifiVersion++;
 }
 
+int ucxapp_ui_wifi(void)
+{
+    return gWifiUp;
+}
+
+static char gPromptText[96];
+static char gPromptFill[48];
+static char gPromptCancel[48];
+static uint32_t gPromptSeq;
+
+void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel)
+{
+    if (gRefs <= 0) {
+        return;
+    }
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(gPromptText, sizeof(gPromptText), "%s", text);
+    snprintf(gPromptFill, sizeof(gPromptFill), "%s", prefill);
+    snprintf(gPromptCancel, sizeof(gPromptCancel), "%s", cancel);
+    gPromptSeq++;
+    U_CX_MUTEX_UNLOCK(gLock);
+}
+
+uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t fillSize, char *cancel,
+                              size_t cancelSize)
+{
+    uint32_t seq;
+
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(text, textSize, "%s", gPromptText);
+    snprintf(prefill, fillSize, "%s", gPromptFill);
+    snprintf(cancel, cancelSize, "%s", gPromptCancel);
+    seq = gPromptSeq;
+    U_CX_MUTEX_UNLOCK(gLock);
+    return seq;
+}
+
+/* Filled by the worker between commands, so the UI thread never talks to the module. */
+static char gWifiText[96];
+static char gCellText[96];
+
+void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSize)
+{
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(wifi, wifiSize, "%s", gWifiText);
+    snprintf(cell, cellSize, "%s", gCellText);
+    U_CX_MUTEX_UNLOCK(gLock);
+}
+
+static void refreshDashCache(bool force)
+{
+    static uint32_t seenWifi = 0xFFFFFFFFu;
+    static uint32_t wifiMs, cellMs;
+    uint32_t now = ucxapp_platform_tick_ms();
+    char text[96];
+
+    if (gApp != NULL && gApp->ucx != NULL &&
+        (force || seenWifi != gWifiVersion || (gWifiUp > 0 && now - wifiMs > 30000u))) {
+        seenWifi = gWifiVersion;
+        wifiMs = now;
+        gWifiUp = ucxapp_wifi_dash(gApp->ucx, text, sizeof(text)) ? 1 : 0;
+        U_CX_MUTEX_LOCK(gLock);
+        snprintf(gWifiText, sizeof(gWifiText), "%s", text);
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
+    if (force || now - cellMs > 10000u) {
+        cellMs = now;
+        if (!ucxapp_cell_dash(text, sizeof(text))) {
+            text[0] = '\0';
+        }
+        U_CX_MUTEX_LOCK(gLock);
+        snprintf(gCellText, sizeof(gCellText), "%s", text);
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
+}
+
 static size_t appendHandles(char *out, size_t size, size_t n, const char *label, ucxapp_handle_kind_t kind)
 {
     int32_t ids[8];
@@ -175,6 +251,7 @@ static void workerLoop(void *arg)
     char line[MAX_JOB];
 
     (void)arg;
+    refreshDashCache(true);
     while (!gStop) {
         bool have = false;
 
@@ -187,6 +264,7 @@ static void workerLoop(void *arg)
         }
         U_CX_MUTEX_UNLOCK(gLock);
         if (!have) {
+            refreshDashCache(false);
             U_CX_PORT_SLEEP_MS(20);
             continue;
         }

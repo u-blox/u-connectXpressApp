@@ -300,6 +300,8 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "device.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
     { "device.reboot", "", "Reboot the module (clears GATT services and connections); use as the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
     { "device.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
+    { "at.reset", "", "Reboot the module (AT+CPWROFF), same as device.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
+    { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as device.factory; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
     { "device.info", "", "Show manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
     { "device.status", "", "Overview: module info, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
     { "device.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },

@@ -5,6 +5,7 @@
 #include "u_port.h"
 
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +48,18 @@ bool ucxappLogEventsEnabled(void)
 bool ucxappLogAtEnabled(void)
 {
     return gLogAt;
+}
+
+int ucxappLibPrintf(const char *format, ...)
+{
+    char text[512];
+    va_list args;
+
+    va_start(args, format);
+    int n = vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+    ucxapp_print("%s", text);
+    return n;
 }
 
 static int cmdLogAtOn(ucxapp_t *app, int argc, char *argv[])

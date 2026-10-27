@@ -1110,6 +1110,22 @@ static int openStreams(ucxapp_stream_t *out[MAX_STREAMS])
     return n;
 }
 
+const char *ucxapp_stream_open_port(const char *kind)
+{
+    static char port[32];
+
+    port[0] = '\0';
+    regLock();
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        if (gStreams[i] != NULL && gStreams[i]->cfg.kind != NULL && strcmp(gStreams[i]->cfg.kind, kind) == 0) {
+            snprintf(port, sizeof(port), "%s", gStreams[i]->port);
+            break;
+        }
+    }
+    regUnlock();
+    return port[0] != '\0' ? port : NULL;
+}
+
 static int cmdBridgeList(ucxapp_t *app, int argc, char *argv[])
 {
     ucxapp_stream_t *s[MAX_STREAMS];

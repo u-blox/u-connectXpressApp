@@ -2,6 +2,7 @@
 
 #include "ucxapp_adv.h"
 #include "ucxapp_store.h"
+#include "ucxapp_ui.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -697,6 +698,12 @@ void ucxapp_bt_user_confirmation(uCxHandle_t *ucx, const uBtLeAddress_t *addr, i
     } else {
         gConfirmPending = true;
         ucxapp_print("[BT] answer with bt.confirm yes|no\n");
+        {
+            char text[96];
+
+            snprintf(text, sizeof(text), "PAIRING REQUEST, code %06d: Enter accepts, Esc rejects", (int)value);
+            ucxapp_ui_prompt(text, "bt.confirm yes", "bt.confirm no");
+        }
     }
 }
 
@@ -720,6 +727,8 @@ void ucxapp_bt_passkey_request(const uBtLeAddress_t *addr)
     ucxapp_print("[BT] passkey requested for ");
     printAddr(addr);
     ucxapp_print("; answer with bt.passkey <digits> or bt.passkey deny\n");
+    ucxapp_ui_prompt("PASSKEY REQUEST: type the 6 digits shown on the remote, Enter sends, Esc denies",
+                     "bt.passkey ", "bt.passkey deny");
 }
 
 /* Just Works: no I/O, unauthenticated bonding, pairing on. Applied once per run before the first server use. */

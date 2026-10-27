@@ -57,6 +57,8 @@ int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *
 void ucxapp_stream_bridge_stop(ucxapp_stream_t *s);
 void ucxapp_stream_bridge_status(ucxapp_stream_t *s);   /* prints one line */
 bool ucxapp_stream_bridge_active(const ucxapp_stream_t *s);
+/* Port of the open stream of this kind ("gnss", "imu", "cell"), or NULL. */
+const char *ucxapp_stream_open_port(const char *kind);
 
 /* Socket URCs for the TCP bridge (queue only); called from ucxapp_urc.c. */
 void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock);

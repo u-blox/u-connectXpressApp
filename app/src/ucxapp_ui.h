@@ -6,7 +6,7 @@
 
 #include "ucxapp_cmd.h"
 
-#define UCXAPP_UI_MAX_GROUPS     32
+#define UCXAPP_UI_MAX_GROUPS     48
 #define UCXAPP_UI_GROUP_LEN      12
 #define UCXAPP_UI_MAX_FIELDS     6
 #define UCXAPP_UI_MAX_GROUP_CMDS 64
@@ -27,6 +27,14 @@ void ucxapp_ui_event(const char *text);
 /* Connection state line ("Wi-Fi up | BLE 0* 1 | Sockets -") for a status bar; the returned version
  * changes whenever Wi-Fi, a BLE connection or a socket comes or goes. */
 uint32_t ucxapp_ui_state(char *out, size_t size);
+int ucxapp_ui_wifi(void);   /* 1 up, 0 down, -1 unknown */
+/* A module request that needs an answer (URC context safe): the text UI pre-fills the input with prefill and
+   sends cancel on Esc. */
+void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel);
+uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t fillSize, char *cancel,
+                              size_t cancelSize);
+/* Wi-Fi ("ssid  rssi  ch\nip") and cellular status cached by the command worker; empty when unknown. */
+void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSize);
 void ucxapp_ui_wifi_set(bool up);   /* URC context safe */
 
 /* Streams are read with a private cursor. Peek clamps the cursor if the reader fell behind and

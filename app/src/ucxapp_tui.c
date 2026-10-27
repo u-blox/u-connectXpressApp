@@ -10,6 +10,7 @@
 #include "ucxapp_platform.h"
 #include "ucxapp_logcfg.h"
 #include "ucxapp_ui.h"
+#include "ucxapp_stream.h"
 #ifdef APP_VERSION_MAJOR
 #include "version.h"
 #endif
@@ -277,23 +278,152 @@ static void outTitleBorder(const char *left, const char *title, int width)
 
 /* ---- state -------------------------------------------------------------------- */
 
+enum { E_HEAD, E_GROUP, E_SUB, E_CMD, E_QUIT };
+
+#define SUB_LEN      32
+#define SUBMENU_MIN  15   /* groups with more commands than this get sub-menus */
+#define MAX_ENTRIES  (UCXAPP_UI_MAX_GROUPS + UCXAPP_UI_MAX_GROUP_CMDS + 4)
+
 typedef struct {
-    bool isGroup;
-    bool isQuit;
-    int gi;
-    int ci;
+    uint8_t kind;
+    int8_t gi;
+    const ucxapp_cmd_t *cmd;
+    char sub[SUB_LEN];        /* E_SUB, and E_CMD inside a sub-menu: "gatt.client" */
+    const char *title;        /* E_HEAD */
 } entry_t;
 
 static lineBuf_t gLog, gEvents;
 static char gGroups[UCXAPP_UI_MAX_GROUPS][UCXAPP_UI_GROUP_LEN];
 static int gGroupCount;
 static int gExpanded = -1;
-static const ucxapp_cmd_t *gGrpCmds[UCXAPP_UI_MAX_GROUP_CMDS];
-static int gGrpCmdCount;
-static int gSel, gTop;
+static char gOpenSub[SUB_LEN];
+static entry_t gEntries[MAX_ENTRIES];
+static int gEntryCount;
+static int gSel, gTop;   /* indexes into gEntries; gTop is the first row shown */
 static bool gListFocus;
 static int gWCmd = 18, gWLog = 34, gWEvt = 24;
 static unsigned gLogScroll;
+static unsigned gEvScroll;
+
+/* A module request waiting for an answer: highlighted hint, input pre-filled, Esc sends gPromptCancel. */
+static char gPrompt[96];
+static char gPromptCancel[48];
+static uint32_t gPromptSeen;
+
+/* Pinned status card at the top of the Events pane; cached state only, never AT calls from this thread. */
+#define DASH_ROWS 12
+static char gDash[DASH_ROWS][LINE_LEN];
+static bool gDashOn[DASH_ROWS];
+static int gDashCount;
+
+static void dashRow(int *n, bool on, const char *name, const char *text, bool *changed)
+{
+    char line[LINE_LEN];
+
+    if (*n >= DASH_ROWS) {
+        return;
+    }
+    snprintf(line, sizeof(line), "%s %-4s %s", name[0] ? (on ? "\xE2\x97\x8F" : "\xE2\x97\x8B") : " ", name, text);
+    if (strcmp(line, gDash[*n]) != 0 || gDashOn[*n] != on) {
+        snprintf(gDash[*n], LINE_LEN, "%s", line);
+        gDashOn[*n] = on;
+        *changed = true;
+    }
+    (*n)++;
+}
+
+/* One area: rows split at '\n', and at double spaces when a part is wider than the pane. */
+static void dashArea(int *n, bool on, const char *name, const char *text, bool *changed)
+{
+    int avail = W_EVT - 7 > 10 ? W_EVT - 7 : 10;
+    const char *p = text;
+    bool first = true;
+
+    do {
+        const char *end = strchr(p, '\n');
+        int len = end != NULL ? (int)(end - p) : (int)strlen(p);
+        char part[LINE_LEN];
+
+        if (len > avail) {
+            for (int i = avail; i > 0; i--) {
+                if (p[i] == ' ' && p[i - 1] == ' ') {
+                    len = i - 1;
+                    end = p + i;
+                    break;
+                }
+            }
+        }
+        snprintf(part, sizeof(part), "%.*s", len, p);
+        dashRow(n, on, first ? name : "", part, changed);
+        first = false;
+        p = end != NULL ? end + 1 : p + len;
+        while (*p == ' ') {
+            p++;
+        }
+    } while (*p != '\0');
+}
+
+static void dashHandles(char *out, size_t size, ucxapp_handle_kind_t kind)
+{
+    int32_t ids[8];
+    int count = ucxapp_handle_list(kind, ids, 8);
+    int32_t cur = ucxapp_handle_current(kind);
+    size_t n = 0;
+
+    out[0] = '\0';
+    for (int i = 0; i < count && n < size; i++) {
+        n += (size_t)snprintf(out + n, size - n, "%s%d%s", i > 0 ? " " : "", (int)ids[i], ids[i] == cur ? "*" : "");
+    }
+}
+
+static bool refreshDash(void)
+{
+    char text[LINE_LEN];
+    char wifiText[96];
+    char cellText[96];
+    char ids[48];
+    char extra[64];
+    bool changed = false;
+    int n = 0;
+    const char *port = ucxapp_device_port();
+    bool mod = port != NULL && port[0] != '\0';
+    int wifi = ucxapp_ui_wifi();
+
+    ucxapp_ui_dash_text(wifiText, sizeof(wifiText), cellText, sizeof(cellText));
+    dashArea(&n, mod, "MOD", mod ? port : "not connected", &changed);
+
+    dashHandles(ids, sizeof(ids), UCXAPP_HANDLE_SOCK);
+    snprintf(text, sizeof(text), "%s%s%s", wifiText[0] ? wifiText : wifi < 0 ? "?" : wifi ? "up" : "not connected",
+             ids[0] ? "\nsockets " : "", ids);
+    dashArea(&n, wifi > 0, "WIFI", text, &changed);
+
+    dashHandles(ids, sizeof(ids), UCXAPP_HANDLE_CONN);
+    (void)ucxapp_gatt_summary(extra, sizeof(extra));
+    snprintf(text, sizeof(text), "%s%s%s", ids[0] ? "conn " : "no links", ids, extra[0] ? "\n" : "");
+    snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s", extra);
+    dashArea(&n, ids[0] != '\0', "BLE", text, &changed);
+
+    port = ucxapp_stream_open_port("gnss");
+    bool on = ucxapp_gnss_dash(extra, sizeof(extra));
+    snprintf(text, sizeof(text), "%s%s%s", on ? extra : "not open", port != NULL ? "\n" : "", port != NULL ? port : "");
+    dashArea(&n, on, "GNSS", text, &changed);
+
+    port = ucxapp_stream_open_port("imu");
+    on = ucxapp_imu_dash(extra, sizeof(extra));
+    snprintf(text, sizeof(text), "%s%s%s", on ? extra : "not open", port != NULL ? "\n" : "", port != NULL ? port : "");
+    dashArea(&n, on, "IMU", text, &changed);
+
+    port = ucxapp_stream_open_port("cell");
+    snprintf(text, sizeof(text), "%s%s%s", cellText[0] ? cellText : "not open", port != NULL ? "\n" : "",
+             port != NULL ? port : "");
+    dashArea(&n, cellText[0] != '\0', "CELL", text, &changed);
+
+    if (n != gDashCount) {
+        gDashCount = n;
+        changed = true;
+    }
+    return changed;
+}
 static bool gBurstHold;
 #define BURST_LINES 30u
 
@@ -302,50 +432,102 @@ static int gInLen, gInPos;
 static char gHist[HIST_LEN][IN_LEN];
 static int gHistCount, gHistPos;
 
-static int entryCount(void)
+static void addEntry(uint8_t kind, int gi, const ucxapp_cmd_t *cmd, const char *sub, const char *title)
 {
-    return gGroupCount + (gExpanded >= 0 ? gGrpCmdCount : 0) + 1;
+    if (gEntryCount < MAX_ENTRIES) {
+        entry_t *e = &gEntries[gEntryCount++];
+
+        e->kind = kind;
+        e->gi = (int8_t)gi;
+        e->cmd = cmd;
+        snprintf(e->sub, sizeof(e->sub), "%s", sub != NULL ? sub : "");
+        e->title = title;
+    }
 }
 
-static entry_t entryAt(int i)
+/* "gatt.client" for "gatt.client.hrs"; empty when the name has only one dot. */
+static void subOf(const char *name, char out[SUB_LEN])
 {
-    entry_t e = { true, false, i, -1 };
+    const char *d1 = strchr(name, '.');
+    const char *d2 = d1 != NULL ? strchr(d1 + 1, '.') : NULL;
 
-    if (i == entryCount() - 1) {
-        e.isGroup = false;
-        e.isQuit = true;
-        e.gi = -1;
-        return e;
+    out[0] = '\0';
+    if (d2 != NULL && d2 - name < SUB_LEN) {
+        snprintf(out, SUB_LEN, "%.*s", (int)(d2 - name), name);
     }
-    if (gExpanded >= 0) {
-        if (i > gExpanded && i <= gExpanded + gGrpCmdCount) {
-            e.isGroup = false;
-            e.gi = gExpanded;
-            e.ci = i - gExpanded - 1;
-        } else if (i > gExpanded + gGrpCmdCount) {
-            e.gi = i - gGrpCmdCount;
-        }
-    }
-    return e;
 }
 
 static int gHostStart;   /* index of the first host group; groups are sorted module first */
 
-static int hostHeadingRow(void)
+static void addGroupCommands(int gi)
 {
-    if (gHostStart >= gGroupCount) {
-        return -1;
+    static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
+    int n = ucxapp_ui_group_cmds(gGroups[gi], cmds, UCXAPP_UI_MAX_GROUP_CMDS);
+    char sub[SUB_LEN], other[SUB_LEN];
+
+    /* Sub-menus first (in command order, e.g. client then server), then the loose commands. */
+    for (int pass = 0; pass < 2; pass++)
+    for (int i = 0; i < n; i++) {
+        int shared = 0, firstAt = i;
+
+        sub[0] = '\0';
+        if (n > SUBMENU_MIN) {
+            subOf(cmds[i]->name, sub);
+        }
+        for (int j = 0; j < n && sub[0] != '\0'; j++) {
+            subOf(cmds[j]->name, other);
+            if (strcmp(sub, other) == 0) {
+                firstAt = shared++ == 0 ? j : firstAt;
+            }
+        }
+        if (shared < 3) {
+            if (pass == 1) {
+                addEntry(E_CMD, gi, cmds[i], NULL, NULL);
+            }
+            continue;
+        }
+        if (pass == 1 || firstAt != i) {
+            continue;   /* the sub-menu was added with its first command */
+        }
+        addEntry(E_SUB, gi, NULL, sub, NULL);
+        if (strcmp(gOpenSub, sub) != 0) {
+            continue;
+        }
+        for (int j = i; j < n; j++) {
+            subOf(cmds[j]->name, other);
+            if (strcmp(sub, other) == 0) {
+                addEntry(E_CMD, gi, cmds[j], sub, NULL);
+            }
+        }
     }
-    return 1 + gHostStart + (gExpanded >= 0 && gExpanded < gHostStart ? gGrpCmdCount : 0);
 }
 
-/* Display row of an entry; row 0 and hostHeadingRow() are the section headings. */
-static int rowOfEntry(int idx)
+/* Rebuilds the visible list and keeps the selection on the same item. */
+static void rebuildEntries(void)
 {
-    int host = hostHeadingRow();
-    int row = idx + 1;
+    entry_t keep = gSel >= 0 && gSel < gEntryCount ? gEntries[gSel] : (entry_t){ E_QUIT, -1, NULL, "", NULL };
 
-    return host >= 0 && row >= host ? row + 1 : row;
+    gEntryCount = 0;
+    addEntry(E_HEAD, -1, NULL, NULL, " Module ");
+    for (int gi = 0; gi < gGroupCount; gi++) {
+        if (gi == gHostStart) {
+            addEntry(E_HEAD, -1, NULL, NULL, " Host ");
+        }
+        addEntry(E_GROUP, gi, NULL, NULL, NULL);
+        if (gi == gExpanded) {
+            addGroupCommands(gi);
+        }
+    }
+    addEntry(E_QUIT, -1, NULL, NULL, NULL);
+    gSel = 1;
+    for (int i = 0; i < gEntryCount; i++) {
+        const entry_t *e = &gEntries[i];
+
+        if (e->kind == keep.kind && e->gi == keep.gi && e->cmd == keep.cmd && strcmp(e->sub, keep.sub) == 0) {
+            gSel = i;
+            break;
+        }
+    }
 }
 
 static void sortGroupsBySide(void)
@@ -366,17 +548,49 @@ static void sortGroupsBySide(void)
     memcpy(gGroups, tmp, sizeof(tmp[0]) * (size_t)gGroupCount);
 }
 
-static void expandGroup(int gi)
+static void toggleGroup(int gi)
 {
-    if (gExpanded == gi) {
-        gExpanded = -1;
-        gGrpCmdCount = 0;
-        gSel = gi;
-        return;
+    gExpanded = gExpanded == gi ? -1 : gi;
+    gOpenSub[0] = '\0';
+    rebuildEntries();
+}
+
+static void toggleSub(const char *sub)
+{
+    if (strcmp(gOpenSub, sub) == 0) {
+        gOpenSub[0] = '\0';
+    } else {
+        snprintf(gOpenSub, sizeof(gOpenSub), "%s", sub);
     }
-    gExpanded = gi;
-    gGrpCmdCount = ucxapp_ui_group_cmds(gGroups[gi], gGrpCmds, UCXAPP_UI_MAX_GROUP_CMDS);
-    gSel = gi;
+    rebuildEntries();
+}
+
+/* Index of the entry that opens e (its sub-menu or group), or -1. */
+static int parentOf(int idx)
+{
+    const entry_t *e = &gEntries[idx];
+
+    for (int i = idx - 1; i >= 0; i--) {
+        const entry_t *p = &gEntries[i];
+
+        if (e->kind == E_CMD && e->sub[0] != '\0' ? (p->kind == E_SUB && strcmp(p->sub, e->sub) == 0)
+                                                    : (p->kind == E_GROUP && p->gi == e->gi)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void moveSel(int dir)
+{
+    int i = gSel + dir;
+
+    while (i >= 0 && i < gEntryCount && gEntries[i].kind == E_HEAD) {
+        i += dir;
+    }
+    if (i >= 0 && i < gEntryCount) {
+        gSel = i;
+    }
 }
 
 static void setInput(const char *text)
@@ -404,6 +618,8 @@ static void inDelete(int at)
 
 /* ---- tab completion ------------------------------------------------------------ */
 
+static void logLocal(const char *text);
+
 static void tabComplete(void)
 {
     char common[64];
@@ -416,6 +632,23 @@ static void tabComplete(void)
     if (count == 0) {
         return;
     }
+    if (count > 1 && (int)strlen(common) == gInLen) {
+        char list[LINE_LEN];
+        size_t n = (size_t)snprintf(list, sizeof(list), "%d matches:", count);
+
+        for (int gi = 0; gi < gGroupCount && n < sizeof(list); gi++) {
+            static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
+            int c = ucxapp_ui_group_cmds(gGroups[gi], cmds, UCXAPP_UI_MAX_GROUP_CMDS);
+
+            for (int i = 0; i < c && n < sizeof(list); i++) {
+                if (strncmp(cmds[i]->name, gIn, (size_t)gInLen) == 0) {
+                    n += (size_t)snprintf(list + n, sizeof(list) - n, " %s", cmds[i]->name);
+                }
+            }
+        }
+        logLocal(list);
+        return;
+    }
     setInput(common);
     if (count == 1) {
         inInsert(' ');
@@ -426,53 +659,54 @@ static void tabComplete(void)
 
 static void drawCommandCell(int row, int bodyRows, int width)
 {
-    int disp = gTop + row;
-    int host = hostHeadingRow();
-    int idx = disp - 1 - (host >= 0 && disp > host ? 1 : 0);
+    int idx = gTop + row;
 
-    if (row < bodyRows && (disp == 0 || disp == host)) {
-        const char *title = disp == 0 ? " Module " : " Host ";
-
-        out("\033[90m" G_H G_H "%s", title);
-        outRepeat(G_H, width - 2 - (int)strlen(title));
-        out("\033[0m");
-        return;
-    }
-    if (idx >= entryCount() || row >= bodyRows) {
+    if (idx >= gEntryCount || row >= bodyRows) {
         outCell("", width, 0, false);
         return;
     }
-    entry_t e = entryAt(idx);
+    const entry_t *e = &gEntries[idx];
+    bool sel = idx == gSel && gListFocus;
     char text[64];
 
-    if (e.isQuit) {
-        outCell("  exit", width, 97, idx == gSel && gListFocus);
+    switch (e->kind) {
+    case E_HEAD:
+        out("\033[90m" G_H G_H "%s", e->title);
+        outRepeat(G_H, width - 2 - (int)strlen(e->title));
+        out("\033[0m");
         return;
-    }
-    if (e.isGroup) {
+    case E_QUIT:
+        outCell("  exit", width, 97, sel);
+        return;
+    case E_GROUP: {
         const ucxapp_cmd_t *only[2];
-        bool single = ucxapp_ui_group_cmds(gGroups[e.gi], only, 2) == 1;
+        bool single = ucxapp_ui_group_cmds(gGroups[e->gi], only, 2) == 1;
 
-        snprintf(text, sizeof(text), "%s %s", single ? " " : gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
-                 gGroups[e.gi]);
-        out(idx == gSel && gListFocus ? "\033[7;1m" : "\033[1m");
+        snprintf(text, sizeof(text), "%s %s", single ? " " : e->gi == gExpanded ? G_CLOSE : G_OPEN, gGroups[e->gi]);
+        out(sel ? "\033[7;1m" : "\033[1m");
         outCell(text, width, 0, false);
         out("\033[0m");
-    } else {
-        snprintf(text, sizeof(text), "  %s", gGrpCmds[e.ci]->name);
-        outCell(text, width, 0, idx == gSel && gListFocus);
+        return;
+    }
+    case E_SUB:
+        snprintf(text, sizeof(text), "  %s %s", strcmp(gOpenSub, e->sub) == 0 ? G_CLOSE : G_OPEN,
+                 strchr(e->sub, '.') + 1);
+        out(sel ? "\033[7;1m" : "\033[1m");
+        outCell(text, width, 0, false);
+        out("\033[0m");
+        return;
+    default:
+        snprintf(text, sizeof(text), "%s%s", e->sub[0] != '\0' ? "      " : "  ",
+                 e->sub[0] != '\0' ? e->cmd->name + strlen(e->sub) + 1 : e->cmd->name);
+        outCell(text, width, 0, sel);
+        return;
     }
 }
 
 static const ucxapp_cmd_t *hintCommand(void)
 {
     if (gListFocus) {
-        if (gSel >= 0 && gSel < entryCount()) {
-            entry_t e = entryAt(gSel);
-
-            return e.isGroup ? NULL : gGrpCmds[e.ci];
-        }
-        return NULL;
+        return gSel >= 0 && gSel < gEntryCount && gEntries[gSel].kind == E_CMD ? gEntries[gSel].cmd : NULL;
     }
     char name[48];
     int n = 0;
@@ -515,20 +749,26 @@ static void outHint2(const char *text, int width, int body)
 static void drawFrame(int rows, bool busy)
 {
     int body = rows - TUI_FOOTER;
+    int dashRows = body >= 2 * (gDashCount + 1) ? gDashCount + 1 : 0;
+    int evBody = body - dashRows;
     unsigned logLines = lbCount(&gLog), evLines = lbCount(&gEvents);
     unsigned logFirst = logLines > (unsigned)body ? logLines - (unsigned)body : 0u;
-    unsigned evFirst = evLines > (unsigned)body ? evLines - (unsigned)body : 0u;
+    unsigned evFirst = evLines > (unsigned)evBody ? evLines - (unsigned)evBody : 0u;
 
     if (gLogScroll > logFirst) {
         gLogScroll = logFirst;
     }
     logFirst -= gLogScroll;
+    if (gEvScroll > evFirst) {
+        gEvScroll = evFirst;
+    }
+    evFirst -= gEvScroll;
 
     gFrameLen = 0;
     out("\033[?25l\033[1;1H");
     outTitleBorder(G_TL, "Commands", W_CMD);
-    outTitleBorder(G_TJ, gLogScroll > 0 ? "Log (scrolled)" : "Log", W_LOG);
-    outTitleBorder(G_TJ, "Events", W_EVT);
+    outTitleBorder(G_TJ, gLogScroll > 0 ? "Log (scrolled, PgDn)" : "Log", W_LOG);
+    outTitleBorder(G_TJ, gEvScroll > 0 ? "Status / Events (scrolled)" : "Status / Events", W_EVT);
     out(G_TR);
 
     for (int r = 0; r < body; r++) {
@@ -542,9 +782,16 @@ static void drawFrame(int rows, bool busy)
             outCell(t, W_LOG, col, false);
         }
         out(G_V);
-        {
+        if (r < dashRows - 1) {
+            outCell(gDash[r], W_EVT, gDashOn[r] ? 92 : 90, false);
+        } else if (r == dashRows - 1) {
+            out("\033[90m");
+            outRepeat(G_H, W_EVT);
+            out("\033[0m");
+        } else {
             int col = 0;
-            const char *t = r + evFirst < evLines ? lbLine(&gEvents, evFirst + (unsigned)r, &col) : "";
+            int er = r - dashRows;
+            const char *t = er + evFirst < evLines ? lbLine(&gEvents, evFirst + (unsigned)er, &col) : "";
 
             outCell(t, W_EVT, col, false);
         }
@@ -567,17 +814,22 @@ static void drawFrame(int rows, bool busy)
         char text[384];
         const ucxapp_cmd_t *cmd = hintCommand();
 
-        if (ucxapp_at_mode_active() && !busy) {
+        if (gPrompt[0] != '\0') {
+            outCell(gPrompt, W_CMD + W_LOG + W_EVT + 4, 93, true);
+        } else if (ucxapp_at_mode_active() && !busy) {
             outCell("AT terminal: type AT commands (AT prefix optional), Up/Down history, Esc or 'back' returns to commands",
                     W_CMD + W_LOG + W_EVT + 4, 96, false);
         } else if (cmd != NULL) {
             snprintf(text, sizeof(text), "[%s] %s%s%s  -  %s", ucxapp_ui_cmd_runs_on(cmd), cmd->name,
                      cmd->usage[0] != '\0' ? " " : "", cmd->usage, cmd->help);
             outHint2(text, W_CMD + W_LOG + W_EVT + 4, body);
-        } else if (gListFocus && gSel >= 0 && gSel < entryCount() && entryAt(gSel).isGroup) {
-            const char *g = gGroups[entryAt(gSel).gi];
+        } else if (gListFocus && gSel >= 0 && gSel < gEntryCount && gEntries[gSel].kind == E_GROUP) {
+            const char *g = gGroups[gEntries[gSel].gi];
 
             snprintf(text, sizeof(text), "[%s] %s  -  %s", ucxapp_ui_runs_on(g), g, ucxapp_ui_group_help(g));
+            outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
+        } else if (gListFocus && gSel >= 0 && gSel < gEntryCount && gEntries[gSel].kind == E_SUB) {
+            snprintf(text, sizeof(text), "%s.*  (Enter opens, Left closes)", gEntries[gSel].sub);
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
         } else if (busy) {
             outCell("running...", W_CMD + W_LOG + W_EVT + 4, 33, false);
@@ -585,7 +837,7 @@ static void drawFrame(int rows, bool busy)
             char state[200];
 
             ucxapp_ui_state(state, sizeof(state));
-            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, Ctrl-C or F10 quit)", state);
+            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, PgUp/PgDn log, Ctrl+PgUp/PgDn events, F10 quit)", state);
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 90, false);
         }
     }
@@ -674,38 +926,37 @@ static void historyMove(int dir)
 /* Returns true to quit. */
 static bool activateEntry(void)
 {
-    entry_t e;
-
-    if (gSel < 0 || gSel >= entryCount()) {
-        return false;
-    }
-    e = entryAt(gSel);
-    if (e.isQuit) {
-        return true;
-    }
-    if (e.isGroup) {
-        const ucxapp_cmd_t *only[2];
-
-        if (ucxapp_ui_group_cmds(gGroups[e.gi], only, 2) == 1) {
-            char text[64];
-
-            snprintf(text, sizeof(text), "%s ", only[0]->name);
-            setInput(text);
-            if (only[0]->usage[0] == '\0' && !(only[0]->flags & UCXAPP_CMD_DANGER)) {
-                submitLine();
-            } else {
-                gListFocus = false;
-            }
-            return false;
-        }
-        expandGroup(e.gi);
-        return false;
-    }
+    const ucxapp_cmd_t *cmd;
     char text[64];
 
-    snprintf(text, sizeof(text), "%s ", gGrpCmds[e.ci]->name);
+    if (gSel < 0 || gSel >= gEntryCount) {
+        return false;
+    }
+    const entry_t *e = &gEntries[gSel];
+
+    if (e->kind == E_QUIT) {
+        return true;
+    }
+    if (e->kind == E_SUB) {
+        toggleSub(e->sub);
+        return false;
+    }
+    if (e->kind == E_GROUP) {
+        const ucxapp_cmd_t *only[2];
+
+        if (ucxapp_ui_group_cmds(gGroups[e->gi], only, 2) != 1) {
+            toggleGroup(e->gi);
+            return false;
+        }
+        cmd = only[0];
+    } else if (e->kind == E_CMD) {
+        cmd = e->cmd;
+    } else {
+        return false;
+    }
+    snprintf(text, sizeof(text), "%s ", cmd->name);
     setInput(text);
-    if (gGrpCmds[e.ci]->usage[0] == '\0' && !(gGrpCmds[e.ci]->flags & UCXAPP_CMD_DANGER)) {
+    if (cmd->usage[0] == '\0' && !(cmd->flags & UCXAPP_CMD_DANGER)) {
         submitLine();   /* no arguments at all: run it right away and stay in the list */
         return false;
     }
@@ -730,24 +981,45 @@ static bool handleKey(int key, int rows)
         gLogScroll = gLogScroll > (unsigned)page ? gLogScroll - (unsigned)page : 0u;
         return false;
     }
+    if (key == UCXAPP_KEY_CPGUP) {
+        gEvScroll += (unsigned)page;
+        return false;
+    }
+    if (key == UCXAPP_KEY_CPGDN) {
+        gEvScroll = gEvScroll > (unsigned)page ? gEvScroll - (unsigned)page : 0u;
+        return false;
+    }
+    if (key == UCXAPP_KEY_WHEELUP || key == UCXAPP_KEY_WHEELDN) {
+        if (key == UCXAPP_KEY_WHEELUP) {
+            gBurstHold = false;
+            gLogScroll += 3u;
+        } else {
+            gLogScroll = gLogScroll > 3u ? gLogScroll - 3u : 0u;
+        }
+        return false;
+    }
     if (gListFocus) {
-        int count = entryCount();
-
         switch (key) {
-        case UCXAPP_KEY_UP:   if (gSel > 0) { gSel--; } return false;
-        case UCXAPP_KEY_DOWN: if (gSel + 1 < count) { gSel++; } return false;
-        case UCXAPP_KEY_HOME: gSel = 0; return false;
-        case UCXAPP_KEY_END:  gSel = count - 1; return false;
+        case UCXAPP_KEY_UP:   moveSel(-1); return false;
+        case UCXAPP_KEY_DOWN: moveSel(1); return false;
+        case UCXAPP_KEY_HOME: gSel = 0; moveSel(1); return false;
+        case UCXAPP_KEY_END:  gSel = gEntryCount - 1; return false;
         case UCXAPP_KEY_RIGHT:
         case 13:
         case 10:              return activateEntry();
         case UCXAPP_KEY_LEFT: {
-            entry_t e = entryAt(gSel);
+            const entry_t *e = &gEntries[gSel];
 
-            if (!e.isGroup) {
-                gSel = e.gi;
-            } else if (gExpanded == e.gi) {
-                expandGroup(e.gi);
+            if (e->kind == E_SUB && strcmp(gOpenSub, e->sub) == 0) {
+                toggleSub(e->sub);
+            } else if (e->kind == E_GROUP && gExpanded == e->gi) {
+                toggleGroup(e->gi);
+            } else {
+                int p = parentOf(gSel);
+
+                if (p >= 0) {
+                    gSel = p;
+                }
             }
             return false;
         }
@@ -765,10 +1037,18 @@ static bool handleKey(int key, int rows)
     case 10: {
         bool quitNow = submitLine();
 
+        gPrompt[0] = '\0';
         gListFocus = !ucxapp_at_mode_active();
         return quitNow;
     }
     case 27:
+        if (gPrompt[0] != '\0') {
+            gPrompt[0] = '\0';
+            setInput(gPromptCancel);
+            (void)submitLine();
+            gListFocus = true;
+            return false;
+        }
         if (ucxapp_at_mode_active()) {
             setInput("back");
             (void)submitLine();
@@ -896,10 +1176,21 @@ int ucxapp_tui_run(ucxapp_t *app)
     gGroupCount = ucxapp_ui_groups(gGroups, UCXAPP_UI_MAX_GROUPS);
     sortGroupsBySide();
     gExpanded = -1;
-    gGrpCmdCount = 0;
+    gOpenSub[0] = '\0';
     gSel = gTop = 0;
+    rebuildEntries();
+    moveSel(1);
     gListFocus = true;
     gLogScroll = 0;
+    gEvScroll = 0;
+    gPrompt[0] = '\0';
+    {
+        char t[8], f[8], c[8];
+
+        gPromptSeen = ucxapp_ui_prompt_get(t, sizeof(t), f, sizeof(f), c, sizeof(c));
+    }
+    uint32_t dashMs = ucxapp_platform_tick_ms();
+    (void)refreshDash();
     gInLen = gInPos = 0;
     gIn[0] = '\0';
     gHistCount = gHistPos = 0;
@@ -922,6 +1213,26 @@ int ucxapp_tui_run(ucxapp_t *app)
         }
         if (pumpStreams(&logCur, &evCur, &doneSeen)) {
             dirty = true;
+        }
+        {
+            char text[sizeof(gPrompt)], fill[48];
+            uint32_t seq = ucxapp_ui_prompt_get(text, sizeof(text), fill, sizeof(fill), gPromptCancel,
+                                                sizeof(gPromptCancel));
+
+            if (seq != gPromptSeen) {
+                gPromptSeen = seq;
+                snprintf(gPrompt, sizeof(gPrompt), "%s", text);
+                setInput(fill);
+                gListFocus = false;
+                fputs("\a", stdout);
+                dirty = true;
+            }
+        }
+        if (ucxapp_platform_tick_ms() - dashMs >= 1000u) {
+            dashMs = ucxapp_platform_tick_ms();
+            if (refreshDash()) {
+                dirty = true;
+            }
         }
         if (ucxapp_at_mode_active() && gListFocus && !ucxapp_ui_busy()) {
             gListFocus = false;   /* the AT terminal lives on the input line */
@@ -975,8 +1286,8 @@ int ucxapp_tui_run(ucxapp_t *app)
         {
             int body = rows - TUI_FOOTER;
 
-            int r = rowOfEntry(gSel);
-            int top = (r - 1 == 0 || r - 1 == hostHeadingRow()) ? r - 1 : r;   /* keep a heading above its first group */
+            int r = gSel;
+            int top = (r > 0 && gEntries[r - 1].kind == E_HEAD) ? r - 1 : r;   /* keep a heading above its first group */
 
             if (top < gTop) {
                 gTop = top;

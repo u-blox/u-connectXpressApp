@@ -14,4 +14,7 @@ void ucxappLogWarnLock(bool locked);
 bool ucxappLogEventsEnabled(void);
 #define U_CX_LOG_WARNING ucxappLogWarnEnabled()
 
+/* Host builds route the library's printf (AT trace, warnings) through ucxapp_print, so the text UI log shows it. */
+int ucxappLibPrintf(const char *format, ...);
+
 #endif

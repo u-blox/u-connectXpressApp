@@ -152,6 +152,7 @@ if(NOT WIN32)
 
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
+    U_CX_PORT_PRINTF=ucxappLibPrintf
     APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
     APP_VERSION_MINOR=${APP_VERSION_MINOR}
     APP_VERSION_PATCH=${APP_VERSION_PATCH}
@@ -252,6 +253,7 @@ target_compile_definitions(ucxapp PRIVATE
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
   U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
+  U_CX_PORT_PRINTF=ucxappLibPrintf
   _CRT_SECURE_NO_WARNINGS
   U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   APP_VERSION_MAJOR=${APP_VERSION_MAJOR}

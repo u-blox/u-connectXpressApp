@@ -45,7 +45,8 @@ int ucxapp_platform_get_key(void);
 enum {
     UCXAPP_KEY_UP = 0x100, UCXAPP_KEY_DOWN, UCXAPP_KEY_LEFT, UCXAPP_KEY_RIGHT,
     UCXAPP_KEY_HOME, UCXAPP_KEY_END, UCXAPP_KEY_PGUP, UCXAPP_KEY_PGDN,
-    UCXAPP_KEY_DEL, UCXAPP_KEY_F1, UCXAPP_KEY_F10
+    UCXAPP_KEY_DEL, UCXAPP_KEY_F1, UCXAPP_KEY_F10,
+    UCXAPP_KEY_CPGUP, UCXAPP_KEY_CPGDN, UCXAPP_KEY_WHEELUP, UCXAPP_KEY_WHEELDN
 };
 
 /** Raw mode and VT output on; call leave to restore. Returns false if not a terminal. */

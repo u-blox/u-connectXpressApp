@@ -143,7 +143,8 @@ bool ucxapp_platform_terminal_enter(void)
     if (!SetConsoleMode(out, gSavedOutMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT)) {
         return false;
     }
-    SetConsoleMode(in, gSavedInMode & ~(DWORD)ENABLE_PROCESSED_INPUT);
+    SetConsoleMode(in, ((gSavedInMode & ~(DWORD)(ENABLE_PROCESSED_INPUT | ENABLE_QUICK_EDIT_MODE)) |
+                        ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS));
     gTermActive = true;
     return true;
 }
@@ -171,27 +172,44 @@ void ucxapp_platform_terminal_size(int *cols, int *rows)
 
 int ucxapp_platform_read_key(void)
 {
-    if (!_kbhit()) {
-        return -1;
-    }
-    int c = _getch();
-    if (c == 0 || c == 0xE0) {
-        switch (_getch()) {
-        case 72: return UCXAPP_KEY_UP;
-        case 80: return UCXAPP_KEY_DOWN;
-        case 75: return UCXAPP_KEY_LEFT;
-        case 77: return UCXAPP_KEY_RIGHT;
-        case 71: return UCXAPP_KEY_HOME;
-        case 79: return UCXAPP_KEY_END;
-        case 73: return UCXAPP_KEY_PGUP;
-        case 81: return UCXAPP_KEY_PGDN;
-        case 83: return UCXAPP_KEY_DEL;
-        case 59: return UCXAPP_KEY_F1;
-        case 68: return UCXAPP_KEY_F10;
-        default: return -1;
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD pending = 0;
+
+    while (GetNumberOfConsoleInputEvents(in, &pending) && pending > 0) {
+        INPUT_RECORD rec;
+        DWORD got = 0;
+
+        if (!ReadConsoleInputA(in, &rec, 1, &got) || got == 0) {
+            return -1;
+        }
+        if (rec.EventType == MOUSE_EVENT && (rec.Event.MouseEvent.dwEventFlags & MOUSE_WHEELED)) {
+            return (SHORT)HIWORD(rec.Event.MouseEvent.dwButtonState) > 0 ? UCXAPP_KEY_WHEELUP : UCXAPP_KEY_WHEELDN;
+        }
+        if (rec.EventType != KEY_EVENT || !rec.Event.KeyEvent.bKeyDown) {
+            continue;
+        }
+        const KEY_EVENT_RECORD *k = &rec.Event.KeyEvent;
+        bool ctrl = (k->dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
+
+        switch (k->wVirtualKeyCode) {
+        case VK_UP:    return UCXAPP_KEY_UP;
+        case VK_DOWN:  return UCXAPP_KEY_DOWN;
+        case VK_LEFT:  return UCXAPP_KEY_LEFT;
+        case VK_RIGHT: return UCXAPP_KEY_RIGHT;
+        case VK_HOME:  return UCXAPP_KEY_HOME;
+        case VK_END:   return UCXAPP_KEY_END;
+        case VK_PRIOR: return ctrl ? UCXAPP_KEY_CPGUP : UCXAPP_KEY_PGUP;
+        case VK_NEXT:  return ctrl ? UCXAPP_KEY_CPGDN : UCXAPP_KEY_PGDN;
+        case VK_DELETE: return UCXAPP_KEY_DEL;
+        case VK_F1:    return UCXAPP_KEY_F1;
+        case VK_F10:   return UCXAPP_KEY_F10;
+        default:       break;
+        }
+        if (k->uChar.AsciiChar != 0) {
+            return (unsigned char)k->uChar.AsciiChar;
         }
     }
-    return c;
+    return -1;
 }
 
 bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)

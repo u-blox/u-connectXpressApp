@@ -181,6 +181,8 @@ void ucxapp_sock_clear_incoming(void);
 
 /* Wi-Fi station state for other packs; false when not connected (ssid and ip are then empty). */
 bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char *ip, size_t ipSize);
+/* "ssid  rssi dBm  ch N\nip" (AT calls; command thread only); false when not connected. */
+bool ucxapp_wifi_dash(uCxHandle_t *ucx, char *out, size_t size);
 
 /* GATT server helpers shared with the HID pack (ucxapp_cmds_gatt.c). */
 int ucxapp_gatt_server_ensure(ucxapp_t *app, const char *key);   /* defines a predefined profile once, e.g. "bas" */

@@ -1,6 +1,7 @@
 /* dash: one card with a line per area (Wi-Fi, BLE, GNSS, cellular, IMU), host only. */
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_stream.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -110,12 +111,13 @@ static void bleLine(ucxapp_t *app)
     otherModules("BLE", false);
 }
 
-static void stream(const char *name, bool (*get)(char *, size_t))
+static void stream(const char *name, const char *kind, bool (*get)(char *, size_t))
 {
     char text[128];
     bool open = get(text, sizeof(text));
+    const char *port = ucxapp_stream_open_port(kind);
 
-    line(name, open, "-", open ? text : "not connected");
+    line(name, open, port != NULL ? port : "-", open ? text : "not connected");
 }
 
 /* GNSS receivers recognised by their USB descriptor, without opening them. */
@@ -124,14 +126,16 @@ static void gnssLines(void)
     static ucxapp_serial_port_t ports[32];
     char text[128];
     int shown = 0;
+    const char *open = ucxapp_stream_open_port("gnss");
 
     if (ucxapp_gnss_dash(text, sizeof(text))) {
-        line("GNSS", true, "-", text);
+        line("GNSS", true, open != NULL ? open : "-", text);
         shown++;
     }
     int count = ucxapp_platform_list_serial_ports(ports, (int)(sizeof(ports) / sizeof(ports[0])));
     for (int i = 0; i < count; i++) {
-        if (!ucxapp_port_skip(&ports[i]) && ucxapp_port_is_gnss(&ports[i])) {
+        if (!ucxapp_port_skip(&ports[i]) && ucxapp_port_is_gnss(&ports[i]) &&
+            (open == NULL || strcmp(open, ports[i].name) != 0)) {
             snprintf(text, sizeof(text), "found, not open (gnss.open %s)", ports[i].name);
             line(shown == 0 ? "GNSS" : "", false, ports[i].name, text);
             shown++;
@@ -149,8 +153,8 @@ static void printDash(ucxapp_t *app)
     wifiLine(app);
     bleLine(app);
     gnssLines();
-    stream("CELL", ucxapp_cell_dash);
-    stream("IMU", ucxapp_imu_dash);
+    stream("CELL", "cell", ucxapp_cell_dash);
+    stream("IMU", "imu", ucxapp_imu_dash);
     rule(NULL);
 }
 

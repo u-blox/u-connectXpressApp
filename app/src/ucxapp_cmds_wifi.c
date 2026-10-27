@@ -85,6 +85,22 @@ static int readStatusInt(uCxHandle_t *ucx, uWifiStatusId_t id, int fallback)
     return value;
 }
 
+bool ucxapp_wifi_dash(uCxHandle_t *ucx, char *out, size_t size)
+{
+    char ssid[40];
+    char ip[40];
+
+    if (!ucxapp_wifi_get_status(ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        snprintf(out, size, "not connected");
+        return false;
+    }
+    int rssi = readStatusInt(ucx, U_WIFI_STATUS_ID_RSSI, 0);
+    int ch = readStatusInt(ucx, U_WIFI_STATUS_ID_CHANNEL, 0);
+
+    snprintf(out, size, "%s  %d dBm  ch %d\n%s", ssid, rssi, ch, ip[0] ? ip : "no IP");
+    return true;
+}
+
 static const char *bandOf(int channel)
 {
     return channel >= 1 && channel <= 14 ? "2.4" : (channel >= 36 ? "5" : "?");

@@ -1059,17 +1059,21 @@ def stm32_flash(name, image):
 
 
 def zephyr_env():
-    """ZEPHYR_BASE and extra modules; defaults to the newest NCS under C:/ncs and C:/ncs/extra/hal_stm32."""
+    """ZEPHYR_BASE and extra modules; prefers an upstream west workspace (C:/zephyrproject, ~/zephyrproject),
+    then the newest NCS under C:/ncs with C:/ncs/extra/hal_stm32."""
     if not os.environ.get("ZEPHYR_BASE"):
-        bases = sorted(glob.glob("C:/ncs/v*/zephyr" if IS_WINDOWS else os.path.expanduser("~/*/zephyr")))
+        upstream = [Path("C:/zephyrproject/zephyr"), Path.home() / "zephyrproject" / "zephyr"]
+        bases = [str(p) for p in upstream if (p / "VERSION").is_file()] or sorted(glob.glob("C:/ncs/v*/zephyr"))[::-1]
         if not bases:
-            fail("ZEPHYR_BASE not set and no Zephyr tree found (C:/ncs/v*/zephyr)")
-        os.environ["ZEPHYR_BASE"] = bases[-1]
+            fail("ZEPHYR_BASE not set and no Zephyr tree found (C:/zephyrproject/zephyr, ~/zephyrproject/zephyr)")
+        os.environ["ZEPHYR_BASE"] = bases[0]
     modules = os.environ.get("UCXAPP_ZEPHYR_MODULES")
     if modules is None:
+        # Upstream workspaces get hal_stm32 from west.yml; NCS needs it as an extra module.
         hal = Path(os.environ["ZEPHYR_BASE"]).parent.parent / "extra" / "hal_stm32"
         modules = hal.as_posix() if (hal / "zephyr" / "module.yml").is_file() else ""
-    require("west", "Install the Zephyr or nRF Connect SDK toolchain (pip install west)")
+    require("west", "Install west (pip install west) and a Zephyr workspace (west init C:\\zephyrproject)")
+    print("Zephyr:", os.environ["ZEPHYR_BASE"])
     return modules
 
 

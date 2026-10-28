@@ -1,6 +1,6 @@
 ---
 name: ucx-stm32
-description: Build, flash and use u-connectXpressApp as firmware on NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY (STM32F407VG) or NUCLEO-F103RB / NUCLEO-G071RB (lite builds) boards driving a u-connectXpress module. Use for STM32 setup, HAL paths, flashing over ST-Link, the console and UART bridge mode.
+description: Build, flash and use u-connectXpressApp as FreeRTOS or Zephyr firmware on NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY (STM32F407VG) or NUCLEO-F103RB / NUCLEO-G071RB (lite builds) boards driving a u-connectXpress module. Use for STM32 setup, HAL paths, Zephyr/NCS setup, flashing over ST-Link, the console and UART bridge mode.
 ---
 
 # u-connectXpressApp on STM32 Nucleo
@@ -17,6 +17,19 @@ description: Build, flash and use u-connectXpressApp as firmware on NUCLEO-H753Z
 Only official ST NUCLEO and Discovery boards are supported. `--stm32` still works as the old name of `--stm32-freertos`.
 On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
 
+## Zephyr (`--stm32-zephyr`, NUCLEO-H753ZI only so far)
+- Needs `west` and an upstream Zephyr workspace with the Zephyr SDK (hal_stm32 comes with it):
+  ```powershell
+  pip install west
+  west init C:\zephyrproject; cd C:\zephyrproject; west update
+  west sdk install
+  ```
+- `ZEPHYR_BASE` defaults to `C:/zephyrproject/zephyr` (or `~/zephyrproject/zephyr`). An nRF Connect SDK under `C:/ncs` also works with [hal_stm32](https://github.com/zephyrproject-rtos/hal_stm32) in `C:\ncs\extra\hal_stm32`, but its `nrf` module warns that the SoC is not supported. `UCXAPP_ZEPHYR_MODULES` sets extra modules.
+- Output: `build/zephyr_h753/zephyr/zephyr.bin` (single image, no sysbuild). Same wiring and console as the FreeRTOS build (`app/zephyr/boards/nucleo_h753zi.overlay`).
+- Run `west` from the repo root with relative paths: it fails when the source and the current directory are on different drives. In PowerShell quote `'-DEXTRA_ZEPHYR_MODULES=C:/...'`, or the colon splits the argument.
+- Files are kept in RAM only for now.
+
+## Files (FreeRTOS builds)
 Files (Wi-Fi profiles, certificates) live in a littlefs file system in the top two flash sectors on H753, F767, F439 and F407, so they survive reset and reflash (`--erase` wipes them; `file.format yes` erases them from the shell). The other boards keep files in RAM only. Fetch littlefs once with `git submodule update --init third-party/littlefs`.
 
 ## Wiring

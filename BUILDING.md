@@ -71,8 +71,8 @@ cmake --build build/windows --config Release
 
 # Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help (--stm32 is the old name of --stm32-freertos)
 
-# Zephyr build (NUCLEO-H753ZI): west + ZEPHYR_BASE (default: newest C:/ncs/v*/zephyr),
-# extra modules in UCXAPP_ZEPHYR_MODULES (default: C:/ncs/extra/hal_stm32)
+# Zephyr build (NUCLEO-H753ZI): west + an upstream workspace (default ZEPHYR_BASE: C:/zephyrproject/zephyr),
+# set up with: pip install west; west init C:\zephyrproject; cd C:\zephyrproject; west update; west sdk install
 .\ucxapp --stm32-zephyr --board h753 --build --flash --log
 ```
 

@@ -17,7 +17,7 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 | Windows | `.\ucxapp` | Visual Studio 2022 + CMake |
 | Linux | `./ucxapp.py` (or `.\ucxapp --linux` for WSL) | CMake + gcc, binary `app/bin/ucxapp` (Windows exe: `app/bin/ucxapp.exe`) |
 | STM32 | `.\ucxapp --stm32-freertos [--board h753\|f767\|f439\|f407\|f401\|f446\|f103\|g071\|all] --build --flash --log` | H753 is the default; only official ST NUCLEO/Discovery boards are supported; f407 is the STM32F4DISCOVERY; f401/f446/f103/g071 are NUCLEO-64 boards (module on USART1 D8/D2); f103 and g071 are lite builds (`UCXAPP_LITE`: Wi-Fi + BT/GATT, no net/cert, no BT company/appearance/characteristic names, small buffers) for 20 KB RAM / 128 KB flash; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`, `STM32CUBEF1_PATH`, `STM32CUBEG0_PATH`); `--stm32` is the old name |
-| STM32 Zephyr | `.\ucxapp --stm32-zephyr --board h753 --build --flash --log` | `app/zephyr`, west + NCS/Zephyr (`ZEPHYR_BASE`, `UCXAPP_ZEPHYR_MODULES` for hal_stm32); H753 only so far |
+| STM32 Zephyr | `.\ucxapp --stm32-zephyr --board h753 --build --flash --log` | `app/zephyr`, west + upstream Zephyr workspace (`ZEPHYR_BASE`, default `C:/zephyrproject/zephyr`); H753 only so far |
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c`, `app/stm32_freertos/` and `app/zephyr/`.
 

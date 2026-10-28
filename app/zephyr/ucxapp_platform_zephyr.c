@@ -2,8 +2,12 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <errno.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
@@ -190,5 +194,63 @@ int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uin
     (void)dir;
     (void)cb;
     (void)ctx;
+    return -1;
+}
+
+/* No file system yet: picolibc's fopen/remove/rename need these, every call fails. */
+int open(const char *path, int flags, ...)
+{
+    (void)path;
+    (void)flags;
+    errno = ENOSYS;
+    return -1;
+}
+
+int close(int fd)
+{
+    (void)fd;
+    errno = ENOSYS;
+    return -1;
+}
+
+ssize_t read(int fd, void *buf, size_t len)
+{
+    (void)fd;
+    (void)buf;
+    (void)len;
+    errno = ENOSYS;
+    return -1;
+}
+
+ssize_t write(int fd, const void *buf, size_t len)
+{
+    (void)fd;
+    (void)buf;
+    (void)len;
+    errno = ENOSYS;
+    return -1;
+}
+
+off_t lseek(int fd, off_t offset, int whence)
+{
+    (void)fd;
+    (void)offset;
+    (void)whence;
+    errno = ENOSYS;
+    return -1;
+}
+
+int unlink(const char *path)
+{
+    (void)path;
+    errno = ENOSYS;
+    return -1;
+}
+
+int rename(const char *from, const char *to)
+{
+    (void)from;
+    (void)to;
+    errno = ENOSYS;
     return -1;
 }

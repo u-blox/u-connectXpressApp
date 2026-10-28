@@ -8,7 +8,7 @@ description: Build and run u-connectXpressApp on Windows to test and configure a
 ## Build and run
 1. Install Visual Studio 2022 Build Tools (Desktop development with C++), CMake 3.15+, Git and Python 3.10+.
 2. `git submodule update --init u-connectClient`
-3. `.\ucxapp` builds on first run and opens the shell. It is a thin caller of `ucxapp.py`; `--help` lists the options (`--debug`, `--clean`, `--rebuild`, `--build --run`, `--selftest`, `--linux` for WSL, `--stm32`).
+3. `.\ucxapp` builds on first run and opens the shell. It is a thin caller of `ucxapp.py`; `--help` lists the options (`--debug`, `--clean`, `--rebuild`, `--build --run`, `--selftest`, `--linux` for WSL, `--stm32-freertos`, `--stm32-zephyr`).
 
 ## Find the hardware
 `.\ucxapp --detect` lists the serial ports with their role (EVK, GNSS, USB-UART, ST-Link), the NORA modules, the GNSS receiver (port and baud) and the IMU, and prints the `UCX_*` variables for the tests. `--detect --test tests/hardware` runs the hardware tests on what it found, one line per test with the `[ NN%]` progress (do not add `-q`).

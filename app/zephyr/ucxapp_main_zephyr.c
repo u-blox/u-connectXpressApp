@@ -45,7 +45,9 @@ static void consoleIsr(const struct device *dev, void *userData)
     uint8_t buf[32];
 
     (void)userData;
-    while (uart_irq_update(dev) && uart_irq_rx_ready(dev)) {
+    // uart_irq_update() returns void since Zephyr 4.4, int before.
+    uart_irq_update(dev);
+    while (uart_irq_rx_ready(dev)) {
         int n = uart_fifo_read(dev, buf, sizeof(buf));
         if (n <= 0) {
             break;

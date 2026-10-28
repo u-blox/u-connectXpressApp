@@ -54,6 +54,48 @@ jobs:
           name: c-coverage
           path: coverage-c.xml
 
+  build-zephyr:
+    runs-on: ubuntu-latest
+    env:
+      ZEPHYR_REF: v4.5.0-rc3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Init u-connectClient (not its nested submodules)
+        run: git submodule update --init u-connectClient
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Cache Zephyr workspace and SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/zephyrproject
+            ~/zephyr-sdk-*
+          key: zephyr-${{ env.ZEPHYR_REF }}-stm32
+      - name: Set up Zephyr (stm32 HAL and CMSIS only, arm toolchain only)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build device-tree-compiler
+          python -m pip install west
+          if [ ! -d ~/zephyrproject/.west ]; then
+            west init -m https://github.com/zephyrproject-rtos/zephyr --mr "$ZEPHYR_REF" ~/zephyrproject
+          fi
+          cd ~/zephyrproject
+          west config manifest.project-filter -- '-.*,+hal_stm32,+cmsis,+cmsis_6'
+          west update --narrow -o=--depth=1
+          python -m pip install -r zephyr/scripts/requirements-base.txt
+          cd zephyr
+          ls -d ~/zephyr-sdk-* >/dev/null 2>&1 || west sdk install -t arm-zephyr-eabi
+      - name: Build NUCLEO-H753ZI (warnings are errors)
+        shell: bash
+        run: |
+          python ucxapp.py --stm32-zephyr --board h753 --build 2>&1 | tee zephyr-build.txt
+          if grep -E "warning:" zephyr-build.txt; then exit 1; fi
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ucxapp-zephyr-h753
+          path: build/zephyr_h753/zephyr/zephyr.bin
+
   build-windows:
     runs-on: windows-latest
     steps:

@@ -63,8 +63,9 @@ def covered(cmds):
     text = "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "tests" / "hardware").glob("*.py")))
     # Expand f-string commands such as gatt.client.{key} with their parametrize values.
     for name, values in re.findall(r'parametrize\("(\w+)", \[([^\]]*)\]', text):
+        lines = [line for line in text.splitlines() if "{" + name + "}" in line]
         for value in re.findall(r'"([\w.-]+)"', values):
-            text += "\n" + text.replace("{" + name + "}", value)
+            text += "\n" + "\n".join(line.replace("{" + name + "}", value) for line in lines)
     return {c for c in cmds if re.search(r'["\s{]' + re.escape(c) + r'(?=[\s"{])', text)}
 
 

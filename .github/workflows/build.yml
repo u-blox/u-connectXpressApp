@@ -80,11 +80,11 @@ jobs:
           if [ ! -d ~/zephyrproject/.west ]; then
             west init -m https://github.com/zephyrproject-rtos/zephyr --mr "$ZEPHYR_REF" ~/zephyrproject
           fi
-          cd ~/zephyrproject
+          cd ~/zephyrproject || exit 1
           west config manifest.project-filter -- '-.*,+hal_stm32,+cmsis,+cmsis_6'
           west update --narrow -o=--depth=1
           python -m pip install -r zephyr/scripts/requirements-base.txt
-          cd zephyr
+          cd zephyr || exit 1
           ls -d ~/zephyr-sdk-* >/dev/null 2>&1 || west sdk install -t arm-zephyr-eabi
       - name: Build NUCLEO-H753ZI (warnings are errors)
         shell: bash

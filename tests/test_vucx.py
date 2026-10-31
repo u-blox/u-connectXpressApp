@@ -1,5 +1,6 @@
 """The app against vucx, the virtual u-connectXpress module (needs a pty: Linux/WSL, run by ucxapp --coverage)."""
 
+import re
 import subprocess
 import sys
 
@@ -79,6 +80,18 @@ def test_wifi_connect_status_disconnect(app_exe, wifi_module):
     assert any(c.startswith("AT+UWSC=") for c in wifi_module.log), wifi_module.log
     assert "AT+UWSDC" in wifi_module.log, wifi_module.log
     assert "192.168.1.50" in out.stdout, out.stdout + str(wifi_module.log)
+
+
+def test_at_trace_hides_wifi_password(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "app.log.at.on", "wifi.connect vucx-net secret123", "app.log.at.off")
+    assert "AT+UWSSW=" in out.stdout, out.stdout
+    assert "secret123" not in out.stdout and '"****"' in out.stdout, out.stdout
+
+
+def test_wifi_survey_gives_a_verdict(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123", "wifi.survey 2 example.com")
+    assert "Signal:" in out.stdout and "Stability:" in out.stdout, out.stdout + str(wifi_module.log)
+    assert re.search(r"^Verdict:\s+(EXCELLENT|GOOD|FAIR|POOR) - ", out.stdout, re.MULTILINE), out.stdout
 
 
 def test_socket_open_connect_list_close(app_exe, wifi_module):

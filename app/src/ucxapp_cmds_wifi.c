@@ -1082,6 +1082,82 @@ static int cmdWifiRoaming(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#ifndef UCXAPP_LITE
+/* Signal rating for a device that sends telemetry and takes firmware updates over the air. */
+static int surveyRating(int avg, int spread, int lost)
+{
+    int rating = avg >= -55 ? 3 : avg >= -67 ? 2 : avg >= -75 ? 1 : 0;
+
+    if ((spread > 15 || lost > 0) && rating > 0) {
+        rating--;
+    }
+    return rating;
+}
+
+/* "Is the Wi-Fi here good enough for my device?": signal over time, stability and the way to the internet. */
+static int cmdWifiSurvey(ucxapp_t *app, int argc, char *argv[])
+{
+    static const char *const kRating[] = { "POOR", "FAIR", "GOOD", "EXCELLENT" };
+    static const char *const kAdvice[] = {
+        "the link will drop: move the device or the access point closer, or check the antenna",
+        "fine for small telemetry messages; firmware updates and streaming will be slow",
+        "fine for MQTT telemetry, the web UI and firmware updates",
+        "strong and steady: fine for streaming and firmware updates",
+    };
+    int32_t seconds = 10;
+    const char *host = "u-blox.com";
+    char ssid[64], ip[48], line[128];
+    int min = 0, max = -128, sum = 0, got = 0, lost = 0;
+    int rating, channel;
+    bool internet = true;
+
+    if (argc > 3 || (argc > 1 && (!ucxapp_parse_int(argv[1], &seconds) || seconds < 1 || seconds > 3600))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc > 2) {
+        host = argv[2];
+    }
+    if (!ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        ucxapp_print("ERROR: Wi-Fi not connected; join the network first: wifi.connect <ssid> <password>\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    channel = readStatusInt(app->ucx, U_WIFI_STATUS_ID_CHANNEL, 0);
+    ucxapp_print("Surveying %s, channel %d (%s GHz), for %d s\n", ssid, channel, bandOf(channel), (int)seconds);
+    for (int32_t i = 0; i < seconds; i++) {
+        int rssi;
+
+        if (i > 0) {
+            U_CX_PORT_SLEEP_MS(1000);
+        }
+        rssi = readStatusInt(app->ucx, U_WIFI_STATUS_ID_RSSI, 0);
+        if (rssi >= 0 || !isConnected(app->ucx)) {
+            lost++;
+            continue;
+        }
+        min = got == 0 || rssi < min ? rssi : min;
+        max = rssi > max ? rssi : max;
+        sum += rssi;
+        got++;
+    }
+    if (got == 0) {
+        ucxapp_print("ERROR: no signal readings; the connection dropped\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    rating = surveyRating(sum / got, max - min, lost);
+    ucxapp_print("Signal:     %d dBm average (%d to %d)\n", sum / got, min, max);
+    ucxapp_print("Stability:  %s (%d dB spread, %d lost reading%s)\n",
+                 max - min > 15 || lost > 0 ? "UNSTABLE" : "STABLE", max - min, lost, lost == 1 ? "" : "s");
+    if (ucxapp_cmd_find("net.ping") != NULL) {
+        ucxapp_print("--- internet (net.ping %s 4)\n", host);
+        snprintf(line, sizeof(line), "net.ping %s 4", host);
+        internet = ucxapp_cmd_exec(app, line) == UCXAPP_OK;
+        ucxapp_print("Internet:   %s\n", internet ? "REACHABLE" : "NOT REACHABLE (the access point has no internet, or blocks ping)");
+    }
+    ucxapp_print("Verdict:    %s - %s\n", kRating[rating], kAdvice[rating]);
+    return internet ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+#endif
+
 static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.scan",       "",                    "Scan for networks: strongest first with band, signal and security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
     { "wifi.connect",    "[ssid|n] [password|-]", "Connect by SSID or number from wifi.scan; '-' prompts for the password; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
@@ -1092,6 +1168,9 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.disconnect", "",                    "Disconnect from Wi-Fi",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiDisconnect },
     { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
     { "wifi.rssi",       "[count] [interval_s]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
+#ifndef UCXAPP_LITE
+    { "wifi.survey",     "[seconds] [host]",    "Is the Wi-Fi here good enough? Signal and stability over time (default 10 s), internet reachability, and a verdict with advice", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiSurvey },
+#endif
     { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP / static IP (applies on next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
     { "wifi.profile.add", "<name> <ssid> [password]", "Save or update a Wi-Fi profile", 0, cmdProfileAdd },
     { "wifi.profile.list", "",                   "List saved Wi-Fi profiles",        0, cmdProfileList },

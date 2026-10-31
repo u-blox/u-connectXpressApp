@@ -37,6 +37,9 @@ def test_diagnostic_commands_run(app_exe, port_a):
     out = _run(app_exe, port_a, "dev.caps", "dev.stack", "dev.crash", "dev.diagnose", timeout=120)
     assert out.returncode == 0, out.stdout
     assert "ERROR" not in out.stdout, out.stdout
+    result = r"^Result:\s+(PASS|PARTIAL) \(\d+ passed, 0 failed, \d+ not run\)"
+    assert re.search(result, out.stdout, re.MULTILINE), out.stdout
+    assert re.search(r"^Check device\s+PASS", out.stdout, re.MULTILINE), out.stdout
 
 
 @pytest.mark.app

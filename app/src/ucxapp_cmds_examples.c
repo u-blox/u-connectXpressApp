@@ -74,6 +74,8 @@ static const example_t kExamples[] = {
       "cert.upload ca ca.pem ca\nwifi.peap CorpNet alice - ca" },
     { "wifi", "Watch the signal while walking around",
       "wifi.rssi 30 1" },
+    { "wifi", "Is the Wi-Fi at the install spot good enough? (verdict with advice)",
+      "wifi.connect MyNetwork MyPassword\nwifi.survey 30" },
     { "wifi", "Hotel or guest Wi-Fi with a login page",
       "wifi.connect HotelGuest\nwifi.portal check\nwifi.portal login room=101 surname=Smith\n"
       "# test on the PC: py -3 tests/harness/captive_portal.py --room\n"

@@ -1,0 +1,17 @@
+# Use case: will my product work on the Wi-Fi where it will be installed?
+#
+# Take the EVK to the spot where the product will sit and run this. It joins the network,
+# watches the signal for 30 s, checks the way to the internet and gives a verdict with advice
+# (EXCELLENT, GOOD, FAIR or POOR).
+#
+# You need: a NORA-W36 EVK, and the network name and password in the environment
+# (the password never appears in the output or a report):
+#   $env:UCX_WIFI_SSID = "MyNetwork"; $env:UCX_WIFI_PASS = "MyPassword"
+#   .\ucxapp --script examples/use-cases/wifi-site-check.ucx --junit site.xml
+dev.info
+expect Model:\s+NORA-W36
+wifi.connect ${UCX_WIFI_SSID} ${UCX_WIFI_PASS}
+wifi.survey 30
+expect Verdict:\s+(EXCELLENT|GOOD|FAIR)
+dev.diagnose
+expect Result:\s+PASS

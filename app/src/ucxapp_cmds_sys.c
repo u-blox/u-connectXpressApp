@@ -90,15 +90,105 @@ bool ucxappLogAtEnabled(void)
     return gLogAt;
 }
 
+/* AT commands whose parameter at index idx (0-based, after '=' or ':') is a password. */
+static const struct {
+    const char *name;
+    int idx;
+} kSecretParams[] = {
+    { "UWSSW", 1 },  /* Wi-Fi station WPA passphrase */
+    { "UWSSP", 3 },  /* Wi-Fi station PEAP password */
+    { "UWAPSW", 0 }, /* Wi-Fi access point passphrase */
+    { "UMQCP", 5 },  /* MQTT password */
+    { "USECUB", 2 }, /* certificate / key password */
+};
+
+/* The trace arrives in pieces (command, ',', each parameter), so the masking keeps its state between calls. */
+static struct {
+    int phase; /* 0 idle, 1 reading the command name, 2 in the parameters */
+    char name[8];
+    size_t len;
+    int secret, param;
+    bool quote, esc, skip;
+} gMask;
+
+void ucxappLogMask(const char *in, char *out, size_t size)
+{
+    size_t o = 0;
+
+    for (; *in != '\0' && o + 7 < size; in++) {
+        char c = *in;
+
+        if (c == '\n' || c == '\33') {
+            memset(&gMask, 0, sizeof(gMask));
+        } else if (gMask.phase == 1) {
+            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                if (gMask.len + 1 < sizeof(gMask.name)) {
+                    gMask.name[gMask.len++] = c;
+                    gMask.name[gMask.len] = '\0';
+                }
+            } else {
+                gMask.phase = 0;
+                for (size_t i = 0; (c == '=' || c == ':') && i < sizeof(kSecretParams) / sizeof(kSecretParams[0]); i++) {
+                    if (strcmp(gMask.name, kSecretParams[i].name) == 0) {
+                        gMask.phase = 2;
+                        gMask.secret = kSecretParams[i].idx;
+                        gMask.param = -1;
+                    }
+                }
+            }
+            if (gMask.phase == 2) {
+                out[o++] = c;
+                c = ',';  /* the first parameter starts here */
+            }
+        } else if (gMask.phase == 0 && c == '+') {
+            gMask.phase = 1;
+            gMask.len = 0;
+            gMask.name[0] = '\0';
+        }
+        if (gMask.phase == 2) {
+            if (gMask.quote) {
+                if (gMask.esc) {
+                    gMask.esc = false;
+                } else if (c == '\\') {
+                    gMask.esc = true;
+                } else if (c == '"') {
+                    gMask.quote = false;
+                }
+            } else if (c == '"') {
+                gMask.quote = true;
+            } else if (c == ',') {
+                bool first = gMask.param < 0;
+
+                gMask.skip = ++gMask.param == gMask.secret;
+                if (!first) {
+                    out[o++] = c;
+                }
+                if (gMask.skip) {
+                    memcpy(out + o, "\"****\"", 6);
+                    o += 6;
+                }
+                continue;
+            }
+            if (gMask.skip) {
+                continue;
+            }
+        }
+        out[o++] = c;
+    }
+    out[o] = '\0';
+}
+
 int ucxappLibPrintf(const char *format, ...)
 {
     char text[512];
+    char masked[sizeof(text) + 8];
     va_list args;
 
     va_start(args, format);
     int n = vsnprintf(text, sizeof(text), format, args);
     va_end(args);
-    ucxapp_print("%s", text);
+    ucxappLogMask(text, masked, sizeof(masked));
+    ucxapp_print("%s", masked);
     return n;
 }
 

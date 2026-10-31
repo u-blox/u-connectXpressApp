@@ -127,6 +127,7 @@ def pytest_configure(config):
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
         "stress: long repeated runs; only with -m stress",
+        "soak: hours-long run checked every few minutes (UCX_SOAK_HOURS); only with -m soak",
     ):
         config.addinivalue_line("markers", marker)
 
@@ -134,6 +135,8 @@ def pytest_configure(config):
 def _skip_reason(item, exe, hw):
     if item.get_closest_marker("stress") and "stress" not in (item.config.option.markexpr or ""):
         return "stress test: select with -m stress"
+    if item.get_closest_marker("soak") and "soak" not in (item.config.option.markexpr or ""):
+        return "soak test: select with -m soak (UCX_SOAK_HOURS, default 1)"
     needs_app = any(item.get_closest_marker(m) for m in ("app", *HARDWARE_MARKERS))
     if not needs_app:
         return None

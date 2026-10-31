@@ -18,7 +18,7 @@ def _run_in(app_exe, cwd, *commands):
 def test_session_selftest(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "session.selftest")
     assert out.returncode == 0, out.stdout + out.stderr
-    assert "session selftest: secret masking and report names ok" in out.stdout
+    assert "session selftest: secret masking (scripts and AT trace) and report names ok" in out.stdout
 
 
 def test_record_then_replay(app_exe, tmp_path):

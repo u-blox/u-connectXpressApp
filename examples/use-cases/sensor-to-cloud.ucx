@@ -1,0 +1,18 @@
+# Use case: send sensor readings to the cloud and get commands back.
+#
+# The module joins Wi-Fi, connects to a public MQTT broker, listens on a command topic and
+# publishes a reading. The broker sends the message back, which proves the whole round trip
+# (Wi-Fi, DNS, internet, broker) works. Swap the broker and topics for your own when ready.
+#
+# You need: a NORA-W36 EVK and the Wi-Fi name and password in the environment:
+#   $env:UCX_WIFI_SSID = "MyNetwork"; $env:UCX_WIFI_PASS = "MyPassword"
+#   .\ucxapp --script examples/use-cases/sensor-to-cloud.ucx
+# Watch it from a PC or phone with any MQTT client: broker.emqx.io:1883, topic ucxapp/evk/#
+wifi.connect ${UCX_WIFI_SSID} ${UCX_WIFI_PASS}
+mqtt.connect broker.emqx.io 1883
+expect connected to broker.emqx.io
+mqtt.subscribe ucxapp/evk/#
+mqtt.publish ucxapp/evk/temperature {"celsius":21.5}
+mqtt.read 10
+expect ucxapp/evk/temperature: \{"celsius":21.5\}
+mqtt.disconnect

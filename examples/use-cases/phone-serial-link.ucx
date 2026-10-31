@@ -1,0 +1,12 @@
+# Use case: replace a serial cable with Bluetooth LE to a phone.
+#
+# The module offers the Nordic UART service for 120 s. Text typed in the phone app is printed
+# here; this is how a product sends logs or takes settings from a phone without a cable.
+#
+# You need: a NORA-W36 or NORA-B26 EVK and a phone with nRF Connect or a
+# "Serial Bluetooth Terminal" app.
+#   .\ucxapp --script examples/use-cases/phone-serial-link.ucx
+# On the phone: connect to the module, pick the Nordic UART service and send some text.
+dev.caps
+expect Bluetooth LE:\s+yes
+gatt.server.nus 120

@@ -32,7 +32,7 @@ Every interface runs the same commands, so what works in the shell works in a sc
 
 ### Supported modules
 
-| Capability | NORA-W36 | NORA-B26 | NORA-W40, W56, W57 |
+| Capability | NORA-W36 | NORA-B26 | NORA-W56, W57 |
 |---|:-:|:-:|:-:|
 | Device, firmware update | yes | yes | not yet |
 | Bluetooth LE, GATT, SPS, HID | yes | yes | not yet |
@@ -57,6 +57,20 @@ ucxapp dev.info
 ```
 
 Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
+
+## What do you want to do?
+
+No Wi-Fi or Bluetooth background needed: pick a goal, run the recipe, read the verdict. Each recipe in [examples/use-cases/](examples/use-cases/) explains what it does and what you need, and checks its own result.
+
+| Your goal | Run | What you get |
+|---|---|---|
+| Will my product work on the Wi-Fi where it is installed? | `ucxapp --script examples/use-cases/wifi-site-check.ucx` | Signal and stability over 30 s, internet check, a verdict (EXCELLENT, GOOD, FAIR, POOR) with advice |
+| Send sensor readings to the cloud and get commands back | `ucxapp --script examples/use-cases/sensor-to-cloud.ucx` | A proven MQTT round trip through a public broker |
+| Show live data in a phone app, with no app of my own | `ucxapp --script examples/use-cases/phone-heart-rate.ucx` | The module acts as a standard heart rate sensor that nRF Connect and fitness apps read |
+| Replace a serial cable with Bluetooth LE | `ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
+| Something does not work | `ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
+
+The Wi-Fi recipes take the network name and password from `UCX_WIFI_SSID` and `UCX_WIFI_PASS`; passwords are masked in the AT trace and in recorded sessions. Every group of commands also has worked examples: type `wifi.ex`, `mqtt.ex` or `gatt.ex` in the shell.
 
 ## Powerful one-liners
 
@@ -119,7 +133,7 @@ $env:UCX_WIFI_PASS = "..."; ucxapp --exec 'wifi.connect MySsid ${UCX_WIFI_PASS}'
 ucxapp --script examples/automation/production-test.ucx --junit production.xml
 ```
 
-**Support report**: `dev.caps` shows what the module and this build can do; `dev.diagnose` checks the module, Wi-Fi, DNS, internet and certificates and ends with PASS or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
+**Support report**: `dev.caps` shows what the module and this build can do; `dev.diagnose` checks the module, Wi-Fi, DNS, internet and certificates, gives each check PASS, FAIL, NOT RUN or NOT SUPPORTED with a hint for what to try next, and ends with PASS, PARTIAL or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
 
 ## Highlights
 
@@ -176,14 +190,14 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 450 KB | 2048 KB | 22% | 314 KB | 512 KB | 61% |
+| `h753` | NUCLEO-H753ZI | 452 KB | 2048 KB | 22% | 314 KB | 512 KB | 61% |
 | `f767` | NUCLEO-F767ZI | 422 KB | 2048 KB | 21% | 299 KB | 368 KB | 81% |
 | `f439` | NUCLEO-F439ZI | 425 KB | 2048 KB | 21% | 105 KB | 192 KB | 55% |
 | `f407` | STM32F4DISCOVERY | 423 KB | 1024 KB | 41% | 105 KB | 128 KB | 82% |
 | `f401` | NUCLEO-F401RE | 403 KB | 512 KB | 79% | 88 KB | 96 KB | 92% |
 | `f446` | NUCLEO-F446RE | 403 KB | 512 KB | 79% | 104 KB | 128 KB | 81% |
-| `f103` | NUCLEO-F103RB | 116 KB | 128 KB | 91% | 15 KB | 20 KB | 79% |
-| `g071` | NUCLEO-G071RB | 121 KB | 128 KB | 95% | 25 KB | 36 KB | 72% |
+| `f103` | NUCLEO-F103RB | 118 KB | 128 KB | 93% | 15 KB | 20 KB | 79% |
+| `g071` | NUCLEO-G071RB | 122 KB | 128 KB | 96% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
 ## Documentation

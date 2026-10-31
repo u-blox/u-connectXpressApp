@@ -1,6 +1,7 @@
 """Wi-Fi: scan, profiles, regulatory domain, access point, ping and link status."""
 
 import os
+import re
 import subprocess
 import time
 
@@ -98,6 +99,15 @@ def test_status_commands_over_wifi(app_exe, port_a):
                "net.ntp status", "sock.list", "stats.show", timeout=180)
     assert out.returncode == 0, out.stdout
     assert "NTP client:" in out.stdout, out.stdout
+
+
+@pytest.mark.hardware
+def test_wifi_survey_gives_a_verdict(app_exe, port_a):
+    out = _run(app_exe, port_a, _wifi_connect_command(), "wifi.survey 5", "wifi.disconnect", timeout=180)
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"Signal: +-\d+ dBm", out.stdout), out.stdout
+    assert "Internet:   REACHABLE" in out.stdout, out.stdout
+    assert re.search(r"Verdict: +(EXCELLENT|GOOD|FAIR|POOR) - ", out.stdout), out.stdout
 
 
 @pytest.mark.hardware

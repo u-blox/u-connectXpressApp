@@ -3,6 +3,7 @@
  * Host builds only. */
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_logcfg.h"
 
 #if !defined(UCXAPP_LITE)
 
@@ -414,12 +415,27 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: session selftest: key password not masked (%s)\n", line);
         return UCXAPP_ERR_FAILED;
     }
+    static const char *const kTrace[] = {
+        "\33[0;36m[AT TX][0] ", "AT+UWSSW=", "0", ",", "\"hun,ter2\"", ",", "0", "\33[0m\n",
+        "AT+UMQCP=0,\"h\",1883,\"c\",\"u\",\"p\\\"w\"\n", "AT+UWAPSW=\"ap1\",2\n", "AT+UWSC=0\n",
+    };
+    static const char *const kMasked[] = {
+        "\33[0;36m[AT TX][0] ", "AT+UWSSW=", "0", ",\"****\"", "", ",", "0", "\33[0m\n",
+        "AT+UMQCP=0,\"h\",1883,\"c\",\"u\",\"****\"\n", "AT+UWAPSW=\"****\",2\n", "AT+UWSC=0\n",
+    };
+    for (size_t i = 0; i < sizeof(kTrace) / sizeof(kTrace[0]); i++) {
+        ucxappLogMask(kTrace[i], line, sizeof(line));
+        if (strcmp(line, kMasked[i]) != 0) {
+            ucxapp_print("ERROR: session selftest: AT trace not masked (%s)\n", line);
+            return UCXAPP_ERR_FAILED;
+        }
+    }
     safeName("35/0A:1b..x", safe, sizeof(safe));
     if (strcmp(safe, "350A1bx") != 0) {
         ucxapp_print("ERROR: session selftest: serial file name (%s)\n", safe);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("session selftest: secret masking and report names ok\n");
+    ucxapp_print("session selftest: secret masking (scripts and AT trace) and report names ok\n");
     return UCXAPP_OK;
 }
 
@@ -427,7 +443,7 @@ static const ucxapp_cmd_t gSessionCmds[] = {
     { "session.record",   "<file.ucx>",            "Record the commands typed from now on, with their output as comments, to a script for support; passwords are written as ${UCX_WIFI_PASS} / ${UCX_SECRET}", 0, cmdRecord },
     { "session.stop",     "",                      "Stop recording",                                                   0, cmdStop },
     { "session.replay",   "<file.ucx> [all] [stop]", "Run the commands of a recorded session or script; firmware, factory reset and removals only with 'all'; 'stop' ends at the first failure", 0, cmdReplay },
-    { "session.selftest", "",                      "Offline check of secret masking and report file names",           0, cmdSelftest },
+    { "session.selftest", "",                      "Offline check of secret masking (scripts, AT trace) and report file names",           0, cmdSelftest },
     { "prod.test",        "[script.ucx|-] [dir]",  "Production test: run a script (or '-' for dev.info, dev.caps and dev.diagnose) and write <dir>/<serial>_<date>.txt plus a line in <dir>/report.csv (default dir: reports)", UCXAPP_CMD_NEEDS_DEVICE, cmdProdTest },
 };
 

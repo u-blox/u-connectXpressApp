@@ -1,0 +1,13 @@
+# Use case: my device shows live data in a phone app, with no app of my own.
+#
+# The module becomes a standard Bluetooth LE heart rate sensor for 60 s and sends a simulated
+# value every second. Standard services work with ready-made apps, so there is nothing to write
+# on the phone side.
+#
+# You need: a NORA-W36 or NORA-B26 EVK and a phone with nRF Connect (or a fitness app that
+# reads heart rate sensors).
+#   .\ucxapp --script examples/use-cases/phone-heart-rate.ucx
+# On the phone: scan, connect to the module, open Heart Rate and enable notifications.
+dev.caps
+expect Bluetooth LE:\s+yes
+gatt.server.hrs 60

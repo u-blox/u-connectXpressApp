@@ -59,7 +59,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 | `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
 | `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |
 | `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it |
-| `dev.diagnose` | `[host]` | Support report: `dev.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates; ends with `Result: PASS` or `FAIL` |
+| `dev.diagnose` | `[host]` | Support report: `dev.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates. Each check prints `PASS`, `FAIL <code>`, `NOT RUN` (e.g. Wi-Fi not connected) or `NOT SUPPORTED` with a hint for the next step; ends with `Result: PASS`, `PARTIAL` (some checks not run) or `FAIL` |
 | `dev.status` | | Overview: module info, Wi-Fi state and IP, open sockets, BLE connections, certificates |
 | `dev.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
 | `dev.factory` | `<confirm>` | Reset the module to factory settings (erases Wi-Fi, Bluetooth and certificate settings) and reboot; the word `confirm` is required |
@@ -174,6 +174,7 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.disconnect` | | Leave the network |
 | `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
 | `wifi.rssi` | `[count] [interval_s]` | Read the signal strength, repeatedly if requested |
+| `wifi.survey` | `[seconds] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
 | `wifi.roaming` | `[on\|off]` | Show or set roaming between access points |
 | `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain used by `wifi.profile.auto` (default `etsi`) |
 | `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (current directory; passwords are obfuscated, not encrypted; max 16) |
@@ -519,7 +520,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `session.record` | `<file.ucx>` | Record every command from now on to a script, with its output as `# ` comments, pauses as `#+` and failures as `#!`; passwords and tokens are written as `${UCX_WIFI_PASS}` / `${UCX_SECRET}`. Send the file to support |
 | `session.stop` | | Stop recording |
 | `session.replay` | `<file.ucx> [all] [stop]` | Run the commands of a recorded session or script (`${NAME}` expanded); firmware, factory reset and removals are skipped unless `all`; `stop` ends at the first failure |
-| `session.selftest` | | Offline check of secret masking and report file names |
+| `session.selftest` | | Offline check of secret masking (scripts, AT trace) and report file names |
 | `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `dev.info`, `dev.caps`, `dev.diagnose`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |

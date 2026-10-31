@@ -249,54 +249,82 @@ static int cmdDeviceCaps(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Runs a check command if this build has it; prints the outcome line and counts failures. */
-static void diagRun(ucxapp_t *app, const char *title, const char *line, int *failed)
+typedef struct {
+    int passed, failed, notRun;
+} diag_t;
+
+/* One status line per check: PASS, FAIL <code>, NOT RUN or NOT SUPPORTED, with a hint for the next step. */
+static void diagStatus(const char *title, const char *status, const char *hint)
+{
+    ucxapp_print("Check %-13s %-14s%s%s\n", title, status, hint[0] != '\0' ? "  " : "", hint);
+}
+
+/* Runs a check command if this build has it; prints the outcome line and counts it. */
+static void diagRun(ucxapp_t *app, const char *title, const char *line, const char *hint, diag_t *d)
 {
     char buf[128];
     size_t nameLen = strcspn(line, " ");
     char name[48];
+    char status[32];
     int rc;
 
     snprintf(name, sizeof(name), "%.*s", (int)(nameLen < sizeof(name) ? nameLen : sizeof(name) - 1), line);
     if (ucxapp_cmd_find(name) == NULL) {
+        diagStatus(title, "NOT SUPPORTED", "not in this build");
         return;
     }
     ucxapp_print("--- %s (%s)\n", title, line);
     snprintf(buf, sizeof(buf), "%s", line);
     rc = ucxapp_cmd_exec(app, buf);
-    ucxapp_print("Check %-11s %s\n", title, rc == UCXAPP_OK ? "OK" : ucxapp_err_code(rc));
-    *failed += rc != UCXAPP_OK;
+    if (rc == UCXAPP_OK) {
+        d->passed++;
+        diagStatus(title, "PASS", "");
+    } else {
+        d->failed++;
+        snprintf(status, sizeof(status), "FAIL %s", ucxapp_err_code(rc));
+        diagStatus(title, status, hint);
+    }
 }
 
 static int cmdDeviceDiagnose(ucxapp_t *app, int argc, char *argv[])
 {
     char ssid[64], ip[48];
     char host[96];
-    int failed = 0;
+    diag_t d = { 0, 0, 0 };
+    bool wifi;
 
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
     }
     snprintf(host, sizeof(host), "%s", argc == 2 ? argv[1] : "u-blox.com");
-    diagRun(app, "device", "dev.caps", &failed);
-    diagRun(app, "uptime", "dev.uptime", &failed);
-    if (!ucxapp_module_has_wifi(app)) {
-        ucxapp_print("Check %-11s no Wi-Fi on this module (network and certificate checks skipped)\n", "wifi");
+    diagRun(app, "device", "dev.caps", "check the cable and the port; try dev.reboot", &d);
+    diagRun(app, "uptime", "dev.uptime", "try dev.reboot", &d);
+    wifi = ucxapp_module_has_wifi(app);
+    if (!wifi) {
+        static const char *const kNet[] = { "wifi", "dns", "internet", "certificates" };
+        for (size_t i = 0; i < sizeof(kNet) / sizeof(kNet[0]); i++) {
+            diagStatus(kNet[i], "NOT SUPPORTED", "no Wi-Fi on this module");
+        }
     } else if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
         char line[128];
-        diagRun(app, "wifi", "wifi.status", &failed);
+        diagRun(app, "wifi", "wifi.status", "try wifi.disconnect, then wifi.connect", &d);
         snprintf(line, sizeof(line), "net.dns %s", host);
-        diagRun(app, "dns", line, &failed);
+        diagRun(app, "dns", line, "the access point gives no working DNS server; try wifi.ip", &d);
         snprintf(line, sizeof(line), "net.ping %s 2", host);
-        diagRun(app, "internet", line, &failed);
+        diagRun(app, "internet", line, "the access point has no internet access, or blocks ping", &d);
     } else {
-        ucxapp_print("Check %-11s not connected (network checks skipped)\n", "wifi");
+        static const char *const kNet[] = { "wifi", "dns", "internet" };
+        for (size_t i = 0; i < sizeof(kNet) / sizeof(kNet[0]); i++) {
+            diagStatus(kNet[i], "NOT RUN", i == 0 ? "not connected: wifi.connect <ssid> <password>" : "needs Wi-Fi");
+            d.notRun++;
+        }
     }
-    if (ucxapp_module_has_wifi(app)) {
-        diagRun(app, "certificates", "cert.list", &failed);
+    if (wifi) {
+        diagRun(app, "certificates", "cert.list", "try dev.reboot", &d);
     }
-    ucxapp_print("Result:           %s (%d failed)\n", failed == 0 ? "PASS" : "FAIL", failed);
-    return failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    ucxapp_print("Result:             %s (%d passed, %d failed, %d not run)\n",
+                 d.failed > 0 ? "FAIL" : d.notRun > 0 ? "PARTIAL" : "PASS", d.passed, d.failed, d.notRun);
+    return d.failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
 static const ucxapp_cmd_t gDeviceCmds[] = {

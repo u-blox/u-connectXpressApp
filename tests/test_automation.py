@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -68,3 +69,26 @@ def test_script_runner_reports_failure(app_exe, tmp_path):
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 1
     assert "FAIL  app.version" in out.stdout and "PASS  app.uptime" in out.stdout
+
+
+def test_example_scripts_use_real_commands(app_exe):
+    out = subprocess.run([str(app_exe), "--offline", "--exec", "help --json"], capture_output=True,
+                         text=True, timeout=60, errors="replace", stdin=subprocess.DEVNULL)
+    names = {c["name"] for c in json.loads(out.stdout[out.stdout.index("["):])}
+    scripts = sorted((ROOT / "examples").rglob("*.ucx"))
+    assert any(s.parent.name == "use-cases" for s in scripts)
+    for script in scripts:
+        for raw in script.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or line == "expect-fail":
+                continue
+            if line.startswith("expect "):
+                re.compile(line[len("expect "):].strip())
+                continue
+            assert line.split()[0] in names, f"{script.name}: unknown command in '{line}'"
+        assert script.read_text(encoding="utf-8").startswith("#"), f"{script.name}: explain the goal first"
+
+
+def test_wifi_survey_needs_a_module(app_exe):
+    _, res = _json(app_exe, "wifi.survey")
+    assert res[0]["code"] == "NOT_CONNECTED"

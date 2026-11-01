@@ -61,7 +61,7 @@ jobs:
       matrix:
         board: [h753, f767, f439, f407, f401, f446, f103, g071]
     env:
-      ZEPHYR_REF: v4.5.0-rc3
+      ZEPHYR_REF: v4.5.0
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
@@ -102,6 +102,37 @@ jobs:
         with:
           name: ucxapp-zephyr-${{ matrix.board }}
           path: build/zephyr_${{ matrix.board }}/zephyr/zephyr.bin
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Init u-connectClient (not its nested submodules)
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
+      - uses: emscripten-core/setup-emsdk@v16
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build the browser app (warnings are errors)
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          emcmake cmake -S app -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm 2>&1 | tee wasm-build.txt
+          test "${PIPESTATUS[0]}" -eq 0 || exit 1
+          if grep -E "warning:" wasm-build.txt; then exit 1; fi
+      - name: Run it in Chromium (fake and virtual Web Serial), W3C check of the site page
+        run: |
+          python -m pip install pytest playwright html5validator
+          python -m playwright install --with-deps chromium
+          python -m pytest tests/test_wasm.py "tests/test_webpage.py::test_page_passes_the_w3c_validator[wasm-site]"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ucxapp-wasm
+          path: build/wasm/site
 
   build-windows:
     runs-on: windows-latest

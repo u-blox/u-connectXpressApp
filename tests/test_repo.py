@@ -31,6 +31,17 @@ def test_workflows_use_node24_actions():
             assert int(major) >= NODE24_ACTIONS[action], f"{wf.name}: {action}@v{major} runs on Node.js 20"
 
 
+def test_ci_builds_what_the_release_ships():
+    build = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    refs = {re.search(r"ZEPHYR_REF: (\S+)", text).group(1) for text in (build, release)}
+    assert len(refs) == 1, f"CI and release build different Zephyr versions: {refs}"
+    assert "-rc" not in refs.pop(), "release a Zephyr release, not a release candidate"
+    boards = [re.search(r"board: \[([^\]]+)\]", text).group(1) for text in (build, release)]
+    assert boards[0] == boards[1]
+    assert "build-wasm:" in build and "emcmake" in build and "tests/test_wasm.py" in build
+
+
 def test_cmake_references_existing_submodule_files():
     cmake = (ROOT / "app" / "CMakeLists.txt").read_text(encoding="utf-8")
     for rel in re.findall(r"\.\./(u-connectClient/[\w./-]+\.(?:cmake|c))\b", cmake):

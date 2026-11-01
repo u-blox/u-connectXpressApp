@@ -112,6 +112,8 @@ jobs:
       fail-fast: false
       matrix:
         board: [h753, f767, f439, f407, f401, f446, f103, g071]
+    env:
+      ZEPHYR_REF: v4.5.0
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
@@ -122,7 +124,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build
           pip install west
-          west init -m https://github.com/zephyrproject-rtos/zephyr --mr v4.5.0 ..
+          west init -m https://github.com/zephyrproject-rtos/zephyr --mr "$ZEPHYR_REF" ..
           (cd .. && west update --narrow -o=--depth=1 cmsis cmsis_6 hal_stm32 picolibc)
           pip install -r ../zephyr/scripts/requirements-base.txt
           (cd .. && west sdk install -t arm-zephyr-eabi)

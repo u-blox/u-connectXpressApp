@@ -110,7 +110,7 @@ It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or lapto
 ```powershell
 .\ucxapp --wasm            # builds build/wasm/site and serves http://127.0.0.1:8098/
 ```
-Click **Connect module**, pick the EVK port, and every command works from the page. The site is static, so it can be hosted on GitHub Pages (`.github/workflows/pages.yml`).
+Click **Connect module**, pick the EVK port, and every command works from the page. No EVK at hand? **Virtual module** connects a simulated NORA-W36 (Wi-Fi scan and connect, sockets, Bluetooth peer and GATT) instead. The site is static and published on GitHub Pages by `.github/workflows/pages.yml`: https://u-blox.github.io/u-connectXpressApp/
 
 **Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
 ```powershell

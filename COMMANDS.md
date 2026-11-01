@@ -575,7 +575,10 @@ API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `
 `http://127.0.0.1:8098/`. The page is the same as `web.start`, but nothing runs on a server: the app answers the
 page inside the tab, and **Connect module** opens the EVK's serial port with Web Serial (Chrome or Edge,
 115200 baud) and runs `dev.connect webserial`. Module commands, sockets and bridges work as on the PC; host-only parts (serial port list, GNSS/IMU/cellular on PC ports, the terminal UI) do not.
-Files live in the tab's memory. The site is static: `.github/workflows/pages.yml` publishes it on GitHub
+Files live in the tab's memory. **Virtual module** needs no hardware: it connects the same `webserial` device to a
+simulated NORA-W36 that answers from `app/wasm/vnora.json`, the `tests/harness/vucx/nora-w36.yaml` test profile
+(regenerate with `python -m harness.vucx --json nora-w36.yaml` from `tests/`; `test_wasm.py` checks they match).
+The site is static: `.github/workflows/pages.yml` publishes it on GitHub
 Pages, with `coi-serviceworker.js` adding the cross-origin isolation headers threads need.
 #### Text UI
 

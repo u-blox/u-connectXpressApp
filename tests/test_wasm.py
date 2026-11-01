@@ -36,6 +36,15 @@ def test_site_sources_are_ascii():
         f.read_bytes().decode("ascii")
 
 
+def test_virtual_module_is_the_vucx_nora_profile():
+    import json
+
+    pytest.importorskip("yaml")
+    from harness import vucx
+    assert json.loads((WASM / "vnora.json").read_text(encoding="ascii")) == vucx.table("nora-w36.yaml"), \
+        "regenerate: cd tests; python -m harness.vucx --json nora-w36.yaml > ../app/wasm/vnora.json"
+
+
 def test_page_script_is_injected_before_the_page_script(tmp_path):
     import subprocess
     out = tmp_path / "index.html"
@@ -89,6 +98,16 @@ def test_app_runs_in_the_browser(site):
         assert not re.search(r"\[[^\]]*-\d", page.inner_text("#out"))
         page.click("#wsc")
         page.wait_for_function("document.getElementById('wsc').textContent === 'Connect module'", timeout=30000)
+        # no hardware: the virtual NORA-W36 answers like the vucx profile
+        page.click("#wsv")
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
+        page.wait_for_function("document.getElementById('out').innerText.split('connected to webserial').length > 2",
+                               timeout=60000)
+        page.fill("#cmd", "wifi.scan")
+        page.click("#run")
+        page.wait_for_function("document.getElementById('out').innerText.includes('vucx-net')", timeout=30000)
+        page.click("#wsc")
+        page.wait_for_function("!document.getElementById('wsv').hidden", timeout=30000)
         browser.close()
     assert not js_errors, js_errors
     assert not [w for w in warnings if "serial" in w], warnings

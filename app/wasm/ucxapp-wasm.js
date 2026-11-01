@@ -1,9 +1,10 @@
 /* u-connectXpressApp in the browser. The app runs as WebAssembly in this tab: it answers the page's /api calls
-   and events here (no server), and reaches the NORA module over Web Serial (Chrome or Edge). */
+   and events here (no server), and reaches the NORA module over Web Serial (Chrome or Edge), or a virtual
+   NORA-W36 that answers from vnora.json (the vucx test profile) when there is no hardware. */
 (() => {
   'use strict';
   const realFetch = window.fetch.bind(window), RealEventSource = window.EventSource;
-  let M = null, port = null, writer = null, reader = null, loop = null, reading = false;
+  let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null;
 
   /* Without cross-origin isolation (first visit, before the service worker reloads the page) threads cannot start. */
   const ready = !self.crossOriginIsolated ? new Promise(() => {}) : createUcxapp({
@@ -59,20 +60,53 @@
   function serialWrite(ptr, len) {
     const bytes = M.HEAPU8.slice(ptr, ptr + len);
     M._free(ptr);
-    if (writer) writer.write(bytes).catch(e => console.warn('serial write', e));
+    if (virt) virtWrite(bytes);
+    else if (writer) writer.write(bytes).catch(e => console.warn('serial write', e));
   }
 
-  async function readLoop(btn) {
+  function rx(bytes) {
+    const p = M._malloc(bytes.length);
+    M.HEAPU8.set(bytes, p);
+    M._ucxapp_webserial_rx(p, bytes.length);
+    M._free(p);
+  }
+
+  /* ---- the virtual module: exact command or * ? pattern -> response lines, then URCs (like tests/harness/vucx) */
+  function lookup(table, cmd) {
+    if (Object.prototype.hasOwnProperty.call(table, cmd)) return table[cmd];
+    for (const [pattern, lines] of Object.entries(table)) {
+      const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+      if (new RegExp(re).test(cmd)) return lines;
+    }
+    return null;
+  }
+
+  function virtSend(v, lines) {
+    if (virt === v) rx(new TextEncoder().encode(lines.map(l => '\r\n' + l).join('') + '\r\n'));
+  }
+
+  function virtWrite(bytes) {
+    const v = virt;
+    v.buf += new TextDecoder().decode(bytes);
+    let i;
+    while ((i = v.buf.indexOf('\r')) >= 0) {
+      const cmd = v.buf.slice(0, i).trim();
+      v.buf = v.buf.slice(i + 1);
+      if (!cmd) continue;
+      const reply = lookup(v.commands, cmd) || v.default, urcs = lookup(v.urcs, cmd);
+      setTimeout(() => virtSend(v, reply), 2);
+      if (urcs) setTimeout(() => virtSend(v, urcs), 50);
+    }
+  }
+
+  async function readLoop() {
     while (port && port.readable && reading) {
       reader = port.readable.getReader();
       try {
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
-          const p = M._malloc(value.length);
-          M.HEAPU8.set(value, p);
-          M._ucxapp_webserial_rx(p, value.length);
-          M._free(p);
+          rx(value);
         }
       } catch (e) {
         if (reading) console.warn('serial read', e);
@@ -82,34 +116,58 @@
         reader = null;
       }
     }
-    if (reading) disconnect(btn);   /* unplugged or failed */
+    if (reading) disconnect();   /* unplugged or failed */
   }
 
   function exec(cmd) {
     return local('POST', '/api/exec?cmd=' + encodeURIComponent(cmd));
   }
 
+  function connected(yes) {
+    document.getElementById('wsc').textContent = yes ? 'Disconnect module' : 'Connect module';
+    document.getElementById('wsv').hidden = yes;
+  }
+
+  function devConnect() {
+    M._ucxapp_webserial_ready(1);
+    connected(true);
+    const cmd = document.getElementById('cmd'), run = document.getElementById('run');
+    if (cmd && run) { cmd.value = 'dev.connect webserial'; run.click(); } else exec('dev.connect webserial');
+  }
+
   /* The app sees a dead port first (writes fail, reads end), then dev.disconnect closes its side. */
-  async function disconnect(btn) {
-    if (!port) return;
+  async function disconnect() {
+    if (!port && !virt) return;
     const p = port, w = writer;
     reading = false;
-    port = writer = null;
+    port = writer = virt = null;
     M._ucxapp_webserial_ready(0);
     try {
       if (reader) await reader.cancel();
       await loop;
       if (w) await w.close();
-      await p.close();
+      if (p) await p.close();
     } catch (e) {
       console.warn('serial close', e);
     }
     await exec('dev.disconnect');
-    btn.textContent = 'Connect module';
+    connected(false);
   }
 
-  async function connect(btn) {
-    if (port) return disconnect(btn);
+  async function connectVirtual() {
+    await ready;
+    try {
+      const r = await realFetch('vnora.json');
+      virt = Object.assign(await r.json(), { buf: '' });
+    } catch (e) {
+      alert('Could not load the virtual module: ' + e.message);
+      return;
+    }
+    devConnect();
+  }
+
+  async function connect() {
+    if (port || virt) return disconnect();
     if (!navigator.serial) {
       alert('This browser has no Web Serial. Use Chrome or Edge on a desktop.');
       return;
@@ -124,27 +182,30 @@
       return;
     }
     writer = port.writable.getWriter();
-    M._ucxapp_webserial_ready(1);
     reading = true;
-    loop = readLoop(btn);
-    btn.textContent = 'Disconnect module';
-    const cmd = document.getElementById('cmd'), run = document.getElementById('run');
-    if (cmd && run) { cmd.value = 'dev.connect webserial'; run.click(); } else exec('dev.connect webserial');
+    loop = readLoop();
+    devConnect();
   }
 
-  function addButton() {
+  function addButton(id, text, title, onclick) {
     const files = document.getElementById('files');
-    if (!files) return;
     const btn = document.createElement('button');
-    btn.id = 'wsc';
-    btn.textContent = 'Connect module';
-    btn.title = 'Pick the NORA EVK serial port (Web Serial, 115200 baud)';
-    btn.onclick = () => connect(btn);
+    btn.id = id;
+    btn.textContent = text;
+    btn.title = title;
+    btn.onclick = onclick;
     files.parentNode.insertBefore(btn, files);
+  }
+
+  function addButtons() {
+    if (!document.getElementById('files')) return;
+    addButton('wsc', 'Connect module', 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);
+    addButton('wsv', 'Virtual module', 'No hardware: a simulated NORA-W36 with Wi-Fi, sockets and Bluetooth',
+      connectVirtual);
     if (navigator.serial) {
-      navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(btn); });
+      navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(); });
     }
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addButton);
-  else addButton();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addButtons);
+  else addButtons();
 })();

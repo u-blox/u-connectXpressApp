@@ -11,9 +11,11 @@ Empty by default: it only answers the AT setup commands. A YAML profile decides 
     default: ["OK"]                 # answer to unmatched commands (default ERROR)
 
 Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the port to open)
+As JSON for the browser's virtual module: python -m harness.vucx --json nora-w36.yaml > app/wasm/vnora.json
 """
 
 import fnmatch
+import json
 import os
 import sys
 import threading
@@ -34,8 +36,6 @@ def load(profile):
         path = PROFILES / path
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".json":
-        import json
-
         return json.loads(text)
     import yaml
 
@@ -50,18 +50,25 @@ def load(profile):
     return merged
 
 
+def table(profile=None):
+    """What the module answers: {commands, urcs, default}, with the setup and identity commands filled in."""
+    p = load(profile) if profile is not None else {}
+    commands = dict(SETUP)
+    ident = p.get("identity") or {}
+    for cmd, key in (("AT+GMI", "manufacturer"), ("AT+GMM", "model"), ("AT+GMR", "version"),
+                     ("AT+GSN", "serial")):
+        if key in ident:
+            commands[cmd] = [f'"{ident[key]}"', "OK"]
+    commands.update(p.get("commands") or {})
+    return {"commands": commands, "urcs": dict(p.get("urcs") or {}), "default": p.get("default") or ["ERROR"]}
+
+
 class Vucx:
     def __init__(self, profile=None):
-        p = load(profile) if profile is not None else {}
-        self.commands = dict(SETUP)
-        ident = p.get("identity") or {}
-        for cmd, key in (("AT+GMI", "manufacturer"), ("AT+GMM", "model"), ("AT+GMR", "version"),
-                         ("AT+GSN", "serial")):
-            if key in ident:
-                self.commands[cmd] = [f'"{ident[key]}"', "OK"]
-        self.commands.update(p.get("commands") or {})
-        self.urcs = dict(p.get("urcs") or {})
-        self.default = p.get("default") or ["ERROR"]
+        t = table(profile)
+        self.commands = t["commands"]
+        self.urcs = t["urcs"]
+        self.default = t["default"]
         self.log = []   # every command received, for the tests
         self._fd = None
         self._stop = threading.Event()
@@ -156,6 +163,9 @@ class Feeder:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--json"]:
+        print(json.dumps(table(sys.argv[2]), indent=1))
+        sys.exit(0)
     v = Vucx(sys.argv[1] if len(sys.argv) > 1 else None)
     print(v.start(), flush=True)
     try:

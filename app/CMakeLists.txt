@@ -192,7 +192,8 @@ if(NOT WIN32)
       COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
               -P ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
-              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${_ucx_site}
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json
+              ${_ucx_site}
       VERBATIM)
   endif()
 

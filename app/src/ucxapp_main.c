@@ -1,6 +1,7 @@
 /* Portable command-line entry point for Windows and POSIX hosts. */
 
 #include <ctype.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -159,11 +160,13 @@ static const ucxapp_cmd_t gConnectCmds[] = {
 
 static void printUsage(const char *prog)
 {
-    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
+    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--web] [--list-ports] [--list-modules] [--version]\n", prog);
     ucxapp_print("  a command can also be given directly: %s [port] dev.info (no spaces inside the command)\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
+    ucxapp_print("  --web only serves the web UI from the module (Wi-Fi: the best known network unless connected; web.start\n");
+    ucxapp_print("        unless an --exec started it); q, Esc or Ctrl+C stops\n");
     ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
     ucxapp_print("  --json prints one JSON object per command: command, success, code, error, output lines, data\n");
     ucxapp_print("  ${NAME} in --exec and shell commands is replaced by the environment variable (keeps secrets off the command line)\n");
@@ -305,6 +308,55 @@ static int runLine(ucxapp_t *app, const char *command, bool json)
     return rc;
 }
 
+static volatile sig_atomic_t gInterrupted;
+
+static void onInterrupt(int sig)
+{
+    (void)sig;
+    gInterrupted = 1;
+}
+
+/* --web: Wi-Fi up, the web server running, then wait until q/Esc/Ctrl+C or web.stop from the page. */
+static int runWeb(ucxapp_t *app)
+{
+    char ssid[64], ip[48];
+
+    if (app->ucx == NULL) {
+        ucxapp_print("ERROR: --web needs a module\n");
+        return 1;
+    }
+    if (!ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip)) || ip[0] == '\0') {
+        char line[] = "wifi.connect";
+        if (ucxapp_cmd_exec(app, line) != UCXAPP_OK) {
+            return 1;
+        }
+    }
+    if (!ucxapp_web_running()) {
+        char line[] = "web.start";
+        if (ucxapp_cmd_exec(app, line) != UCXAPP_OK) {
+            return 1;
+        }
+    }
+    ucxapp_print("web UI only; q, Esc or Ctrl+C stops\n");
+    gInterrupted = 0;
+    (void)signal(SIGINT, onInterrupt);
+    (void)signal(SIGTERM, onInterrupt);
+#ifdef SIGBREAK
+    (void)signal(SIGBREAK, onInterrupt);   /* Ctrl+Break, and how a script stops a Windows process group */
+#endif
+    while (!gInterrupted && ucxapp_web_running()) {
+        if (ucxapp_platform_key_pressed()) {
+            int key = ucxapp_platform_get_key();
+            if (key == 'q' || key == 'Q' || key == 27) {
+                break;
+            }
+        }
+        ucxapp_platform_sleep_ms(50);
+    }
+    ucxapp_print("stopping the web server\n");
+    return 0;
+}
+
 static bool looksLikePort(const char *name)
 {
     if (toupper((unsigned char)name[0]) == 'C' && toupper((unsigned char)name[1]) == 'O' &&
@@ -359,6 +411,7 @@ int main(int argc, char *argv[])
     int execCount = 0;
     bool shellMode = false;
     bool tuiMode = false;
+    bool webMode = false;
     bool offline = false;
     bool json = false;
     const char *pos[MAX_POS];
@@ -379,6 +432,8 @@ int main(int argc, char *argv[])
             shellMode = true;
         } else if (strcmp(argv[i], "--tui") == 0) {
             tuiMode = true;
+        } else if (strcmp(argv[i], "--web") == 0) {
+            webMode = true;
         } else if (strcmp(argv[i], "--offline") == 0) {
             offline = true;
         } else if (strcmp(argv[i], "--json") == 0) {
@@ -467,6 +522,7 @@ int main(int argc, char *argv[])
     (void)port;
     (void)shellMode;
     (void)tuiMode;
+    (void)webMode;
     (void)offline;
     (void)json;
     return ucxapp_web_local_begin(&webApp) ? 0 : 1;
@@ -475,8 +531,8 @@ int main(int argc, char *argv[])
     ucxapp_t app = { NULL };
     int rc = 0;
     char detected[8][32];
-    bool needDevice = execCount == 0 || shellMode || tuiMode;
-    json = json && execCount > 0 && !shellMode && !tuiMode;
+    bool needDevice = execCount == 0 || shellMode || tuiMode || webMode;
+    json = json && execCount > 0 && !shellMode && !tuiMode && !webMode;
     if (json) {
         ucxapp_io_set(&gCaptureIo);
     }
@@ -503,7 +559,9 @@ int main(int argc, char *argv[])
             rc = 1;
         }
     }
-    if (rc == 0 && (tuiMode || (execCount == 0 && !shellMode))) {
+    if (rc == 0 && webMode) {
+        rc = runWeb(&app);
+    } else if (rc == 0 && (tuiMode || (execCount == 0 && !shellMode))) {
         rc = ucxapp_tui_run(&app);
         if (rc != 0 && !tuiMode) {
             ucxapp_shell_run(&app);   /* not a terminal (piped input): plain shell */

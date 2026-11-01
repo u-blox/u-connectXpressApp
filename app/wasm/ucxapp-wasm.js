@@ -4,7 +4,8 @@
 (() => {
   'use strict';
   const realFetch = window.fetch.bind(window), RealEventSource = window.EventSource;
-  let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null;
+  let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null, opening = false;
+  const LAST_PORT = 'ucxapp.lastPort';
 
   /* Without cross-origin isolation (first visit, before the service worker reloads the page) threads cannot start. */
   const ready = !self.crossOriginIsolated ? new Promise(() => {}) : createUcxapp({
@@ -136,8 +137,9 @@
   }
 
   /* The app sees a dead port first (writes fail, reads end), then dev.disconnect closes its side. */
-  async function disconnect() {
+  async function disconnect(forget) {
     if (!port && !virt) return;
+    if (forget === true && port) localStorage.removeItem(LAST_PORT);
     const p = port, w = writer;
     reading = false;
     port = writer = virt = null;
@@ -166,25 +168,63 @@
     devConnect();
   }
 
+  async function openPort(p) {
+    await p.open({ baudRate: 115200, bufferSize: 65536 });
+    port = p;
+    const ports = await navigator.serial.getPorts(), info = p.getInfo();
+    localStorage.setItem(LAST_PORT, JSON.stringify({ index: ports.indexOf(p), vid: info.usbVendorId,
+      pid: info.usbProductId }));
+    writer = port.writable.getWriter();
+    reading = true;
+    loop = readLoop();
+    devConnect();
+  }
+
+  /* A port this site was granted before: the remembered index if it is still the same USB device, else the
+     first one with the same vendor and product id. */
+  async function lastPort() {
+    let last;
+    try {
+      last = JSON.parse(localStorage.getItem(LAST_PORT));
+    } catch (e) {
+      last = null;
+    }
+    if (!last || !navigator.serial) return null;
+    const ports = await navigator.serial.getPorts();
+    const same = p => { const i = p.getInfo(); return i.usbVendorId === last.vid && i.usbProductId === last.pid; };
+    return ports[last.index] && same(ports[last.index]) ? ports[last.index] : ports.find(same) || null;
+  }
+
+  async function reopen() {
+    if (port || virt || opening) return;
+    opening = true;
+    try {
+      await ready;
+      const p = await lastPort();
+      if (p && !port && !virt) await openPort(p);
+    } catch (e) {
+      port = null;
+      console.warn('reopen last port', e);   /* busy in another tab or app: the button still works */
+    } finally {
+      opening = false;
+    }
+  }
+
   async function connect() {
-    if (port || virt) return disconnect();
+    if (port || virt) return disconnect(true);
     if (!navigator.serial) {
       alert('This browser has no Web Serial. Use Chrome or Edge on a desktop.');
       return;
     }
     await ready;
+    let p;
     try {
-      port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200, bufferSize: 65536 });
+      p = await navigator.serial.requestPort();
+      await openPort(p);
     } catch (e) {
       port = null;
       if (e.name !== 'NotFoundError') alert('Could not open the port: ' + e.message);
-      return;
     }
-    writer = port.writable.getWriter();
-    reading = true;
-    loop = readLoop();
-    devConnect();
   }
 
   function addButton(id, text, title, onclick) {
@@ -204,6 +244,8 @@
       connectVirtual);
     if (navigator.serial) {
       navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(); });
+      navigator.serial.addEventListener('connect', reopen);   /* the remembered EVK plugged back in */
+      reopen();
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addButtons);

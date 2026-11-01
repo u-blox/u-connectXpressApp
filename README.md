@@ -105,12 +105,13 @@ ucxapp --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://githu
 ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
 It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or laptop for a command box with live output.
+`ucxapp COM13 --web` does the same without the text UI: it joins the best saved Wi-Fi network if needed, starts the web server and runs until q, Esc or Ctrl+C.
 
 **No install: the app in the browser**: the whole app runs as WebAssembly in Chrome or Edge and talks to the EVK over Web Serial
 ```powershell
 .\ucxapp --wasm            # builds build/wasm/site and serves http://127.0.0.1:8098/
 ```
-Click **Connect module**, pick the EVK port, and every command works from the page. No EVK at hand? **Virtual module** connects a simulated NORA-W36 (Wi-Fi scan and connect, sockets, Bluetooth peer and GATT) instead. The site is static and published on GitHub Pages by `.github/workflows/pages.yml`: https://u-blox.github.io/u-connectXpressApp/
+Click **Connect module**, pick the EVK port, and every command works from the page. The page remembers that port: on the next visit, and when the EVK is plugged back in, it reopens it without asking; **Disconnect module** forgets it. No EVK at hand? **Virtual module** connects a simulated NORA-W36 (Wi-Fi scan and connect, sockets, Bluetooth peer and GATT) instead. The site is static and published on GitHub Pages by `.github/workflows/pages.yml`: https://u-blox.github.io/u-connectXpressApp/
 
 **Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
 ```powershell

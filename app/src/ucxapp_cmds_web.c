@@ -1040,6 +1040,11 @@ static int cmdWebStop(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+bool ucxapp_web_running(void)
+{
+    return gServer != NULL && gRunning;
+}
+
 static int cmdWebStatus(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;

@@ -116,8 +116,9 @@ def parse(argv):
     g.add_argument("--debug", action="store_true", help="Debug configuration (host builds)")
     g.add_argument("--all", action="store_true", help="build Debug and Release (Windows)")
     g.add_argument("--everything", action="store_true",
-                   help="with --build/--rebuild/--clean: Windows, Linux (WSL) and every STM32 board in parallel, "
-                        "one table of results and warnings, then the offline tests")
+                   help="with --build/--rebuild/--clean: Windows, Linux (WSL), every STM32 board and, when emsdk is "
+                        "installed, the WebAssembly site in parallel, one table of results and warnings, then the "
+                        "offline tests")
     g.add_argument("--run", action="store_true", help="start the app after --build/--clean/--rebuild/--sign")
     g = p.add_argument_group("STM32")
     g.add_argument("--erase", action="store_true", help="erase the whole flash")
@@ -934,6 +935,10 @@ def everything(args):
         print("WSL not found, skipping the Linux build")
     stm32_tools()
     jobs.update({b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+    if emsdk_env(required=False):
+        jobs["wasm"] = ["--wasm", *flags]
+    else:
+        print("Emscripten (emsdk) not found, skipping the optional WebAssembly build")
     rc = build_many(args, jobs)
     if args.clean and not (args.build or args.rebuild):
         return rc
@@ -1132,13 +1137,14 @@ def zephyr(args, extra):
 
 WASM_DIR = ROOT / "build" / "wasm"
 WASM_PORT = 8098
+EMSDK_DIRS = ("C:/emsdk", Path.home() / "emsdk")
 
 
-def emsdk_env():
-    """Puts emsdk's Emscripten on PATH unless emcmake is already there (emsdk_env was sourced)."""
+def emsdk_env(required=True):
+    """Puts emsdk's Emscripten on PATH unless emcmake is already there (emsdk_env was sourced); False if not found."""
     if shutil.which("emcmake"):
-        return
-    for d in (os.environ.get("EMSDK"), "C:/emsdk", Path.home() / "emsdk"):
+        return True
+    for d in (os.environ.get("EMSDK"), *EMSDK_DIRS):
         if d and (Path(d) / "upstream" / "emscripten").is_dir():
             d = Path(d)
             nodes = sorted((d / "node").glob("*/bin")) + sorted((d / "node").glob("*"))
@@ -1146,9 +1152,11 @@ def emsdk_env():
             os.environ.setdefault("EM_CONFIG", str(d / ".emscripten"))
             os.environ["PATH"] = os.pathsep.join([str(d / "upstream" / "emscripten"),
                                                    *(str(n) for n in nodes[-1:]), os.environ["PATH"]])
-            return
-    fail("Emscripten not found: install emsdk (git clone https://github.com/emscripten-core/emsdk C:/emsdk, "
-         "emsdk install latest, emsdk activate latest) or set EMSDK")
+            return True
+    if required:
+        fail("Emscripten not found: install emsdk (git clone https://github.com/emscripten-core/emsdk C:/emsdk, "
+             "emsdk install latest, emsdk activate latest) or set EMSDK")
+    return False
 
 
 def wasm_build():

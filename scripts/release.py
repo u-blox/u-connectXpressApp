@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux, STM32 (FreeRTOS and Zephyr) and the
 browser app, sign the Windows exe and publish one archive with the layout windows/, linux/,
-stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/.
+stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/ (optional: left out when the browser build failed).
 
 1. Checks the work tree is clean, on master and in sync with origin.
 2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards, offline
@@ -123,7 +123,7 @@ def package(tree, archive, root=None):
     if root is None:
         missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
         missing += [f"zephyr_{b}" for b in STM32_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
-        for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm"):
+        for f in ("windows/ucxapp.exe", "linux/ucxapp"):
             if not (tree / f).is_file():
                 missing.append(f)
         if missing:
@@ -206,11 +206,16 @@ def finish(args, tag, tree, exe):
     run("gh", "run", "download", run_id, "--name", "release-tree", "--dir", tree)
     archive = dist / f"ucxapp-{tag}.zip"
     package(tree, archive)
-    web = dist / f"ucxapp-wasm-{tag}.zip"
-    package(tree, web, tree / "wasm")
+    assets = [archive, exe, tree / "linux" / "ucxapp"]
+    if (tree / "wasm" / "ucxapp.wasm").is_file():
+        web = dist / f"ucxapp-wasm-{tag}.zip"
+        package(tree, web, tree / "wasm")
+        assets.append(web)
+    else:
+        print("No WebAssembly build in the tree (optional), releasing without the browser app")
 
     step("Creating the release")
-    run("gh", "release", "create", tag, archive, exe, tree / "linux" / "ucxapp", web,
+    run("gh", "release", "create", tag, *assets,
         "--title", f"u-connectXpressApp {tag}", "--notes-file", ".github/release-notes.md",
         "--generate-notes", *([] if args.publish else ["--draft"]))
     print(f"Release: {out('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')[1]}")

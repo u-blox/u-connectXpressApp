@@ -19,6 +19,7 @@ ucxapp dev.info
 ```
 
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
+- Add `--web` to use only the web UI: Wi-Fi from the saved profiles unless already connected, then `web.start` (unless an `--exec` started it, e.g. `--exec "web.start 443 https" --web`), until q, Esc or Ctrl+C.
 
 - Without a port argument, `--exec` and `--shell` use the saved port from the ini file.
 - `--offline` skips the module auto-detection, for commands that need no device (`tls.*`, `help`).

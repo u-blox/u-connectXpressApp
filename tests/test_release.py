@@ -1,5 +1,5 @@
-"""Release: the CI workflow builds every board on FreeRTOS and Zephyr plus the browser app, and release.py
-refuses an incomplete tree."""
+"""Release: the CI workflow builds every board on FreeRTOS and Zephyr plus the optional browser app, and
+release.py refuses an incomplete tree."""
 
 import importlib.util
 import zipfile
@@ -40,8 +40,22 @@ def test_bundle_collects_every_build(jobs):
         assert name in pattern
 
 
-def make_tree(tree, boards):
-    for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm", "wasm/index.html"):
+def test_browser_build_is_optional(jobs):
+    assert jobs["wasm"]["continue-on-error"] is True
+    assert all(job.get("continue-on-error") is not True for name, job in jobs.items() if name != "wasm")
+
+
+def test_launcher_skips_the_browser_build_without_emsdk(monkeypatch, tmp_path):
+    monkeypatch.setattr(ucxapp.shutil, "which", lambda _name: None)
+    monkeypatch.setenv("EMSDK", str(tmp_path))
+    monkeypatch.setattr(ucxapp, "EMSDK_DIRS", (tmp_path / "emsdk",))
+    assert ucxapp.emsdk_env(required=False) is False
+    with pytest.raises(SystemExit):
+        ucxapp.emsdk_env()
+
+
+def make_tree(tree, boards, wasm=True):
+    for f in ("windows/ucxapp.exe", "linux/ucxapp", *(["wasm/ucxapp.wasm", "wasm/index.html"] if wasm else [])):
         (tree / f).parent.mkdir(parents=True, exist_ok=True)
         (tree / f).write_bytes(b"x")
     for b in boards:
@@ -54,6 +68,14 @@ def test_package_refuses_an_incomplete_tree(tmp_path):
     make_tree(tmp_path / "t", rel.STM32_BOARDS[1:])
     with pytest.raises(SystemExit):
         rel.package(tmp_path / "t", tmp_path / "a.zip")
+
+
+def test_package_accepts_a_tree_without_the_browser_app(tmp_path):
+    rel = release_py()
+    make_tree(tmp_path / "t", rel.STM32_BOARDS, wasm=False)
+    rel.package(tmp_path / "t", tmp_path / "a.zip")
+    with zipfile.ZipFile(tmp_path / "a.zip") as z:
+        assert not any(n.startswith("wasm/") for n in z.namelist())
 
 
 def test_package_writes_the_archive_and_the_browser_zip(tmp_path):

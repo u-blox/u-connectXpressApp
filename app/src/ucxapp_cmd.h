@@ -154,6 +154,7 @@ void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
 /* Browser build: the page calls the web routes in the same tab and polls the events (ucxapp_cmds_web.c). */
 bool ucxapp_web_local_begin(ucxapp_t *app);
+bool ucxapp_web_running(void);
 int ucxapp_web_local_request(const char *method, const char *path, const char *query, const char *body, int len);
 const char *ucxapp_web_local_body(void);
 int ucxapp_web_local_length(void);

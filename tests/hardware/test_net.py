@@ -170,6 +170,48 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
 
 
 @pytest.mark.hardware
+def test_web_mode_serves_the_page_until_interrupted(app_exe, port_a, tmp_path):
+    """--web: no TUI or shell, Wi-Fi from the saved profiles, the page served, Ctrl+C (Ctrl+Break) stops it."""
+    import os
+    import signal
+    import urllib.request
+
+    wifi = _wifi_connect_command(tmp_path)
+    ip_a, _ = _join_wifi(app_exe, port_a, wifi)
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    proc = subprocess.Popen(_args(app_exe, port_a, "web.start 8080 web-token") + ["--web"], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                            cwd=tmp_path, creationflags=flags)
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
+    seen = []
+    try:
+        deadline = time.time() + 90
+        while time.time() < deadline and not any("web UI only" in s for s in seen):
+            try:
+                seen.append(lines.get(timeout=1))
+            except queue.Empty:
+                pass
+        assert any("web UI only" in s for s in seen), "".join(seen)
+        assert f"http://{ip_a}:8080/#t=web-token" in "".join(seen)
+        try:
+            with urllib.request.urlopen(f"http://{ip_a}:8080/api/groups?t=web-token", timeout=20) as r:
+                assert r.status == 200 and b"wifi" in r.read()
+        except OSError as e:
+            pytest.skip(f"this PC cannot reach the module at {ip_a}: {e}")
+    finally:
+        proc.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    while not lines.empty():
+        seen.append(lines.get())
+    assert proc.returncode == 0, "".join(seen)
+    assert "web server stopped" in "".join(seen)
+
+
+@pytest.mark.hardware
 def test_coap_get_public_server(app_exe, port_a):
     out = _run(app_exe, port_a, _wifi_connect_command(), "coap.get coap.me 5683 test", timeout=180)
     assert out.returncode == 0, out.stdout

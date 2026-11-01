@@ -22,7 +22,7 @@ FAKE_SERIAL = """
       window.__tx += text;
       if (/\\r/.test(text)) setTimeout(() => push.enqueue(new TextEncoder().encode('\\r\\nOK\\r\\n')), 5);
     } }),
-    open: async () => {}, close: async () => {},
+    open: async () => {}, close: async () => {}, getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6015 }),
   };
   Object.defineProperty(navigator, 'serial', { value: {
     requestPort: async () => port, addEventListener() {}, getPorts: async () => [port],
@@ -111,3 +111,36 @@ def test_app_runs_in_the_browser(site):
         browser.close()
     assert not js_errors, js_errors
     assert not [w for w in warnings if "serial" in w], warnings
+
+
+def test_last_port_is_reopened_until_disconnected(site):
+    """A port granted and opened before comes back on the next visit; the Disconnect button forgets it."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script(FAKE_SERIAL)
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        assert page.inner_text("#wsc") == "Connect module"   # nothing remembered yet
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
+        assert '"vid":1027' in page.evaluate("localStorage.getItem('ucxapp.lastPort')")
+        page.reload()
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                               timeout=60000)
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Connect module'", timeout=30000)
+        assert page.evaluate("localStorage.getItem('ucxapp.lastPort')") is None
+        page.reload()
+        page.wait_for_selector("#st.ok", timeout=30000)
+        page.wait_for_timeout(500)
+        assert page.inner_text("#wsc") == "Connect module"
+        browser.close()
+    assert not js_errors, js_errors

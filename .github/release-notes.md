@@ -1,6 +1,6 @@
 ## What's in this release
 
-u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, and as firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB and NUCLEO-G071RB (lite) boards.
+u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, in the browser, and as FreeRTOS or Zephyr firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB and NUCLEO-G071RB (lite) boards.
 
 - One launcher, `ucxapp.py`, for Windows, Linux (also WSL) and STM32
 - Hardware detection with `--detect`, including NORA modules, GNSS receiver and IMU
@@ -24,9 +24,18 @@ stm32/stm32_f401/
 stm32/stm32_f446/
 stm32/stm32_f103/             lite build
 stm32/stm32_g071/             lite build
+zephyr/zephyr_<board>/        the same boards on Zephyr (ucxapp_zephyr.bin/.hex/.elf), flashed the same way
+wasm/                         the app in the browser (WebAssembly + Web Serial), see below
 ```
 
-`ucxapp.exe` (Windows, signed) and `ucxapp` (Linux x64) are also attached on their own.
+`ucxapp.exe` (Windows, signed), `ucxapp` (Linux x64) and `ucxapp-wasm-<version>.zip` (the browser app) are also attached on their own.
+
+## The app in the browser
+
+The same app runs as WebAssembly in Chrome or Edge, online at https://u-blox.github.io/u-connectXpressApp/ or from
+`wasm/` on your own PC: `python -m http.server 8098 --bind 127.0.0.1` in that folder, then open
+http://127.0.0.1:8098/. **Connect module** opens the EVK's serial port (Web Serial); **Virtual module** runs a
+simulated NORA-W36 without hardware.
 
 ## Connecting a NORA-W36 to a NUCLEO board
 

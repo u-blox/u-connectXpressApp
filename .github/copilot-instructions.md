@@ -22,7 +22,7 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c`, `app/stm32_freertos/` and `app/zephyr/`.
 
-Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux and the three STM32 images).
+Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux, every STM32 board on FreeRTOS and Zephyr, and the WebAssembly site).
 
 ## Scope and priorities
 

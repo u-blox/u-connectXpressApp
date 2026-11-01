@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux and STM32, sign the Windows exe
-and publish one archive with the layout windows/, linux/, stm32/stm32_<board>/.
+"""Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux, STM32 (FreeRTOS and Zephyr) and the
+browser app, sign the Windows exe and publish one archive with the layout windows/, linux/,
+stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/.
 
 1. Checks the work tree is clean, on master and in sync with origin.
 2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards, offline
    tests) and commits the refreshed memory tables in README.md and docs/STM32_MEMORY.md.
 3. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
-4. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 into the `release-tree` artifact.
+4. Tags and pushes; .github/workflows/release.yml builds Linux, STM32, Zephyr and WebAssembly into the
+   `release-tree` artifact.
 5. Downloads that tree, adds windows/ucxapp.exe and creates the release with
-   ucxapp-<tag>.zip plus ucxapp.exe and ucxapp (Linux) as direct downloads.
+   ucxapp-<tag>.zip plus ucxapp.exe, ucxapp (Linux) and ucxapp-wasm-<tag>.zip as direct downloads.
 
 X.Y.Z is U_CX_VERSION_MAJOR/MINOR/PATCH in u_cx_version.h (the same header app/CMakeLists.txt reads), YYMMDD is today.
 
@@ -116,17 +118,18 @@ def wait_for_run(tag, minutes):
     fail(f"no release.yml run for {tag} after {minutes} min; check the Actions tab")
 
 
-def package(tree, archive):
-    """Zip the tree; zipfile keeps the Linux binary executable."""
-    missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
-    if not (tree / "windows" / "ucxapp.exe").is_file():
-        missing.append("windows/ucxapp.exe")
-    if not (tree / "linux" / "ucxapp").is_file():
-        missing.append("linux/ucxapp")
-    if missing:
-        fail(f"release tree incomplete: {missing}")
+def package(tree, archive, root=None):
+    """Zip the tree (or the root folder of it); zipfile keeps the Linux binary executable."""
+    if root is None:
+        missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
+        missing += [f"zephyr_{b}" for b in STM32_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
+        for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm"):
+            if not (tree / f).is_file():
+                missing.append(f)
+        if missing:
+            fail(f"release tree incomplete: {missing}")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(tree.rglob("*")):
+        for f in sorted((root or tree).rglob("*")):
             if f.is_file():
                 info = zipfile.ZipInfo.from_file(f, f.relative_to(tree).as_posix())
                 info.external_attr = (0o755 if f.name == "ucxapp" else 0o644) << 16
@@ -199,13 +202,15 @@ def main():
 def finish(args, tag, tree, exe):
     dist = tree.parent
     run_id = wait_for_run(tag, args.wait_minutes)
-    step("Downloading the Linux and STM32 builds")
+    step("Downloading the Linux, STM32, Zephyr and WebAssembly builds")
     run("gh", "run", "download", run_id, "--name", "release-tree", "--dir", tree)
     archive = dist / f"ucxapp-{tag}.zip"
     package(tree, archive)
+    web = dist / f"ucxapp-wasm-{tag}.zip"
+    package(tree, web, tree / "wasm")
 
     step("Creating the release")
-    run("gh", "release", "create", tag, archive, exe, tree / "linux" / "ucxapp",
+    run("gh", "release", "create", tag, archive, exe, tree / "linux" / "ucxapp", web,
         "--title", f"u-connectXpressApp {tag}", "--notes-file", ".github/release-notes.md",
         "--generate-notes", *([] if args.publish else ["--draft"]))
     print(f"Release: {out('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')[1]}")

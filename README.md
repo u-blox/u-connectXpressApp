@@ -197,7 +197,7 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 456 KB | 2048 KB | 22% | 314 KB | 512 KB | 61% |
+| `h753` | NUCLEO-H753ZI | 464 KB | 2048 KB | 23% | 314 KB | 512 KB | 61% |
 | `f767` | NUCLEO-F767ZI | 443 KB | 2048 KB | 22% | 323 KB | 368 KB | 88% |
 | `f439` | NUCLEO-F439ZI | 446 KB | 2048 KB | 22% | 131 KB | 192 KB | 69% |
 | `f407` | STM32F4DISCOVERY | 443 KB | 1024 KB | 43% | 104 KB | 128 KB | 81% |
@@ -215,8 +215,13 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 
 ## Security notes
 
-- Saved Wi-Fi passwords (`ucxapp.wifi`, `wifi.profile.*`) are XOR-obfuscated so they are not readable at a glance. This is obfuscation, not protection: anyone with the file can recover them.
+- Saved Wi-Fi passwords (`ucxapp.wifi`, `wifi.profile.*`) are encrypted with AES-256-GCM using a random per-install key in `storage/ucxapp.key` (owner-only on Linux). The profiles file alone reveals nothing; whoever has both files, or runs ucxapp as you, can read the passwords. STM32 builds (no mbedTLS) still use XOR obfuscation. Profiles saved by older versions (XOR) are not read any more: add them again.
+- `utils.encrypt` / `utils.decrypt` protect any file with a passphrase (AES-256-GCM, PBKDF2-HMAC-SHA256 with 600000 iterations).
 - The web UI is protected by a random 128-bit token in the printed URL. Use `web.start https` on networks you do not trust.
+
+### EU Cyber Resilience Act and RED cybersecurity (EN 18031)
+
+ucxapp is a test and integration tool, not the radio product; the NORA module carries the RED conformity (secure boot, signed module firmware). What the app can show is pinned to tests in [tests/test_cra.py](tests/test_cra.py): an SBOM of every component (`app.sbom`), no default passwords (random web token, client certificates from the local CA), stored secrets sealed and kept out of logs, TLS/DTLS with mbedTLS and malformed input rejected. The process items (vulnerability reporting, support period, signed releases) are handled by the u-blox release process.
 
 ---
 

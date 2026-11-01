@@ -150,8 +150,8 @@ static int cmdOn(ucxapp_t *app, int argc, char *argv[])
     if (!gDefined && !defineService(app)) {
         return UCXAPP_ERR_FAILED;
     }
+    gOn = true;   /* before advertising: a bonded phone can write as soon as the service is active */
     ucxapp_gatt_ensure_advertising(app);
-    gOn = true;
     ucxapp_print("notification service on: the phone app pairs, then writes <id>|<app>|<title>|<text> to "
                  "7a3f0011-5c1e-4d2b-9f6a-3e8b2c4d5e6f\n");
     return UCXAPP_OK;

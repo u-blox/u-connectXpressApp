@@ -185,6 +185,58 @@ static const char *baseName(const char *path)
     return slash != NULL ? slash + 1 : path;
 }
 
+int ucxapp_cert_upload(ucxapp_t *app, int certType, const char *name, const uint8_t *data, size_t len,
+                       const char *pw)
+{
+    uSecCertType_t type = (uSecCertType_t)certType;
+
+    if (name[0] == '\0' || strlen(name) > CERT_MAX_NAME) {
+        ucxapp_print("ERROR: invalid certificate name\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (len == 0 || len > CERT_MAX_FILE) {
+        ucxapp_print("ERROR: file size %u is outside 1-%d bytes\n", (unsigned)len, CERT_MAX_FILE);
+        return UCXAPP_ERR_FAILED;
+    }
+
+    char localFp[UCXAPP_SHA256_HEX_LEN] = "";
+    if (type != U_SEC_CERT_TYPE_KEY) {
+        size_t derLen = 0;
+        uint8_t *der = pemToDer((const char *)data, &derLen);
+        if (der == NULL) {
+            ucxapp_print("warning: no PEM certificate block found, fingerprint check skipped\n");
+        } else {
+            ucxapp_sha256_hex(der, derLen, localFp);
+            free(der);
+        }
+    }
+
+    int32_t err;
+    if (pw != NULL) {
+        err = uCxSecurityCertificateUploadPW(app->ucx, type, name, pw, data, (int32_t)len);
+    } else {
+        err = uCxSecurityCertificateUpload(app->ucx, type, name, data, (int32_t)len);
+    }
+    if (err != 0) {
+        ucxapp_print("ERROR: upload failed (%d%s); check PEM format, size and that the name is unused\n", (int)err, ucxapp_errname(err));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("uploaded %s %s (%u bytes)\n", typeName(type), name, (unsigned)len);
+
+    if (localFp[0] != '\0') {
+        char modFp[UCXAPP_SHA256_HEX_LEN];
+        if (!moduleFingerprint(app, name, modFp, sizeof(modFp))) {
+            ucxapp_print("warning: could not read the fingerprint back from the module\n");
+        } else if (ucxapp_hex_equal(localFp, modFp)) {
+            ucxapp_print("fingerprint verified: %s\n", modFp);
+        } else {
+            ucxapp_print("ERROR: fingerprint mismatch (local %s, module %s)\n", localFp, modFp);
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    return UCXAPP_OK;
+}
+
 static int cmdCertUpload(ucxapp_t *app, int argc, char *argv[])
 {
     uSecCertType_t type;
@@ -205,49 +257,9 @@ static int cmdCertUpload(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot read %s\n", argv[2]);
         return UCXAPP_ERR_FAILED;
     }
-    if (len == 0 || len > CERT_MAX_FILE) {
-        ucxapp_print("ERROR: file size %u is outside 1-%d bytes\n", (unsigned)len, CERT_MAX_FILE);
-        free(data);
-        return UCXAPP_ERR_FAILED;
-    }
-
-    char localFp[UCXAPP_SHA256_HEX_LEN] = "";
-    if (type != U_SEC_CERT_TYPE_KEY) {
-        size_t derLen = 0;
-        uint8_t *der = pemToDer((const char *)data, &derLen);
-        if (der == NULL) {
-            ucxapp_print("warning: no PEM certificate block found, fingerprint check skipped\n");
-        } else {
-            ucxapp_sha256_hex(der, derLen, localFp);
-            free(der);
-        }
-    }
-
-    int32_t err;
-    if (argc > 4) {
-        err = uCxSecurityCertificateUploadPW(app->ucx, type, name, argv[4], data, (int32_t)len);
-    } else {
-        err = uCxSecurityCertificateUpload(app->ucx, type, name, data, (int32_t)len);
-    }
+    int rc = ucxapp_cert_upload(app, (int)type, name, data, len, argc > 4 ? argv[4] : NULL);
     free(data);
-    if (err != 0) {
-        ucxapp_print("ERROR: upload failed (%d%s); check PEM format, size and that the name is unused\n", (int)err, ucxapp_errname(err));
-        return UCXAPP_ERR_FAILED;
-    }
-    ucxapp_print("uploaded %s %s (%u bytes)\n", typeName(type), name, (unsigned)len);
-
-    if (localFp[0] != '\0') {
-        char modFp[UCXAPP_SHA256_HEX_LEN];
-        if (!moduleFingerprint(app, name, modFp, sizeof(modFp))) {
-            ucxapp_print("warning: could not read the fingerprint back from the module\n");
-        } else if (ucxapp_hex_equal(localFp, modFp)) {
-            ucxapp_print("fingerprint verified: %s\n", modFp);
-        } else {
-            ucxapp_print("ERROR: fingerprint mismatch (local %s, module %s)\n", localFp, modFp);
-            return UCXAPP_ERR_FAILED;
-        }
-    }
-    return UCXAPP_OK;
+    return rc;
 }
 
 static int cmdCertRemove(ucxapp_t *app, int argc, char *argv[])

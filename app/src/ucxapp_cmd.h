@@ -135,6 +135,11 @@ bool ucxappLogEventsEnabled(void);   /* app.log.events.on: URC events are also p
 void ucxapp_register_mqtt_cmds(void);
 void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);
+/* Uploads PEM data (0 ca, 1 client, 2 key; pw for an encrypted key or NULL) and checks the fingerprint. */
+int ucxapp_cert_upload(ucxapp_t *app, int certType, const char *name, const uint8_t *data, size_t len,
+                       const char *pw);
+void ucxapp_register_certfile_cmds(void); /* utils.cert.*, cert.import: PKCS#12, PKCS#7, DER (host only) */
+void ucxapp_register_crypt_cmds(void);   /* utils.encrypt/decrypt: AES-256-GCM files (host only) */
 void ucxapp_register_tls_cmds(void);     /* tls.* local CA and certificates (ucxapp_cmds_tls.c) */
 void ucxapp_register_fw_cmds(void);
 void ucxapp_register_ymodem_cmds(void);  /* file.send, file.recv over the console (not in UCXAPP_LITE builds) */

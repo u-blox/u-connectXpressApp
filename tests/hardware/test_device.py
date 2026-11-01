@@ -46,7 +46,7 @@ def test_diagnostic_commands_run(app_exe, port_a):
 def test_imu_detect_probes_usb_uart_adapters(app_exe):
     # "USB-SERIAL CH340" was once parsed as an EVK port with a label and silently skipped.
     ports = subprocess.run([str(app_exe), "--list-ports"], capture_output=True, text=True, timeout=30,
-                           errors="replace").stdout
+                           errors="replace", stdin=subprocess.DEVNULL).stdout
     adapters = re.findall(r"^(COM\d+)\s+available\s+.*USB-SERIAL", ports, re.MULTILINE)
     if not adapters:
         pytest.skip("no USB-SERIAL adapter attached")
@@ -92,6 +92,45 @@ def test_certificate_upload_info_and_remove(app_exe, port_a, tmp_path):
     assert "fingerprint verified" in out.stdout, out.stdout
     assert fingerprint in out.stdout.lower(), out.stdout
     assert "removed ca ucxtest" in out.stdout, out.stdout
+
+
+@pytest.mark.hardware
+@pytest.mark.wifi
+def test_certificate_import_pkcs12(app_exe, port_a, tmp_path):
+    x509 = pytest.importorskip("cryptography.x509")
+    import datetime
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    def cert(cn, key, issuer, issuer_key, ca):
+        return (x509.CertificateBuilder()
+                .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)]))
+                .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, issuer)]))
+                .public_key(key.public_key()).serial_number(x509.random_serial_number())
+                .not_valid_before(now - datetime.timedelta(days=1)).not_valid_after(now + datetime.timedelta(days=30))
+                .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
+                .sign(issuer_key, hashes.SHA256()))
+
+    ca_key, leaf_key = ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())
+    ca = cert("ucxapp test ca", ca_key, "ucxapp test ca", ca_key, True)
+    leaf = cert("ucxapp test client", leaf_key, "ucxapp test ca", ca_key, False)
+    p12 = tmp_path / "client.p12"
+    p12.write_bytes(pkcs12.serialize_key_and_certificates(
+        b"client", leaf_key, leaf, [ca], serialization.BestAvailableEncryption(b"secret")))
+
+    cleanup = ("cert.remove ucximp", "cert.remove ucximp-key", "cert.remove ucximp-ca")
+    _run(app_exe, port_a, *cleanup)  # leftovers from an aborted run
+    out = _run(app_exe, port_a, f"cert.import {p12} ucximp secret", "cert.list", *cleanup)
+    assert out.returncode == 0, out.stdout
+    for line in ("uploaded client ucximp", "uploaded key ucximp-key", "uploaded ca ucximp-ca",
+                 "client certificate ucximp, key ucximp-key, CA ucximp-ca",
+                 "removed client ucximp", "removed key ucximp-key", "removed ca ucximp-ca"):
+        assert line in out.stdout, out.stdout
 
 
 @pytest.mark.gnss

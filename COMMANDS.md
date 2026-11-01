@@ -127,7 +127,7 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 | `gatt.credits` | `[conn] <1-127>` | Send SPS credits |
 | `gatt.wps` | `[conn] <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
 | `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `ras`, `nus` or `sps` |
-| `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed) |
+| `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed; `.wps` ends early once a phone has sent the Wi-Fi settings) |
 | `gatt.server.list` |  | List the local characteristics defined by the server examples |
 | `gatt.server.set` | `<name\|handle> <hex\|text:abc>` | Set a local characteristic value |
 | `gatt.server.notify` | `[conn] <name\|handle> <data>` | Send a notification |
@@ -178,7 +178,7 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.survey` | `[seconds] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
 | `wifi.roaming` | `[on\|off]` | Show or set roaming between access points |
 | `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain used by `wifi.profile.auto` (default `etsi`) |
-| `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (current directory; passwords are obfuscated, not encrypted; max 16) |
+| `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (passwords encrypted with AES-256-GCM, key in `ucxapp.key`; XOR-obfuscated on STM32; max 16) |
 | `wifi.profile.list` |  | List saved profiles (no passwords shown) and the network (IP prefix) each was last used on |
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
 | `wifi.profile.connect` | `<name>` | Connect with a saved profile; it becomes the "last used" profile |
@@ -335,12 +335,21 @@ NORA-W36 has no GNSS; for a position from a receiver on the PC use `gnss.open` a
 | `cert.info` | `<name>` | Size and SHA-256 fingerprint |
 | `cert.upload` | `<ca\|client\|key> <file> [name] [pw]` | Upload a PEM file (max 8192 bytes); the name defaults to the file name, `pw` is for encrypted keys. For `ca` and `client` the fingerprint is checked against the module afterwards |
 | `cert.remove` | `<name>` | Remove a certificate or key (type is looked up automatically) |
+| `cert.import` | `<file> [name] [pw]` | Convert a PKCS#12 (`.p12`/`.pfx`), PKCS#7 (`.p7b`), DER (`.cer`/`.der`) or PEM file and upload it: client chain as `<name>`, key as `<name>-key`, CA certificates as `<name>-ca` (without a key all certificates go up as CA `<name>`). The name defaults to the file name, max 28 characters. Not on STM32 |
 | `dtls.selftest` | `[server-cert]` | Run a DTLS client and server in-process (offline) and check an echo |
 | `dtls.client` | `<host> <port> [text]` | DTLS client over a module UDP socket: handshake, send text, print the reply |
 | `dtls.server` | `<port> [cert]` | DTLS server over a module UDP socket: one client, echo one message |
 
 ```powershell
 ucxapp COM13 --exec "cert.upload ca root-ca.pem" --exec "cert.upload client device.pem" --exec "cert.upload key device-key.pem" --exec "cert.list"
+```
+
+Certificates often come as PKCS#12 from Windows or the IT department. The module only takes PEM, so convert first or import in one go.
+PKCS#12 must use AES (PBES2); files with the legacy 3DES/RC2 encryption get a re-export hint
+(`openssl pkcs12 -legacy -in old.p12 -nodes | openssl pkcs12 -export -out new.p12`, or AES256-SHA256 in the Windows export wizard):
+
+```powershell
+ucxapp COM13 --exec "utils.cert.info device.p12 MyPassword" --exec "cert.import device.p12 device MyPassword" --exec "cert.list"
 ```
 
 #### App TLS (HTTPS and TLS bridges)
@@ -381,12 +390,13 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | Command | Arguments | Description |
 |---|---|---|
 | `gnss.detect` | `[port]` | Find a GNSS receiver on the serial ports (tries 9600 to 921600 baud) |
-| `gnss.open` | `[port] [baud]` | Open a receiver; detects port and baud when omitted |
+| `gnss.open` | `[port] [baud]` | Open a receiver; detects port and baud when omitted. Already open: says so and succeeds |
 | `gnss.close` | | Close the receiver |
 | `gnss.status` | | Fix, position, time, satellites, DOP, receiver version and counters |
 | `gnss.sats` | | Satellites with elevation, azimuth, signal strength and used flag |
 | `gnss.watch` | `[seconds]` | Live card once a second: fix bars, used/seen satellites as dots, HDOP bars with a rating, position, UTC time and time to first fix since `gnss.open`. Default 10 s, any key stops |
-| `gnss.log` | `<file\|off>` | Record the raw receiver stream to a file |
+| `gnss.log` | `<file\|off> [nmea]` | Record the raw receiver stream to a file; `nmea` keeps only valid NMEA sentences (a track `gnss.replay` and other NMEA tools read) |
+| `gnss.replay` | `<file.nmea> [speed]` | Virtual receiver without hardware: plays an NMEA file in real time (epochs paced by the RMC/GGA/GNS/ZDA time) or at `speed` 0.1 to 100, from the start again at the end. Record one with `gnss.log <file> nmea` or draw a route on [nmeagen.org](https://nmeagen.org/). Status, watch, bridges and the use cases work on it as on a receiver; `gnss.send`, `rate` and `restart` are accepted and dropped. `gnss.close` stops |
 | `gnss.send` | `<hex..\|$NMEA\|ubx cls id [hex]>` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
 | `gnss.restart` | `<hot\|warm\|cold>` | Restart the receiver (UBX-CFG-RST) |
 | `gnss.rate` | `<hz>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
@@ -418,7 +428,7 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 | Command | Arguments | Description |
 |---|---|---|
 | `cell.detect` | `[port]` | Find a module answering AT (115200, 9600, 921600, 460800 baud) |
-| `cell.open` | `<port> [baud]` | Open a module (default 115200) |
+| `cell.open` | `[port] [baud]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI`. Already open: says so and succeeds |
 | `cell.close` |  | Close it |
 | `cell.status` |  | SIM, ICCID, signal in dBm, registration (LTE and 2G/3G), operator, IP |
 | `cell.at` | `<command>` | Send a raw AT command |
@@ -505,6 +515,10 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `utils.qr.geo` | `<lat> <lon>` | Print a location QR code |
 | `utils.zip` | `<archive.zip> <file> [file...]` | Create a zip archive from up to 6 files (deflate; no device needed) |
 | `utils.unzip` | `<archive.zip> [dir]` | Extract a zip archive, default into the current directory (no device needed) |
+| `utils.cert.info` | `<file> [pw]` | Show what a PKCS#12, PKCS#7, DER or PEM file holds: subject, issuer, validity, which certificate matches the key, key type and size (no device needed, not on STM32) |
+| `utils.cert.convert` | `<file> [out] [pw]` | Convert PKCS#12, PKCS#7, DER or PEM to the PEM the module takes: `<out>.crt` (client chain, or all certificates without a key), `<out>.key` (not encrypted) and `<out>-ca.crt`; `out` defaults to the file name without extension (no device needed, not on STM32) |
+| `utils.encrypt` | `<in> <out> <passphrase>` | Encrypt a file with AES-256-GCM; the key comes from the passphrase (PBKDF2-HMAC-SHA256, 600000 iterations, random salt). Max 64 MB (no device needed, not on STM32) |
+| `utils.decrypt` | `<in> <out> <passphrase>` | Decrypt a `utils.encrypt` file; fails on a wrong passphrase or a changed file (no device needed, not on STM32) |
 | `app.log.at.on` | | Show the AT TX/RX trace |
 | `app.log.at.off` | | Hide the AT TX/RX trace (default) |
 | `app.log.warn.on` | | Show library warnings such as `Unexpected data` (refused in the text UI, where they would garble the screen) |
@@ -540,13 +554,14 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
 | `app.time` | `[sync [ntp\|http\|module] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| selftest]` | App wall clock in UTC with its source and age. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |
-| `app.sbom` | | Software bill of materials: components, versions, licences and sources |
+| `app.sbom` | | Software bill of materials: build target and compiler, AT API variant, then each component with version (u-connectClient with its commit, mbedTLS and TF-PSA-Crypto on Windows/Linux/browser, FreeRTOS or Zephyr on STM32), licence and source |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
 | `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS). Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 | `web.export` | `<dir>` | Write the page's JSON (`groups.json`, `commands-<group>.json`, `examples-<group>.json`) for a preview or a static demo; `.\ucxapp --web-preview` uses it to serve the page on the PC |
-| `usecase.list` | | Use cases with a fit check and ready-made steps (`usecase.ex`) |
+| `usecase.list` | | Use cases with a fit check and ready-made steps: `tool` (connected tool, steps in `usecase.ex`) and the everyday ones `boat` (GPS to a chart app over the module's AP or BLE), `rtk` (NTRIP corrections over Wi-Fi, position over BLE), `tracker` (position to a server over Wi-Fi or cellular), `home` (MQTT to Home Assistant), `provision` (Wi-Fi set up from a phone over BLE), `hotel` (guest Wi-Fi login page), `notify` (iPhone/Android notifications), `remote` (BLE keyboard clicker and media remote); their steps are in `examples uc-<name>` |
+| `usecase.check` | `<name>` | Fit check of a use case: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, a `[gap]` when the module has no Wi-Fi or a command is not in this build (STM32), the open GNSS receiver and the station state. `usecase.check tool` is `usecase.tool` |
 | `usecase.tool` | `[mbit/s]` | Fit check of the connected tool use case (factory Wi-Fi with Enterprise security, AP for laptops, HTTPS page on the host, 900 MB history in 30 min, 8 socket trays, BLE) against the NORA-W36 limits: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, plus the station state when a module is connected. With a measured rate (e.g. from `net.iperf`) it prints the download time |
 
 ```powershell
@@ -563,8 +578,9 @@ same text as the console), an **Events** pane that shows module events as they a
 network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a command line with history
 (up/down arrows) and quick buttons. Handle fields (`[handle]` of `sock.*`, `[conn]`) are lists of the open
 sockets and links (empty means the current one), fields remember the last value typed (never passwords), and
-the last commands sit as one-click chips above the groups. **Use cases** shows the connected tool: a live
-diagram (factory network, AP, laptops, trays, phone), the `usecase.tool` fit check and the `usecase.ex` steps as
+the last commands sit as one-click chips above the groups. **Use cases** has a page per use case (picked at the
+top right): a live diagram (lit by the Wi-Fi station, AP, BLE links and sockets), the `usecase.tool` or
+`usecase.check <name>` fit check and the steps (`usecase.ex` or `examples uc-<name>`) as
 cards that run with one click. Commands run one at a time; the `web.*` commands are not allowed
 from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
@@ -579,6 +595,8 @@ page inside the tab, and **Connect module** opens the EVK's serial port with Web
 Files live in the tab's memory. **Virtual module** needs no hardware: it connects the same `webserial` device to a
 simulated NORA-W36 that answers from `app/wasm/vnora.json`, the `tests/harness/vucx/nora-w36.yaml` test profile
 (regenerate with `python -m harness.vucx --json nora-w36.yaml` from `tests/`; `test_wasm.py` checks they match).
+The profile's `peer:` block is a BLE peer with every service the `gatt.client.*` and `hid.client` commands look for;
+its `sockets:` block (echo, NTRIP caster on 2101, CoAP server on 5683) runs only in the Python vucx used by the tests.
 The site is static: `.github/workflows/pages.yml` publishes it on GitHub
 Pages, with `coi-serviceworker.js` adding the cross-origin isolation headers threads need.
 #### Text UI

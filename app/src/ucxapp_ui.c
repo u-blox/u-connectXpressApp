@@ -59,7 +59,7 @@ void ucxapp_ui_event(const char *text)
     U_CX_MUTEX_UNLOCK(gLock);
 }
 
-static volatile int gWifiUp = -1;   /* -1 unknown */
+static volatile int gWifiUp = -1;   /* -1 unknown or no module, -2 module without Wi-Fi */
 static volatile uint32_t gWifiVersion;
 
 void ucxapp_ui_wifi_set(bool up)
@@ -120,15 +120,35 @@ void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSiz
 static void refreshDashCache(bool force)
 {
     static uint32_t seenWifi = 0xFFFFFFFFu;
+    static const void *seenUcx;
     static uint32_t wifiMs, cellMs;
     uint32_t now = ucxapp_platform_tick_ms();
     char text[96];
 
+    /* A module opened or closed after the UI started (web, Web Serial) */
+    if (gApp != NULL && (const void *)gApp->ucx != seenUcx) {
+        seenUcx = gApp->ucx;
+        force = true;
+        if (gApp->ucx == NULL) {
+            gWifiUp = -1;
+            gWifiVersion++;
+            U_CX_MUTEX_LOCK(gLock);
+            gWifiText[0] = '\0';
+            U_CX_MUTEX_UNLOCK(gLock);
+        }
+    }
     if (gApp != NULL && gApp->ucx != NULL &&
         (force || seenWifi != gWifiVersion || (gWifiUp > 0 && now - wifiMs > 30000u))) {
+        int up = !ucxapp_module_has_wifi(gApp) ? -2 : ucxapp_wifi_dash(gApp->ucx, text, sizeof(text)) ? 1 : 0;
+        if (up == -2) {
+            text[0] = '\0';
+        }
+        if (up != gWifiUp) {
+            gWifiUp = up;
+            gWifiVersion++;
+        }
         seenWifi = gWifiVersion;
         wifiMs = now;
-        gWifiUp = ucxapp_wifi_dash(gApp->ucx, text, sizeof(text)) ? 1 : 0;
         U_CX_MUTEX_LOCK(gLock);
         snprintf(gWifiText, sizeof(gWifiText), "%s", text);
         U_CX_MUTEX_UNLOCK(gLock);
@@ -163,7 +183,8 @@ static size_t appendHandles(char *out, size_t size, size_t n, const char *label,
 uint32_t ucxapp_ui_state(char *out, size_t size)
 {
     uint32_t version = ucxapp_handle_version() + gWifiVersion;
-    size_t n = (size_t)snprintf(out, size, "Wi-Fi %s | ", gWifiUp < 0 ? "?" : gWifiUp ? "up" : "down");
+    size_t n = (size_t)snprintf(out, size, "Wi-Fi %s | ",
+                                gWifiUp == -2 ? "n/a" : gWifiUp < 0 ? "-" : gWifiUp ? "up" : "down");
 
     if (n >= size) {
         return version;
@@ -542,6 +563,7 @@ static const char *const kCmdOrder[] = {
     "app.info", "app.version", "app.memory", "app.uptime", "app.time",
     "utils.zip", "utils.unzip", "utils.hash.text", "utils.tls.list", "utils.tls.ca.create",
     "utils.tls.server.create", "utils.tls.client.create", "utils.tls.pem", "utils.tls.remove",
+    "utils.cert.info", "utils.cert.convert", "utils.encrypt", "utils.decrypt",
     "file.list", "file.view", "file.hash", "file.remove",
     "dtls.client", "dtls.server",
     "web.start", "web.status", "web.stop",

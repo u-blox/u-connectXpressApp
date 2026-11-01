@@ -212,10 +212,29 @@
   "AT+UBTGPSD=*": [
    "+UBTGPSD:0,1,5,1800",
    "+UBTGPSD:0,16,32,180D",
+   "+UBTGPSD:0,33,42,7905F431B5CE4E99A40F4B1E122D00D0",
+   "+UBTGPSD:0,100,103,1805",
+   "+UBTGPSD:0,104,110,181A",
+   "+UBTGPSD:0,111,116,1819",
+   "+UBTGPSD:0,117,122,1815",
+   "+UBTGPSD:0,123,126,180F",
+   "+UBTGPSD:0,127,135,180A",
+   "+UBTGPSD:0,136,141,185B",
+   "+UBTGPSD:0,142,147,6E400001B5A3F393E0A9E50E24DCCA9E",
+   "+UBTGPSD:0,148,154,2456E1B926E28F83E744F34F01E9D701",
+   "+UBTGPSD:0,155,162,14387800130C49E7B8772881C89CB258",
+   "+UBTGPSD:0,163,168,FFE5",
+   "+UBTGPSD:0,169,181,1812",
    "OK"
   ],
   "AT+UBTGPSDU=*": [
    "+UBTGPSDU:0,16,32",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,33,42": [
+   "+UBTGSCD:0,34,10,35,9FBF120D630142D98C5825E699A21DBD",
+   "+UBTGSCD:0,37,08,38,69D1D8F345E149A898219BBDFDAAD9D9",
+   "+UBTGSCD:0,39,10,40,22EAC6E924D64BB5BE44B36ACE7C7BFB",
    "OK"
   ],
   "AT+UBTGSCD=*": [
@@ -270,6 +289,300 @@
   "AT+CSGT?": [
    "+CSGT:1,\"+STARTUP\"",
    "OK"
+  ],
+  "AT+UMQPB=*": [
+   "+UMQPB:0,1",
+   "OK"
+  ],
+  "AT+UMQRB=*": [
+   [
+    "+UMQRB:0,\"home/garage/cmd\"\u0001open",
+    "OK"
+   ],
+   [
+    "ERROR"
+   ]
+  ],
+  "AT+UHTCGH=* [page=probe portal=open]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 204 No Content\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=* [page=probe]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 302 Found\\r\\nLocation: http://portal.vucx/login?src=probe\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=* [page=login]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 200 OK\\r\\nSet-Cookie: s=vucx; Path=/\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=*": [
+   "+UHTCGH:0,0,\"HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=probe]": [
+   "ERROR"
+  ],
+  "AT+UHTCGBB=* [page=login]": [
+   "+UHTCGBB:0,0\u0001<html><form method='post' action='/login'><input type='hidden' name='token' value='t1'><input name='room'><input name='surname'><input type='checkbox' name='accept' value='yes'></form></html>",
+   "OK"
+  ],
+  "AT+UHTCGBB=*": [
+   "+UHTCGBB:0,0\u0001<html>vucx</html>",
+   "OK"
+  ],
+  "AT+UHTCRPOB=*": [
+   "+UHTCRPOB:0,64",
+   "OK"
+  ],
+  "AT+UNTE?": [
+   "+UNTE:1",
+   "OK"
+  ],
+  "AT+UNTSC?": [
+   "+UNTSC:0,\"pool.ntp.org\",162.159.200.1,1",
+   "OK"
+  ],
+  "AT+UBTA?": [
+   "+UBTA:1,0,",
+   "OK"
+  ],
+  "AT+UBTGR=0,102": [
+   "+UBTGR:0,102,EA070A1B0C2313020000",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,100,103": [
+   "+UBTGSCD:0,101,12,102,2A2B",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,102,103": [
+   "+UBTGCDD:0,102,103,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,106": [
+   "+UBTGR:0,106,2909",
+   "OK"
+  ],
+  "AT+UBTGR=0,109": [
+   "+UBTGR:0,109,9411",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,104,110": [
+   "+UBTGSCD:0,105,12,106,2A6E",
+   "+UBTGSCD:0,108,12,109,2A6F",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,106,107": [
+   "+UBTGCDD:0,106,107,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,109,110": [
+   "+UBTGCDD:0,109,110,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,113": [
+   "+UBTGR:0,113,04000000",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,111,116": [
+   "+UBTGSCD:0,112,02,113,2A6A",
+   "+UBTGSCD:0,114,10,115,2A67",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,113,113": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,115,116": [
+   "+UBTGCDD:0,115,116,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,119": [
+   "+UBTGR:0,119,01",
+   "OK"
+  ],
+  "AT+UBTGR=0,122": [
+   "+UBTGR:0,122,F401",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,117,122": [
+   "+UBTGSCD:0,118,12,119,2A56",
+   "+UBTGSCD:0,121,02,122,2A58",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,119,120": [
+   "+UBTGCDD:0,119,120,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,122,122": [
+   "OK"
+  ],
+  "AT+UBTGR=0,125": [
+   "+UBTGR:0,125,5A",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,123,126": [
+   "+UBTGSCD:0,124,12,125,2A19",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,125,126": [
+   "+UBTGCDD:0,125,126,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,129": [
+   "+UBTGR:0,129,752D626C6F78",
+   "OK"
+  ],
+  "AT+UBTGR=0,131": [
+   "+UBTGR:0,131,76756378",
+   "OK"
+  ],
+  "AT+UBTGR=0,133": [
+   "+UBTGR:0,133,332E352E30",
+   "OK"
+  ],
+  "AT+UBTGR=0,135": [
+   "+UBTGR:0,135,0011223344556677",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,127,135": [
+   "+UBTGSCD:0,128,02,129,2A29",
+   "+UBTGSCD:0,130,02,131,2A24",
+   "+UBTGSCD:0,132,02,133,2A26",
+   "+UBTGSCD:0,134,02,135,2A23",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,129,129": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,131,131": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,133,133": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,135,135": [
+   "OK"
+  ],
+  "AT+UBTGR=0,138": [
+   "+UBTGR:0,138,0F000000",
+   "OK"
+  ],
+  "AT+UBTGR=0,140": [
+   "+UBTGR:0,140,0100",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,136,141": [
+   "+UBTGSCD:0,137,02,138,2C14",
+   "+UBTGSCD:0,139,12,140,2C18",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,138,138": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,140,141": [
+   "+UBTGCDD:0,140,141,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,142,147": [
+   "+UBTGSCD:0,143,0C,144,6E400002B5A3F393E0A9E50E24DCCA9E",
+   "+UBTGSCD:0,145,10,146,6E400003B5A3F393E0A9E50E24DCCA9E",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,144,144": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,146,147": [
+   "+UBTGCDD:0,146,147,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,148,154": [
+   "+UBTGSCD:0,149,1C,150,2456E1B926E28F83E744F34F03E9D701",
+   "+UBTGSCD:0,152,1C,153,2456E1B926E28F83E744F34F04E9D701",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,150,151": [
+   "+UBTGCDD:0,150,151,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,153,154": [
+   "+UBTGCDD:0,153,154,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,157": [
+   "+UBTGR:0,157,767563782D77707320312E30",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,155,162": [
+   "+UBTGSCD:0,156,02,157,14387801130C49E7B8772881C89CB258",
+   "+UBTGSCD:0,158,08,159,14387802130C49E7B8772881C89CB258",
+   "+UBTGSCD:0,160,10,161,14387803130C49E7B8772881C89CB258",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,157,157": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,159,159": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,161,162": [
+   "+UBTGCDD:0,161,162,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,163,168": [
+   "+UBTGSCD:0,164,10,165,FFE4",
+   "+UBTGSCD:0,167,0C,168,FFE9",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,165,166": [
+   "+UBTGCDD:0,165,166,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,168,168": [
+   "OK"
+  ],
+  "AT+UBTGR=0,171": [
+   "+UBTGR:0,171,11010002",
+   "OK"
+  ],
+  "AT+UBTGR=0,173": [
+   "+UBTGR:0,173,05010906A1018501050719E029E71500250175019508810295017508810195067508150025650507190029658100C0",
+   "OK"
+  ],
+  "AT+UBTGR=0,175": [
+   "+UBTGR:0,175,01",
+   "OK"
+  ],
+  "AT+UBTGR=0,177": [
+   "+UBTGR:0,177,0000000000000000",
+   "OK"
+  ],
+  "AT+UBTGR=0,179": [
+   "+UBTGR:0,179,0101",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,169,181": [
+   "+UBTGSCD:0,170,02,171,2A4A",
+   "+UBTGSCD:0,172,02,173,2A4B",
+   "+UBTGSCD:0,174,06,175,2A4E",
+   "+UBTGSCD:0,176,12,177,2A4D",
+   "+UBTGSCD:0,180,04,181,2A4C",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,171,171": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,173,173": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,175,175": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,177,179": [
+   "+UBTGCDD:0,177,178,2902",
+   "+UBTGCDD:0,177,179,2908",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,181,181": [
+   "OK"
   ]
  },
  "urcs": {
@@ -292,6 +605,18 @@
   "AT+UBTDC=*": [
    "+UEBTDC:0"
   ],
+  "AT+UBTGCCW=0,36,1": [
+   "+UEBTGCN:0,35,001C04012A000000"
+  ],
+  "AT+UBTGW=0,38,002A000000*": [
+   "+UEBTGCN:0,40,002A000000000C00636F6D2E7768617473617070010400416E6E61020000030C0044696E6E657220617420383F050F003230323631303237543139303030300605005265706C79070500436C656172"
+  ],
+  "AT+UBTGW=0,159,*": [
+   "+UEBTGCN:0,161,5354415455533A434F4E4E45435445443A767563782D6E65743A3139322E3136382E312E3530"
+  ],
+  "AT+UBTGC=14387803130C49E7B8772881C89CB258*": [
+   "+UEBTGCW:0,42,5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0"
+  ],
   "AT+UBTGW=*": [
    "+UEBTGCN:0,18,0048"
   ],
@@ -306,7 +631,8 @@
    "+UEMQC:0"
   ],
   "AT+UMQS=*": [
-   "+UEMQSC:0,0"
+   "+UEMQSC:0,0",
+   "+UEMQDA:0,4"
   ],
   "AT+UMQDC=*": [
    "+UEMQDC:0,0"
@@ -315,10 +641,32 @@
    "+UEDGP:1,32,12",
    "+UEDGPC:4,4,12,10,14"
   ],
+  "AT+UHTCRG=*": [
+   "+UEHTCRS:0,200,\"OK\""
+  ],
+  "AT+UHTCRPOB=*": [
+   "+UEHTCRS:0,200,\"OK\""
+  ],
   "AT+UBTGSA": [
    "+UEBTC:0,C0FFEE001122p",
-   "+UEBTGCW:0,43,0100,0"
+   "+UEBTGCW:0,43,0100,0",
+   "+UEBTGCW:0,42,377C57686174734170707C416E6E617C44696E6E657220617420383F,0"
   ]
+ },
+ "state": {
+  "AT+UHTCRP=0,\"/generate_204\"": {
+   "page": "probe"
+  },
+  "AT+UHTCRP=0,\"/login*\"": {
+   "page": "login"
+  },
+  "AT+UHTCRP=*": {
+   "page": "other"
+  },
+  "AT+UHTCRPOB=*": {
+   "page": "posted",
+   "portal": "open"
+  }
  },
  "default": [
   "OK"

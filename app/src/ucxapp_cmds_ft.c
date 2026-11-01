@@ -631,9 +631,9 @@ static void serveGet(link_t *l, const pkt_t *req)
     if (sent >= 0) {
         gFiles++;
         gBytes += sent;
-        snprintf(gLast, sizeof(gLast), "sent %s, %ld bytes, conn %d", name, sent, (int)l->conn);
+        snprintf(gLast, sizeof(gLast), "sent %.100s, %ld bytes, conn %d", name, sent, (int)l->conn);
     } else {
-        snprintf(gLast, sizeof(gLast), "send %s failed: %s", name, l->err);
+        snprintf(gLast, sizeof(gLast), "send %.60s failed: %.80s", name, l->err);
     }
 }
 
@@ -696,9 +696,9 @@ static void servePut(link_t *l, const pkt_t *req)
     if (st == ST_OK) {
         gFiles++;
         gBytes += got;
-        snprintf(gLast, sizeof(gLast), "received %s, %ld bytes, conn %d", name, got, (int)l->conn);
+        snprintf(gLast, sizeof(gLast), "received %.100s, %ld bytes, conn %d", name, got, (int)l->conn);
     } else {
-        snprintf(gLast, sizeof(gLast), "receive %s failed: %s", name, got < 0 ? l->err : statusName(st));
+        snprintf(gLast, sizeof(gLast), "receive %.60s failed: %.80s", name, got < 0 ? l->err : statusName(st));
     }
 }
 

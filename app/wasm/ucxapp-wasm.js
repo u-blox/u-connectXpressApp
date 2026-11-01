@@ -72,29 +72,66 @@
     M._free(p);
   }
 
-  /* ---- the virtual module: exact command or * ? pattern -> response lines, then URCs (like tests/harness/vucx) */
-  function lookup(table, cmd) {
-    if (Object.prototype.hasOwnProperty.call(table, cmd)) return table[cmd];
-    for (const [pattern, lines] of Object.entries(table)) {
-      const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-      if (new RegExp(re).test(cmd)) return lines;
+  /* ---- the virtual module: exact command or * ? pattern [state] -> response lines, then URCs; lists of lists
+     answer in turn, \x01 starts binary data (like tests/harness/vucx) */
+  function lookup(v, table, cmd) {
+    for (const exact of [true, false]) {
+      for (const [key, lines] of Object.entries(table || {})) {
+        const at = key.indexOf(' ['), pattern = at < 0 ? key : key.slice(0, at);
+        const cond = at < 0 ? [] : key.slice(at + 2, -1).split(' ').filter(Boolean);
+        const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+        if (!(exact ? pattern === cmd : new RegExp(re).test(cmd))) continue;
+        if (!cond.every(c => (v.state[c.split('=')[0]] || '') === c.slice(c.indexOf('=') + 1))) continue;
+        if (lines.length && lines.every(Array.isArray)) {
+          const n = v.turn[key] || 0;
+          v.turn[key] = n + 1;
+          return lines[n % lines.length];
+        }
+        return lines;
+      }
     }
     return null;
   }
 
   function virtSend(v, lines) {
-    if (virt === v) rx(new TextEncoder().encode(lines.map(l => '\r\n' + l).join('') + '\r\n'));
+    if (virt !== v) return;
+    const enc = new TextEncoder(), out = [];
+    for (const line of lines) {
+      const i = line.indexOf('\x01'), text = i < 0 ? line : line.slice(0, i);
+      out.push(...enc.encode('\r\n' + text));
+      if (i >= 0) {
+        const data = enc.encode(line.slice(i + 1));
+        out.push(1, data.length >> 8, data.length & 0xff, ...data);
+      }
+    }
+    out.push(13, 10);
+    rx(new Uint8Array(out));
   }
 
   function virtWrite(bytes) {
-    const v = virt;
-    v.buf += new TextDecoder().decode(bytes);
-    let i;
-    while ((i = v.buf.indexOf('\r')) >= 0) {
-      const cmd = v.buf.slice(0, i).trim();
-      v.buf = v.buf.slice(i + 1);
+    const v = virt, b = new Uint8Array(v.buf.length + bytes.length);
+    b.set(v.buf);
+    b.set(bytes, v.buf.length);
+    v.buf = b;
+    for (;;) {
+      const cr = v.buf.indexOf(13), soh = v.buf.indexOf(1);
+      let end, next;
+      if (soh >= 0 && (cr < 0 || soh < cr)) {
+        if (v.buf.length < soh + 3) break;
+        next = soh + 3 + (v.buf[soh + 1] << 8 | v.buf[soh + 2]);   /* binary data follows the command */
+        if (v.buf.length < next) break;
+        end = soh;
+      } else if (cr >= 0) {
+        end = cr;
+        next = cr + 1;
+      } else {
+        break;
+      }
+      const cmd = new TextDecoder().decode(v.buf.slice(0, end)).trim();
+      v.buf = v.buf.slice(next);
       if (!cmd) continue;
-      const reply = lookup(v.commands, cmd) || v.default, urcs = lookup(v.urcs, cmd);
+      Object.assign(v.state, lookup(v, v.state_set, cmd) || {});
+      const reply = lookup(v, v.commands, cmd) || v.default, urcs = lookup(v, v.urcs, cmd);
       setTimeout(() => virtSend(v, reply), 2);
       if (urcs) setTimeout(() => virtSend(v, urcs), 50);
     }
@@ -160,7 +197,8 @@
     await ready;
     try {
       const r = await realFetch('vnora.json');
-      virt = Object.assign(await r.json(), { buf: '' });
+      const t = await r.json();
+      virt = Object.assign(t, { state_set: t.state, state: {}, turn: {}, buf: new Uint8Array(0) });
     } catch (e) {
       alert('Could not load the virtual module: ' + e.message);
       return;
@@ -213,7 +251,7 @@
   async function connect() {
     if (port || virt) return disconnect(true);
     if (!navigator.serial) {
-      alert('This browser has no Web Serial. Use Chrome or Edge on a desktop.');
+      alert(noSerialReason());
       return;
     }
     await ready;
@@ -237,11 +275,28 @@
     files.parentNode.insertBefore(btn, files);
   }
 
+  /* Web Serial is Chromium only (Chrome, Edge, Opera) and needs https or localhost. */
+  function noSerialReason() {
+    if (navigator.serial) return '';
+    if (!window.isSecureContext) return 'Web Serial needs https or localhost.';
+    return 'This browser has no Web Serial (Firefox and Safari do not support it). Use Chrome or Edge on a ' +
+      'desktop to connect a module, or try the virtual module.';
+  }
+
   function addButtons() {
-    if (!document.getElementById('files')) return;
-    addButton('wsc', 'Connect module', 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);
+    const files = document.getElementById('files');
+    if (!files) return;
+    const reason = noSerialReason();
+    addButton('wsc', 'Connect module', reason || 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);
     addButton('wsv', 'Virtual module', 'No hardware: a simulated NORA-W36 with Wi-Fi, sockets and Bluetooth',
       connectVirtual);
+    if (reason) {
+      const note = document.createElement('span');
+      note.id = 'wsnote';
+      note.textContent = reason;
+      note.style.cssText = 'color:#b45309;font-size:12px;margin:0 6px';
+      files.parentNode.insertBefore(note, files);
+    }
     if (navigator.serial) {
       navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(); });
       navigator.serial.addEventListener('connect', reopen);   /* the remembered EVK plugged back in */

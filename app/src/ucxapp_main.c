@@ -490,6 +490,8 @@ int main(int argc, char *argv[])
     ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();
+    ucxapp_register_certfile_cmds();
+    ucxapp_register_crypt_cmds();
     ucxapp_register_tls_cmds();
     ucxapp_register_dtls_cmds();
     ucxapp_register_coap_cmds();

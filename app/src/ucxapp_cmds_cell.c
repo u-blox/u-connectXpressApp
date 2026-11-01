@@ -235,14 +235,40 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
     int32_t baud = 115200;
     (void)app;
 
-    if (argc < 2 || argc > 3 || (argc == 3 && (!ucxapp_parse_int(argv[2], &baud) || baud <= 0))) {
+    if (argc > 3 || (argc == 3 && (!ucxapp_parse_int(argv[2], &baud) || baud <= 0))) {
         return UCXAPP_ERR_USAGE;
     }
     if (gOpen) {
+        if (argc == 1 || strcasecmp(argv[1], gPort) == 0) {
+            ucxapp_print("cellular module already open on %s: %s\n", gPort, gMaker);
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: already open on %s (cell.close first)\n", gPort);
         return UCXAPP_ERR_FAILED;
     }
-    if (!openPort(argv[1], baud)) {
+    if (argc == 1) {
+        static ucxapp_serial_port_t ports[32];
+        int count = ucxapp_platform_list_serial_ports(ports, 32);
+        char resp[RESP_SIZE];
+
+        for (int i = 0; i < count && !gOpen; i++) {
+            const char *dev = ucxapp_device_port();
+
+            if (ucxapp_port_skip(&ports[i]) || (dev != NULL && strcasecmp(dev, ports[i].name) == 0)) {
+                continue;
+            }
+            for (size_t b = 0; b < sizeof(kBauds) / sizeof(kBauds[0]) && !openPort(ports[i].name, kBauds[b]); b++) {
+            }
+            /* a NORA module answers AT too, but has no 3GPP identification */
+            if (gOpen && atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) != AT_OK) {
+                closePort();
+            }
+        }
+        if (!gOpen) {
+            ucxapp_print("ERROR: no cellular module found (cell.open <port>)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+    } else if (!openPort(argv[1], baud)) {
         ucxapp_print("ERROR: no AT response on %s at %d baud\n", argv[1], (int)baud);
         return UCXAPP_ERR_FAILED;
     }
@@ -742,7 +768,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t kCmds[] = {
     { "cell.detect", "[port]", "Find a cellular module answering AT on the PC serial ports", 0, cmdDetect },
-    { "cell.open", "<port> [baud]", "Open a cellular module on a PC serial port (default 115200)", 0, cmdOpen },
+    { "cell.open", "[port] [baud]", "Open a cellular module on a PC serial port (default 115200; finds it when omitted)", 0, cmdOpen },
     { "cell.close", "", "Close the cellular module", 0, cmdClose },
     { "cell.status", "", "Show SIM, signal, registration, operator and IP", 0, cmdStatus },
     { "cell.at", "<command>", "Send a raw AT command to the cellular module", 0, cmdAt },

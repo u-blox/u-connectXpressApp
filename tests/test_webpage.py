@@ -215,10 +215,19 @@ def test_page_in_a_browser(server):
         # use case view: diagram lit from the live state, steps from usecase.ex
         page.click("#vw button[data-v='1']")
         assert page.is_visible("#pu") and not page.is_visible("#pc")
-        assert "on" in page.get_attribute("#n-mes", "class") and "on" in page.get_attribute("#n-tool", "class")
+        assert "on" in page.get_attribute("#n-wifi", "class") and "on" in page.get_attribute("#n-hub", "class")
         page.wait_for_selector("#steps .card")
         assert page.locator("#steps .card").count() == 1
         assert page.inner_text("#steps h3") == "Join with PEAP"
+        assert "usecase.ex 2" in page.get_attribute("#steps .card button", "title")
+        # another use case: its own page, diagram and steps run through 'examples uc-<name>'
+        page.select_option("#ucs", "boat")
+        assert page.inner_text("#uh").startswith("Boat") and page.locator("#n-gnss").count() == 1
+        assert page.locator("#n-ap").count() == 1 and not page.is_visible("#mb")
+        page.wait_for_selector("#steps .card button[title*='examples uc-boat 2']")
+        assert page.locator("#steps .card").count() == 1
+        page.select_option("#ucs", "tool")
+        assert page.is_visible("#mb") and "on" in page.get_attribute("#n-wifi", "class")
         page.click("#vw button[data-v='0']")
         assert page.is_visible("#pc")
         browser.close()
@@ -240,6 +249,8 @@ def test_web_export_writes_the_page_json(app_exe, tmp_path):
     assert wifi["wifi.connect"]["f"][0][0].startswith("ssid")
     examples = json.loads((tmp_path / "examples-usecase.json").read_text(encoding="utf-8"))
     assert any("(PEAP)" in e["t"] and "wifi." in e["l"] for e in examples)
+    boat = json.loads((tmp_path / "examples-uc-boat.json").read_text(encoding="utf-8"))
+    assert any("gnss.bridge tcp 10110" in e["l"] for e in boat)
     assert not (tmp_path / "commands-web.json").exists()
 
 

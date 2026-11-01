@@ -76,10 +76,11 @@ def _wifi_connect_command(cwd=None):
     if not PROFILES.is_file() or not PROFILES.read_text(errors="replace").strip():
         pytest.skip("set UCX_WIFI_SSID/UCX_WIFI_PASS or connect once with wifi.connect <ssid> <password>")
     if cwd is not None:
-        # A test running in its own folder gets a copy of the saved profiles.
+        # A test running in its own folder gets a copy of the saved profiles and the key that opens them.
         (Path(cwd) / "storage").mkdir(exist_ok=True)
-        for f in PROFILES.parent.glob("ucxapp.wifi*"):
-            (Path(cwd) / "storage" / f.name).write_bytes(f.read_bytes())
+        for f in [*PROFILES.parent.glob("ucxapp.wifi*"), PROFILES.parent / "ucxapp.key"]:
+            if f.is_file():
+                (Path(cwd) / "storage" / f.name).write_bytes(f.read_bytes())
     return "wifi.profile.auto"
 
 

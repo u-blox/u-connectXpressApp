@@ -109,6 +109,18 @@ void ucxapp_store_set_dir(const char *dir)
     }
 }
 
+void ucxapp_store_make_private(const char *name)
+{
+#if defined(__unix__) || defined(__APPLE__)
+    char path[NAME_MAX_LEN * 2];
+    if (gOps == &gStdioOps && fullPath(name, path, sizeof(path))) {
+        (void)chmod(path, 0600);
+    }
+#else
+    (void)name;
+#endif
+}
+
 int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx)
 {
     return gOps->list != NULL ? gOps->list(cb, ctx) : -1;

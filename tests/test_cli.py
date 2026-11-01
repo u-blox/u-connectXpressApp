@@ -215,6 +215,10 @@ def test_app_about_commands(app_exe, tmp_path):
     assert re.search(r"built\s+\w{3} +\d+ \d{4} \d\d:\d\d:\d\d", out.stdout)
     assert re.search(r"^0 days 00:00:\d\d$", out.stdout, re.M)
     assert "u-connectClient " in out.stdout and "Apache-2.0" in out.stdout
+    assert re.search(r"^u-connectClient \d+\.\d+\.\d+ \(commit \w+\)", out.stdout, re.M), out.stdout
+    assert re.search(r"^mbedTLS \d+\.\d+\.\d+ ", out.stdout, re.M)
+    assert re.search(r"^TF-PSA-Crypto \d+\.\d+\.\d+ ", out.stdout, re.M)
+    assert re.search(r"^AT API +NORA-", out.stdout, re.M)
     assert "Permission is hereby granted" in out.stdout
     assert _run(app_exe, tmp_path, "COM255", "app.license nosuch").returncode != 0
 
@@ -495,7 +499,7 @@ def test_custom_ble_bridge_arguments(app_exe, tmp_path, command, expected):
 
 
 @pytest.mark.parametrize("command, usage", [
-    ("cell.open", "usage: cell.open"),
+    ("cell.open COM254 115200 x", "usage: cell.open"),
     ("cell.open COM254 x", "usage: cell.open"),
     ("cell.at", "usage: cell.at"),
     ("cell.attach maybe", "usage: cell.attach"),

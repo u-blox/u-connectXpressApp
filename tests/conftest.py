@@ -119,6 +119,20 @@ def _describe(port):
 
 
 def pytest_configure(config):
+    # Child processes inherit the std handles; under PowerShell `*>` and pytest's fd capture those can be
+    # invalid on Windows (WinError 6 in subprocess). Hand over fds 1 and 2 (pytest's capture) and no stdin.
+    if sys.platform == "win32" and not getattr(subprocess.Popen, "_ucx_std", False):
+        popen_init = subprocess.Popen.__init__
+
+        def init(self, args, *rest, **kw):
+            if not rest:
+                for name, fd in (("stdin", subprocess.DEVNULL), ("stdout", 1), ("stderr", 2)):
+                    if kw.get(name) is None:
+                        kw[name] = fd
+            popen_init(self, args, *rest, **kw)
+
+        subprocess.Popen.__init__ = init
+        subprocess.Popen._ucx_std = True
     for marker in (
         "app: runs the built ucxapp.exe (Windows only, no hardware needed)",
         "hardware: needs a NORA module on UCX_PORT_A",

@@ -26,5 +26,6 @@ commands:
   "AT+CGPADDR*": ['+CGPADDR: 1,"10.0.0.5"', "OK"]
   "AT+UPING=*": ["OK"]
   "AT+USOCR=*": ["+USOCR: 0", "OK"]
+  "AT+USODL=*": ["CONNECT"]
 urcs:
   "AT+UPING=*": ['+UUPING: 1,32,"example.com","93.184.216.34",55,20']

@@ -26,7 +26,7 @@
 #endif
 
 #define DEFAULT_PORT   80
-#define TOKEN_LEN      12
+#define TOKEN_LEN      32   /* hex: 128 random bits */
 #define MAX_EVENTS     64
 #define OUT_CHUNK_ESC  380      /* escaped bytes per SSE event; the engine caps an event at 512 */
 #define KEEPALIVE_MS   15000
@@ -1097,6 +1097,18 @@ static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
             (!writeJson(argv[1], "commands", gGroups[i], buildCommands(gGroups[i])) ||
              !writeJson(argv[1], "examples", gGroups[i], buildExamples(gGroups[i])))) {
             return UCXAPP_ERR_FAILED;
+        }
+    }
+    /* Use case steps (uc-*) are example groups without a command group of their own; they are listed together. */
+    {
+        const char *g, *t, *l, *prev = "";
+
+        for (size_t i = 0; ucxapp_example_get(i, &g, &t, &l); i++) {
+            if (strncmp(g, "uc-", 3) == 0 && strcmp(g, prev) != 0 &&
+                !writeJson(argv[1], "examples", g, buildExamples(g))) {
+                return UCXAPP_ERR_FAILED;
+            }
+            prev = g;
         }
     }
     ucxapp_print("exported %d groups to %s\n", count, argv[1]);

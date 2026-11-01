@@ -56,7 +56,8 @@ def test_env_expansion(app_exe):
 def test_script_runner_offline(app_exe, tmp_path):
     junit = tmp_path / "r.xml"
     out = subprocess.run([sys.executable, "ucxapp.py", "--script", "examples/automation/offline.ucx",
-                          "--junit", str(junit), "--offline"], cwd=ROOT, capture_output=True, text=True, timeout=120)
+                          "--junit", str(junit), "--offline"], cwd=ROOT, capture_output=True, text=True, timeout=120,
+                         stdin=subprocess.DEVNULL)
     assert out.returncode == 0, out.stdout + out.stderr
     assert "2/2 passed" in out.stdout
     assert 'failures="0"' in junit.read_text()
@@ -66,7 +67,7 @@ def test_script_runner_reports_failure(app_exe, tmp_path):
     script = tmp_path / "s.ucx"
     script.write_text("app.version\nexpect no-such-text\napp.uptime\n")
     out = subprocess.run([sys.executable, "ucxapp.py", "--script", str(script), "--offline"], cwd=ROOT,
-                         capture_output=True, text=True, timeout=120)
+                         capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     assert out.returncode == 1
     assert "FAIL  app.version" in out.stdout and "PASS  app.uptime" in out.stdout
 

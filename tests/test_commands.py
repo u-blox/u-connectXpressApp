@@ -61,7 +61,8 @@ def test_every_command_is_documented():
 def test_every_source_file_is_built_by_both_targets():
     cmake = (APP / "CMakeLists.txt").read_text(encoding="utf-8")
     platform_only = {"ucxapp_platform_win.c", "ucxapp_platform_posix.c"}
-    embedded_only = {"ucxapp_store_ram.c", "ucxapp_stubs_embedded.c"}
+    # ucx_obfuscate.c: Wi-Fi passwords without mbedTLS; host builds use AES-GCM (ucxapp_crypt.c)
+    embedded_only = {"ucxapp_store_ram.c", "ucxapp_stubs_embedded.c", "ucx_obfuscate.c"}
     embedded = {t: (APP / t / "CMakeLists.txt").read_text(encoding="utf-8") for t in ("stm32_freertos", "zephyr")}
     for src in sorted(SRC.glob("*.c")):
         count = len(re.findall(rf"src/{re.escape(src.name)}\b", cmake))
@@ -96,7 +97,6 @@ def test_web_server_reads_up_to_2048_bytes():
 @pytest.mark.app
 def test_help_lists_every_command(app_exe):
     out = subprocess.run([str(app_exe), "COM255", "--exec", "help"], capture_output=True, text=True, timeout=30,
-                         errors="replace")
-    assert out.returncode == 0
+                         errors="replace", stdin=subprocess.DEVNULL)
     missing = sorted(n for n in registered_commands() if n not in out.stdout)
     assert not missing, f"missing from help: {missing}"

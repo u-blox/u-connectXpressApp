@@ -101,6 +101,10 @@ typedef struct {
     uint8_t rxA;
 } parser_t;
 
+/* gnss.log <file> nmea: only valid NMEA sentences, a file gnss.replay and other NMEA tools read. */
+static FILE *gNmeaLog;
+static char gNmeaName[200];
+
 static uint32_t le16(const uint8_t *p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
@@ -277,6 +281,10 @@ static void nmeaLine(parser_t *p)
     if (x != (uint8_t)strtoul((char[3]){ star[1], star[2], '\0' }, NULL, 16)) {
         p->st.bad++;
         return;
+    }
+    if (gNmeaLog != NULL) {
+        fprintf(gNmeaLog, "%s\r\n", p->line);
+        fflush(gNmeaLog);
     }
     *star = '\0';
     p->st.nmea++;
@@ -672,6 +680,103 @@ static void onData(void *ctx, const uint8_t *data, size_t n)
     feed(&gP, data, n);
 }
 
+/* ---- Replay: a virtual receiver that plays an NMEA file (gnss.log nmea, nmeagen.org) in real time ---- */
+
+typedef struct {
+    FILE *f;
+    char name[200];
+    double speed;
+    char line[512];      /* next line to send; len 0 = none read yet */
+    size_t len;
+    double epoch;        /* UTC seconds of day of the epoch being sent */
+    bool haveEpoch;
+    uint32_t due;
+    uint32_t loops;
+} replay_t;
+
+static replay_t gReplay;
+
+/* UTC seconds of day of an RMC, GGA, GNS or ZDA sentence; -1 for other lines. */
+static double sentenceTime(const char *line)
+{
+    static const char *const kTimed[] = { "RMC", "GGA", "GNS", "ZDA" };
+    const char *v = line + 7;
+    bool timed = false;
+
+    if (line[0] != '$' || strlen(line) < 13 || line[6] != ',') {
+        return -1.0;
+    }
+    for (size_t i = 0; i < sizeof(kTimed) / sizeof(kTimed[0]); i++) {
+        timed = timed || strncmp(line + 3, kTimed[i], 3) == 0;
+    }
+    for (int i = 0; i < 6 && timed; i++) {
+        timed = v[i] >= '0' && v[i] <= '9';
+    }
+    if (!timed) {
+        return -1.0;
+    }
+    return ((v[0] - '0') * 10 + (v[1] - '0')) * 3600.0 + ((v[2] - '0') * 10 + (v[3] - '0')) * 60.0 + atof(v + 4);
+}
+
+/* Next line of the file, from the start again at the end; false when the file has no lines. */
+static bool replayRead(replay_t *r)
+{
+    for (int tries = 0; tries < 2; tries++) {
+        if (fgets(r->line, (int)sizeof(r->line) - 2, r->f) != NULL) {
+            r->len = strlen(r->line);
+            if (r->line[r->len - 1] != '\n') {
+                r->line[r->len++] = '\n';
+                r->line[r->len] = '\0';
+            }
+            return true;
+        }
+        rewind(r->f);
+        r->loops++;
+    }
+    return false;
+}
+
+/* Sends every line of one epoch at once, then waits for the time the next epoch's sentences carry. */
+static void replayPoll(void *ctx, ucxapp_stream_t *s)
+{
+    replay_t *r = ctx;
+    uint32_t now = ucxapp_platform_tick_ms();
+
+    for (int i = 0; i < 200 && (int32_t)(now - r->due) >= 0; i++) {
+        if (r->len == 0 && !replayRead(r)) {
+            return;
+        }
+        double t = sentenceTime(r->line);
+        if (t >= 0.0 && r->haveEpoch && t != r->epoch) {
+            double dt = t - r->epoch;
+            if (dt < 0.0) {
+                dt += 86400.0;
+            }
+            if (dt > 10.0) {   /* next lap of the file, or a gap in the recording */
+                dt = 1.0;
+            }
+            r->epoch = t;
+            r->due = now + (uint32_t)(dt * 1000.0 / r->speed);
+            continue;
+        }
+        if (t >= 0.0) {
+            r->epoch = t;
+            r->haveEpoch = true;
+        }
+        ucxapp_stream_push(s, (const uint8_t *)r->line, r->len);
+        r->len = 0;
+    }
+}
+
+/* Commands to the replayed receiver (gnss.send, gnss.rate, ...) are accepted and dropped. */
+static bool replayWrite(void *ctx, const uint8_t *data, size_t n)
+{
+    (void)ctx;
+    (void)data;
+    (void)n;
+    return true;
+}
+
 static bool needOpen(void)
 {
     if (gStream == NULL) {
@@ -743,6 +848,10 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (gStream != NULL) {
+        if (argc == 1 || strcmp(argv[1], ucxapp_stream_port(gStream)) == 0) {
+            ucxapp_print("GNSS receiver already open on %s\n", ucxapp_stream_port(gStream));
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: %s is already open (gnss.close first)\n", ucxapp_stream_port(gStream));
         return UCXAPP_ERR_FAILED;
     }
@@ -780,6 +889,14 @@ static int cmdClose(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_stream_close(gStream);
     gStream = NULL;
+    if (gReplay.f != NULL) {
+        fclose(gReplay.f);
+        gReplay.f = NULL;
+    }
+    if (gNmeaLog != NULL) {
+        fclose(gNmeaLog);
+        gNmeaLog = NULL;
+    }
     ucxapp_print("closed\n");
     return UCXAPP_OK;
 }
@@ -806,8 +923,13 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     for (int i = 0; i < gSnap.nsat; i++) {
         used += satUsed(&gSnap, &gSnap.sats[i], now) ? 1 : 0;
     }
-    ucxapp_print("Port:      %s at %d baud, %u bytes received\n", ucxapp_stream_port(gStream),
-                 (int)ucxapp_stream_baud(gStream), (unsigned)ucxapp_stream_rx_bytes(gStream));
+    if (gReplay.f != NULL) {
+        ucxapp_print("Replay:    %s at %gx, lap %u, %u bytes sent\n", gReplay.name, gReplay.speed,
+                     (unsigned)gReplay.loops + 1, (unsigned)ucxapp_stream_rx_bytes(gStream));
+    } else {
+        ucxapp_print("Port:      %s at %d baud, %u bytes received\n", ucxapp_stream_port(gStream),
+                     (int)ucxapp_stream_baud(gStream), (unsigned)ucxapp_stream_rx_bytes(gStream));
+    }
     ucxapp_print("Messages:  %u NMEA, %u UBX, %u bad%s\n", (unsigned)gSnap.nmea, (unsigned)gSnap.ubx, (unsigned)gSnap.bad,
                  gSnap.lastMs == 0 ? " (no data yet)" : (now - gSnap.lastMs > 3000u ? " (stalled)" : ""));
     if (gSnap.mod[0] != '\0' || gSnap.sw[0] != '\0') {
@@ -828,7 +950,8 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("Satellites: %d used of %d tracked; HDOP %.1f VDOP %.1f PDOP %.1f\n",
                  gSnap.satsUsed > 0 ? gSnap.satsUsed : used, gSnap.nsat, gSnap.hdop, gSnap.vdop, gSnap.pdop);
-    ucxapp_print("Log:       %s\n", ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off");
+    ucxapp_print("Log:       %s\n", gNmeaLog != NULL ? gNmeaName :
+                 (ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off"));
     ucxapp_print("Bridge:    ");
     ucxapp_stream_bridge_status(gStream);
     return UCXAPP_OK;
@@ -1006,18 +1129,91 @@ static int cmdWatch(ucxapp_t *app, int argc, char *argv[])
 static int cmdLog(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;
-    if (argc != 2) {
+    bool off = argc >= 2 && strcasecmp(argv[1], "off") == 0;
+    bool nmea = argc == 3 && strcasecmp(argv[2], "nmea") == 0;
+
+    if (argc < 2 || argc > 3 || (argc == 3 && (!nmea || off))) {
         return UCXAPP_ERR_USAGE;
     }
     if (!needOpen()) {
         return UCXAPP_ERR_FAILED;
     }
-    bool off = strcasecmp(argv[1], "off") == 0;
-    if (!ucxapp_stream_log(gStream, off ? NULL : argv[1])) {
+    FILE *f = (off || !nmea) ? NULL : fopen(argv[1], "wb");
+    if ((nmea && f == NULL) || !ucxapp_stream_log(gStream, (off || nmea) ? NULL : argv[1])) {
         ucxapp_print("ERROR: cannot create %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print(off ? "logging stopped\n" : "logging raw receiver data to %s\n", argv[1]);
+    ucxapp_stream_lock(gStream);
+    if (gNmeaLog != NULL) {
+        fclose(gNmeaLog);
+    }
+    gNmeaLog = f;
+    snprintf(gNmeaName, sizeof(gNmeaName), "%s (NMEA)", argv[1]);
+    ucxapp_stream_unlock(gStream);
+    ucxapp_print(off ? "logging stopped\n" : nmea ? "logging NMEA sentences to %s (gnss.replay plays it back)\n"
+                                                 : "logging raw receiver data to %s\n", argv[1]);
+    return UCXAPP_OK;
+}
+
+static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
+{
+    ucxapp_stream_cfg_t cfg = { "gnss", onData, replayPoll, 10, &gReplay, replayWrite };
+    char line[512];
+    unsigned sentences = 0;
+    unsigned epochs = 0;
+    double last = -1.0;
+    double speed = 1.0;
+    char *end = NULL;
+    (void)app;
+
+    if (argc < 2 || argc > 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 3) {
+        speed = strtod(argv[2], &end);
+        if (end == argv[2] || *end != '\0' || !(speed >= 0.1 && speed <= 100.0)) {
+            return UCXAPP_ERR_USAGE;
+        }
+    }
+    if (gStream != NULL) {
+        ucxapp_print("ERROR: %s is already open (gnss.close first)\n", ucxapp_stream_port(gStream));
+        return UCXAPP_ERR_FAILED;
+    }
+    FILE *f = fopen(argv[1], "rb");
+    if (f == NULL) {
+        ucxapp_print("ERROR: cannot open %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    while (fgets(line, (int)sizeof(line), f) != NULL) {
+        double t = sentenceTime(line);
+        sentences += line[0] == '$' ? 1u : 0u;
+        if (t >= 0.0 && t != last) {
+            epochs++;
+            last = t;
+        }
+    }
+    if (sentences == 0) {
+        fclose(f);
+        ucxapp_print("ERROR: no NMEA sentences in %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    rewind(f);
+    memset(&gReplay, 0, sizeof(gReplay));
+    gReplay.f = f;
+    gReplay.speed = speed;
+    snprintf(gReplay.name, sizeof(gReplay.name), "%s", argv[1]);
+    memset(&gP, 0, sizeof(gP));
+    gOpenMs = ucxapp_platform_tick_ms();
+    gFixMs = 0;
+    gStream = ucxapp_stream_open("virt:replay", 0, &cfg);
+    if (gStream == NULL) {
+        fclose(f);
+        gReplay.f = NULL;
+        ucxapp_print("ERROR: cannot start the replay\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("Replaying %s: %u sentences, %u epochs at %gx, from the start again at the end (gnss.close stops)\n",
+                 argv[1], sentences, epochs, speed);
     return UCXAPP_OK;
 }
 
@@ -1193,7 +1389,8 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.status", "", "Fix, position, time, satellites and counters", 0, cmdStatus },
     { "gnss.sats", "", "Satellites in view with elevation, azimuth and signal strength", 0, cmdSats },
     { "gnss.watch", "[seconds]", "Live card once a second (fix, satellites, HDOP, position, time to first fix); default 10 s, any key stops", 0, cmdWatch },
-    { "gnss.log", "<file|off>", "Record the raw receiver stream (NMEA/UBX) to a file", 0, cmdLog },
+    { "gnss.log", "<file|off> [nmea]", "Record the raw receiver stream (NMEA/UBX) to a file; nmea keeps only valid NMEA sentences, for gnss.replay", 0, cmdLog },
+    { "gnss.replay", "<file.nmea> [speed]", "Virtual receiver: play an NMEA file (gnss.log nmea, nmeagen.org) in real time or at speed 0.1 to 100, looping; every gnss.* command and bridge works on it", 0, cmdReplay },
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },

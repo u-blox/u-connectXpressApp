@@ -1,7 +1,11 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_store.h"
+#ifdef UCXAPP_CRYPTO
+#include "ucxapp_crypt.h"
+#else
 #include "ucx_obfuscate.h"
+#endif
 #include "u_port.h"
 
 #include <stdio.h>
@@ -281,14 +285,19 @@ static int cmdWifiPeap(ucxapp_t *app, int argc, char *argv[])
 }
 #endif
 
-/* ---- saved profiles: one "name<TAB>ssid<TAB>obfuscated password" line each (older files add an ignored field) ---- */
+/* ---- saved profiles: one "name<TAB>ssid<TAB>sealed password" line each (older files add an ignored field).
+   Host builds seal with AES-256-GCM (ucxapp_crypt.c); embedded builds and older files use the XOR+hex form. ---- */
 
 #define PROFILES_FILE  "ucxapp.wifi"
 #define MAX_PROFILES   16
 #define NAME_LEN       32
 #define SSID_LEN       33
 #define PASS_LEN       64
+#ifdef UCXAPP_CRYPTO
+#define OBF_LEN        UCXAPP_SECRET_LEN(PASS_LEN)
+#else
 #define OBF_LEN        (PASS_LEN * 2 + 1)
+#endif
 #define LINE_MAX_LEN   (NAME_LEN + SSID_LEN + OBF_LEN + 4)
 
 typedef struct {
@@ -331,7 +340,20 @@ static int loadProfiles(profile_t *list)
             if (strlen(line) < NAME_LEN && strlen(tab1 + 1) < SSID_LEN && strlen(tab2 + 1) < OBF_LEN) {
                 snprintf(p->name, sizeof(p->name), "%s", line);
                 snprintf(p->ssid, sizeof(p->ssid), "%s", tab1 + 1);
+#ifdef UCXAPP_CRYPTO
+                p->password[0] = '\0';
+                if (tab2[1] != '\0' && strncmp(tab2 + 1, UCXAPP_SECRET_PREFIX, strlen(UCXAPP_SECRET_PREFIX)) != 0) {
+                    ucxapp_print("WARNING: profile %s has an old password format; add it again\n", p->name);
+                    line = next;
+                    continue;
+                }
+                if (tab2[1] != '\0' && !ucxapp_secret_open(tab2 + 1, p->password, sizeof(p->password))) {
+                    ucxapp_print("WARNING: cannot decrypt the password of profile %s (storage/ucxapp.key missing or changed)\n",
+                                 p->name);
+                }
+#else
                 deobfuscatePassword(tab2 + 1, p->password, sizeof(p->password));
+#endif
                 count++;
             }
         }
@@ -353,7 +375,15 @@ static bool saveProfiles(const profile_t *list, int count)
         char obf[OBF_LEN];
         size_t used = strlen(text);
 
+#ifdef UCXAPP_CRYPTO
+        if (!ucxapp_secret_seal(list[i].password, obf, sizeof(obf))) {
+            ucxapp_print("ERROR: cannot encrypt the password of profile %s\n", list[i].name);
+            free(text);
+            return false;
+        }
+#else
         obfuscatePassword(list[i].password, obf, sizeof(obf));
+#endif
         snprintf(text + used, LINE_MAX_LEN, "%s\t%s\t%s\n", list[i].name, list[i].ssid, obf);
     }
     ok = ucxapp_store_save(PROFILES_FILE, text, strlen(text));

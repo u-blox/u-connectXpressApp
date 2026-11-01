@@ -47,6 +47,8 @@ bool ucxapp_store_save(const char *name, const void *data, size_t len);
 uint8_t *ucxapp_store_load(const char *name, size_t *outLen);
 
 bool ucxapp_store_exists(const char *name);
+/** Owner-only file permissions (POSIX stdio backend; no-op elsewhere). */
+void ucxapp_store_make_private(const char *name);
 /** Streaming read for files too big to load whole; read returns 0 at the end. */
 void *ucxapp_store_open_read(const char *name);
 int32_t ucxapp_store_read(void *handle, uint8_t *buf, size_t len);

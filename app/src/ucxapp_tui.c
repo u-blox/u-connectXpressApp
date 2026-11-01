@@ -393,7 +393,7 @@ static bool refreshDash(void)
     dashArea(&n, mod, "MOD", mod ? port : "not connected", &changed);
 
     dashHandles(ids, sizeof(ids), UCXAPP_HANDLE_SOCK);
-    snprintf(text, sizeof(text), "%s%s%s", wifiText[0] ? wifiText : wifi < 0 ? "?" : wifi ? "up" : "not connected",
+    snprintf(text, sizeof(text), "%s%s%s", wifiText[0] ? wifiText : wifi == -2 ? "n/a (Bluetooth LE module)" : wifi < 0 ? "-" : wifi ? "up" : "not connected",
              ids[0] ? "\nsockets " : "", ids);
     dashArea(&n, wifi > 0, "WIFI", text, &changed);
 
@@ -505,7 +505,7 @@ static void addGroupCommands(int gi)
 /* Rebuilds the visible list and keeps the selection on the same item. */
 static void rebuildEntries(void)
 {
-    entry_t keep = gSel >= 0 && gSel < gEntryCount ? gEntries[gSel] : (entry_t){ E_QUIT, -1, NULL, "", NULL };
+    entry_t keep = gSel >= 0 && gSel < gEntryCount ? gEntries[gSel] : (entry_t){ E_HEAD, -2, NULL, "", NULL };
 
     gEntryCount = 0;
     addEntry(E_HEAD, -1, NULL, NULL, " Module ");
@@ -1178,8 +1178,8 @@ int ucxapp_tui_run(ucxapp_t *app)
     gExpanded = -1;
     gOpenSub[0] = '\0';
     gSel = gTop = 0;
+    gEntryCount = 0;
     rebuildEntries();
-    moveSel(1);
     gListFocus = true;
     gLogScroll = 0;
     gEvScroll = 0;

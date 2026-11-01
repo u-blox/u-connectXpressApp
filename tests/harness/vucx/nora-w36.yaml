@@ -1,7 +1,13 @@
 # vucx profile: a NORA-W36 that says OK to everything it does not know, with Wi-Fi, a BLE peer,
-# a heart rate service on the peer and a GATT server. Used to drive whole command groups.
+# a heart rate service and ANCS on the peer, a GATT server, an MQTT broker with one message waiting
+# and a hotel login page in front of the internet. Used to drive whole command groups and the use cases.
 include: [wifi.yaml]
 default: ["OK"]
+state:
+  'AT+UHTCRP=0,"/generate_204"': {page: probe}
+  'AT+UHTCRP=0,"/login*"': {page: login}
+  "AT+UHTCRP=*": {page: other}
+  "AT+UHTCRPOB=*": {page: posted, portal: open}
 commands:
   "AT+UBTD*":
     - '+UBTD:C0FFEE001122p,-50,"vucx-hrs",0,020106030D18'
@@ -20,8 +26,15 @@ commands:
   "AT+UBTGPSD=*":
     - "+UBTGPSD:0,1,5,1800"
     - "+UBTGPSD:0,16,32,180D"
+    - "+UBTGPSD:0,33,42,7905F431B5CE4E99A40F4B1E122D00D0"
     - "OK"
   "AT+UBTGPSDU=*": ["+UBTGPSDU:0,16,32", "OK"]
+  # ANCS: Notification Source 35, Control Point 38, Data Source 40
+  "AT+UBTGSCD=0,33,42":
+    - "+UBTGSCD:0,34,10,35,9FBF120D630142D98C5825E699A21DBD"
+    - "+UBTGSCD:0,37,08,38,69D1D8F345E149A898219BBDFDAAD9D9"
+    - "+UBTGSCD:0,39,10,40,22EAC6E924D64BB5BE44B36ACE7C7BFB"
+    - "OK"
   "AT+UBTGSCD=*":
     - "+UBTGSCD:0,17,10,18,2A37"
     - "+UBTGSCD:0,20,02,21,2A38"
@@ -38,15 +51,87 @@ commands:
   "AT+USYEC?": ["+USYEC:0", "OK"]
   "AT+USYUS?": ["+USYUS:115200,1", "OK"]
   "AT+CSGT?": ['+CSGT:1,"+STARTUP"', "OK"]
+  "AT+UMQPB=*": ["+UMQPB:0,1", "OK"]
+  "AT+UMQRB=*": [["+UMQRB:0,\"home/garage/cmd\"\x01open", "OK"], ["ERROR"]]
+  # HTTP: the probe is redirected to the login page until its form is posted
+  "AT+UHTCGH=* [page=probe portal=open]": ['+UHTCGH:0,0,"HTTP/1.1 204 No Content\r\n\r\n"', "OK"]
+  "AT+UHTCGH=* [page=probe]":
+    - '+UHTCGH:0,0,"HTTP/1.1 302 Found\r\nLocation: http://portal.vucx/login?src=probe\r\n\r\n"'
+    - "OK"
+  "AT+UHTCGH=* [page=login]":
+    - '+UHTCGH:0,0,"HTTP/1.1 200 OK\r\nSet-Cookie: s=vucx; Path=/\r\n\r\n"'
+    - "OK"
+  "AT+UHTCGH=*": ['+UHTCGH:0,0,"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"', "OK"]
+  "AT+UHTCGBB=* [page=probe]": ["ERROR"]
+  "AT+UHTCGBB=* [page=login]":
+    - "+UHTCGBB:0,0\x01<html><form method='post' action='/login'><input type='hidden' name='token' value='t1'>\
+      <input name='room'><input name='surname'><input type='checkbox' name='accept' value='yes'></form></html>"
+    - "OK"
+  "AT+UHTCGBB=*": ["+UHTCGBB:0,0\x01<html>vucx</html>", "OK"]
+  "AT+UHTCRPOB=*": ["+UHTCRPOB:0,64", "OK"]
+  "AT+UNTE?": ["+UNTE:1", "OK"]
+  "AT+UNTSC?": ['+UNTSC:0,"pool.ntp.org",162.159.200.1,1', "OK"]
+  "AT+UBTA?": ["+UBTA:1,0,", "OK"]
+# the network: an NTRIP caster on 2101, a CoAP server on 5683, everything else echoes; a client connects to 8000
+sockets:
+  servers: {2101: ntrip, 5683: coap}
+  accept: [8000]
+# the BLE peer (C0FFEE001122) also has every service the gatt.client.* and hid.client examples look for
+peer:
+  start: 100
+  services:
+    - uuid: "1805"
+      chars: [["2A2B", R N, "EA070A1B0C2313020000"]]
+    - uuid: "181A"
+      chars: [["2A6E", R N, "2909"], ["2A6F", R N, "9411"]]
+    - uuid: "1819"
+      chars: [["2A6A", R, "04000000"], ["2A67", N]]
+    - uuid: "1815"
+      chars: [["2A56", R N, "01"], ["2A58", R, "F401"]]
+    - uuid: "180F"
+      chars: [["2A19", R N, "5A"]]
+    - uuid: "180A"
+      chars: [["2A29", R, "text:u-blox"], ["2A24", R, "text:vucx"], ["2A26", R, "text:3.5.0"],
+              ["2A23", R, "0011223344556677"]]
+    - uuid: "185B"
+      chars: [["2C14", R, "0F000000"], ["2C18", R N, "0100"]]
+    - uuid: "6E400001B5A3F393E0A9E50E24DCCA9E"
+      chars: [["6E400002B5A3F393E0A9E50E24DCCA9E", W w], ["6E400003B5A3F393E0A9E50E24DCCA9E", N]]
+    - uuid: "2456E1B926E28F83E744F34F01E9D701"
+      chars: [["2456E1B926E28F83E744F34F03E9D701", W w N], ["2456E1B926E28F83E744F34F04E9D701", W w N]]
+    - uuid: "14387800130C49E7B8772881C89CB258"
+      chars: [["14387801130C49E7B8772881C89CB258", R, "text:vucx-wps 1.0"],
+              ["14387802130C49E7B8772881C89CB258", W], ["14387803130C49E7B8772881C89CB258", N]]
+    - uuid: "FFE5"
+      chars: [["FFE4", N], ["FFE9", W w]]
+    - uuid: "1812"
+      chars: [["2A4A", R, "11010002"],
+              ["2A4B", R, "05010906A1018501050719E029E71500250175019508810295017508810195067508150025650507190029658100C0"],
+              ["2A4E", R w, "01"], ["2A4D", R N, "0000000000000000", {"2908": "0101"}], ["2A4C", w]]
 urcs:
   "AT+UBTC=*": ["+UEBTC:0,C0FFEE001122p"]
   "AT+UBTDC=*": ["+UEBTDC:0"]
+  # ANCS: one notification on the phone (uid 42), its attributes, then the generic write answer
+  "AT+UBTGCCW=0,36,1": ["+UEBTGCN:0,35,001C04012A000000"]
+  "AT+UBTGW=0,38,002A000000*":
+    - "+UEBTGCN:0,40,002A000000000C00636F6D2E7768617473617070010400416E6E61020000030C0044696E6E657220617420383F\
+      050F003230323631303237543139303030300605005265706C79070500436C656172"
+  # Wi-Fi provisioning: any command on the control point (159) is answered on the data point (161)
+  "AT+UBTGW=0,159,*": ["+UEBTGCN:0,161,5354415455533A434F4E4E45435445443A767563782D6E65743A3139322E3136382E312E3530"]
+  # ... and a phone provisions our own Wi-Fi Provisioning server (SET_CONFIG:vucx-net:secret123:WPA2 on 42)
+  "AT+UBTGC=14387803130C49E7B8772881C89CB258*":
+    ["+UEBTGCW:0,42,5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0"]
   "AT+UBTGW=*": ["+UEBTGCN:0,18,0048"]
   "AT+UWAPA*": ["+UEWAPU", "+UEWAPNU"]
   "AT+UWAPD*": ["+UEWAPD"]
   "AT+UMQC=*": ["+UEMQC:0"]
-  "AT+UMQS=*": ["+UEMQSC:0,0"]
+  "AT+UMQS=*": ["+UEMQSC:0,0", "+UEMQDA:0,4"]
   "AT+UMQDC=*": ["+UEMQDC:0,0"]
   "AT+UDGP=*": ["+UEDGP:1,32,12", "+UEDGPC:4,4,12,10,14"]
-  # a host connects and enables notifications (every characteristic gets CCCD 43)
-  "AT+UBTGSA": ["+UEBTC:0,C0FFEE001122p", "+UEBTGCW:0,43,0100,0"]
+  "AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']
+  "AT+UHTCRPOB=*": ['+UEHTCRS:0,200,"OK"']
+  # a host connects, enables notifications (every characteristic gets CCCD 43) and writes a phone notification
+  "AT+UBTGSA":
+    - "+UEBTC:0,C0FFEE001122p"
+    - "+UEBTGCW:0,43,0100,0"
+    - "+UEBTGCW:0,42,377C57686174734170707C416E6E617C44696E6E657220617420383F,0"

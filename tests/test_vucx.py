@@ -139,19 +139,19 @@ SCENARIOS = {
                     "gatt.wps 0 status", "gatt.send 0 nus hello", "gatt.credits 0 10"],
     "gatt-server": ["gatt.server.hrs", "gatt.server.cts", "gatt.server.ess", "gatt.server.lns",
                     "gatt.server.aio", "gatt.server.bas", "gatt.server.ras", "gatt.server.nus",
-                    "gatt.server.sps", "gatt.server.wps", "gatt.server.list", "gatt.server.set hrs 0048",
-                    "gatt.server.notify 0 hrs 0048", "gatt.server.indicate 0 hrs 0048",
+                    "gatt.server.sps", "gatt.server.wps", "gatt.server.list", "gatt.server.set hrs.measurement 0048",
+                    "gatt.server.notify 0 hrs.measurement 0048", "gatt.server.indicate 0 hrs.measurement 0048",
                     "gatt.server.demo 0 hrs 1", "gatt.server.hostchar 180F 2A19 12",
                     "gatt.server.readresp 0 01", "gatt.server.writeresp 0", "gatt.server.error 0 read 2",
                     "gatt.server.servicechanged 0 1 100"],
     "hid": ["hid.setup", "hid.status", "hid.key a ctrl shift", "hid.text Hello", "hid.mouse 10 -5 1",
             "hid.click left double", "hid.media volup", "hid.client 0", "hid.client off"],
     "web": ["web.status", "web.start 8080 tok", "web.status", "web.stop"],
-    "ancs": ["ancs.on", "ancs.sub 0", "ancs.list", "ancs.show 1", "ancs.action 1 pos", "ancs.off"],
+    "ancs": ["ancs.on", "ancs.sub 0", "ancs.list", "ancs.show 42", "ancs.action 42 pos", "ancs.off"],
     "notify": ["notify.on", "notify.list", "notify.action 1 dismiss", "notify.off"],
     "coap": ["coap.get 192.168.1.10 5683 temp"],
     "time": ["app.time", "app.time sync module", "app.time push", "app.time set 2026-10-27T12:00:00"],
-    "cert-more": ["cert.remove myca", "cert.upload ca missing.pem"],
+    "cert-more": ["cert.remove myca"],
 }
 
 
@@ -173,6 +173,8 @@ def test_command_group_runs_against_module(app_exe, nora, group):
     assert out.returncode in (0, 1), (f"rc={out.returncode}\n{out.stdout[-3000:]}\n{out.stderr[-2000:]}\n"
                                       f"last AT: {nora.log[-10:]}")
     assert len(nora.log) > 3, nora.log
+    errors = [line for line in out.stdout.splitlines() if re.search(r"\bERROR\b|(?<!\b0 )\b[Ff]ailed\b", line)]
+    assert not errors, "\n".join(errors) + f"\nlast AT: {nora.log[-10:]}"
 
 
 def test_cert_upload_list_and_info(app_exe, nora, tmp_path):
@@ -256,6 +258,38 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
     finally:
         imu.stop()
     assert out.returncode in (0, 1), out.stdout[-3000:]
+
+
+USE_CASES = ["boat", "rtk", "tracker", "home", "provision", "hotel", "notify", "remote"]
+
+
+@pytest.mark.parametrize("case", USE_CASES)
+def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path):
+    """Every step of every use case (examples uc-<name> N) runs on the virtual NORA-W36 without stopping."""
+    from harness.vucx import Feeder, Vucx
+
+    listing = subprocess.run([str(app_exe), "COM255", "--exec", f"examples uc-{case}"], capture_output=True,
+                             text=True, timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
+    count = len(re.findall(r"^ \d+\. ", listing, re.MULTILINE))
+    assert count > 0, listing
+    gnss = Feeder(NMEA, 0.2)
+    modem = Vucx("cell.yaml")
+    args = [str(app_exe), nora.port, "--exec", f"gnss.open {gnss.start()} 9600", "--exec",
+            f"cell.open {modem.start()}"]
+    for n in range(1, count + 1):
+        args += ["--exec", f"examples uc-{case} {n}"]
+    try:
+        out = subprocess.run(args, capture_output=True, text=True, timeout=150, errors="replace",
+                             stdin=subprocess.DEVNULL, cwd=tmp_path)
+    finally:
+        gnss.stop()
+        modem.stop()
+    ran = out.stdout.count(f"Running uc-{case} example")
+    bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
+    assert ran == count and not bad, (f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
+                                      f"\nlast AT: {nora.log[-15:]}")
+    if case == "provision":   # the profile's virtual phone sends SET_CONFIG to gatt.server.wps
+        assert "the phone sent the Wi-Fi settings" in out.stdout, out.stdout[-3000:]
 
 
 def test_cell_commands_on_a_virtual_modem(app_exe, nora):

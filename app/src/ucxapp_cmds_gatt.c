@@ -1486,6 +1486,7 @@ typedef struct {
 static wpsCmd_t gWpsQueue[WPS_QUEUE];
 static volatile int gWpsHead;
 static volatile int gWpsTail;
+static bool gWpsProvisioned;   /* a SET_CONFIG was accepted */
 
 /* Called from the URC task when a remote client writes to a local characteristic. */
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
@@ -1604,6 +1605,7 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
                     snprintf(resp, sizeof(resp), "ERROR:CONNECT_FAILED:%d", (int)r);
                 } else {
                     snprintf(resp, sizeof(resp), "OK:CONNECTING:%.64s", ssid);
+                    gWpsProvisioned = true;
                 }
             }
         }
@@ -1757,9 +1759,14 @@ static int serverExample(ucxapp_t *app, int argc, char *argv[], const char *key)
     }
     if (p->u128 != NULL) {
         ucxapp_print("serving %s for %d s\n", p->title, (int)seconds);
+        gWpsProvisioned = false;
         for (int32_t t = 0; t < seconds; t++) {
             U_CX_PORT_SLEEP_MS(1000);
             wpsPoll(app);
+            if (gWpsProvisioned) {
+                ucxapp_print("the phone sent the Wi-Fi settings; the module is joining the network\n");
+                return UCXAPP_OK;
+            }
         }
         ucxapp_print("example finished\n");
         return UCXAPP_OK;
@@ -2095,7 +2102,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
     { "gatt.server.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
-    { "gatt.server.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands for that long", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
+    { "gatt.server.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands until a phone sends the Wi-Fi settings or the time is up", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
     { "gatt.server.servicechanged", "[conn] <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
     { "gatt.server.error", "[conn] <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
     { "gatt.server.readresp", "[conn] <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },

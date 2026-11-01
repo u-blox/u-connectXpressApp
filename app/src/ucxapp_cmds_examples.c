@@ -42,7 +42,9 @@ static const example_t kExamples[] = {
     { "gnss", "Secure remote access (TLS)",
       "utils.tls.server.create gnss 192.168.1.50\ngnss.bridge tls 2948 gnss" },
     { "gnss", "Log a drive test",
-      "gnss.rate 5\ngnss.log drive.nmea\n# ...drive...\ngnss.log off" },
+      "gnss.rate 5\ngnss.log drive.nmea nmea\n# ...drive...\ngnss.log off" },
+    { "gnss", "Replay a track without a receiver (recorded, or drawn on nmeagen.org)",
+      "gnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udp 192.168.1.10 10110" },
     { "gnss", "Recover a stuck receiver",
       "gnss.restart cold\ngnss.status" },
     { "gnss", "PC tool through a second COM port",
@@ -112,6 +114,12 @@ static const example_t kExamples[] = {
 
     { "cert", "Install and check certificates",
       "cert.upload ca ca.pem myca\ncert.upload client client.pem mycert\ncert.upload key client.key mykey\ncert.list\ncert.info myca" },
+    { "cert", "Install a PKCS#12 (.p12/.pfx) file from the IT department",
+      "utils.cert.info device.p12 MyPassword\ncert.import device.p12 device MyPassword\ncert.list" },
+    { "utils", "Convert PKCS#12, PKCS#7 or DER to PEM files",
+      "utils.cert.convert device.pfx device MyPassword\nutils.cert.info chain.p7b\nutils.cert.convert root.cer" },
+    { "utils", "Encrypt a file with a passphrase and get it back",
+      "utils.encrypt device.key device.key.enc MyPassphrase\nutils.decrypt device.key.enc device.key MyPassphrase" },
 
     { "bt", "Find and connect a device",
       "bt.scan\nbt.connect 1\nbt.list\nbt.disconnect" },
@@ -230,6 +238,55 @@ static const example_t kExamples[] = {
       "gatt.server.sps 60" },
     { "usecase", "BLE: accessory such as a battery pack or scanner",
       "bt.scan\nbt.connect 1\ngatt.client.bas" },
+#ifndef UCXAPP_LITE
+    /* Everyday use cases (usecase.check <name>); run with examples uc-<name> <number>. */
+    { "uc-boat", "Receiver check and fix",
+      "gnss.open\ngnss.watch 10" },
+    { "uc-boat", "Boat Wi-Fi for the tablets",
+      "wifi.ap.enable BoatNet BoatPass123\nwifi.ap.status" },
+    { "uc-boat", "NMEA to the chart app over TCP 10110",
+      "gnss.bridge tcp 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
+    { "uc-boat", "NMEA to a phone over BLE instead",
+      "gnss.bridge off\ngnss.bridge ble nus\n# connect a GNSS app to the Nordic UART service" },
+    { "uc-boat", "Log the trip",
+      "gnss.log trip.nmea nmea\n# ...sail...\ngnss.log off\n# at home: gnss.close, then gnss.replay trip.nmea 10" },
+    { "uc-rtk", "Home Wi-Fi and the receiver",
+      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.status" },
+    { "uc-rtk", "Corrections from a caster, position to the robot over BLE",
+      "gnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\ngnss.bridge status" },
+    { "uc-rtk", "Watch for an RTK fixed solution",
+      "gnss.watch 30" },
+    { "uc-tracker", "Position to your server over Wi-Fi",
+      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge tcpc myserver.example.com 5000\ngnss.bridge status" },
+    { "uc-tracker", "Position over cellular on the road",
+      "gnss.bridge off\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell" },
+    { "uc-home", "Join the home network",
+      "wifi.connect MyNetwork MyPassword\nwifi.profile.add home MyNetwork MyPassword" },
+    { "uc-home", "Publish a state to Home Assistant",
+      "mqtt.connect 192.168.1.20 1883\nmqtt.publish home/garage/door open" },
+    { "uc-home", "Take commands from Home Assistant",
+      "mqtt.subscribe home/garage/cmd\nmqtt.read 30" },
+    { "uc-provision", "Wait for a phone to send the Wi-Fi settings",
+      "bt.defaults secure\nbt.pairing on\ngatt.server.wps 120\nwifi.status" },
+    { "uc-provision", "Or: own access point with a join QR code",
+      "wifi.ap.enable Setup-1234 setup1234\nwifi.ap.status" },
+    { "uc-hotel", "Find and join the guest network",
+      "wifi.scan\nwifi.connect HotelGuest" },
+    { "uc-hotel", "Log in on the portal page",
+      "wifi.portal login room=412 surname=Smith\nwifi.portal check\nnet.ping 8.8.8.8" },
+    { "uc-notify", "iPhone notifications",
+      "ancs.on\n# pair 'ucx ANCS' from the phone's Bluetooth settings\nancs.sub 0\nancs.list" },
+    { "uc-notify", "Read and answer one",
+      "ancs.show 42\nancs.action 42 pos" },
+    { "uc-notify", "Android notifications from a companion app",
+      "bt.defaults secure\nbt.pairing on\nnotify.on\nnotify.list" },
+    { "uc-remote", "Pair as a keyboard",
+      "hid.setup\nbt.pairing on\n# pair from the PC or phone\nhid.status" },
+    { "uc-remote", "Presentation clicker",
+      "hid.key space\nhid.key backspace" },
+    { "uc-remote", "Media remote",
+      "hid.media volup\nhid.media play\nhid.text hello" },
+#endif
     { "utils", "Handy tools",
       "utils.qr.wifi MyNetwork MyPassword\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
 };
@@ -251,11 +308,19 @@ bool ucxapp_example_get(size_t index, const char **group, const char **title, co
 static ucxapp_cmd_t gCmds[GROUP_MAX + 1];
 static char gNames[GROUP_MAX][24];
 
+static bool hasGroup(const char *group);
+
+/* "gnss.ex 2" for a command group, "examples uc-boat 2" for a use case. */
+static void runHint(const char *group, char *out, size_t size)
+{
+    snprintf(out, size, hasGroup(group) ? "%s.ex" : "examples %s", group);
+}
+
 static void printGroup(const char *group)
 {
     int n = 0;
 
-    ucxapp_print("Examples for %s.*\n", group);
+    ucxapp_print("Examples for %s%s\n", group, hasGroup(group) ? ".*" : "");
     for (size_t i = 0; i < EX_COUNT; i++) {
         const char *p = kExamples[i].lines;
 
@@ -272,7 +337,10 @@ static void printGroup(const char *group)
         }
     }
     if (n > 0) {
-        ucxapp_print("\nRun one with %s.ex <number> (stops at the first error)\n", group);
+        char hint[32];
+
+        runHint(group, hint, sizeof(hint));
+        ucxapp_print("\nRun one with %s <number> (stops at the first error)\n", hint);
     }
 }
 
@@ -314,7 +382,10 @@ static int runExample(ucxapp_t *app, const char *group, int n)
         }
         return UCXAPP_OK;
     }
-    ucxapp_print("no example %d for %s (see %s.ex)\n", n, group, group);
+    char hint[32];
+
+    runHint(group, hint, sizeof(hint));
+    ucxapp_print("no example %d for %s (see %s)\n", n, group, hint);
     return UCXAPP_ERR_USAGE;
 }
 

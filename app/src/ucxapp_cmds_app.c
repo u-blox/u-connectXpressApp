@@ -5,6 +5,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef UCXAPP_CRYPTO
+#include "mbedtls/build_info.h"
+#include "tf-psa-crypto/build_info.h"
+#endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten/version.h>
+#endif
+
 #define STR2(x) #x
 #define STR(x)  STR2(x)
 
@@ -15,9 +23,19 @@
 #define APP_VERSION "dev"
 #define UCX_API_VERSION "-"
 #endif
+#ifdef UCXAPP_UCC_COMMIT
+#define UCC_VERSION UCX_API_VERSION " (commit " UCXAPP_UCC_COMMIT ")"
+#else
+#define UCC_VERSION UCX_API_VERSION
+#endif
+#ifndef UCXAPP_UCX_MODULE
+#define UCXAPP_UCX_MODULE "NORA-W36X"
+#endif
 
 #if defined(_WIN32)
 #define APP_PLATFORM "Windows"
+#elif defined(__EMSCRIPTEN__)
+#define APP_PLATFORM "WebAssembly"
 #elif defined(U_PORT_POSIX)
 #define APP_PLATFORM "Linux"
 #elif defined(__ZEPHYR__)
@@ -48,6 +66,13 @@
 #define HOSTED 1
 #else
 #define HOSTED 0
+#endif
+
+#if !HOSTED && defined(__ZEPHYR__)
+#include <zephyr/kernel.h>
+#elif !HOSTED
+#include "FreeRTOS.h"
+#include "task.h"
 #endif
 
 typedef struct {
@@ -106,8 +131,19 @@ static const char kApache[] =
 static const component_t kComponents[] = {
     { "u-connectXpressApp", APP_VERSION, "Copyright (C) u-blox AG", "this application",
       "https://github.com/u-blox/u-connectXpressApp", NULL },
-    { "u-connectClient", UCX_API_VERSION, "Apache-2.0", "AT command client for u-connectXpress modules",
+    { "u-connectClient", UCC_VERSION, "Apache-2.0", "AT command client for u-connectXpress modules",
       "https://github.com/u-blox/u-connectClient", kApache },
+#ifdef UCXAPP_CRYPTO
+    { "mbedTLS", MBEDTLS_VERSION_STRING, "Apache-2.0", "TLS and X.509 (tls.*, cert.import, utils.cert.*, web.start https)",
+      "https://github.com/Mbed-TLS/mbedtls", kApache },
+    { "TF-PSA-Crypto", TF_PSA_CRYPTO_VERSION_STRING, "Apache-2.0",
+      "PSA crypto: AES-256-GCM, PBKDF2, hashes (utils.encrypt, Wi-Fi passwords)",
+      "https://github.com/Mbed-TLS/TF-PSA-Crypto", kApache },
+#endif
+#ifdef __EMSCRIPTEN__
+    { "Emscripten", STR(__EMSCRIPTEN_major__) "." STR(__EMSCRIPTEN_minor__) "." STR(__EMSCRIPTEN_tiny__), "MIT",
+      "C runtime and JavaScript glue for the browser build", "https://emscripten.org", kMit },
+#endif
 #if HOSTED
     { "qrcodegen", "-", "MIT", "QR codes (qr.*)",
       "https://github.com/nayuki/QR-Code-generator", kMit },
@@ -124,7 +160,16 @@ static const component_t kComponents[] = {
     { "Zephyr RTOS", "-", "Apache-2.0", "kernel and drivers", "https://www.zephyrproject.org", kApache },
 #elif !HOSTED
     { "STM32Cube HAL", "-", "BSD-3-Clause", "board support", "https://github.com/STMicroelectronics", NULL },
-    { "FreeRTOS", "-", "MIT", "kernel", "https://www.freertos.org", kMit },
+    { "FreeRTOS", tskKERNEL_VERSION_NUMBER, "MIT", "kernel", "https://www.freertos.org", kMit },
+#if defined(STM32H753xx) || defined(STM32F767xx) || defined(STM32F439xx) || defined(STM32F407xx)
+    { "littlefs", "-", "BSD-3-Clause", "file store in the internal flash", "https://github.com/littlefs-project/littlefs",
+      NULL },
+#endif
+#if defined(STM32H753xx) || defined(STM32F767xx) || defined(STM32F439xx) || defined(STM32F407xx) || \
+    defined(STM32F401xE) || defined(STM32F446xx)
+    { "FatFs", "-", "FatFs licence (BSD-1-Clause)", "FAT file system on an SD card (STM32Cube middleware)",
+      "http://elm-chan.org/fsw/ff/", NULL },
+#endif
 #endif
 };
 
@@ -173,9 +218,24 @@ static int cmdSbom(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
+    ucxapp_print("build     u-connectXpressApp %s, %s %s, %s\n", APP_VERSION, APP_PLATFORM, APP_ARCH, APP_COMPILER);
+    ucxapp_print("AT API    %s %s\n\n", UCXAPP_UCX_MODULE, UCX_API_VERSION);
     for (size_t i = 0; i < COMPONENT_COUNT; i++) {
         const component_t *c = &kComponents[i];
         bool hasVersion = strcmp(c->version, "-") != 0;
+#if !HOSTED && defined(__ZEPHYR__)
+        char zv[16];
+
+        if (strcmp(c->name, "Zephyr RTOS") == 0) {
+            uint32_t v = sys_kernel_version_get();
+
+            snprintf(zv, sizeof(zv), "%u.%u.%u", (unsigned)SYS_KERNEL_VER_MAJOR(v), (unsigned)SYS_KERNEL_VER_MINOR(v),
+                     (unsigned)SYS_KERNEL_VER_PATCHLEVEL(v));
+            ucxapp_print("%s %s  [%s]\n", c->name, zv, c->license);
+            ucxapp_print("  %s\n  %s\n\n", c->use, c->source);
+            continue;
+        }
+#endif
         ucxapp_print("%s%s%s  [%s]\n", c->name, hasVersion ? " " : "", hasVersion ? c->version : "", c->license);
         ucxapp_print("  %s\n  %s\n\n", c->use, c->source);
     }

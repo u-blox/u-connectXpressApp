@@ -94,7 +94,7 @@ struct ucxapp_stream {
     bool ntripStreaming;           /* response header passed */
     bool ntripBle;                 /* also send the receiver stream to a BLE Nordic UART client */
     char ntripMount[64];
-    char ntripReq[400];
+    char ntripReq[480];
     char ntripHdr[256];
     size_t ntripHdrLen;
     char nmea[100];                /* NMEA line being assembled from the receiver */

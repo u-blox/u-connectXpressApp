@@ -87,6 +87,14 @@ def test_app_runs_in_the_browser(site):
         page.click("#run")
         page.wait_for_selector(".blk .badge.ok", timeout=30000)
         assert "usecase.tool" in page.inner_text(".blk .bh")
+        # Tab completes the command, then its keyword, through /api/complete in the app
+        page.fill("#cmd", "gnss.brid")
+        page.press("#cmd", "Tab")
+        page.wait_for_function("document.getElementById('cmd').value === 'gnss.bridge '", timeout=10000)
+        page.type("#cmd", "ntr")
+        page.press("#cmd", "Tab")
+        page.wait_for_function("document.getElementById('cmd').value === 'gnss.bridge ntrip '", timeout=10000)
+        page.fill("#cmd", "")
         # the module over (fake) Web Serial
         page.click("#wsc")
         page.wait_for_function("window.__tx.includes('AT')", timeout=30000)

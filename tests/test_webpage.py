@@ -287,6 +287,9 @@ def test_web_preview_serves_the_real_commands():
         assert "usecase:host:x" in json.loads(get("/api/groups"))
         assert any(c["n"] == "wifi.scan" for c in json.loads(get("/api/commands?g=wifi")))
         assert [c["n"] for c in json.loads(get("/api/find?q=usecase.t&p=1"))] == ["usecase.tool"]
+        assert json.loads(get("/api/complete?q=gnss.bridge%20nt")) == {"l": "gnss.bridge ntrip ", "n": 1, "c": ""}
+        many = json.loads(get("/api/complete?q=bt.pairing%20"))
+        assert many["n"] == 2 and many["c"].split() == ["on", "off"]
         events = urllib.request.urlopen(urllib.request.Request(base + "/events", headers={"X-Token": token}),
                                         timeout=30)
         post = urllib.request.Request(base + "/api/exec?cmd=usecase.tool&a0=4", method="POST",

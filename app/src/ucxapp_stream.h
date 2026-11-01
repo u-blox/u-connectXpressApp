@@ -44,6 +44,10 @@ bool ucxapp_stream_bridge_tcp_connect(ucxapp_stream_t *s, ucxapp_t *app, const c
  * ble also sends the device stream to a BLE Nordic UART client (RTK rover with a phone). */
 bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *mount,
                                 const char *user, const char *pass, int32_t ggaSeconds, bool ble);
+/* The same NTRIP client over a serial data link that is already connected to the caster (cellular modem). */
+bool ucxapp_stream_bridge_ntrip_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud,
+                                     const char *mount, const char *user, const char *pass, int32_t ggaSeconds,
+                                     bool ble);
 /* u-blox Serial Port Service over BLE. */
 bool ucxapp_stream_bridge_sps(ucxapp_stream_t *s, ucxapp_t *app);
 bool ucxapp_stream_bridge_ble(ucxapp_stream_t *s, ucxapp_t *app);

@@ -45,7 +45,7 @@ summary{cursor:pointer;padding:.3rem .2rem;font-weight:700;text-transform:upperc
 .c input,.c select{flex:1;min-width:4rem;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c button{padding:.25rem .7rem}.c select.h{border-color:#2d4a6a}
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
-.uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}
+.uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}#ucs{float:right;margin-left:.5rem}
 #dg{width:100%;max-height:15rem}#dg rect{fill:var(--bg2);stroke:var(--bd);stroke-width:2;transition:stroke .4s,fill .4s}#dg .on rect{stroke:var(--k);fill:#122033}
 #dg text{fill:var(--tx);font:700 14px 'Segoe UI',sans-serif;text-anchor:middle}#dg text+text{fill:var(--mut);font-weight:400;font-size:11px}
 #dg line{stroke:var(--bd);stroke-width:2.5;stroke-dasharray:7 7}#dg line.on{stroke:var(--k);animation:fl .9s linear infinite}@keyframes fl{to{stroke-dashoffset:-14}}
@@ -76,9 +76,8 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
 <main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands"><div id="rc"></div>
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
-<div class="pane" id="pu"><h2>Use case</h2><div class="sc"><div class="uh">Connected tool</div>
-<div class="ud">A tool host (STM32H7 with Zephyr) and a NORA-W36: station on the factory network and an access point for laptops at the same time,
-an HTTPS page on the host for up to 5 laptops, 900 MB of history in under 30 minutes, up to 8 socket trays, and BLE for phone setup, service and accessories.</div>
+<div class="pane" id="pu"><h2>Use case</h2><div class="sc"><select id="ucs" aria-label="Use case"></select><div class="uh" id="uh">Connected tool</div>
+<div class="ud" id="ud"></div>
 <svg id="dg" viewBox="0 0 660 260" role="img" aria-label="System diagram"></svg>
 <div class="cards"><div class="card cw"><h3>Fit check against the module limits</h3><div id="fit" class="fit"><span class="note" style="grid-column:1/-1">Run it to rate each requirement: ok, limit, check or gap.</span></div>
 <div class="r"><button id="fitb">Run fit check</button><input id="mb" placeholder="Mbit/s" title="Measured rate, e.g. from net.iperf; shows the 900 MB download time"></div></div></div>
@@ -130,7 +129,6 @@ function setBusy(c){busy=!!c;$('busy').textContent=c?'running '+c:'';document.qu
 
 /* ---- running commands ---- */
 async function run(c,a,raw,yes){c=c.trim();if(!c)return;
- if(!a&&$('at').checked&&!/^at(\s|$)/i.test(c))c='at '+c;
  if(busy){note('busy: '+$('busy').textContent);return}
  a=a?a.slice():null;if(a)while(a.length&&!a[a.length-1])a.pop();
  const sh=c+(a&&a.length?' '+a.join(' '):'');
@@ -145,8 +143,8 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
 function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  b.badge.className='badge '+(rc?'bad':'ok');b.badge.textContent=(rc?'exit '+rc:'ok')+', '+((Date.now()-b.t0)/1000).toFixed(1)+' s';
  if(/^wifi\.scan/.test(b.cmd))scanLinks(b);
- if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('pc',apOn)}
- if(/^usecase\.tool/.test(b.cmd))fitTable(b)}
+ if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
+ if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b)}
 
 /* ---- command line: history, Tab completion, usage hint ---- */
 let ht=0;
@@ -155,12 +153,11 @@ function showHint(){clearTimeout(ht);if($('at').checked){hint.textContent='AT mo
  const n=cmd.value.trim().split(/\s+/)[0],c=CM[n];
  if(c){hint.textContent=c.n+' '+c.u+'   '+c.h;return}hint.textContent='';
  if(n.length>2)ht=setTimeout(()=>find(n,1).then(()=>{if(CM[n]&&cmd.value.trim().split(/\s+/)[0]===n)showHint()}).catch(()=>{}),300)}
-async function complete(){const v=cmd.value;if(!v||/\s/.test(v))return;
- const names=(await find(v,1)).map(c=>c.n).filter(n=>n.startsWith(v));
- if(!names.length){hint.textContent='no command starts with '+v;return}
- let p=names[0];names.forEach(x=>{while(!x.startsWith(p))p=p.slice(0,-1)});
- if(names.length===1){cmd.value=p+' ';showHint()}else{cmd.value=p;hint.textContent=names.join('  ')}}
-function submit(){const v=cmd.value;cmd.value='';hint.textContent='';run(v)}
+async function complete(){const v=cmd.value;if(!v.trim())return;
+ const r=await api('/api/complete?q='+enc(v)).then(x=>x.json());
+ if(!r.n){hint.textContent='nothing to complete';return}
+ cmd.value=r.l;showHint();if(r.n>1)hint.textContent=r.c}
+function submit(){let v=cmd.value.trim();cmd.value='';hint.textContent='';if(v&&$('at').checked&&!/^at(\s|$)/i.test(v)&&!CM[v.split(/\s/)[0]])v='at '+v;run(v)}
 $('run').onclick=submit;$('clr').onclick=clearAll;$('at').onchange=()=>{cmd.placeholder=$('at').checked?'AT command, e.g. AT+GMM':'command, e.g. wifi.scan (Tab completes, Up/Down history)';showHint();cmd.focus()};
 cmd.oninput=showHint;
 cmd.onkeydown=e=>{if(e.key==='Enter')submit();
@@ -226,36 +223,72 @@ $('up').onchange=async()=>{const f=$('up').files[0];if(!f)return;const buf=new U
 $('files').onclick=()=>{$('fst').textContent='';$('fd').showModal();listFiles()};
 $('fref').onclick=listFiles;$('fclose').onclick=()=>$('fd').close();
 
-/* ---- use case view: diagram lit by the live state, fit check and steps from usecase.tool and usecase.ex ---- */
-const ND=[['tool','Tool','host + NORA-W36',330,130,'--ok'],['mes','Factory network','Enterprise Wi-Fi, MES',95,45,'--ac'],
- ['pc','Laptops (5)','tool AP, HTTPS',565,45,'--pu'],['tray','Socket trays (8)','UDP or BLE',565,215,'--warm'],['ph','Phone, accessories','BLE',95,215,'--ble']];
-let dh='';ND.slice(1).forEach(n=>dh+=`<line id="l-${n[0]}" x1="330" y1="130" x2="${n[3]}" y2="${n[4]}" style="--k:var(${n[5]})"/>`);
-ND.forEach(n=>dh+=`<g id="n-${n[0]}" style="--k:var(${n[5]})"><rect x="${n[3]-80}" y="${n[4]-27}" width="160" height="54" rx="12"/><text x="${n[3]}" y="${n[4]-3}">${n[1]}</text><text x="${n[3]}" y="${n[4]+15}">${n[2]}</text></g>`);
-$('dg').innerHTML=dh;
-function lit(k,on){['n-','l-'].forEach(p=>{const e=document.getElementById(p+k);if(e)e.classList.toggle('on',!!on)})}
-function fitTable(b){const f=$('fit');f.textContent='';b.body.textContent.split('\n').forEach(l=>{const m=l.match(/^\s*\[(ok|limit|check|gap)\]\s+(.+?)\s{2,}(.+)$/);
+/* ---- use case view: one page per use case; diagram lit by the live state, fit check from usecase.tool/check, steps from the examples ----
+   Node keys lit by the state: hub (page live), wifi (station up), ap (wifi.ap.enable), ble (a BLE link), sock (an open socket). */
+const UC={
+ tool:{t:'Connected tool',g:'usecase',d:'A tool host (STM32H7 with Zephyr) and a NORA-W36: station on the factory network and an access point for laptops at the same time, '+
+  'an HTTPS page on the host for up to 5 laptops, 900 MB of history in under 30 minutes, up to 8 socket trays, and BLE for phone setup, service and accessories.',
+  h:['Tool','host + NORA-W36'],n:[['wifi','Factory network','Enterprise Wi-Fi, MES','--ac'],['ap','Laptops (5)','tool AP, HTTPS','--pu'],['sock','Socket trays (8)','UDP or BLE','--warm'],['ble','Phone, accessories','BLE','--ble']]},
+ boat:{t:'Boat or camper: GPS on the chart app',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
+  h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial','--ok'],['ap','Tablets (5)','module AP, TCP 10110','--pu'],['log','Trip log','gnss.log','--warm'],['ble','Phone','BLE NUS','--ble']]},
+ rtk:{t:'Survey pole or rover: RTK',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
+  h:['Host','RTK GNSS + NORA-W36'],n:[['wifi','Wi-Fi','station','--ac'],['sock','NTRIP caster','RTCM in, GGA out','--warm'],['gnss','RTK receiver','ZED-F9P, ZED-X20P','--ok'],['ble','Rover or phone','BLE NUS','--ble']]},
+ mower:{t:'Robotic lawn mower',d:'The owner sets the mower up from a phone over BLE, it joins the garden Wi-Fi and gets PointPerfect SPARTN corrections for its HP GNSS receiver; '+
+  'the phone follows it over BLE, and past the Wi-Fi the corrections and a theft alert go over a cellular modem.',
+  h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status','--ble'],['wifi','Garden Wi-Fi','PointPerfect NTRIP','--ac'],['gnss','HP GNSS','ZED-F9P, ZED-X20P','--ok'],['cell','Cellular modem','edge, theft alert','--pu']]},
+ farm:{t:'Tractor or field robot: auto-steer',d:'An HP GNSS receiver gets PointPerfect corrections over a cellular modem in the field and sends the corrected NMEA to the guidance tablet in the cab over BLE; '+
+  'the field log goes up over the farmyard Wi-Fi.',
+  h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','--pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P','--ok'],['ble','Cab tablet','BLE NUS','--ble'],['wifi','Farmyard Wi-Fi','log upload','--ac']]},
+ tracker:{t:'Car, bike or pet tracker',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
+  h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station','--ac'],['sock','Your server','TCP, NMEA lines','--warm'],['cell','Cellular modem','on the road','--pu'],['gnss','GNSS receiver','position','--ok']]},
+ home:{t:'Smart home sensor: MQTT',d:'A sensor on the home Wi-Fi publishes its state to Mosquitto in Home Assistant and takes commands back.',
+  h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station','--ac'],['sock','MQTT broker','Home Assistant','--warm'],['imu','Sensor','IMU, door, machine','--ok'],['ble','Phone','BLE setup','--ble']]},
+ provision:{t:'Wi-Fi set up from a phone',d:'A new device has no keyboard: the phone sends the network name and password over BLE (Wi-Fi Provisioning service), or joins the device\'s own AP from a QR code.',
+  h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning','--ble'],['wifi','Home Wi-Fi','joined after setup','--ac'],['ap','Setup AP','QR code','--pu'],['sock','Cloud or app','after setup','--warm']]},
+ hotel:{t:'Hotel or cafe Wi-Fi with a login page',d:'Guest networks hold traffic until a form is filled in: the app finds the portal page, fills in the room and surname, and checks the internet.',
+  h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2','--ac'],['portal','Login page','room, surname','--warm'],['sock','Internet','after login','--ok'],['ble','Phone','BLE','--ble']]},
+ notify:{t:'Phone notifications',d:'Calls and messages from an iPhone (ANCS) or an Android companion app on a small display or wearable, with answer and dismiss.',
+  h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS','--ble'],['android','Android','companion app','--ok'],['disp','Display','title and text','--warm'],['act','Actions','answer, dismiss','--pu']]},
+ remote:{t:'Clicker or media remote',d:'The module is a BLE keyboard (HID over GATT): next slide, volume and play/pause on a PC, TV or phone without a driver.',
+  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID','--ble'],['slides','Slides','space, backspace','--warm'],['media','Media','volume, play','--pu'],['text','Text','hid.text','--ok']]}};
+const XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
+Object.keys(UC).forEach(k=>$('ucs').add(new Option(UC[k].t,k)));
+function draw(){const u=UC[uc],K=k=>`style="--k:var(${k})"`;let dh='';
+ u.n.forEach((n,i)=>dh+=`<line id="l-${n[0]}" x1="330" y1="130" x2="${XY[i][0]}" y2="${XY[i][1]}" ${K(n[3])}/>`);
+ [['hub',u.h[0],u.h[1],'--ok']].concat(u.n).forEach((n,i)=>{const x=i?XY[i-1][0]:330,y=i?XY[i-1][1]:130;
+  dh+=`<g id="n-${n[0]}" ${K(n[3])}><rect x="${x-80}" y="${y-27}" width="160" height="54" rx="12"/><text x="${x}" y="${y-3}">${n[1]}</text><text x="${x}" y="${y+15}">${n[2]}</text></g>`});
+ $('dg').innerHTML=dh;Object.keys(LS).forEach(k=>lit(k,LS[k]))}
+function lit(k,on){LS[k]=!!on;['n-','l-'].forEach(p=>{const e=document.getElementById(p+k);if(e)e.classList.toggle('on',!!on)})}
+function fitTable(b){const f=$('fit');let first=1;f.textContent='';b.body.textContent.split('\n').forEach(l=>{const m=l.match(/^\s*\[(ok|limit|check|gap)\]\s+(.+?)\s{2,}(.+)$/);
+  if(l.trim()&&first){first=0;return}
   if(m){f.appendChild(el('span','v '+m[1],m[1]));f.appendChild(el('b','',m[2]));f.appendChild(el('span','',m[3]))}
-  else if(l.trim()&&!/^Connected tool/.test(l)){const n=el('span','note',l.trim());n.style.gridColumn='1/-1';f.appendChild(n)}})}
-$('fitb').onclick=()=>run('usecase.tool',[$('mb').value.trim()]);
-let ucl=0;
-function steps(){if(ucl)return;ucl=1;api('/api/examples?g=usecase').then(r=>r.json()).then(xs=>{const s=$('steps');
- xs.forEach((x,i)=>{if(/^usecase\.tool/.test(x.l))return;const c=el('div','card'),r=el('div','r'),rb=el('button','','Run steps');c.appendChild(el('h3','',x.t));
+  else if(l.trim()&&!first){const n=el('span','note',l.trim());n.style.gridColumn='1/-1';f.appendChild(n)}})}
+$('fitb').onclick=()=>uc==='tool'?run('usecase.tool',[$('mb').value.trim()]):run('usecase.check',[uc]);
+let ucl='';
+function steps(){const g=UC[uc].g||'uc-'+uc,s=$('steps');if(ucl===g)return;ucl=g;s.textContent='';
+ api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{if(ucl!==g)return;let n=0;
+ xs.forEach(x=>{n++;if(/^usecase\.tool/.test(x.l))return;const i=n,c=el('div','card'),r=el('div','r'),rb=el('button','','Run steps');c.appendChild(el('h3','',x.t));
   x.l.split('\n').forEach(l=>{const k=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){k.title='Put in the command line to edit';k.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}c.appendChild(k)});
-  rb.title='Runs the lines in order, stops at the first error (usecase.ex '+(i+1)+')';rb.onclick=()=>run('usecase.ex',[String(i+1)],1);r.appendChild(rb);c.appendChild(r);s.appendChild(c)})}).catch(()=>{ucl=0})}
+  const ex=g==='usecase'?['usecase.ex',[String(i)]]:['examples',[g,String(i)]];
+  rb.title='Runs the lines in order, stops at the first error ('+ex[0]+' '+ex[1].join(' ')+')';rb.onclick=()=>run(ex[0],ex[1],1);r.appendChild(rb);c.appendChild(r);s.appendChild(c)})}).catch(()=>{ucl=''})}
+function pick(k){uc=k;localStorage.setItem('ucxc',k);const u=UC[k];$('ucs').value=k;$('uh').textContent=u.t;$('ud').textContent=u.d;$('mb').hidden=k!=='tool';
+ const f=$('fit');f.textContent='';const n=el('span','note','Run it to rate each requirement: ok, limit, check or gap.');n.style.gridColumn='1/-1';f.appendChild(n);
+ draw();if(document.body.classList.contains('uc'))steps()}
+$('ucs').onchange=()=>pick($('ucs').value);pick(uc);
 function view(v){document.body.classList.toggle('uc',!!v);localStorage.setItem('ucxv',v?'1':'0');
  document.querySelectorAll('#vw button').forEach(b=>b.classList.toggle('on',+b.dataset.v===+!!v));if(v)steps()}
 document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset.v));
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
 function events(){const es=new EventSource('/events');
- es.onopen=()=>{st.textContent='live';st.className='ok';lit('tool',1)};
- es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('tool',0)};
+ es.onopen=()=>{st.textContent='live';st.className='ok';lit('hub',1)};
+ es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));
  es.addEventListener('state',e=>{const s=$('state'),ps=JSON.parse(e.data).split(' | ');s.textContent='';ps.forEach(p=>{
-  s.appendChild(el('span','chip '+(/( -|down|\?)$/.test(p)?'off':'on'),p));const m=p.match(/^(BLE|Sockets) (.+)$/);
+  s.appendChild(el('span','chip '+(/( -|down|n\/a)$/.test(p)?'off':'on'),p));const m=p.match(/^(BLE|Sockets) (.+)$/);
   if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2]==='-'?[]:m[2].split(' ')});
-  fillHandles();lit('mes',ps[0]==='Wi-Fi up');lit('ph',HS.conn.length>0);lit('tray',HS.sock.length>0)});
+  fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();

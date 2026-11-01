@@ -62,7 +62,7 @@ def test_use_case_list_and_examples(app_exe):
         assert word in ex.stdout
 
 
-USE_CASES = ("boat", "rtk", "tracker", "home", "provision", "hotel", "notify", "remote")
+USE_CASES = ("boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")
 
 
 @pytest.mark.app

@@ -692,6 +692,32 @@ static void routeFind(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     sendList(resp, n);
 }
 
+/* /api/complete?q=line: {"l":completed line,"n":count,"c":"candidates"}, the same as Tab in the TUI. */
+static void routeComplete(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    static char q[200], line[200], list[1024];
+    size_t n = 0;
+    int count;
+
+    (void)user;
+    if (!tokenOk(req)) {
+        uWebServerSendError(resp, 403, "token required");
+        return;
+    }
+    if (uWebServerGetQueryParam(req, "q", q, sizeof(q)) != 0) {
+        uWebServerSendError(resp, 400, "missing q");
+        return;
+    }
+    urlDecode(q);
+    count = ucxapp_cmd_complete_line(q, line, sizeof(line), list, sizeof(list));
+    n += (size_t)snprintf(gBuf + n, API_BUF - n, "{\"l\":\"");
+    jsonStr(gBuf, &n, line);
+    n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"n\":%d,\"c\":\"", count);
+    jsonStr(gBuf, &n, count > 1 ? list : "");
+    snprintf(gBuf + n, API_BUF - n, "\"}");
+    uWebServerSendJSON(resp, gBuf);
+}
+
 /* /api/examples?g=group */
 static void routeExamples(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
@@ -890,6 +916,7 @@ static const struct {
     { U_HTTP_METHOD_GET,  "/api/groups",   routeList },
     { U_HTTP_METHOD_GET,  "/api/commands", routeList },
     { U_HTTP_METHOD_GET,  "/api/find",     routeFind },
+    { U_HTTP_METHOD_GET,  "/api/complete", routeComplete },
     { U_HTTP_METHOD_GET,  "/api/examples", routeExamples },
     { U_HTTP_METHOD_GET,  "/api/files",    routeFiles },
     { U_HTTP_METHOD_GET,  "/api/file",     routeFile },

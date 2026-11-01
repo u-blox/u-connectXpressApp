@@ -43,7 +43,7 @@ def pytest_runtest_logreport(report):
     # The full report (with the app output) goes next to the one-line log, one file per failure.
     details = FAILURE_LOG.parent / "test_failures"
     details.mkdir(exist_ok=True)
-    name = re.sub(r"[^\w.-]+", "_", report.nodeid.split("::", 1)[-1])
+    name = re.sub(r"[^\w.-]+", "_", report.nodeid.split("::", 1)[-1])[:120]   # long parameters exceed MAX_PATH
     (details / f"{stamp.replace(':', '')}_{name}.txt").write_text(report.longreprtext, encoding="utf-8")
     with FAILURE_LOG.open("a", encoding="utf-8") as log:
         log.write(f"{stamp}\t{report.when}\t{report.nodeid}\t{reason}\n")

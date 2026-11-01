@@ -89,7 +89,7 @@ struct ucxapp_stream {
     int32_t spsConn;
     ucxapp_tls_server_t *tlsSrv;   /* BR_TCP server with TLS; NULL for plain TCP */
     ucxapp_tls_conn_t *tls[MAX_CLIENTS];
-    bool ntrip;                    /* BR_TCP client speaking NTRIP v1 to a caster */
+    bool ntrip;                    /* BR_TCP client (or BR_UART data link) speaking NTRIP v1 to a caster */
     bool ntripFailed;              /* caster refused: no reconnect */
     bool ntripStreaming;           /* response header passed */
     bool ntripBle;                 /* also send the receiver stream to a BLE Nordic UART client */
@@ -406,6 +406,20 @@ static int32_t ntripHeader(ucxapp_stream_t *s, const uint8_t *buf, int32_t n)
     return n;
 }
 
+/* The receiver stream to a BLE Nordic UART client next to the NTRIP link. */
+static void ntripBle(ucxapp_stream_t *s, const uint8_t *d, size_t n)
+{
+    if (!s->ntripBle || s->app->ucx == NULL || ucxapp_handle_current(UCXAPP_HANDLE_CONN) < 0) {
+        return;
+    }
+    for (size_t off = 0; off < n; off += BLE_CHUNK_MIN) {
+        size_t piece = n - off < BLE_CHUNK_MIN ? n - off : BLE_CHUNK_MIN;
+        if (ucxapp_gatt_notify_nus(s->app, d + off, piece)) {
+            ucxapp_stats_add(UCXAPP_STATS_GATT, piece, 0);
+        }
+    }
+}
+
 /* Keeps the last GGA sentence of the receiver stream for the caster. */
 static void ntripScan(ucxapp_stream_t *s, const uint8_t *d, size_t n)
 {
@@ -635,14 +649,7 @@ static void senderLoop(void *arg)
         if (s->ntrip) {
             while ((n = ringGet(s, chunk, sizeof(chunk))) > 0) {
                 ntripScan(s, chunk, n);
-                if (s->ntripBle && ucxapp_handle_current(UCXAPP_HANDLE_CONN) >= 0) {
-                    for (size_t off = 0; off < n; off += BLE_CHUNK_MIN) {
-                        size_t piece = n - off < BLE_CHUNK_MIN ? n - off : BLE_CHUNK_MIN;
-                        if (ucxapp_gatt_notify_nus(s->app, chunk + off, piece)) {
-                            ucxapp_stats_add(UCXAPP_STATS_GATT, piece, 0);
-                        }
-                    }
-                }
+                ntripBle(s, chunk, n);
             }
             if (s->ntripStreaming && s->nClients > 0 && s->gga[0] != '\0' &&
                 (int32_t)(ucxapp_platform_tick_ms() - s->nextGga) >= 0) {
@@ -663,24 +670,51 @@ static void senderLoop(void *arg)
     }
 }
 
-/* Serial to serial: no module needed, both directions. */
+/* Serial to serial: no module needed, both directions. With NTRIP the other port is a data link to the caster:
+   only GGA goes up, the corrections come down after the response header. */
 static void uartBridgeLoop(void *arg)
 {
     ucxapp_stream_t *s = arg;
     uint8_t chunk[NET_CHUNK];
 
+    if (s->ntrip) {
+        s->ntripStreaming = false;
+        s->ntripHdrLen = 0;
+        (void)uPortUartWrite(s->out, (const uint8_t *)s->ntripReq, strlen(s->ntripReq));
+    }
     while (!s->senderStop) {
         size_t n = ringGet(s, chunk, sizeof(chunk));
 
-        if (n > 0 && uPortUartWrite(s->out, chunk, n) == (int32_t)n) {
+        if (s->ntrip) {
+            ntripScan(s, chunk, n);
+            ntripBle(s, chunk, n);
+            if (s->ntripStreaming && s->gga[0] != '\0' && (int32_t)(ucxapp_platform_tick_ms() - s->nextGga) >= 0) {
+                s->nextGga = ucxapp_platform_tick_ms() + s->ggaPeriodMs;
+                n = strlen(s->gga);
+                if (uPortUartWrite(s->out, (const uint8_t *)s->gga, n) == (int32_t)n) {
+                    s->sent += (uint32_t)n;
+                }
+            }
+        } else if (n > 0 && uPortUartWrite(s->out, chunk, n) == (int32_t)n) {
             s->sent += (uint32_t)n;
         } else if (n > 0) {
             s->dropped += (uint32_t)n;
         }
         int32_t r = uPortUartRead(s->out, chunk, sizeof(chunk), 20);
-        if (r > 0) {
-            (void)ucxapp_stream_write(s, chunk, (size_t)r);
-            s->received += (uint32_t)r;
+        int32_t skip = 0;
+        if (r > 0 && s->ntrip && !s->ntripStreaming) {
+            skip = s->ntripFailed ? r : ntripHeader(s, chunk, r);
+            if (skip < 0) {
+                s->ntripFailed = true;
+                skip = r;
+            } else if (s->ntripStreaming) {
+                ucxapp_print("NTRIP: streaming corrections from /%s\n", s->ntripMount);
+                s->nextGga = 0;
+            }
+        }
+        if (r > skip) {
+            (void)ucxapp_stream_write(s, chunk + skip, (size_t)(r - skip));
+            s->received += (uint32_t)(r - skip);
         } else if (r < 0) {
             ucxapp_platform_sleep_ms(20);
         }
@@ -834,21 +868,17 @@ static void base64(const char *in, char *out, size_t size)
     out[o] = '\0';
 }
 
-bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *mount,
-                                const char *user, const char *pass, int32_t ggaSeconds, bool ble)
+/* Request and BLE side of an NTRIP client, after bridgeBegin; stops the bridge on failure. */
+static bool ntripSetup(ucxapp_stream_t *s, ucxapp_t *app, const char *mount, const char *user, const char *pass,
+                       int32_t ggaSeconds, bool ble)
 {
     char cred[200];
     char auth[280] = "";
 
-    if (strlen(host) >= sizeof(s->connectHost) || strlen(mount) >= sizeof(s->ntripMount) ||
-        strlen(user) + strlen(pass) + 2 > sizeof(cred)) {
-        ucxapp_print("ERROR: host, mountpoint or credentials too long\n");
-        return false;
+    if (ble && app->ucx == NULL) {
+        ucxapp_print("ERROR: ble needs a connected module\n");
     }
-    if (!bridgeBegin(s, app, BR_TCP)) {
-        return false;
-    }
-    if (ble && ucxapp_gatt_server_ensure(app, "nus") != UCXAPP_OK) {
+    if (ble && (app->ucx == NULL || ucxapp_gatt_server_ensure(app, "nus") != UCXAPP_OK)) {
         ucxapp_stream_bridge_stop(s);
         return false;
     }
@@ -868,6 +898,25 @@ bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *h
     memset(auth, 0, sizeof(auth));
     s->ntrip = true;
     s->ggaPeriodMs = (uint32_t)ggaSeconds * 1000u;
+    return true;
+}
+
+static bool ntripArgsOk(const char *host, const char *mount, const char *user, const char *pass)
+{
+    if (strlen(host) >= sizeof(((ucxapp_stream_t *)0)->connectHost) ||
+        strlen(mount) >= sizeof(((ucxapp_stream_t *)0)->ntripMount) || strlen(user) + strlen(pass) + 2 > 200) {
+        ucxapp_print("ERROR: host, mountpoint or credentials too long\n");
+        return false;
+    }
+    return true;
+}
+
+bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *mount,
+                                const char *user, const char *pass, int32_t ggaSeconds, bool ble)
+{
+    if (!ntripArgsOk(host, mount, user, pass) || !bridgeBegin(s, app, BR_TCP) || !ntripSetup(s, app, mount, user, pass, ggaSeconds, ble)) {
+        return false;
+    }
     snprintf(s->connectHost, sizeof(s->connectHost), "%s", host);
     s->connectPort = port;
     s->tcpPort = port;
@@ -983,7 +1032,7 @@ bool ucxapp_stream_bridge_ble_custom(ucxapp_stream_t *s, ucxapp_t *app, const ui
     return true;
 }
 
-bool ucxapp_stream_bridge_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud)
+static bool uartOpen(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud)
 {
     if (strcmp(port, s->port) == 0) {
         ucxapp_print("ERROR: that is the port of the %s itself\n", s->cfg.kind);
@@ -1000,10 +1049,29 @@ bool ucxapp_stream_bridge_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *po
     }
     snprintf(s->outPort, sizeof(s->outPort), "%s", port);
     s->outBaud = baud;
-    if (!bridgeRun(s)) {
+    return true;
+}
+
+bool ucxapp_stream_bridge_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud)
+{
+    if (!uartOpen(s, app, port, baud) || !bridgeRun(s)) {
         return false;
     }
     ucxapp_print("%s bridge: %s <-> %s at %d baud\n", s->cfg.kind, s->port, port, (int)baud);
+    return true;
+}
+
+bool ucxapp_stream_bridge_ntrip_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud,
+                                     const char *mount, const char *user, const char *pass, int32_t ggaSeconds,
+                                     bool ble)
+{
+    if (!ntripArgsOk("", mount, user, pass) || !uartOpen(s, app, port, baud) ||
+        !ntripSetup(s, app, mount, user, pass, ggaSeconds, ble) || !bridgeRun(s)) {
+        return false;
+    }
+    ucxapp_print("%s bridge: NTRIP client over %s to /%s, GGA every %d s, corrections go to the receiver%s\n",
+                 s->cfg.kind, port, s->ntripMount, (int)ggaSeconds,
+                 ble ? "; corrected NMEA to BLE Nordic UART clients" : "");
     return true;
 }
 
@@ -1182,9 +1250,16 @@ void ucxapp_stream_bridge_status(ucxapp_stream_t *s)
         return;
     }
     if (s->ntrip) {
-        ucxapp_print("bridge: NTRIP %s:%d/%s, %s, %u bytes of corrections\n", s->connectHost, (int)s->connectPort,
+        char where[100];
+
+        if (s->bridge == BR_UART) {
+            snprintf(where, sizeof(where), "over %s", s->outPort);
+        } else {
+            snprintf(where, sizeof(where), "%s:%d", s->connectHost, (int)s->connectPort);
+        }
+        ucxapp_print("bridge: NTRIP %s/%s, %s, %u bytes of corrections\n", where,
                      s->ntripMount, s->ntripFailed ? "refused by the caster"
-                                    : s->nClients == 0 ? "reconnecting"
+                                    : s->bridge == BR_TCP && s->nClients == 0 ? "reconnecting"
                                     : !s->ntripStreaming ? "waiting for the caster"
                                     : s->gga[0] == '\0' ? "streaming, no GGA from the receiver yet" : "streaming",
                      (unsigned)s->received);

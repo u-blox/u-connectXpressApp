@@ -135,6 +135,34 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return found;
 }
 
+bool ucxapp_platform_location(double *lat, double *lon, double *alt)
+{
+    static const char kCmd[] =
+        "powershell -NoProfile -NonInteractive -Command \"Add-Type -AssemblyName System.Device; "
+        "$w = New-Object System.Device.Location.GeoCoordinateWatcher; $w.Start(); "
+        "for ($i = 0; $i -lt 60 -and $w.Status -ne 'Ready' -and $w.Status -ne 'Disabled' -and "
+        "$w.Permission -ne 'Denied'; $i++) { Start-Sleep -Milliseconds 100 }; $c = $w.Position.Location; "
+        "if (-not $c.IsUnknown) { [string]::Format([Globalization.CultureInfo]::InvariantCulture, "
+        "'{0} {1} {2}', $c.Latitude, $c.Longitude, $c.Altitude) }\" 2>NUL";
+    char line[128] = "";
+    FILE *p = _popen(kCmd, "r");
+    int n;
+
+    if (p == NULL) {
+        return false;
+    }
+    if (fgets(line, (int)sizeof(line), p) == NULL) {
+        line[0] = '\0';
+    }
+    (void)_pclose(p);
+    *alt = 0.0;
+    n = sscanf(line, "%lf %lf %lf", lat, lon, alt);
+    if (n == 3 && !(*alt > -1000.0 && *alt < 10000.0)) {   /* NaN when the source has no altitude */
+        *alt = 0.0;
+    }
+    return n >= 2 && *lat >= -90.0 && *lat <= 90.0 && *lon >= -180.0 && *lon <= 180.0;
+}
+
 static DWORD gSavedInMode, gSavedOutMode;
 static bool gTermActive;
 

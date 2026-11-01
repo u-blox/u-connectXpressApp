@@ -6,7 +6,7 @@ after that heap. Flash is code, read-only data and the initial values of `.data`
 
 | Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
 |---|---|---|---|---|---|---|---|
-| `h753` | NUCLEO-H753ZI | 456 KB | 2048 KB | 22% | 314 KB | 512 KB | 61% |
+| `h753` | NUCLEO-H753ZI | 464 KB | 2048 KB | 23% | 314 KB | 512 KB | 61% |
 | `f767` | NUCLEO-F767ZI | 443 KB | 2048 KB | 22% | 323 KB | 368 KB | 88% |
 | `f439` | NUCLEO-F439ZI | 446 KB | 2048 KB | 22% | 131 KB | 192 KB | 69% |
 | `f407` | STM32F4DISCOVERY | 443 KB | 1024 KB | 43% | 104 KB | 128 KB | 81% |

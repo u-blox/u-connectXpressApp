@@ -217,6 +217,297 @@ int ucxapp_cmd_complete(const char *prefix, char *out, size_t size)
     return count;
 }
 
+/* ---- Tab completion of a whole line -------------------------------------------- */
+
+#ifdef UCXAPP_LITE
+#define CMPL_KEEP  16    /* candidates kept for the list; all are counted */
+#else
+#define CMPL_KEEP  64
+#endif
+#define CMPL_DEPTH 8
+
+typedef struct {
+    const char *p;
+    const char *end;
+    bool plain;          /* two or more bare words ("user pass"): all of them are values */
+} cmplSeg_t;
+
+typedef struct {
+    char **args;         /* typed arguments before the word being completed */
+    int nargs;
+    const char *word;
+    size_t wlen;
+    const char *first;
+    size_t common;
+    int total;
+    const char *cand[CMPL_KEEP];
+    size_t clen[CMPL_KEEP];
+    int kept;
+    int budget;
+} cmpl_t;
+
+/* Usage words that name a value to type rather than a keyword. */
+static const char kValueWords[] = " - addr baud blk cert channel cls cn command conn content_type count digits dir dns1 dns2"
+                                  " file group handle hex host id interval_s ip len lines local max n name number offset"
+                                  " out password path port probe_url pw qos remote rsec seconds server-cert service-index"
+                                  " sha256 show_bytes speed ssid text token unix wait_s wheel wsec ";
+
+static bool eqNoCase(const char *a, const char *b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool isValueWord(const char *w, size_t len)
+{
+    char key[24];
+    bool digit = isdigit((unsigned char)w[0]) != 0;
+
+    if (len == 0 || len + 3 > sizeof(key)) {
+        return true;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (strchr("[]<>:=,$", w[i]) != NULL || (w[i] == '.' && !digit) || (w[i] == '-' && digit)) {
+            return true;
+        }
+    }
+    snprintf(key, sizeof(key), " %.*s ", (int)len, w);
+    return strstr(kValueWords, key) != NULL;
+}
+
+static void cmplAdd(cmpl_t *c, const char *s, size_t len)
+{
+    if (len < c->wlen || !eqNoCase(s, c->word, c->wlen)) {
+        return;
+    }
+    for (int i = 0; i < c->kept; i++) {
+        if (c->clen[i] == len && strncmp(c->cand[i], s, len) == 0) {
+            return;
+        }
+    }
+    if (c->total++ == 0) {
+        c->first = s;
+        c->common = len;
+    } else {
+        size_t k = 0;
+
+        while (k < c->common && k < len && tolower((unsigned char)c->first[k]) == tolower((unsigned char)s[k])) {
+            k++;
+        }
+        c->common = k;
+    }
+    if (c->kept < CMPL_KEEP) {
+        c->cand[c->kept] = s;
+        c->clen[c->kept++] = len;
+    }
+}
+
+/* End of the alternative starting at p (a depth-0 '|', only " | " when spaced); returns the next one or NULL. */
+static const char *altSplit(const char *p, const char *end, bool spaced, const char **ae)
+{
+    int depth = 0;
+
+    for (const char *q = p; q < end; q++) {
+        if (*q == '<' || *q == '[') {
+            depth++;
+        } else if (*q == '>' || *q == ']') {
+            depth--;
+        } else if (*q == '|' && depth == 0 && (!spaced || (q > p && q[-1] == ' ') || (q + 1 < end && q[1] == ' '))) {
+            *ae = q;
+            return q + 1;
+        }
+    }
+    *ae = end;
+    return NULL;
+}
+
+static bool slotNext(cmplSeg_t *s, const char **w, size_t *wl)
+{
+    const char *p = s->p;
+    int depth = 0;
+
+    while (p < s->end && *p == ' ') {
+        p++;
+    }
+    if (p >= s->end) {
+        return false;
+    }
+    *w = p;
+    for (; p < s->end && (depth > 0 || *p != ' '); p++) {
+        if (*p == '<' || *p == '[') {
+            depth++;
+        } else if (*p == '>' || *p == ']') {
+            depth--;
+        }
+    }
+    *wl = (size_t)(p - *w);
+    s->p = p;
+    return true;
+}
+
+static void segInit(cmplSeg_t *s, const char *p, const char *end)
+{
+    cmplSeg_t t = { p, end, false };
+    const char *w;
+    size_t wl;
+    int words = 0;
+    bool bare = true;
+
+    while (slotNext(&t, &w, &wl)) {
+        words++;
+        bare = bare && w[0] != '<' && w[0] != '[';
+    }
+    s->p = p;
+    s->end = end;
+    s->plain = bare && words >= 2;
+}
+
+/* Matches the typed arguments against the usage slots on the stack; at the word being typed, adds keywords. */
+static void walk(cmpl_t *c, const cmplSeg_t *stack, int depth, int k)
+{
+    cmplSeg_t s[CMPL_DEPTH];
+
+    memcpy(s, stack, (size_t)depth * sizeof(s[0]));
+    for (;;) {
+        const char *w = NULL;
+        size_t wl = 0;
+        bool value = false;
+        bool hit = false;
+
+        if (--c->budget < 0) {
+            return;
+        }
+        while (depth > 0 && !slotNext(&s[depth - 1], &w, &wl)) {
+            depth--;
+        }
+        if (depth == 0) {
+            return;
+        }
+        if (w[0] == '<' || w[0] == '[') {
+            const char *body = w + 1;
+            const char *bodyEnd = w + wl - 1;
+            const char *sep = strpbrk(body, "| ");
+
+            if (w[0] == '[') {
+                walk(c, s, depth, k);   /* left out */
+            } else if (sep == NULL || sep >= bodyEnd) {
+                if (k == c->nargs) {
+                    return;             /* <value> */
+                }
+                k++;
+                continue;
+            }
+            if (depth == CMPL_DEPTH) {
+                return;
+            }
+            for (const char *p = body; p != NULL;) {
+                const char *ae;
+                const char *a = p;
+
+                p = altSplit(p, bodyEnd, false, &ae);
+                segInit(&s[depth], a, ae);
+                walk(c, s, depth + 1, k);
+            }
+            return;
+        }
+        if (wl >= 2 && w[wl - 1] == '.' && w[wl - 2] == '.') {
+            return;   /* "args...": anything from here on */
+        }
+        for (const char *p = w; p != NULL;) {
+            const char *ae;
+            const char *a = p;
+            size_t n;
+
+            p = altSplit(p, w + wl, false, &ae);
+            n = (size_t)(ae - a);
+            if (s[depth - 1].plain || isValueWord(a, n)) {
+                value = true;
+            } else if (k == c->nargs) {
+                cmplAdd(c, a, n);
+            } else if (strlen(c->args[k]) == n && eqNoCase(c->args[k], a, n)) {
+                hit = true;
+            }
+        }
+        if (k == c->nargs || !(value || hit)) {
+            return;
+        }
+        k++;
+    }
+}
+
+int ucxapp_cmd_complete_line(const char *line, char *out, size_t size, char *list, size_t listSize)
+{
+    cmpl_t c;
+    char head[200];
+    char *argv[UCXAPP_MAX_ARGS];
+    const char *word;
+    int argc;
+    int quotes = 0;
+    int shown = 0;
+
+    while (*line == ' ') {
+        line++;
+    }
+    for (const char *q = line; *q != '\0'; q++) {
+        quotes += *q == '"';
+    }
+    word = strrchr(line, ' ');
+    word = word != NULL ? word + 1 : line;
+    if (size == 0 || (quotes & 1) != 0 || (size_t)(word - line) >= sizeof(head)) {
+        return 0;
+    }
+    memset(&c, 0, sizeof(c));
+    c.word = word;
+    c.wlen = strlen(word);
+    c.budget = 4000;
+    snprintf(head, sizeof(head), "%.*s", (int)(word - line), line);
+    argc = tokenize(head, argv, UCXAPP_MAX_ARGS);
+    if (argc == 0 || (argc == 1 && strcmp(argv[0], "help") == 0)) {
+        if (argc == 0) {
+            cmplAdd(&c, "help", 4);
+        }
+        for (size_t p = 0; p < gPackCount; p++) {
+            for (size_t i = 0; i < gPacks[p].count; i++) {
+                cmplAdd(&c, gPacks[p].table[i].name, strlen(gPacks[p].table[i].name));
+            }
+        }
+    } else if (argc > 0 && findCmd(argv[0]) != NULL) {
+        const char *usage = findCmd(argv[0])->usage;
+        const char *end = usage + strlen(usage);
+        cmplSeg_t s;
+
+        c.args = argv + 1;
+        c.nargs = argc - 1;
+        for (const char *p = usage; p != NULL;) {
+            const char *ae;
+            const char *a = p;
+
+            p = altSplit(p, end, true, &ae);
+            segInit(&s, a, ae);
+            walk(&c, &s, 1, 0);
+        }
+    }
+    snprintf(out, size, "%.*s%.*s%s", (int)(word - line), line, (int)(c.total > 0 ? c.common : c.wlen),
+             c.total > 0 ? c.first : word, c.total == 1 ? " " : "");
+    if (list != NULL && listSize > 0) {
+        size_t n = 0;
+
+        list[0] = '\0';
+        for (; shown < c.kept && n + c.clen[shown] + 6 < listSize; shown++) {
+            n += (size_t)snprintf(list + n, listSize - n, "%s%.*s", n > 0 ? " " : "", (int)c.clen[shown],
+                                  c.cand[shown]);
+        }
+        if (shown < c.total) {
+            snprintf(list + n, listSize - n, " ...");
+        }
+    }
+    return c.total;
+}
+
 /* Print usage one top-level alternative per line ("a|b" or "<a|b>"), each line prefixed by indent. */
 void ucxapp_print_usage_lines(const char *indent, const char *usage)
 {

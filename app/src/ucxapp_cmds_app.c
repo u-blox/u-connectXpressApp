@@ -141,7 +141,11 @@ static const component_t kComponents[] = {
       "https://github.com/Mbed-TLS/TF-PSA-Crypto", kApache },
 #endif
 #ifdef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN_MAJOR__
+    { "Emscripten", STR(__EMSCRIPTEN_MAJOR__) "." STR(__EMSCRIPTEN_MINOR__) "." STR(__EMSCRIPTEN_TINY__), "MIT",
+#else
     { "Emscripten", STR(__EMSCRIPTEN_major__) "." STR(__EMSCRIPTEN_minor__) "." STR(__EMSCRIPTEN_tiny__), "MIT",
+#endif
       "C runtime and JavaScript glue for the browser build", "https://emscripten.org", kMit },
 #endif
 #if HOSTED
@@ -304,23 +308,31 @@ static int cmdMemory(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Same completion as Tab in the TUI; scriptable and testable. */
+/* Same completion as Tab in the TUI and the web page; scriptable and testable. */
 static int cmdComplete(ucxapp_t *app, int argc, char *argv[])
 {
-    char common[64];
+    char line[200], out[200], list[512];
+    size_t n = 0;
     int count;
 
     (void)app;
-    if (argc != 2) {
+    if (argc < 2) {
         return UCXAPP_ERR_USAGE;
     }
-    count = ucxapp_cmd_complete(argv[1], common, sizeof(common));
-    ucxapp_print("%d match%s: %s\n", count, count == 1 ? "" : "es", count > 0 ? common : argv[1]);
+    line[0] = '\0';
+    for (int i = 1; i < argc && n < sizeof(line); i++) {
+        n += (size_t)snprintf(line + n, sizeof(line) - n, "%s%s", i > 1 ? " " : "", argv[i]);
+    }
+    count = ucxapp_cmd_complete_line(line, out, sizeof(out), list, sizeof(list));
+    ucxapp_print("%d match%s: %s\n", count, count == 1 ? "" : "es", out);
+    if (count > 1) {
+        ucxapp_print("  %s\n", list);
+    }
     return count > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
 static const ucxapp_cmd_t gAppCmds[] = {
-    { "app.complete", "<prefix>", "Show what Tab would complete a typed start of a command to (for scripts and tests)", 0, cmdComplete },
+    { "app.complete", "<text...>", "Show what Tab completes a typed line to: the command, then its keywords (quote a trailing space)", 0, cmdComplete },
     { "app.info", "", "About this app: maker, platform and links", 0, cmdInfo },
     { "app.memory", "", "App RAM, heap and flash (disk on PC) use; task stacks on STM32. Same look as dev.stack", 0, cmdMemory },
     { "app.version", "", "App version, build time, platform and compiler", 0, cmdVersion },

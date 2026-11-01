@@ -194,6 +194,42 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return found;
 }
 
+bool ucxapp_platform_location(double *lat, double *lon, double *alt)
+{
+#ifdef __EMSCRIPTEN__
+    (void)lat;
+    (void)lon;
+    (void)alt;
+    return false;
+#else
+    /* GeoClue's demo client prints "Latitude:    55.61 deg", "Longitude: ...", "Altitude: ... meters". */
+    static const char kCmd[] =
+        "for p in /usr/libexec/geoclue-2.0/demos/where-am-i /usr/lib/geoclue-2.0/demos/where-am-i; do "
+        "[ -x \"$p\" ] && exec timeout 8 \"$p\" -t 5; done 2>/dev/null";
+    char line[128];
+    bool haveLat = false;
+    bool haveLon = false;
+    FILE *p = popen(kCmd, "r");
+
+    if (p == NULL) {
+        return false;
+    }
+    *alt = 0.0;
+    while (fgets(line, (int)sizeof(line), p) != NULL) {
+        if (strncmp(line, "Latitude:", 9) == 0) {
+            haveLat = sscanf(line + 9, "%lf", lat) == 1;
+        } else if (strncmp(line, "Longitude:", 10) == 0) {
+            haveLon = sscanf(line + 10, "%lf", lon) == 1;
+        } else if (strncmp(line, "Altitude:", 9) == 0 && (sscanf(line + 9, "%lf", alt) != 1 ||
+                                                           !(*alt > -1000.0 && *alt < 10000.0))) {
+            *alt = 0.0;
+        }
+    }
+    (void)pclose(p);
+    return haveLat && haveLon && *lat >= -90.0 && *lat <= 90.0 && *lon >= -180.0 && *lon <= 180.0;
+#endif
+}
+
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
 {
     ssize_t n = readlink("/proc/self/exe", buffer, bufferSize - 1);

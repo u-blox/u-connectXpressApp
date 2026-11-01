@@ -664,6 +664,18 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port)
+{
+    char name[] = "cell.connect";
+    char h[104];
+    char p[8];
+    char *argv[] = { name, h, p };
+
+    snprintf(h, sizeof(h), "%s", host);
+    snprintf(p, sizeof(p), "%d", (int)port);
+    return cmdConnect(app, 3, argv);
+}
+
 /* cell.disconnect: guard time, +++, then close the socket. Stop any bridge using the link first. */
 static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
 {

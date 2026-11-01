@@ -99,6 +99,26 @@ def test_tui_list_navigation_and_commands(app_exe, tmp_path):
     assert "[exit" in out
 
 
+def test_tui_tab_completes_keywords_and_lists(app_exe, tmp_path):
+    t = Tui(app_exe, "COM255", tmp_path)
+    t.keys(ESC)
+    t.type("app.log.lev")
+    t.keys(TAB)
+    t.type("w")
+    t.keys(TAB, ENTER)               # app.log.level warn
+    t.pump(1.0)
+    t.type("gnss.bridge ")
+    t.keys(TAB, TAB)                 # the second Tab lists the keywords
+    t.keys(*([BS] * len("gnss.bridge ")))
+    t.type("app.ver extra")
+    t.keys(*([LEFT] * 6), TAB)       # Tab before the cursor keeps the rest of the line
+    rc, out = t.quit()
+    assert rc == 0, out[-3000:]
+    assert "app.log.level warn" in out
+    assert "matches:" in out and "ntrip" in out and "status" in out
+    assert "app.version extra" in out
+
+
 def test_tui_with_a_module_shows_the_dashboard(app_exe, tmp_path):
     pytest.importorskip("yaml")
     from harness.vucx import Vucx

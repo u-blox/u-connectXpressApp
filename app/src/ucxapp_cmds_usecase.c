@@ -125,6 +125,27 @@ static const ucRow_t kRtk[] = {
     { 0, "[ok]", "Phone or robot", "the corrected NMEA over BLE: add ble to gnss.bridge ntrip", "gnss.bridge" },
 };
 
+static const ucRow_t kMower[] = {
+    { 0, "[ok]", "Owner's phone", "first setup over BLE, the phone sends the home Wi-Fi: gatt.server.wps 120", "gatt.server.wps" },
+    { 'w', "[ok]", "Garden Wi-Fi", "station on the home network: wifi.connect, wifi.profile.add for next time", NULL },
+    { 'g', "[check]", "HP GNSS", "a high precision receiver (ZED-F9P, ZED-X20P) for cm; plain GNSS gets metres", "gnss.open" },
+    { 0, "[ok]", "PointPerfect", "SPARTN over NTRIP: gnss.bridge ntrip <caster> 2101 NEAR-SPARTN <user> <pass>", "gnss.bridge" },
+    { 0, "[ok]", "Phone status", "add ble: the corrected position to the owner's app over Nordic UART", "gnss.bridge" },
+    { 0, "[check]", "Edge of garden", "corrections stop where Wi-Fi ends: add cell to gnss.bridge ntrip", "cell.connect" },
+    { 0, "[ok]", "Theft alert", "position to your server over cellular: cell.connect, gnss.bridge cell", "gnss.bridge" },
+    { 0, "[limit]", "One bridge", "corrections and the theft link share the receiver; one gnss.bridge at a time", NULL },
+};
+
+static const ucRow_t kFarm[] = {
+    { 'g', "[check]", "HP GNSS", "a high precision receiver (ZED-F9P, ZED-X20P) for auto-steer at 2-3 cm", "gnss.open" },
+    { 0, "[check]", "Field link", "no Wi-Fi in the field: a cellular modem and SIM, cell.open, cell.attach on", "cell.attach" },
+    { 0, "[ok]", "PointPerfect", "NTRIP over cellular: gnss.bridge ntrip <caster> 2101 NEAR-SPARTN <user> <pass> cell", "gnss.bridge" },
+    { 0, "[ok]", "Cab tablet", "add ble: the corrected NMEA to the guidance app over Nordic UART", "gnss.bridge" },
+    { 0, "[ok]", "Field log", "the track to a file while driving: gnss.log field.nmea nmea", "gnss.log" },
+    { 'w', "[ok]", "Farmyard Wi-Fi", "back at the yard: wifi.connect, then upload the log with tftp.put or ft.put", NULL },
+    { 0, "[limit]", "Coverage", "over cellular the bridge does not reconnect; restart it after a dead zone", NULL },
+};
+
 static const ucRow_t kTracker[] = {
     { 'g', "[check]", "GNSS receiver", "open it first: gnss.open, then gnss.watch for the fix", "gnss.open" },
     { 'w', "[ok]", "At home", "Wi-Fi to your server: gnss.bridge tcpc <host> <port> (reconnects)", "gnss.bridge" },
@@ -175,7 +196,9 @@ static const ucRow_t kRemote[] = {
 #define CASE(id, title, rows) { id, title, rows, sizeof(rows) / sizeof(rows[0]) }
 static const ucCase_t kCases[] = {
     CASE("boat", "Boat or camper: GPS to the chart app on a tablet", kBoat),
-    CASE("rtk", "Garden robot or survey pole: centimetre position with RTK", kRtk),
+    CASE("rtk", "Survey pole or rover: centimetre position with RTK", kRtk),
+    CASE("mower", "Robotic lawn mower: owner's phone, HP GNSS with PointPerfect, cellular theft alert", kMower),
+    CASE("farm", "Tractor or field robot: auto-steer with PointPerfect over cellular", kFarm),
     CASE("tracker", "Car, bike or pet tracker: position to your server", kTracker),
     CASE("home", "Smart home sensor: MQTT to Home Assistant", kHome),
     CASE("provision", "New smart device: Wi-Fi set up from a phone over BLE", kProvision),

@@ -12,7 +12,7 @@
 #define UCXAPP_ERR_FAILED        (-103)
 #define UCXAPP_ERR_UNSUPPORTED   (-104)
 
-#define UCXAPP_MAX_ARGS    8
+#define UCXAPP_MAX_ARGS    12
 #define UCXAPP_MAX_PACKS   40
 
 /* Command needs a connected module (app->ucx != NULL). */
@@ -75,6 +75,10 @@ void ucxapp_cmd_foreach(void (*visit)(const ucxapp_cmd_t *cmd, void *user), void
 
 /* Longest common completion of prefix into out; returns the number of matching commands. */
 int ucxapp_cmd_complete(const char *prefix, char *out, size_t size);
+
+/* Tab on a typed line: command names, then keywords from the command's usage. out gets the completed line,
+ * list (may be NULL) the candidates separated by spaces. Returns the number of candidates. */
+int ucxapp_cmd_complete_line(const char *line, char *out, size_t size, char *list, size_t listSize);
 
 /* Exact name lookup; NULL if unknown. */
 const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
@@ -222,6 +226,8 @@ bool ucxapp_gatt_notify_nus(ucxapp_t *app, const uint8_t *data, size_t len);   /
 int ucxapp_gatt_server_custom(ucxapp_t *app, const uint8_t svc[16], const uint8_t rx[16], const uint8_t tx[16]);
 /* Port and baud of a cellular modem in transparent data mode (cell.connect); false when there is none. */
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud);
+/* cell.connect host port (TCP); UCXAPP_OK when the modem is in transparent data mode. */
+int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port);
 bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len);
 /* Short dashboard fragments for the TUI and web status line; empty when inactive. */
 size_t ucxapp_gatt_summary(char *out, size_t size);

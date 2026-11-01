@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "u_port.h"
 #include "u_port_uart.h"
@@ -22,7 +23,9 @@
 #define MAX_SATS      128
 #define LINE_MAX_LEN  160
 #define UBX_MAX_LEN   2048
+#define UNIT_MAX      (8 + UBX_MAX_LEN + 1)   /* one NMEA sentence or UBX frame of a recording, NUL-terminated */
 #define USED_WINDOW_MS 3000u
+#define FENCE_MAX_PTS 2000
 
 enum { SYS_UNKNOWN, SYS_GPS, SYS_GLO, SYS_GAL, SYS_BDS, SYS_QZSS, SYS_NAVIC, SYS_SBAS, SYS_COUNT };
 static const char *const kSysName[SYS_COUNT] = { "?", "GPS", "GLO", "GAL", "BDS", "QZSS", "NavIC", "SBAS" };
@@ -81,6 +84,7 @@ typedef struct {
     bool hasDate, hasTime;
     char sw[48], hw[16], mod[24], proto[16], ext[96];
     uint32_t nmea, ubx, bad;
+    uint32_t posSeq;  /* counts position updates */
     uint32_t lastMs;
     sat_t sats[MAX_SATS];
     int nsat;
@@ -101,9 +105,14 @@ typedef struct {
     uint8_t rxA;
 } parser_t;
 
-/* gnss.log <file> nmea: only valid NMEA sentences, a file gnss.replay and other NMEA tools read. */
-static FILE *gNmeaLog;
-static char gNmeaName[200];
+/* The live receiver (or replay); other parsers (gnss.export) neither log nor check the fence. */
+static parser_t gP;
+
+/* gnss.log <file> nmea|ubx: only valid NMEA sentences or UBX frames, files gnss.replay and u-center read. */
+enum { LOG_NMEA = 1, LOG_UBX = 2 };
+static FILE *gMsgLog;
+static int gMsgLogKind;
+static char gMsgLogName[200];
 
 static uint32_t le16(const uint8_t *p)
 {
@@ -205,6 +214,7 @@ static void nmeaSentence(parser_t *p, char *body)
             s->lon = coord(f[4], f[5]);
             s->alt = atof(f[9]);
             s->hasPos = true;
+            s->posSeq++;
         }
         s->satsUsed = atoi(f[7]);
         s->hdop = atof(f[8]);
@@ -217,6 +227,7 @@ static void nmeaSentence(parser_t *p, char *body)
             s->speed = atof(f[7]) * 0.514444;
             s->course = atof(f[8]);
             s->hasPos = true;
+            s->posSeq++;
         }
     } else if (strncmp(type, "GSA", 3) == 0) {
         int sys = (n > 18 && f[18][0] != '\0') ? atoi(f[18]) : sysFromTalker(f[0]);
@@ -282,9 +293,9 @@ static void nmeaLine(parser_t *p)
         p->st.bad++;
         return;
     }
-    if (gNmeaLog != NULL) {
-        fprintf(gNmeaLog, "%s\r\n", p->line);
-        fflush(gNmeaLog);
+    if (p == &gP && gMsgLog != NULL && gMsgLogKind == LOG_NMEA) {
+        fprintf(gMsgLog, "%s\r\n", p->line);
+        fflush(gMsgLog);
     }
     *star = '\0';
     p->st.nmea++;
@@ -317,6 +328,7 @@ static void ubxFrame(parser_t *p)
         s->course = s32(d + 64) * 1e-5;
         s->pdop = (double)le16(d + 76) * 0.01;
         s->hasPos = (d[21] & 0x01) != 0 && s->fixType >= 2;
+        s->posSeq += s->hasPos ? 1u : 0u;
     } else if (p->cls == 0x01 && p->id == 0x35 && p->len >= 8) {    /* NAV-SAT */
         uint32_t count = d[5];
         s->nsat = 0;
@@ -424,6 +436,14 @@ static void feedByte(parser_t *p, uint8_t b)
             break;
         case ST_CKB:
             if (p->rxA == p->ca && b == p->cb) {
+                if (p == &gP && gMsgLog != NULL && gMsgLogKind == LOG_UBX) {
+                    const uint8_t h[6] = { 0xB5, 0x62, p->cls, p->id, (uint8_t)p->len, (uint8_t)(p->len >> 8) };
+                    const uint8_t ck[2] = { p->ca, p->cb };
+                    fwrite(h, 1, sizeof(h), gMsgLog);
+                    fwrite(p->pay, 1, p->len, gMsgLog);
+                    fwrite(ck, 1, sizeof(ck), gMsgLog);
+                    fflush(gMsgLog);
+                }
                 ubxFrame(p);
             } else {
                 p->st.bad++;
@@ -436,10 +456,61 @@ static void feedByte(parser_t *p, uint8_t b)
     }
 }
 
+/* ---- Geofence: a polygon from a KML file (Google My Maps, Google Earth); alerts when the position leaves it ---- */
+
+typedef struct {
+    int n;
+    double lat[FENCE_MAX_PTS];
+    double lon[FENCE_MAX_PTS];
+    char name[64];
+    int state;        /* -1 no position yet, 0 outside, 1 inside */
+    unsigned exits;
+} fence_t;
+
+static fence_t gFence;
+
+/* Ray casting; fine for fields and gardens, where the earth is flat enough. */
+static bool fenceInside(const fence_t *f, double lat, double lon)
+{
+    bool in = false;
+
+    for (int i = 0, j = f->n - 1; i < f->n; j = i++) {
+        if ((f->lat[i] > lat) != (f->lat[j] > lat) &&
+            lon < (f->lon[j] - f->lon[i]) * (lat - f->lat[i]) / (f->lat[j] - f->lat[i]) + f->lon[i]) {
+            in = !in;
+        }
+    }
+    return in;
+}
+
+static void fenceCheck(const gnss_t *s)
+{
+    int in;
+
+    if (gFence.n == 0 || !s->hasPos) {
+        return;
+    }
+    in = fenceInside(&gFence, s->lat, s->lon) ? 1 : 0;
+    if (in == gFence.state) {
+        return;
+    }
+    if (in == 0) {
+        gFence.exits++;
+        ucxapp_print("FENCE: outside %s at %.7f, %.7f\n", gFence.name, s->lat, s->lon);
+    } else if (gFence.state == 0) {
+        ucxapp_print("FENCE: back inside %s\n", gFence.name);
+    }
+    gFence.state = in;
+}
+
 static void feed(parser_t *p, const uint8_t *data, size_t len)
 {
     for (size_t i = 0; i < len; i++) {
+        uint32_t seq = p->st.posSeq;
         feedByte(p, data[i]);
+        if (p == &gP && p->st.posSeq != seq) {
+            fenceCheck(&p->st);
+        }
     }
 }
 
@@ -669,7 +740,6 @@ static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *
 /* ---- Commands ---- */
 
 static ucxapp_stream_t *gStream;
-static parser_t gP;
 static gnss_t gSnap;
 static uint32_t gOpenMs;
 static uint32_t gFixMs;   /* first 2D/3D fix since gnss.open, 0 = none yet */
@@ -680,16 +750,19 @@ static void onData(void *ctx, const uint8_t *data, size_t n)
     feed(&gP, data, n);
 }
 
-/* ---- Replay: a virtual receiver that plays an NMEA file (gnss.log nmea, nmeagen.org) in real time ---- */
+/* ---- Replay: a virtual receiver that plays an NMEA or UBX recording (gnss.log, u-center, nmeagen.org) in real time ---- */
+
+enum { CLOCK_NONE, CLOCK_NMEA, CLOCK_UBX };
 
 typedef struct {
     FILE *f;
     char name[200];
     double speed;
-    char line[512];      /* next line to send; len 0 = none read yet */
+    uint8_t unit[UNIT_MAX];   /* next sentence or frame to send; len 0 = none read yet */
     size_t len;
-    double epoch;        /* UTC seconds of day of the epoch being sent */
+    double epoch;        /* NMEA: UTC seconds of day, UBX: NAV-PVT time of week in seconds */
     bool haveEpoch;
+    int clock;           /* the first time source seen paces the replay */
     uint32_t due;
     uint32_t loops;
 } replay_t;
@@ -718,39 +791,102 @@ static double sentenceTime(const char *line)
     return ((v[0] - '0') * 10 + (v[1] - '0')) * 3600.0 + ((v[2] - '0') * 10 + (v[3] - '0')) * 60.0 + atof(v + 4);
 }
 
-/* Next line of the file, from the start again at the end; false when the file has no lines. */
+/* Next NMEA sentence (ending in \r\n) or UBX frame of a recording, NUL-terminated; other bytes are skipped. */
+static bool readUnit(FILE *f, uint8_t *u, size_t *len)
+{
+    int c;
+
+    while ((c = getc(f)) != EOF) {
+        if (c == '$') {
+            size_t n = 0;
+            u[n++] = '$';
+            while ((c = getc(f)) != EOF && c != '\n') {
+                if (c != '\r' && n < 510) {
+                    u[n++] = (uint8_t)c;
+                }
+            }
+            u[n++] = '\r';
+            u[n++] = '\n';
+            u[n] = '\0';
+            *len = n;
+            return true;
+        }
+        if (c == 0xB5) {
+            size_t pl;
+            c = getc(f);
+            if (c != 0x62) {
+                if (c != EOF) {
+                    (void)ungetc(c, f);
+                }
+                continue;
+            }
+            u[0] = 0xB5;
+            u[1] = 0x62;
+            if (fread(u + 2, 1, 4, f) != 4) {
+                return false;
+            }
+            pl = le16(u + 4);
+            if (pl > UBX_MAX_LEN) {
+                continue;
+            }
+            if (fread(u + 6, 1, pl + 2, f) != pl + 2) {
+                return false;
+            }
+            *len = pl + 8;
+            u[*len] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Epoch time of a unit in seconds (see replay_t.epoch), -1 when it carries none; clock tells which kind. */
+static double unitTime(const uint8_t *u, size_t len, int *clock)
+{
+    if (u[0] == '$') {
+        *clock = CLOCK_NMEA;
+        return sentenceTime((const char *)u);
+    }
+    *clock = CLOCK_UBX;
+    return (u[2] == 0x01 && u[3] == 0x07 && len >= 12) ? le32(u + 6) / 1000.0 : -1.0;
+}
+
+/* Next unit of the file, from the start again at the end; false when the file has none. */
 static bool replayRead(replay_t *r)
 {
     for (int tries = 0; tries < 2; tries++) {
-        if (fgets(r->line, (int)sizeof(r->line) - 2, r->f) != NULL) {
-            r->len = strlen(r->line);
-            if (r->line[r->len - 1] != '\n') {
-                r->line[r->len++] = '\n';
-                r->line[r->len] = '\0';
-            }
+        if (readUnit(r->f, r->unit, &r->len)) {
             return true;
         }
         rewind(r->f);
         r->loops++;
     }
+    r->len = 0;
     return false;
 }
 
-/* Sends every line of one epoch at once, then waits for the time the next epoch's sentences carry. */
+/* Sends every unit of one epoch at once, then waits for the time the next epoch carries. */
 static void replayPoll(void *ctx, ucxapp_stream_t *s)
 {
     replay_t *r = ctx;
     uint32_t now = ucxapp_platform_tick_ms();
 
     for (int i = 0; i < 200 && (int32_t)(now - r->due) >= 0; i++) {
+        int clock;
         if (r->len == 0 && !replayRead(r)) {
             return;
         }
-        double t = sentenceTime(r->line);
+        double t = unitTime(r->unit, r->len, &clock);
+        if (t >= 0.0 && r->clock == CLOCK_NONE) {
+            r->clock = clock;
+        }
+        if (clock != r->clock) {
+            t = -1.0;
+        }
         if (t >= 0.0 && r->haveEpoch && t != r->epoch) {
             double dt = t - r->epoch;
             if (dt < 0.0) {
-                dt += 86400.0;
+                dt += r->clock == CLOCK_UBX ? 604800.0 : 86400.0;
             }
             if (dt > 10.0) {   /* next lap of the file, or a gap in the recording */
                 dt = 1.0;
@@ -763,7 +899,7 @@ static void replayPoll(void *ctx, ucxapp_stream_t *s)
             r->epoch = t;
             r->haveEpoch = true;
         }
-        ucxapp_stream_push(s, (const uint8_t *)r->line, r->len);
+        ucxapp_stream_push(s, r->unit, r->len);
         r->len = 0;
     }
 }
@@ -775,6 +911,93 @@ static bool replayWrite(void *ctx, const uint8_t *data, size_t n)
     (void)data;
     (void)n;
     return true;
+}
+
+/* ---- Virtual receiver: a fixed position (the host's location, or u-blox Malmo) as a normal NMEA stream ---- */
+
+#define MALMO_LAT 55.6125   /* u-blox AB, Malmo office */
+#define MALMO_LON 12.9925
+#define MALMO_ALT 10.0
+
+typedef struct {
+    bool on;
+    double lat, lon, alt;
+    char source[40];
+    uint32_t due;
+} virt_t;
+
+static virt_t gVirt;
+
+static void pushNmea(ucxapp_stream_t *s, const char *body)
+{
+    char line[128];
+    uint8_t x = 0;
+
+    for (const char *c = body; *c != '\0'; c++) {
+        x ^= (uint8_t)*c;
+    }
+    int n = snprintf(line, sizeof(line), "$%s*%02X\r\n", body, x);
+    if (n > 0 && (size_t)n < sizeof(line)) {
+        ucxapp_stream_push(s, (const uint8_t *)line, (size_t)n);
+    }
+}
+
+/* ddmm.mmmmm,N or dddmm.mmmmm,E */
+static void nmeaCoord(char *out, size_t size, double v, bool isLat)
+{
+    double a = fabs(v);
+    int deg = (int)a;
+    double min = (a - deg) * 60.0;
+
+    if (min >= 59.999995) {
+        deg++;
+        min = 0.0;
+    }
+    snprintf(out, size, isLat ? "%02d%08.5f,%c" : "%03d%08.5f,%c", deg, min,
+             isLat ? (v < 0 ? 'S' : 'N') : (v < 0 ? 'W' : 'E'));
+}
+
+/* One epoch a second: RMC, GGA, GSA and GSV with ten GPS satellites, stamped with the host's UTC time. */
+static void virtPoll(void *ctx, ucxapp_stream_t *s)
+{
+    static const int kSv[10][4] = {   /* PRN, elevation, azimuth, C/N0 */
+        { 2, 48, 62, 44 }, { 5, 30, 145, 40 }, { 12, 67, 250, 47 }, { 15, 22, 305, 36 }, { 18, 55, 80, 45 },
+        { 20, 12, 190, 31 }, { 24, 40, 10, 42 }, { 25, 75, 120, 48 }, { 29, 35, 220, 41 }, { 31, 18, 340, 33 }
+    };
+    virt_t *v = ctx;
+    uint32_t now = ucxapp_platform_tick_ms();
+    char body[100];
+    char lat[24];
+    char lon[24];
+    char hms[16];
+    char dmy[8];
+    time_t t = time(NULL);
+    const struct tm *tm = gmtime(&t);
+
+    if ((int32_t)(now - v->due) < 0 || tm == NULL) {
+        return;
+    }
+    v->due = now + 1000u;
+    nmeaCoord(lat, sizeof(lat), v->lat, true);
+    nmeaCoord(lon, sizeof(lon), v->lon, false);
+    strftime(hms, sizeof(hms), "%H%M%S.00", tm);
+    strftime(dmy, sizeof(dmy), "%d%m%y", tm);
+    snprintf(body, sizeof(body), "GPRMC,%s,A,%s,%s,0.0,0.0,%s,,,A", hms, lat, lon, dmy);
+    pushNmea(s, body);
+    snprintf(body, sizeof(body), "GPGGA,%s,%s,%s,1,10,0.8,%.1f,M,0.0,M,,", hms, lat, lon, v->alt);
+    pushNmea(s, body);
+    snprintf(body, sizeof(body), "GPGSA,A,3,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,,,1.4,0.8,1.1",
+             kSv[0][0], kSv[1][0], kSv[2][0], kSv[3][0], kSv[4][0], kSv[5][0], kSv[6][0], kSv[7][0], kSv[8][0],
+             kSv[9][0]);
+    pushNmea(s, body);
+    for (int m = 0; m < 3; m++) {
+        int n = snprintf(body, sizeof(body), "GPGSV,3,%d,10", m + 1);
+        for (int i = m * 4; i < m * 4 + 4 && i < 10 && n > 0 && (size_t)n < sizeof(body); i++) {
+            n += snprintf(body + n, sizeof(body) - (size_t)n, ",%02d,%02d,%03d,%02d", kSv[i][0], kSv[i][1],
+                          kSv[i][2], kSv[i][3]);
+        }
+        pushNmea(s, body);
+    }
 }
 
 static bool needOpen(void)
@@ -866,6 +1089,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         }
     }
     memset(&gP, 0, sizeof(gP));
+    gFence.state = -1;
     gOpenMs = ucxapp_platform_tick_ms();
     gFixMs = 0;
     gStream = ucxapp_stream_open(port, baud, &cfg);
@@ -893,9 +1117,10 @@ static int cmdClose(ucxapp_t *app, int argc, char *argv[])
         fclose(gReplay.f);
         gReplay.f = NULL;
     }
-    if (gNmeaLog != NULL) {
-        fclose(gNmeaLog);
-        gNmeaLog = NULL;
+    gVirt.on = false;
+    if (gMsgLog != NULL) {
+        fclose(gMsgLog);
+        gMsgLog = NULL;
     }
     ucxapp_print("closed\n");
     return UCXAPP_OK;
@@ -905,6 +1130,18 @@ static bool satUsed(const gnss_t *s, const sat_t *t, uint32_t now)
 {
     return t->used || (t->sys < SYS_COUNT && s->usedStamp[t->sys][t->id] != 0 &&
                        now - s->usedStamp[t->sys][t->id] < USED_WINDOW_MS);
+}
+
+static void fenceStatus(void)
+{
+    static const char *const kState[] = { "no position yet", "outside", "inside" };
+
+    if (gFence.n == 0) {
+        ucxapp_print("Fence:     off\n");
+        return;
+    }
+    ucxapp_print("Fence:     %s, %d points, %s, left it %u time(s)\n", gFence.name, gFence.n,
+                 kState[gFence.state + 1], gFence.exits);
 }
 
 static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
@@ -926,6 +1163,9 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     if (gReplay.f != NULL) {
         ucxapp_print("Replay:    %s at %gx, lap %u, %u bytes sent\n", gReplay.name, gReplay.speed,
                      (unsigned)gReplay.loops + 1, (unsigned)ucxapp_stream_rx_bytes(gStream));
+    } else if (gVirt.on) {
+        ucxapp_print("Virtual:   %s at %.7f, %.7f, %u bytes sent\n", gVirt.source, gVirt.lat, gVirt.lon,
+                     (unsigned)ucxapp_stream_rx_bytes(gStream));
     } else {
         ucxapp_print("Port:      %s at %d baud, %u bytes received\n", ucxapp_stream_port(gStream),
                      (int)ucxapp_stream_baud(gStream), (unsigned)ucxapp_stream_rx_bytes(gStream));
@@ -950,8 +1190,9 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("Satellites: %d used of %d tracked; HDOP %.1f VDOP %.1f PDOP %.1f\n",
                  gSnap.satsUsed > 0 ? gSnap.satsUsed : used, gSnap.nsat, gSnap.hdop, gSnap.vdop, gSnap.pdop);
-    ucxapp_print("Log:       %s\n", gNmeaLog != NULL ? gNmeaName :
+    ucxapp_print("Log:       %s\n", gMsgLog != NULL ? gMsgLogName :
                  (ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off"));
+    fenceStatus();
     ucxapp_print("Bridge:    ");
     ucxapp_stream_bridge_status(gStream);
     return UCXAPP_OK;
@@ -1130,40 +1371,51 @@ static int cmdLog(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;
     bool off = argc >= 2 && strcasecmp(argv[1], "off") == 0;
-    bool nmea = argc == 3 && strcasecmp(argv[2], "nmea") == 0;
+    int kind = argc != 3 ? 0 : strcasecmp(argv[2], "nmea") == 0 ? LOG_NMEA : strcasecmp(argv[2], "ubx") == 0 ? LOG_UBX : 0;
 
-    if (argc < 2 || argc > 3 || (argc == 3 && (!nmea || off))) {
+    if (argc < 2 || argc > 3 || (argc == 3 && (kind == 0 || off))) {
         return UCXAPP_ERR_USAGE;
     }
     if (!needOpen()) {
         return UCXAPP_ERR_FAILED;
     }
-    FILE *f = (off || !nmea) ? NULL : fopen(argv[1], "wb");
-    if ((nmea && f == NULL) || !ucxapp_stream_log(gStream, (off || nmea) ? NULL : argv[1])) {
+    FILE *f = (off || kind == 0) ? NULL : fopen(argv[1], "wb");
+    if ((kind != 0 && f == NULL) || !ucxapp_stream_log(gStream, (off || kind != 0) ? NULL : argv[1])) {
         ucxapp_print("ERROR: cannot create %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_stream_lock(gStream);
-    if (gNmeaLog != NULL) {
-        fclose(gNmeaLog);
+    if (gMsgLog != NULL) {
+        fclose(gMsgLog);
     }
-    gNmeaLog = f;
-    snprintf(gNmeaName, sizeof(gNmeaName), "%s (NMEA)", argv[1]);
+    gMsgLog = f;
+    gMsgLogKind = kind;
+    snprintf(gMsgLogName, sizeof(gMsgLogName), "%s (%s)", argv[1], kind == LOG_UBX ? "UBX" : "NMEA");
     ucxapp_stream_unlock(gStream);
-    ucxapp_print(off ? "logging stopped\n" : nmea ? "logging NMEA sentences to %s (gnss.replay plays it back)\n"
-                                                 : "logging raw receiver data to %s\n", argv[1]);
+    if (off) {
+        ucxapp_print("logging stopped\n");
+    } else if (kind == LOG_NMEA) {
+        ucxapp_print("logging NMEA sentences to %s (gnss.replay plays it back)\n", argv[1]);
+    } else if (kind == LOG_UBX) {
+        ucxapp_print("logging UBX frames to %s (gnss.replay and u-center play it back)\n", argv[1]);
+    } else {
+        ucxapp_print("logging raw receiver data to %s\n", argv[1]);
+    }
     return UCXAPP_OK;
 }
 
 static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
 {
     ucxapp_stream_cfg_t cfg = { "gnss", onData, replayPoll, 10, &gReplay, replayWrite };
-    char line[512];
     unsigned sentences = 0;
+    unsigned frames = 0;
     unsigned epochs = 0;
     double last = -1.0;
     double speed = 1.0;
     char *end = NULL;
+    char ubx[32] = "";
+    int clock = CLOCK_NONE;
+    size_t len;
     (void)app;
 
     if (argc < 2 || argc > 3) {
@@ -1184,17 +1436,25 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot open %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
-    while (fgets(line, (int)sizeof(line), f) != NULL) {
-        double t = sentenceTime(line);
-        sentences += line[0] == '$' ? 1u : 0u;
-        if (t >= 0.0 && t != last) {
+    while (readUnit(f, gReplay.unit, &len)) {
+        int c;
+        double t = unitTime(gReplay.unit, len, &c);
+        if (gReplay.unit[0] == '$') {
+            sentences++;
+        } else {
+            frames++;
+        }
+        if (t >= 0.0 && clock == CLOCK_NONE) {
+            clock = c;
+        }
+        if (t >= 0.0 && c == clock && t != last) {
             epochs++;
             last = t;
         }
     }
-    if (sentences == 0) {
+    if (sentences == 0 && frames == 0) {
         fclose(f);
-        ucxapp_print("ERROR: no NMEA sentences in %s\n", argv[1]);
+        ucxapp_print("ERROR: no NMEA sentences or UBX frames in %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
     rewind(f);
@@ -1203,6 +1463,7 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
     gReplay.speed = speed;
     snprintf(gReplay.name, sizeof(gReplay.name), "%s", argv[1]);
     memset(&gP, 0, sizeof(gP));
+    gFence.state = -1;
     gOpenMs = ucxapp_platform_tick_ms();
     gFixMs = 0;
     gStream = ucxapp_stream_open("virt:replay", 0, &cfg);
@@ -1212,8 +1473,345 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot start the replay\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("Replaying %s: %u sentences, %u epochs at %gx, from the start again at the end (gnss.close stops)\n",
-                 argv[1], sentences, epochs, speed);
+    if (frames > 0) {
+        snprintf(ubx, sizeof(ubx), "%u UBX frames, ", frames);
+    }
+    ucxapp_print("Replaying %s: %s%u sentences, %u epochs at %gx, from the start again at the end (gnss.close stops)\n",
+                 argv[1], ubx, sentences, epochs, speed);
+    return UCXAPP_OK;
+}
+
+static bool parseDouble(const char *s, double *out, double lo, double hi)
+{
+    char *end = NULL;
+    *out = strtod(s, &end);
+    return end != s && *end == '\0' && *out >= lo && *out <= hi;
+}
+
+static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
+{
+    ucxapp_stream_cfg_t cfg = { "gnss", onData, virtPoll, 50, &gVirt, replayWrite };
+    double lat = MALMO_LAT;
+    double lon = MALMO_LON;
+    double alt = MALMO_ALT;
+    const char *source = "u-blox Malmo office";
+    bool host = argc == 1 || (argc == 2 && strcasecmp(argv[1], "host") == 0);
+
+    if (argc == 2 && strcasecmp(argv[1], "off") == 0) {
+        if (!gVirt.on) {
+            ucxapp_print("ERROR: no virtual receiver is running\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        return cmdClose(app, 1, argv);
+    }
+    if (argc == 3 || argc == 4) {
+        alt = 0.0;
+        if (!parseDouble(argv[1], &lat, -90.0, 90.0) || !parseDouble(argv[2], &lon, -180.0, 180.0) ||
+            (argc == 4 && !parseDouble(argv[3], &alt, -1000.0, 10000.0))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        source = "fixed position";
+    } else if (!host && !(argc == 2 && strcasecmp(argv[1], "malmo") == 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gStream != NULL) {
+        ucxapp_print("ERROR: %s is already open (gnss.close first)\n", ucxapp_stream_port(gStream));
+        return UCXAPP_ERR_FAILED;
+    }
+    if (host) {
+        ucxapp_print("Asking the host for its location...\n");
+        if (ucxapp_platform_location(&lat, &lon, &alt)) {
+            source = "host location";
+        } else {
+            ucxapp_print("note: no location from the host (location service off or missing), using u-blox in Malmo\n");
+        }
+    }
+    memset(&gP, 0, sizeof(gP));
+    gFence.state = -1;
+    gOpenMs = ucxapp_platform_tick_ms();
+    gFixMs = 0;
+    memset(&gVirt, 0, sizeof(gVirt));
+    gVirt.lat = lat;
+    gVirt.lon = lon;
+    gVirt.alt = alt;
+    snprintf(gVirt.source, sizeof(gVirt.source), "%s", source);
+    gVirt.due = ucxapp_platform_tick_ms();
+    gVirt.on = true;
+    gStream = ucxapp_stream_open("virt:gnss", 0, &cfg);
+    if (gStream == NULL) {
+        gVirt.on = false;
+        ucxapp_print("ERROR: cannot start the virtual receiver\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("Virtual receiver at %.7f, %.7f (%s): NMEA once a second; every gnss.* command and bridge works "
+                 "on it (gnss.close stops)\n", lat, lon, source);
+    return UCXAPP_OK;
+}
+
+/* The text between "<tag>" and "</tag>" (CDATA unwrapped, trimmed) into out. */
+static void xmlTagText(const char *start, const char *tag, char *out, size_t size)
+{
+    char open[24];
+    char close[24];
+    const char *b;
+    const char *e;
+
+    snprintf(open, sizeof(open), "<%s>", tag);
+    snprintf(close, sizeof(close), "</%s>", tag);
+    out[0] = '\0';
+    b = strstr(start, open);
+    e = b != NULL ? strstr(b, close) : NULL;
+    if (e == NULL) {
+        return;
+    }
+    b += strlen(open);
+    if (strncmp(b, "<![CDATA[", 9) == 0) {
+        b += 9;
+        e = (e - b >= 3 && strncmp(e - 3, "]]>", 3) == 0) ? e - 3 : e;
+    }
+    while (b < e && (*b == ' ' || *b == '\t' || *b == '\r' || *b == '\n')) {
+        b++;
+    }
+    while (e > b && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n')) {
+        e--;
+    }
+    snprintf(out, size, "%.*s", (int)(e - b), b);
+}
+
+/* First polygon of a KML file (the first line string when there is none); false with the reason printed. */
+static bool fenceLoad(const char *file, fence_t *f)
+{
+    FILE *in = fopen(file, "rb");
+    char *text = NULL;
+    char *shape;
+    char *coords;
+    char *end;
+    char *c;
+    long size;
+
+    if (in == NULL) {
+        ucxapp_print("ERROR: cannot open %s\n", file);
+        return false;
+    }
+    if (fseek(in, 0, SEEK_END) != 0 || (size = ftell(in)) <= 0 || size > 8L * 1024 * 1024 ||
+        fseek(in, 0, SEEK_SET) != 0 || (text = malloc((size_t)size + 1)) == NULL) {
+        fclose(in);
+        ucxapp_print("ERROR: %s is empty or too big\n", file);
+        return false;
+    }
+    size = (long)fread(text, 1, (size_t)size, in);
+    fclose(in);
+    text[size] = '\0';
+    shape = strstr(text, "<Polygon");
+    shape = shape != NULL ? shape : strstr(text, "<LineString");
+    coords = strstr(shape != NULL ? shape : text, "<coordinates>");
+    end = coords != NULL ? strstr(coords, "</coordinates>") : NULL;
+    if (end == NULL) {
+        free(text);
+        ucxapp_print("ERROR: no polygon in %s (draw one in Google My Maps and export it as KML)\n", file);
+        return false;
+    }
+    *end = '\0';
+    /* the area's name is the last <name> before its coordinates (the Placemark's) */
+    f->name[0] = '\0';
+    for (char *n = strstr(text, "<name>"); n != NULL && n < coords; n = strstr(n + 6, "<name>")) {
+        char save = *coords;
+        *coords = '\0';
+        xmlTagText(n, "name", f->name, sizeof(f->name));
+        *coords = save;
+    }
+    if (f->name[0] == '\0') {
+        snprintf(f->name, sizeof(f->name), "fence");
+    }
+    f->n = 0;
+    c = coords + 13;
+    while (f->n < FENCE_MAX_PTS) {
+        char *e;
+        double lon = strtod(c, &e);
+        if (e == c || *e != ',') {
+            break;
+        }
+        c = e + 1;
+        double lat = strtod(c, &e);
+        if (e == c || lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
+            break;
+        }
+        c = e;
+        if (*c == ',') {
+            (void)strtod(c + 1, &e);
+            c = e;
+        }
+        f->lat[f->n] = lat;
+        f->lon[f->n] = lon;
+        f->n++;
+    }
+    free(text);
+    if (f->n > 1 && f->lat[0] == f->lat[f->n - 1] && f->lon[0] == f->lon[f->n - 1]) {
+        f->n--;   /* KML repeats the first point to close the ring */
+    }
+    if (f->n < 3) {
+        ucxapp_print("ERROR: the area in %s needs at least 3 points\n", file);
+        return false;
+    }
+    return true;
+}
+
+static int cmdFence(ucxapp_t *app, int argc, char *argv[])
+{
+    fence_t *f;
+    (void)app;
+
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcasecmp(argv[1], "status") == 0) {
+        fenceStatus();
+        return UCXAPP_OK;
+    }
+    if (strcasecmp(argv[1], "off") == 0) {
+        if (gStream != NULL) {
+            ucxapp_stream_lock(gStream);
+        }
+        gFence.n = 0;
+        if (gStream != NULL) {
+            ucxapp_stream_unlock(gStream);
+        }
+        ucxapp_print("fence off\n");
+        return UCXAPP_OK;
+    }
+    f = malloc(sizeof(*f));
+    if (f == NULL) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!fenceLoad(argv[1], f)) {
+        free(f);
+        return UCXAPP_ERR_FAILED;
+    }
+    f->state = -1;
+    f->exits = 0;
+    if (gStream != NULL) {
+        ucxapp_stream_lock(gStream);
+    }
+    memcpy(&gFence, f, sizeof(gFence));
+    if (gStream != NULL) {
+        ucxapp_stream_unlock(gStream);
+    }
+    free(f);
+    ucxapp_print("fence '%s': %d points from %s; FENCE: lines report leaving and coming back\n", gFence.name, gFence.n,
+                 argv[1]);
+    return UCXAPP_OK;
+}
+
+static void xmlEscaped(FILE *out, const char *s)
+{
+    for (; *s != '\0'; s++) {
+        switch (*s) {
+            case '&': fputs("&amp;", out); break;
+            case '<': fputs("&lt;", out); break;
+            case '>': fputs("&gt;", out); break;
+            case '"': fputs("&quot;", out); break;
+            default: fputc(*s, out); break;
+        }
+    }
+}
+
+static unsigned exportPoint(FILE *out, const gnss_t *s, bool gpx)
+{
+    if (!s->hasPos) {
+        return 0;
+    }
+    if (!gpx) {
+        fprintf(out, "%.7f,%.7f,%.1f\n", s->lon, s->lat, s->alt);
+        return 1;
+    }
+    fprintf(out, "<trkpt lat=\"%.7f\" lon=\"%.7f\"><ele>%.1f</ele>", s->lat, s->lon, s->alt);
+    if (s->hasDate && s->hasTime) {
+        fprintf(out, "<time>%04d-%02d-%02dT%02d:%02d:%02dZ</time>", s->year, s->month, s->day, s->hour, s->min,
+                s->sec);
+    }
+    fprintf(out, "</trkpt>\n");
+    return 1;
+}
+
+/* gnss.export <recording> <out.kml|out.gpx>: the track of an NMEA or UBX recording, one point per epoch. */
+static int cmdExport(ucxapp_t *app, int argc, char *argv[])
+{
+    size_t olen = argc == 3 ? strlen(argv[2]) : 0;
+    bool gpx = olen > 4 && strcasecmp(argv[2] + olen - 4, ".gpx") == 0;
+    bool kml = olen > 4 && strcasecmp(argv[2] + olen - 4, ".kml") == 0;
+    parser_t *p;
+    uint8_t *u;
+    FILE *in;
+    FILE *out;
+    size_t len;
+    double epoch = -1.0;
+    int clock = CLOCK_NONE;
+    unsigned points = 0;
+    (void)app;
+
+    if (argc != 3 || (!gpx && !kml)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    in = fopen(argv[1], "rb");
+    if (in == NULL) {
+        ucxapp_print("ERROR: cannot open %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    out = fopen(argv[2], "wb");
+    if (out == NULL) {
+        fclose(in);
+        ucxapp_print("ERROR: cannot create %s\n", argv[2]);
+        return UCXAPP_ERR_FAILED;
+    }
+    p = calloc(1, sizeof(*p));
+    u = malloc(UNIT_MAX);
+    if (p == NULL || u == NULL) {
+        free(p);
+        free(u);
+        fclose(in);
+        fclose(out);
+        return UCXAPP_ERR_FAILED;
+    }
+    fputs("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", out);
+    if (gpx) {
+        fputs("<gpx version=\"1.1\" creator=\"u-connectXpressApp\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n"
+              "<trk><name>", out);
+        xmlEscaped(out, argv[1]);
+        fputs("</name><trkseg>\n", out);
+    } else {
+        fputs("<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document><Placemark><name>", out);
+        xmlEscaped(out, argv[1]);
+        fputs("</name>\n<LineString><tessellate>1</tessellate><coordinates>\n", out);
+    }
+    while (readUnit(in, u, &len)) {
+        int c;
+        double t = unitTime(u, len, &c);
+        if (t >= 0.0 && clock == CLOCK_NONE) {
+            clock = c;
+        }
+        if (t >= 0.0 && c == clock && t != epoch) {
+            if (epoch >= 0.0) {
+                points += exportPoint(out, &p->st, gpx);
+            }
+            epoch = t;
+            p->st.hasPos = false;
+        }
+        feed(p, u, len);
+    }
+    if (epoch >= 0.0) {
+        points += exportPoint(out, &p->st, gpx);
+    }
+    fputs(gpx ? "</trkseg></trk></gpx>\n" : "</coordinates></LineString></Placemark></Document></kml>\n", out);
+    fclose(out);
+    fclose(in);
+    free(p);
+    free(u);
+    if (points == 0) {
+        (void)remove(argv[2]);
+        ucxapp_print("ERROR: no positions in %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%u points written to %s (open it in Google Earth, Google My Maps or any GPX tool)\n", points, argv[2]);
     return UCXAPP_OK;
 }
 
@@ -1362,16 +1960,40 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     int32_t port;
 
     if (argc >= 2 && strcasecmp(argv[1], "ntrip") == 0) {
-        bool ble = argc > 5 && strcasecmp(argv[argc - 1], "ble") == 0;
-        int n = argc - (ble ? 1 : 0);
+        bool ble = false;
+        bool cell = false;
+        int n = argc;
+        for (int i = 0; i < 2 && n > 5; i++) {
+            if (!ble && strcasecmp(argv[n - 1], "ble") == 0) {
+                ble = true;
+                n--;
+            } else if (!cell && strcasecmp(argv[n - 1], "cell") == 0) {
+                cell = true;
+                n--;
+            }
+        }
         if ((n != 5 && n != 7) || !ucxapp_parse_int(argv[3], &port) || port < 1 || port > 65535) {
             return UCXAPP_ERR_USAGE;
         }
         if (!needOpen()) {
             return UCXAPP_ERR_FAILED;
         }
-        return ucxapp_stream_bridge_ntrip(gStream, app, argv[2], port, argv[4], n == 7 ? argv[5] : "",
-                                          n == 7 ? argv[6] : "", 10, ble) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+        const char *user = n == 7 ? argv[5] : "";
+        const char *pass = n == 7 ? argv[6] : "";
+        if (cell) {
+            char cport[32];
+            int32_t cbaud;
+            if (!ucxapp_cell_data_link(cport, sizeof(cport), &cbaud) &&
+                (ucxapp_cell_connect(app, argv[2], port) != UCXAPP_OK ||
+                 !ucxapp_cell_data_link(cport, sizeof(cport), &cbaud))) {
+                ucxapp_print("ERROR: no cellular data link (open the modem with cell.open and attach with cell.attach on)\n");
+                return UCXAPP_ERR_FAILED;
+            }
+            return ucxapp_stream_bridge_ntrip_uart(gStream, app, cport, cbaud, argv[4], user, pass, 10, ble)
+                       ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+        }
+        return ucxapp_stream_bridge_ntrip(gStream, app, argv[2], port, argv[4], user, pass, 10, ble)
+                   ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     if (argc < 2 || argc > 6) {
         return UCXAPP_ERR_USAGE;
@@ -1389,12 +2011,15 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.status", "", "Fix, position, time, satellites and counters", 0, cmdStatus },
     { "gnss.sats", "", "Satellites in view with elevation, azimuth and signal strength", 0, cmdSats },
     { "gnss.watch", "[seconds]", "Live card once a second (fix, satellites, HDOP, position, time to first fix); default 10 s, any key stops", 0, cmdWatch },
-    { "gnss.log", "<file|off> [nmea]", "Record the raw receiver stream (NMEA/UBX) to a file; nmea keeps only valid NMEA sentences, for gnss.replay", 0, cmdLog },
-    { "gnss.replay", "<file.nmea> [speed]", "Virtual receiver: play an NMEA file (gnss.log nmea, nmeagen.org) in real time or at speed 0.1 to 100, looping; every gnss.* command and bridge works on it", 0, cmdReplay },
+    { "gnss.log", "<file|off> [nmea|ubx]", "Record the raw receiver stream (NMEA/UBX) to a file; nmea or ubx keeps only valid NMEA sentences or UBX frames, for gnss.replay and u-center", 0, cmdLog },
+    { "gnss.replay", "<file.nmea|file.ubx> [speed]", "Virtual receiver: play an NMEA or UBX recording (gnss.log, u-center, nmeagen.org) in real time or at speed 0.1 to 100, looping; every gnss.* command and bridge works on it", 0, cmdReplay },
+    { "gnss.virtual", "[host|malmo|<lat> <lon> [alt]|off]", "Virtual receiver at the host's location (Windows Location, GeoClue on Linux; u-blox Malmo when unknown), u-blox Malmo or a given position: NMEA once a second for bridges and tests", 0, cmdVirtual },
+    { "gnss.fence", "<file.kml|off|status>", "Geofence from the first polygon of a KML file (Google My Maps, Google Earth); prints FENCE: lines when the position leaves or comes back", 0, cmdFence },
+    { "gnss.export", "<recording> <out.kml|out.gpx>", "Track of an NMEA or UBX recording as KML (Google Earth, My Maps) or GPX, one point per epoch", 0, cmdExport },
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
-    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble] [cell]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

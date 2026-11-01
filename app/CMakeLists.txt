@@ -22,6 +22,13 @@ string(TIMESTAMP APP_VERSION_BUILD "%y%m%d")
 
 message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (timestamp-based)")
 
+# u-connectClient commit for app.sbom (read at configure time)
+execute_process(COMMAND git -C ${CMAKE_CURRENT_SOURCE_DIR}/../u-connectClient rev-parse --short HEAD
+                OUTPUT_VARIABLE UCC_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT UCC_COMMIT)
+  set(UCC_COMMIT "unknown")
+endif()
+
 # Generate version header
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/version.h.in
@@ -80,7 +87,6 @@ if(NOT WIN32)
 
     src/ucxapp_io_stdio.c
     src/ucxapp_store.c
-    src/ucx_obfuscate.c
     src/ucxapp_hash.c
 
     src/ucxapp_cmd.c
@@ -103,6 +109,8 @@ if(NOT WIN32)
     src/ucxapp_cmds_bt.c
     src/ucxapp_adv.c
     src/ucxapp_cmds_cert.c
+    src/ucxapp_cmds_certfile.c
+    src/ucxapp_crypt.c
     src/ucxapp_cmds_tls.c
     src/ucxapp_tls.c
     src/ucxapp_cmds_dtls.c
@@ -157,6 +165,9 @@ if(NOT WIN32)
   endif()
 
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
+    UCXAPP_CRYPTO
+    UCXAPP_UCC_COMMIT="${UCC_COMMIT}"
+    UCXAPP_UCX_MODULE="${UCX_MODULE}"
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
     U_CX_PORT_PRINTF=ucxappLibPrintf
     APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
@@ -213,7 +224,6 @@ set(PORT_UART_SRC ../u-connectClient/ports/uart/u_port_uart_windows.c)
 add_executable(ucxapp
   src/ucxapp_main.c
   src/ucxapp_urc.c
-  src/ucx_obfuscate.c
   src/ucxapp_events.c
   src/ucxapp_thread.c
   src/ucxapp_ui.c
@@ -236,6 +246,8 @@ add_executable(ucxapp
   src/ucxapp_cmds_bt.c
   src/ucxapp_adv.c
   src/ucxapp_cmds_cert.c
+  src/ucxapp_cmds_certfile.c
+  src/ucxapp_crypt.c
   src/ucxapp_cmds_tls.c
   src/ucxapp_tls.c
   src/ucxapp_cmds_dtls.c
@@ -276,6 +288,9 @@ target_compile_options(ucxapp PRIVATE /W4 /FS /wd4200)
 
 target_compile_definitions(ucxapp PRIVATE
   U_PORT_WINDOWS
+  UCXAPP_CRYPTO
+  UCXAPP_UCC_COMMIT="${UCC_COMMIT}"
+  UCXAPP_UCX_MODULE="${UCX_MODULE}"
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
   U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"

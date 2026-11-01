@@ -29,3 +29,5 @@ commands:
   "AT+USODL=*": ["CONNECT"]
 urcs:
   "AT+UPING=*": ['+UUPING: 1,32,"example.com","93.184.216.34",55,20']
+data:                               # in transparent mode: an NTRIP caster on the far side
+  "GET /*": "ICY 200 OK\r\n\r\n"

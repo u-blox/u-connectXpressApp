@@ -31,7 +31,10 @@ value (a CCCD follows every notifiable value). Static, so the browser's virtual 
       accept: [8000]                # listening ports a client connects to (it echoes)
 
 answers AT+USOCR/USOC/USOWB/USOSTB/USORB/USORFB/USOCL/USOL/USOST? with real per-socket state.
-Only lines starting with AT are commands; anything else (data mode, a bridged stream) is logged and dropped.
+Only lines starting with AT are commands; anything else (data mode, a bridged stream) is logged and dropped, unless
+
+    data:                           # fnmatch pattern on a data-mode line -> raw bytes sent back as they are
+      "GET /*": "ICY 200 OK\\r\\n\\r\\n"   # an NTRIP caster behind a modem in transparent mode
 
 Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the port to open)
 As JSON for the browser's virtual module: python -m harness.vucx --json nora-w36.yaml > app/wasm/vnora.json
@@ -133,7 +136,7 @@ def table(profile=None):
         commands["AT+UBTGPSD=*"] = base + services + ["OK"]
         commands.update(generated)
     return {"commands": commands, "urcs": dict(p.get("urcs") or {}), "state": dict(p.get("state") or {}),
-            "default": p.get("default") or ["ERROR"]}
+            "data": dict(p.get("data") or {}), "default": p.get("default") or ["ERROR"]}
 
 
 class Network:
@@ -219,6 +222,7 @@ class Vucx:
         self.commands = t["commands"]
         self.urcs = t["urcs"]
         self.setters = t["state"]
+        self.data = t["data"]
         self.default = t["default"]
         self.state = {}
         self.log = []   # every command received, for the tests
@@ -258,6 +262,9 @@ class Vucx:
         cmd = cmd[3:] if cmd.startswith("+++") else cmd   # the escape from data mode has no line end
         self.log.append(cmd)
         if not cmd[:2].upper() == "AT":
+            reply = next((v for k, v in self.data.items() if fnmatch.fnmatchcase(cmd, k)), None)
+            if reply is not None:
+                os.write(self._fd, reply.encode())
             return
         answer = self.net.handle(cmd, data) if self.net else None
         if answer is None:
@@ -284,11 +291,11 @@ class Vucx:
 
         buf = b""
         while not self._stop.is_set():
-            if not select.select([self._fd], [], [], 0.1)[0]:
-                continue
             try:
+                if not select.select([self._fd], [], [], 0.1)[0]:
+                    continue
                 buf += os.read(self._fd, 4096)
-            except OSError:
+            except (OSError, ValueError):   # stop() closed the pty
                 return
             while True:
                 cr, soh = buf.find(b"\r"), buf.find(b"\x01")

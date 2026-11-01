@@ -260,7 +260,7 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
     assert out.returncode in (0, 1), out.stdout[-3000:]
 
 
-USE_CASES = ["boat", "rtk", "tracker", "home", "provision", "hotel", "notify", "remote"]
+USE_CASES = ["boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote"]
 
 
 @pytest.mark.parametrize("case", USE_CASES)
@@ -290,6 +290,9 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
                                       f"\nlast AT: {nora.log[-15:]}")
     if case == "provision":   # the profile's virtual phone sends SET_CONFIG to gatt.server.wps
         assert "the phone sent the Wi-Fi settings" in out.stdout, out.stdout[-3000:]
+    if case in ("mower", "farm"):   # PointPerfect over the modem's data link: request up, corrections down
+        assert any(c.startswith("GET /NEAR-SPARTN ") for c in modem.log), modem.log[-20:]
+        assert "NTRIP: streaming corrections from /NEAR-SPARTN" in out.stdout, out.stdout[-3000:]
 
 
 def test_cell_commands_on_a_virtual_modem(app_exe, nora):

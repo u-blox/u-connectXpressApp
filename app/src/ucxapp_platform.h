@@ -60,6 +60,9 @@ int ucxapp_platform_read_key(void);
 /** IPv4 address of the host's main LAN/Wi-Fi interface (virtual and link-local ones skipped); false if none. */
 bool ucxapp_platform_local_ip(char *out, size_t size);
 
+/** The host's location from the OS location service (Windows Location, GeoClue); false if unknown. Can take seconds. */
+bool ucxapp_platform_location(double *lat, double *lon, double *alt);
+
 /** Directory of the running executable, with a trailing path separator. */
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize);
 

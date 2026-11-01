@@ -22,7 +22,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          python -m pip install --upgrade pip pytest pytest-cov ruff html5validator
+          python -m pip install --upgrade pip pytest pytest-cov ruff html5validator cryptography
       - name: Run pytest (ruff + shellcheck + repo checks, W3C vnu + node --check of the web page)
         shell: bash
         run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
@@ -40,14 +40,14 @@ jobs:
           python-version: "3.12"
       - name: Build instrumented ucxapp
         run: |
-          python -m pip install pytest gcovr
+          python -m pip install pytest gcovr cryptography
           cmake -S app -B build-cov -DUCXAPP_COVERAGE=ON
           cmake --build build-cov
       - name: Run CLI tests and report C coverage
         env:
           UCX_APP_EXE: ${{ github.workspace }}/app/bin/ucxapp
         run: |
-          python -m pytest tests/test_cli.py
+          python -m pytest tests/test_cli.py tests/test_certfile.py
           gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml
       - uses: actions/upload-artifact@v5
         with:

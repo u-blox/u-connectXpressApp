@@ -622,37 +622,41 @@ static void logLocal(const char *text);
 
 static void tabComplete(void)
 {
-    char common[64];
-    int count;
+    char before[IN_LEN], line[IN_LEN], list[1024], text[LINE_LEN];
+    const char *typed = before;
+    int count, pos;
 
-    if (gInLen == 0 || strchr(gIn, ' ') != NULL) {
-        return;
-    }
-    count = ucxapp_cmd_complete(gIn, common, sizeof(common));
+    snprintf(before, sizeof(before), "%.*s", gInPos, gIn);
+    count = ucxapp_cmd_complete_line(before, line, sizeof(line), list, sizeof(list));
     if (count == 0) {
         return;
     }
-    if (count > 1 && (int)strlen(common) == gInLen) {
-        char list[LINE_LEN];
-        size_t n = (size_t)snprintf(list, sizeof(list), "%d matches:", count);
+    while (*typed == ' ') {
+        typed++;
+    }
+    if (count > 1 && strcmp(line, typed) == 0) {
+        /* second Tab: list the candidates, wrapped */
+        const char *p = list;
+        size_t n = (size_t)snprintf(text, sizeof(text), "%d matches:", count);
 
-        for (int gi = 0; gi < gGroupCount && n < sizeof(list); gi++) {
-            static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
-            int c = ucxapp_ui_group_cmds(gGroups[gi], cmds, UCXAPP_UI_MAX_GROUP_CMDS);
+        while (*p != '\0') {
+            size_t w = strcspn(p, " ");
 
-            for (int i = 0; i < c && n < sizeof(list); i++) {
-                if (strncmp(cmds[i]->name, gIn, (size_t)gInLen) == 0) {
-                    n += (size_t)snprintf(list + n, sizeof(list) - n, " %s", cmds[i]->name);
-                }
+            if (n + w + 1 >= 100) {
+                logLocal(text);
+                n = (size_t)snprintf(text, sizeof(text), " ");
             }
+            n += (size_t)snprintf(text + n, sizeof(text) - n, " %.*s", (int)w, p);
+            p += w;
+            p += *p == ' ';
         }
-        logLocal(list);
+        logLocal(text);
         return;
     }
-    setInput(common);
-    if (count == 1) {
-        inInsert(' ');
-    }
+    pos = (int)strlen(line);
+    snprintf(before, sizeof(before), "%s%s", line, gIn + gInPos + (count == 1 && gIn[gInPos] == ' '));
+    setInput(before);
+    gInPos = pos < gInLen ? pos : gInLen;
 }
 
 /* ---- drawing ------------------------------------------------------------------ */

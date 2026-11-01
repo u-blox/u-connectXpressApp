@@ -65,6 +65,30 @@ static ucxapp_store_writer_t *gUpload;      /* one upload at a time, in slices *
 static char gUploadName[FILE_NAME_MAX];
 static uint32_t gUploadOff;
 
+/* WebAssembly build: the page calls the routes directly and polls the events, no socket server. */
+static bool gLocal;
+static char gLocalEvents[4096];
+static size_t gLocalLen;
+
+static int32_t clientCount(void)
+{
+    return gLocal ? 1 : uWebServerGetSSEClientCount(gServer);
+}
+
+/* > 0 when the event was taken, as uWebServerBroadcastSSEEvent. */
+static int32_t broadcast(const char *name, const char *data)
+{
+    if (!gLocal) {
+        return uWebServerBroadcastSSEEvent(gServer, name, data);
+    }
+    size_t need = strlen(name) + strlen(data) + 2;
+    if (gLocalLen + need >= sizeof(gLocalEvents)) {
+        return 0;
+    }
+    gLocalLen += (size_t)snprintf(gLocalEvents + gLocalLen, sizeof(gLocalEvents) - gLocalLen, "%s\t%s\n", name, data);
+    return 1;
+}
+
 /* ---- queues shared with the URC and print contexts ------------------------ */
 
 static void pushEvent(int type, int32_t sock, int32_t n)
@@ -157,7 +181,7 @@ static bool flushOutput(void)
 {
     char raw[256], json[600];
 
-    if (uWebServerGetSSEClientCount(gServer) <= 0) {
+    if (clientCount() <= 0) {
         return false;
     }
     for (int round = 0; round < 32; round++) {
@@ -166,7 +190,7 @@ static bool flushOutput(void)
             return false;
         }
         int used = escapeOutput(raw, avail, json, sizeof(json));
-        if (uWebServerBroadcastSSEEvent(gServer, "out", json) <= 0) {
+        if (broadcast("out", json) <= 0) {
             return true;   /* previous event still draining; retry next pass */
         }
         gLogCur += (uint32_t)used;
@@ -178,7 +202,7 @@ static void flushEvents(void)
 {
     char line[96], json[2 * sizeof(line) + 4];
 
-    if (uWebServerGetSSEClientCount(gServer) <= 0) {
+    if (clientCount() <= 0) {
         return;
     }
     for (int round = 0; round < 4 && ucxapp_ui_event_peek(&gEvCur, line, sizeof(line)); round++) {
@@ -195,7 +219,7 @@ static void flushEvents(void)
         }
         json[n++] = '"';
         json[n] = '\0';
-        if (uWebServerBroadcastSSEEvent(gServer, "evt", json) <= 0) {
+        if (broadcast("evt", json) <= 0) {
             return;   /* previous event still draining; retry next pass */
         }
         gEvCur++;
@@ -210,7 +234,7 @@ static void flushState(void)
     char text[200], json[210];
     int32_t now = U_CX_PORT_GET_TIME_MS();
     uint32_t version = ucxapp_ui_state(text, sizeof(text));
-    int32_t clients = uWebServerGetSSEClientCount(gServer);
+    int32_t clients = clientCount();
     bool joined = clients > lastClients;
 
     lastClients = clients;
@@ -218,7 +242,7 @@ static void flushState(void)
         return;
     }
     snprintf(json, sizeof(json), "\"%s\"", text);
-    if (uWebServerBroadcastSSEEvent(gServer, "state", json) > 0) {
+    if (broadcast("state", json) > 0) {
         seen = version;
         lastMs = now;
     } else if (joined) {
@@ -234,13 +258,12 @@ static void flushDone(void)
     char probe[8];
 
     /* send "done" only after the command's output has been delivered */
-    if (seq == gDoneSeen || ucxapp_ui_log_peek(&cur, probe, sizeof(probe)) > 0 ||
-        uWebServerGetSSEClientCount(gServer) <= 0) {
+    if (seq == gDoneSeen || ucxapp_ui_log_peek(&cur, probe, sizeof(probe)) > 0 || clientCount() <= 0) {
         return;
     }
     char text[16];
     snprintf(text, sizeof(text), "%d", rc);
-    if (uWebServerBroadcastSSEEvent(gServer, "done", text) > 0) {
+    if (broadcast("done", text) > 0) {
         gDoneSeen = seq;
     }
 }
@@ -312,6 +335,9 @@ static bool tokenOk(const uHttpRequest_t *req)
     char t[TOKEN_LEN + 8];
     unsigned diff = 0;
 
+    if (gLocal) {
+        return true;   /* the page and the app share one browser tab */
+    }
     if (uWebServerGetHeader(req, "X-Token", t, sizeof(t)) != 0 && !cookieToken(req, t, sizeof(t)) &&
         uWebServerGetQueryParam(req, "t", t, sizeof(t)) != 0) {
         return false;
@@ -515,35 +541,82 @@ static void sendList(uHttpResponse_t *resp, size_t n)
     uWebServerSendJSON(resp, gBuf);
 }
 
-static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+static char gGroups[UCXAPP_UI_MAX_GROUPS][UCXAPP_UI_GROUP_LEN];
+
+/* The JSON builders fill gBuf (terminated) and return its length. */
+static size_t buildGroups(void)
 {
-    static char groups[UCXAPP_UI_MAX_GROUPS][UCXAPP_UI_GROUP_LEN];
-    static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
-    char group[16];
+    int count = ucxapp_ui_groups(gGroups, UCXAPP_UI_MAX_GROUPS);
     size_t n = 0;
     bool first = true;
+
+    gBuf[n++] = '[';
+    for (int pass = 0; pass < 2; pass++) {
+        const char *where = pass == 0 ? "module" : "host";
+
+        for (int i = 0; i < count; i++) {
+            if (strcmp(gGroups[i], "web") != 0 && strcmp(ucxapp_ui_runs_on(gGroups[i]), where) == 0) {
+                n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s\"%s:%s%s\"", first ? "" : ",", gGroups[i], where,
+                                      hasExamples(gGroups[i]) ? ":x" : "");
+                first = false;
+            }
+        }
+    }
+    gBuf[n++] = ']';
+    gBuf[n] = '\0';
+    return n;
+}
+
+static size_t buildCommands(const char *group)
+{
+    static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
+    int count = ucxapp_ui_group_cmds(group, cmds, UCXAPP_UI_MAX_GROUP_CMDS);
+    size_t n = 0;
+    bool first = true;
+
+    gBuf[n++] = '[';
+    for (int i = 0; i < count; i++) {
+        appendCmd(&n, &first, cmds[i]);
+    }
+    gBuf[n++] = ']';
+    gBuf[n] = '\0';
+    return n;
+}
+
+/* [{"t":title,"l":lines}] */
+static size_t buildExamples(const char *group)
+{
+    const char *g, *t, *l;
+    size_t n = 0;
+
+    gBuf[n++] = '[';
+    for (size_t i = 0; ucxapp_example_get(i, &g, &t, &l) && n + 1024 < API_BUF; i++) {
+        if (strcmp(g, group) != 0) {
+            continue;
+        }
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s{\"t\":\"", n > 1 ? "," : "");
+        jsonStr(gBuf, &n, t);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"l\":\"");
+        jsonStr(gBuf, &n, l);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\"}");
+    }
+    gBuf[n++] = ']';
+    gBuf[n] = '\0';
+    return n;
+}
+
+static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    char group[16];
 
     (void)user;
     if (!tokenOk(req)) {
         uWebServerSendError(resp, 403, "token required");
         return;
     }
-    gBuf[n++] = '[';
     if (strcmp(req->path, "/api/groups") == 0) {
-        int count = ucxapp_ui_groups(groups, UCXAPP_UI_MAX_GROUPS);
-
-        for (int pass = 0; pass < 2; pass++) {
-            const char *where = pass == 0 ? "module" : "host";
-
-            for (int i = 0; i < count; i++) {
-                if (strcmp(groups[i], "web") != 0 && strcmp(ucxapp_ui_runs_on(groups[i]), where) == 0) {
-                    n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s\"%s:%s%s\"", first ? "" : ",", groups[i], where,
-                                          hasExamples(groups[i]) ? ":x" : "");
-                    first = false;
-                }
-            }
-        }
-        sendList(resp, n);
+        buildGroups();
+        uWebServerSendJSON(resp, gBuf);
         /* the event stream cannot send X-Token, so it authenticates with this cookie */
         snprintf(resp->custom_headers, sizeof(resp->custom_headers),
                  "Set-Cookie: " COOKIE "=%s; Path=/; HttpOnly; SameSite=Strict\r\n", gToken);
@@ -553,12 +626,8 @@ static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
         uWebServerSendError(resp, 400, "missing g");
         return;
     }
-    int count = ucxapp_ui_group_cmds(group, cmds, UCXAPP_UI_MAX_GROUP_CMDS);
-
-    for (int i = 0; i < count; i++) {
-        appendCmd(&n, &first, cmds[i]);
-    }
-    sendList(resp, n);
+    buildCommands(group);
+    uWebServerSendJSON(resp, gBuf);
 }
 
 typedef struct {
@@ -623,12 +692,10 @@ static void routeFind(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     sendList(resp, n);
 }
 
-/* /api/examples?g=group: [{"t":title,"l":lines}] */
+/* /api/examples?g=group */
 static void routeExamples(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
     char group[16];
-    const char *g, *t, *l;
-    size_t n = 0;
 
     (void)user;
     if (!tokenOk(req)) {
@@ -639,18 +706,8 @@ static void routeExamples(const uHttpRequest_t *req, uHttpResponse_t *resp, void
         uWebServerSendError(resp, 400, "missing g");
         return;
     }
-    gBuf[n++] = '[';
-    for (size_t i = 0; ucxapp_example_get(i, &g, &t, &l) && n + 1024 < API_BUF; i++) {
-        if (strcmp(g, group) != 0) {
-            continue;
-        }
-        n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s{\"t\":\"", n > 1 ? "," : "");
-        jsonStr(gBuf, &n, t);
-        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"l\":\"");
-        jsonStr(gBuf, &n, l);
-        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\"}");
-    }
-    sendList(resp, n);
+    buildExamples(group);
+    uWebServerSendJSON(resp, gBuf);
 }
 
 /* ---- files ------------------------------------------------------------------ */
@@ -788,7 +845,7 @@ static void routeUpload(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
         uWebServerSendError(resp, 400, "bad file name");
         return;
     }
-    if (!gHttps && (isKey(name) || strncmp(name, "tls-", 4) == 0)) {
+    if (!gHttps && !gLocal && (isKey(name) || strncmp(name, "tls-", 4) == 0)) {
         uWebServerSendError(resp, 403, "keys and certificates need https (web.start https)");
         return;
     }
@@ -821,6 +878,23 @@ static void routeUpload(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
 }
 
 /* ---- commands --------------------------------------------------------------- */
+
+static const struct {
+    uHttpMethod_t method;
+    const char *path;
+    uRouteHandler_t fn;
+} kRoutes[] = {
+    { U_HTTP_METHOD_GET,  "/",             routePage },
+    { U_HTTP_METHOD_GET,  "/events",       routeEvents },
+    { U_HTTP_METHOD_POST, "/api/exec",     routeExec },
+    { U_HTTP_METHOD_GET,  "/api/groups",   routeList },
+    { U_HTTP_METHOD_GET,  "/api/commands", routeList },
+    { U_HTTP_METHOD_GET,  "/api/find",     routeFind },
+    { U_HTTP_METHOD_GET,  "/api/examples", routeExamples },
+    { U_HTTP_METHOD_GET,  "/api/files",    routeFiles },
+    { U_HTTP_METHOD_GET,  "/api/file",     routeFile },
+    { U_HTTP_METHOD_POST, "/api/upload",   routeUpload },
+};
 
 static bool makeToken(char *out)
 {
@@ -917,17 +991,11 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     }
     uWebServerSetTls(gServer, tls);
     gHttps = tls != NULL;
-    if (gServer == NULL ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/", routePage, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/events", routeEvents, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_POST, "/api/exec", routeExec, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/groups", routeList, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/commands", routeList, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/find", routeFind, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/examples", routeExamples, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/files", routeFiles, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/file", routeFile, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_POST, "/api/upload", routeUpload, NULL) != 0) {
+    bool routed = gServer != NULL;
+    for (size_t i = 0; routed && i < sizeof(kRoutes) / sizeof(kRoutes[0]); i++) {
+        routed = uWebServerAddRoute(gServer, kRoutes[i].method, kRoutes[i].path, kRoutes[i].fn, NULL) == 0;
+    }
+    if (!routed) {
         ucxapp_print("ERROR: cannot create the web server\n");
         uWebServerFree(gServer);
         gServer = NULL;
@@ -986,7 +1054,52 @@ static int cmdWebStatus(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static bool writeJson(const char *dir, const char *name, const char *group, size_t len)
+{
+    char path[256];
+    FILE *f;
+    bool ok;
+
+    snprintf(path, sizeof(path), "%s/%s%s%s.json", dir, name, group[0] != '\0' ? "-" : "", group);
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        ucxapp_print("ERROR: cannot write %s\n", path);
+        return false;
+    }
+    ok = fwrite(gBuf, 1, len, f) == len;
+    return fclose(f) == 0 && ok;
+}
+
+/* web.export <dir>: the /api JSON of this build as files, for a preview or a static demo of the page. */
+static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
+{
+    int count;
+
+    (void)app;
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gServer != NULL) {
+        ucxapp_print("ERROR: stop the web server first (web.stop)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!writeJson(argv[1], "groups", "", buildGroups())) {
+        return UCXAPP_ERR_FAILED;
+    }
+    count = ucxapp_ui_groups(gGroups, UCXAPP_UI_MAX_GROUPS);
+    for (int i = 0; i < count; i++) {
+        if (strcmp(gGroups[i], "web") != 0 &&
+            (!writeJson(argv[1], "commands", gGroups[i], buildCommands(gGroups[i])) ||
+             !writeJson(argv[1], "examples", gGroups[i], buildExamples(gGroups[i])))) {
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    ucxapp_print("exported %d groups to %s\n", count, argv[1]);
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gWebCmds[] = {
+    { "web.export", "<dir>",          "Write the page's command lists and examples as JSON files (preview, static demo)", 0, cmdWebExport },
     { "web.start",  "[port] [token] [https [cert]]", "Serve a web UI from the module (needs Wi-Fi); port 80, or 443 with https", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Show web server state",                                        0, cmdWebStatus },
@@ -995,4 +1108,72 @@ static const ucxapp_cmd_t gWebCmds[] = {
 void ucxapp_register_web_cmds(void)
 {
     ucxapp_cmd_register(gWebCmds, sizeof(gWebCmds) / sizeof(gWebCmds[0]));
+}
+
+/* ---- browser build: the page in the same tab calls the routes and polls the events ---- */
+
+static uHttpResponse_t gLocalResp;
+
+bool ucxapp_web_local_begin(ucxapp_t *app)
+{
+    if (gLocal || !ucxapp_ui_acquire(app)) {
+        return gLocal;
+    }
+    gApp = app;
+    gLocal = true;
+    gLogCur = ucxapp_ui_log_start();
+    gEvCur = ucxapp_ui_event_start();
+    gDoneSeen = ucxapp_ui_done_seq(&(int){ 0 });
+    return true;
+}
+
+/* One request; the reply is read with ucxapp_web_local_body/_length/_type. Runs on the page's thread. */
+int ucxapp_web_local_request(const char *method, const char *path, const char *query, const char *body, int len)
+{
+    static uHttpRequest_t req;
+
+    memset(&req, 0, sizeof(req));
+    memset(&gLocalResp, 0, sizeof(gLocalResp));
+    req.method = strcmp(method, "POST") == 0 ? U_HTTP_METHOD_POST : U_HTTP_METHOD_GET;
+    snprintf(req.path, sizeof(req.path), "%s", path);
+    snprintf(req.query, sizeof(req.query), "%s", query);
+    req.body = body;
+    req.body_length = len;
+    for (size_t i = 0; gLocal && i < sizeof(kRoutes) / sizeof(kRoutes[0]); i++) {
+        if (kRoutes[i].method == req.method && strcmp(kRoutes[i].path, path) == 0) {
+            kRoutes[i].fn(&req, &gLocalResp, NULL);
+            return gLocalResp.status_code;
+        }
+    }
+    uWebServerSendError(&gLocalResp, 404, "not found");
+    return 404;
+}
+
+const char *ucxapp_web_local_body(void)
+{
+    return gLocalResp.body != NULL ? gLocalResp.body : "";
+}
+
+int ucxapp_web_local_length(void)
+{
+    return gLocalResp.body_length >= 0 ? gLocalResp.body_length : (int)strlen(ucxapp_web_local_body());
+}
+
+const char *ucxapp_web_local_type(void)
+{
+    return gLocalResp.content_type;
+}
+
+/* The events since the last call as "name<TAB>data" lines, the data as the event stream would carry it. */
+const char *ucxapp_web_local_poll(void)
+{
+    gLocalLen = 0;
+    gLocalEvents[0] = '\0';
+    if (gLocal) {
+        flushOutput();
+        flushEvents();
+        flushState();
+        flushDone();
+    }
+    return gLocalEvents;
 }

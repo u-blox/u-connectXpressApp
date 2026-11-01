@@ -461,6 +461,17 @@ int main(int argc, char *argv[])
     ucxapp_register_usecase_cmds();
     ucxapp_register_examples_cmds();
 
+#ifdef __EMSCRIPTEN__
+    /* Browser: the page drives the app (ucxapp-wasm.js); the module comes in through Web Serial. */
+    static ucxapp_t webApp;
+    (void)port;
+    (void)shellMode;
+    (void)tuiMode;
+    (void)offline;
+    (void)json;
+    return ucxapp_web_local_begin(&webApp) ? 0 : 1;
+#endif
+
     ucxapp_t app = { NULL };
     int rc = 0;
     char detected[8][32];

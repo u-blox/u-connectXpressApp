@@ -1,0 +1,46 @@
+name: pages
+
+# u-connectXpressApp in the browser (WebAssembly + Web Serial) on GitHub Pages.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Init u-connectClient (not its nested submodules)
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Build the browser app
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          emcmake cmake -S app -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/wasm/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

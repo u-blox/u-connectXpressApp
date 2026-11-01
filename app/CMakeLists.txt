@@ -46,8 +46,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 # Release is built for speed: /O2 (MSVC) or -O3 (gcc) plus link-time optimisation.
 include(CheckIPOSupported)
 check_ipo_supported(RESULT _ucx_ipo OUTPUT _ucx_ipo_msg LANGUAGES C)
-if(_ucx_ipo)
+if(_ucx_ipo AND NOT EMSCRIPTEN)
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+endif()
+
+# Browser build (emcmake): every object, mbedTLS included, must be built for shared memory.
+if(EMSCRIPTEN)
+  string(APPEND CMAKE_C_FLAGS " -pthread")
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/mbedtls.cmake)
@@ -130,9 +135,9 @@ if(NOT WIN32)
 
     src/ucxapp_platform_posix.c
 
-    ../u-connectClient/ports/os/u_port_posix.c
+    $<IF:$<BOOL:${EMSCRIPTEN}>,wasm/u_port_posix_wasm.c,../u-connectClient/ports/os/u_port_posix.c>
 
-    ../u-connectClient/ports/uart/u_port_uart_linux.c
+    $<IF:$<BOOL:${EMSCRIPTEN}>,wasm/u_port_uart_webserial.c,../u-connectClient/ports/uart/u_port_uart_linux.c>
 
     ${U_CONNECT_CLIENT_UCX_API_SRC}
 
@@ -172,6 +177,24 @@ if(NOT WIN32)
   )
 
   target_link_libraries(ucxapp PRIVATE Threads::Threads m ${UCXAPP_MBEDTLS_LIBS})
+
+  # Browser build: build/wasm/site is a static web site (the page, the app as WebAssembly, Web Serial shim).
+  if(EMSCRIPTEN)
+    set(_ucx_site ${CMAKE_BINARY_DIR}/site)
+    set_target_properties(ucxapp PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${_ucx_site}
+                                            RUNTIME_OUTPUT_DIRECTORY_RELEASE ${_ucx_site})
+    target_link_options(ucxapp PRIVATE -pthread -sMODULARIZE=1 -sEXPORT_NAME=createUcxapp
+      -sENVIRONMENT=web,worker -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8
+      -sINITIAL_MEMORY=67108864 -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=262144
+      "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ucxapp_web_local_request,_ucxapp_web_local_body,_ucxapp_web_local_length,_ucxapp_web_local_type,_ucxapp_web_local_poll,_ucxapp_webserial_rx,_ucxapp_webserial_ready"
+      -sEXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,HEAPU8)
+    add_custom_command(TARGET ucxapp POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${_ucx_site}
+      VERBATIM)
+  endif()
 
   return()
 

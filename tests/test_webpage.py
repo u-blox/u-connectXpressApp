@@ -4,7 +4,9 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import threading
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,7 +49,8 @@ def test_script_ids_exist_in_the_markup():
 
 
 def test_script_only_calls_registered_routes():
-    routes = set(re.findall(r'uWebServerAddRoute\(gServer, \w+, "([^"]+)"', SRC.read_text(encoding="utf-8")))
+    routes = set(re.findall(r'\{ U_HTTP_METHOD_\w+, +"([^"]+)"', SRC.read_text(encoding="utf-8")))
+    assert "/api/exec" in routes
     for path in set(re.findall(r"'(/(?:events|api/\w+))", SCRIPT)):
         assert path in routes, path
 
@@ -208,3 +211,68 @@ def test_page_in_a_browser(server):
         assert page.is_visible("#pc")
         browser.close()
     assert not js_errors, js_errors
+
+
+@pytest.mark.app
+def test_web_export_writes_the_page_json(app_exe, tmp_path):
+    out = subprocess.run([str(app_exe), "COM255", "--exec", f'web.export "{tmp_path.as_posix()}"'],
+                         capture_output=True, text=True, timeout=30, errors="replace")
+    assert "exported" in out.stdout, out.stdout + out.stderr
+    groups = json.loads((tmp_path / "groups.json").read_text(encoding="utf-8"))
+    names = {g.split(":")[0]: g for g in groups}
+    assert names["wifi"].startswith("wifi:module") and names["usecase"].startswith("usecase:host")
+    for g in groups:
+        name = g.split(":")[0]
+        assert json.loads((tmp_path / f"commands-{name}.json").read_text(encoding="utf-8")), name
+    wifi = {c["n"]: c for c in json.loads((tmp_path / "commands-wifi.json").read_text(encoding="utf-8"))}
+    assert wifi["wifi.connect"]["f"][0][0].startswith("ssid")
+    examples = json.loads((tmp_path / "examples-usecase.json").read_text(encoding="utf-8"))
+    assert any("(PEAP)" in e["t"] and "wifi." in e["l"] for e in examples)
+    assert not (tmp_path / "commands-web.json").exists()
+
+
+def test_preview_composes_lines_like_the_app():
+    import ucxapp
+
+    assert ucxapp.compose("wifi.connect", ["My Net", 'a"b', ""], False) == 'wifi.connect "My Net" "a\\"b"'
+    assert ucxapp.compose("at", ["AT+GMM ?"], True) == "at AT+GMM ?"
+    assert ucxapp.compose("dev.info", [""], False) == "dev.info"
+
+
+@pytest.mark.app
+def test_web_preview_serves_the_real_commands():
+    proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "ucxapp.py"), "--web-preview", "0"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+    try:
+        lines = []
+        for line in proc.stdout:   # a stale exe is rebuilt first
+            lines.append(line)
+            m = re.search(r"http://127\.0\.0\.1:(\d+)/#t=(\w+)", line)
+            if m:
+                break
+        assert m, "".join(lines)
+        base, token = f"http://127.0.0.1:{m.group(1)}", m.group(2)
+
+        def get(path, tok=token):
+            req = urllib.request.Request(base + path, headers={"X-Token": tok} if tok else {})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.read().decode()
+
+        assert get("/", None).startswith("<!doctype html>")
+        with pytest.raises(urllib.error.HTTPError, match="403"):
+            get("/api/groups", "wrong")
+        assert "usecase:host:x" in json.loads(get("/api/groups"))
+        assert any(c["n"] == "wifi.scan" for c in json.loads(get("/api/commands?g=wifi")))
+        assert [c["n"] for c in json.loads(get("/api/find?q=usecase.t&p=1"))] == ["usecase.tool"]
+        events = urllib.request.urlopen(urllib.request.Request(base + "/events", headers={"X-Token": token}),
+                                        timeout=30)
+        post = urllib.request.Request(base + "/api/exec?cmd=usecase.tool&a0=4", method="POST",
+                                      headers={"X-Token": token})
+        assert urllib.request.urlopen(post, timeout=10).read() == b"accepted"
+        seen = ""
+        while "event: done" not in seen:
+            seen += events.readline().decode()
+        assert "Preview | no module" in seen and "900 MB/30 min" in seen
+    finally:
+        proc.terminate()
+        proc.wait(10)

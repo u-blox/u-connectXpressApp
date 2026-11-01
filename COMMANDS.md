@@ -544,6 +544,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS). Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
+| `web.export` | `<dir>` | Write the page's JSON (`groups.json`, `commands-<group>.json`, `examples-<group>.json`) for a preview or a static demo; `.\ucxapp --web-preview` uses it to serve the page on the PC |
 | `usecase.list` | | Use cases with a fit check and ready-made steps (`usecase.ex`) |
 | `usecase.tool` | `[mbit/s]` | Fit check of the connected tool use case (factory Wi-Fi with Enterprise security, AP for laptops, HTTPS page on the host, 900 MB history in 30 min, 8 socket trays, BLE) against the NORA-W36 limits: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, plus the station state when a module is connected. With a measured rate (e.g. from `net.iperf`) it prints the download time |
 
@@ -568,6 +569,14 @@ from the page. Open the printed URL, including the `#t=` token. The token sits i
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
 API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `?t=`, as EventSource cannot set headers.
 
+#### In the browser (WebAssembly + Web Serial)
+
+`.\ucxapp --wasm` builds the whole app as WebAssembly (`build/wasm/site`) and serves it on
+`http://127.0.0.1:8098/`. The page is the same as `web.start`, but nothing runs on a server: the app answers the
+page inside the tab, and **Connect module** opens the EVK's serial port with Web Serial (Chrome or Edge,
+115200 baud) and runs `dev.connect webserial`. Module commands, sockets and bridges work as on the PC; host-only parts (serial port list, GNSS/IMU/cellular on PC ports, the terminal UI) do not.
+Files live in the tab's memory. The site is static: `.github/workflows/pages.yml` publishes it on GitHub
+Pages, with `coi-serviceworker.js` adding the cross-origin isolation headers threads need.
 #### Text UI
 
 `--tui` opens the same three panes in a terminal window (Windows console, Linux terminal) and is the

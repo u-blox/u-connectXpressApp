@@ -7,6 +7,7 @@ and STM32.
   ucxapp --linux                            Linux build; on Windows it runs inside WSL
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
+  ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
   ucxapp --ports COM13,COM24 --test tests/hardware   tests on these modules (A, B, ...), no probing
@@ -105,6 +106,9 @@ def parse(argv):
                    help="Zephyr firmware for STM32 boards (west; ZEPHYR_BASE, UCXAPP_ZEPHYR_MODULES)")
     g.add_argument("--board", default="h753", choices=[*BOARDS, "all"],
                    help="STM32 board (default h753)")
+    g.add_argument("--wasm", action="store_true",
+                   help="browser build: the app as WebAssembly, the module over Web Serial (emsdk: EMSDK, C:/emsdk "
+                        "or ~/emsdk); build/wasm/site, served on 127.0.0.1:8098 unless only --build/--clean")
     g = p.add_argument_group("build")
     g.add_argument("--build", action="store_true", help="build, then stop (add --run to start the app)")
     g.add_argument("--clean", action="store_true", help="remove build output")
@@ -144,6 +148,9 @@ def parse(argv):
     g.add_argument("--update", action="store_true", help=f"update u-connectClient to {SUBMODULE_BRANCH}")
     g.add_argument("--sign", metavar="THUMBPRINT", help="sign the Release exe into app/release (Windows)")
     g.add_argument("--release", action="store_true", help="run scripts/release.py with the remaining arguments")
+    g.add_argument("--web-preview", nargs="?", const=8099, type=int, metavar="PORT",
+                   help="serve app/web/index.html on 127.0.0.1 (default port 8099) with this build's commands; "
+                        "commands run in the host app without a module")
     args, extra = p.parse_known_args(argv)
     if args.ports is not None:
         args.ports = [x.strip() for x in args.ports.split(",") if x.strip()]
@@ -1121,6 +1128,85 @@ def zephyr(args, extra):
     return 0
 
 
+# ---- Browser build (WebAssembly) ----
+
+WASM_DIR = ROOT / "build" / "wasm"
+WASM_PORT = 8098
+
+
+def emsdk_env():
+    """Puts emsdk's Emscripten on PATH unless emcmake is already there (emsdk_env was sourced)."""
+    if shutil.which("emcmake"):
+        return
+    for d in (os.environ.get("EMSDK"), "C:/emsdk", Path.home() / "emsdk"):
+        if d and (Path(d) / "upstream" / "emscripten").is_dir():
+            d = Path(d)
+            nodes = sorted((d / "node").glob("*/bin")) + sorted((d / "node").glob("*"))
+            os.environ["EMSDK"] = d.as_posix()
+            os.environ.setdefault("EM_CONFIG", str(d / ".emscripten"))
+            os.environ["PATH"] = os.pathsep.join([str(d / "upstream" / "emscripten"),
+                                                   *(str(n) for n in nodes[-1:]), os.environ["PATH"]])
+            return
+    fail("Emscripten not found: install emsdk (git clone https://github.com/emscripten-core/emsdk C:/emsdk, "
+         "emsdk install latest, emsdk activate latest) or set EMSDK")
+
+
+def wasm_build():
+    emsdk_env()
+    require("ninja", "Install Ninja (winget install Ninja-build.Ninja)")
+    check([shutil.which("emcmake"), "cmake", "-S", "app", "-B", WASM_DIR, "-G", "Ninja",
+           "-DCMAKE_BUILD_TYPE=Release"], "emcmake")
+    check(["cmake", "--build", WASM_DIR], "WebAssembly build")
+    print("Built", (WASM_DIR / "site").relative_to(ROOT))
+
+
+def wasm_server(site, port):
+    """The site with the headers threads need (COOP/COEP); localhost counts as secure for Web Serial."""
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def end_headers(self):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            self.send_header("Cache-Control", "no-cache")
+            super().end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), partial(Handler, directory=str(site)))
+    server.daemon_threads = True
+    return server
+
+
+def wasm_serve(site, port):
+    server = wasm_server(site, port)
+    print(f"u-connectXpressApp in the browser: http://127.0.0.1:{port}/  (Chrome or Edge; Ctrl+C stops)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def wasm(args, extra):
+    if extra:
+        fail(f"unknown --wasm argument(s): {' '.join(extra)}")
+    site = WASM_DIR / "site"
+    if args.clean or args.rebuild:
+        shutil.rmtree(WASM_DIR, ignore_errors=True)
+        print("Cleaned", WASM_DIR.relative_to(ROOT))
+    page = max(f.stat().st_mtime for f in [ROOT / "app" / "web" / "index.html", *(ROOT / "app" / "wasm").iterdir()])
+    built = site / "ucxapp.wasm"
+    if args.build or args.rebuild or (not args.clean and (not built.exists()
+                                                         or max(newest_source(), page) > built.stat().st_mtime)):
+        wasm_build()
+    if (args.build or args.clean or args.rebuild) and not args.run:
+        return 0
+    return wasm_serve(site, WASM_PORT)
+
+
 # ---- Workspace tools ----
 
 def update():
@@ -1296,6 +1382,162 @@ def run_script(exe, path, app_args, junit=None):
     return 0 if passed == len(cases) else 1
 
 
+def compose(name, values, raw):
+    """Command line from form fields, as ucxapp_ui_compose() builds it in the app."""
+    while values and values[-1] == "":
+        values = values[:-1]
+    if raw:
+        return f"{name} {values[0]}" if values else name
+    parts = [name]
+    for v in values:
+        if v == "" or any(c in v for c in ' \t"'):
+            v = '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        parts.append(v)
+    return " ".join(parts)
+
+
+def web_preview(exe, port):
+    """app/web/index.html on this PC with the command lists of this build (web.export); every command runs in a
+    fresh host app without a module, so host commands work and module commands report that no module answers."""
+    import queue
+    import secrets
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    api = ROOT / "build" / "webpreview"
+    api.mkdir(parents=True, exist_ok=True)
+    for f in api.glob("*.json"):
+        f.unlink()
+    out = subprocess.run([str(exe), "--offline", "--exec", f'web.export "{api.as_posix()}"'], capture_output=True,
+                         text=True, errors="replace", timeout=60)
+    if not (api / "groups.json").exists():
+        fail(f"web.export failed:\n{out.stdout}{out.stderr}")
+    commands = [c for f in sorted(api.glob("commands-*.json")) for c in json.loads(f.read_text(encoding="utf-8"))]
+    danger = {c["n"] for c in commands if c.get("d")}
+    token = secrets.token_hex(6)
+    clients, lock, busy = [], threading.Lock(), threading.Lock()
+
+    def broadcast(name, data):
+        with lock:
+            for c in clients:
+                c.put((name, data))
+
+    def execute(line):
+        rc = -1
+        try:
+            proc = subprocess.Popen([str(exe), "--offline", "--exec", line], stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace")
+            for text in proc.stdout:
+                broadcast("out", json.dumps(text))
+            rc = proc.wait()
+        finally:
+            busy.release()
+        broadcast("done", str(rc))
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def reply(self, body, ctype="application/json", code=200, headers=()):
+            data = body.encode() if isinstance(body, str) else body
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            for h in headers:
+                self.send_header(*h)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def authorized(self, q):
+            cookie = dict(p.strip().split("=", 1) for p in self.headers.get("Cookie", "").split(";") if "=" in p)
+            given = self.headers.get("X-Token") or cookie.get("ucxt") or q.get("t", [""])[0]
+            return secrets.compare_digest(given, token)
+
+        def json_file(self, name):
+            f = api / f"{name}.json"
+            self.reply(f.read_bytes() if re.fullmatch(r"[\w.-]+", name) and f.exists() else "[]")
+
+        def do_GET(self):
+            u = urlparse(self.path)
+            q = parse_qs(u.query)
+            if u.path == "/":
+                return self.reply((ROOT / "app" / "web" / "index.html").read_bytes(), "text/html")
+            if not self.authorized(q):
+                return self.reply("token required", "text/plain", 403)
+            group = q.get("g", [""])[0]
+            if u.path == "/api/groups":
+                self.reply((api / "groups.json").read_bytes(),
+                           headers=[("Set-Cookie", f"ucxt={token}; Path=/; HttpOnly; SameSite=Strict")])
+            elif u.path == "/api/commands":
+                self.json_file(f"commands-{group}")
+            elif u.path == "/api/examples":
+                self.json_file(f"examples-{group}")
+            elif u.path == "/api/find":
+                text = q.get("q", [""])[0].lower()
+                hits = [c for c in commands if (c["n"].startswith(text) if "p" in q
+                                                else text in c["n"].lower() or text in c["h"].lower())]
+                self.reply(json.dumps(hits[:60]))
+            elif u.path == "/api/files":
+                self.reply("[]")
+            elif u.path == "/events":
+                self.events()
+            else:
+                self.reply("not in the preview", "text/plain", 404)
+
+        def events(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            mine = queue.Queue()
+            mine.put(("state", json.dumps("Preview | no module")))
+            with lock:
+                clients.append(mine)
+            try:
+                while True:
+                    try:
+                        name, data = mine.get(timeout=15)
+                    except queue.Empty:
+                        name, data = "ka", ""
+                    self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
+                    self.wfile.flush()
+            except OSError:
+                pass
+            finally:
+                with lock:
+                    clients.remove(mine)
+
+        def do_POST(self):
+            u = urlparse(self.path)
+            q = parse_qs(u.query, keep_blank_values=True)
+            if not self.authorized(q):
+                return self.reply("token required", "text/plain", 403)
+            if u.path != "/api/exec":
+                return self.reply("not in the preview", "text/plain", 404)
+            name = q.get("cmd", [""])[0].strip()
+            if not name or name.startswith("web."):
+                return self.reply("command not allowed", "text/plain", 400)
+            if name.split()[0] in danger and "y" not in q:
+                return self.reply("confirm", "text/plain", 428)
+            values = [q[f"a{i}"][0] for i in range(8) if f"a{i}" in q]
+            line = compose(name, values, "r" in q) if values else name
+            if not busy.acquire(blocking=False):
+                return self.reply("busy", "text/plain", 409)
+            threading.Thread(target=execute, args=(line,), daemon=True).start()
+            self.reply("accepted", "text/plain")
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_threads = True
+    print(f"{len(commands)} commands from {exe.name}; page: http://127.0.0.1:{server.server_address[1]}/#t={token}"
+          "  (Ctrl+C stops)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main(argv):
     args, extra, parsed_argv = parse(argv)
     if args.ports and not (args.detect or args.test or args.put or args.get):
@@ -1308,6 +1550,11 @@ def main(argv):
         return selftest()
     if args.doctor:
         return doctor()
+    if args.web_preview is not None:
+        exe = host_exe(args.debug)
+        if stale(exe):
+            host_build(["Debug" if args.debug else "Release"])
+        return web_preview(exe, args.web_preview)
     if args.script:
         exe = host_exe(args.debug)
         if stale(exe):
@@ -1325,6 +1572,8 @@ def main(argv):
         return stm32(args, extra)
     if args.stm32_zephyr:
         return zephyr(args, extra)
+    if args.wasm:
+        return wasm(args, extra)
     if args.coverage:
         return coverage(extra)
     found = {}

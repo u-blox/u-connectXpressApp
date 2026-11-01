@@ -106,6 +106,12 @@ ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
 It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or laptop for a command box with live output.
 
+**No install: the app in the browser**: the whole app runs as WebAssembly in Chrome or Edge and talks to the EVK over Web Serial
+```powershell
+.\ucxapp --wasm            # builds build/wasm/site and serves http://127.0.0.1:8098/
+```
+Click **Connect module**, pick the EVK port, and every command works from the page. The site is static, so it can be hosted on GitHub Pages (`.github/workflows/pages.yml`).
+
 **Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
 ```powershell
 ucxapp COM13 --exec "utils.tls.ca.create" --exec "utils.tls.server.create server 192.168.1.42" --exec "wifi.connect MySsid MyPassword" --exec "gnss.open" --exec "gnss.bridge tls 2947" --shell
@@ -165,7 +171,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 | Cellular | `cell.detect`, `cell.open`, `cell.status`, `cell.apn`, `cell.attach`, `cell.ping`, `cell.connect`, `cell.bridge`, `cell.at` (a cellular modem on a PC serial port) |
 | Certificates | `cert.list`, `cert.upload`, `cert.info`, `cert.remove` |
 | Firmware | `fw.download [latest [file]]` or `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
-| Web UI | `web.start`, `web.stop`, `web.status` |
+| Web UI | `web.start`, `web.stop`, `web.status`, `web.export` |
 
 ## Quick start from source
 
@@ -177,7 +183,7 @@ git submodule update --init --recursive third-party/mbedtls
 .\ucxapp             # builds on first run, then starts the shell
 ```
 
-Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`).
+Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm` (emsdk).
 Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
 
 ## Memory footprint

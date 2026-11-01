@@ -152,6 +152,13 @@ void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_
 bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
+/* Browser build: the page calls the web routes in the same tab and polls the events (ucxapp_cmds_web.c). */
+bool ucxapp_web_local_begin(ucxapp_t *app);
+int ucxapp_web_local_request(const char *method, const char *path, const char *query, const char *body, int len);
+const char *ucxapp_web_local_body(void);
+int ucxapp_web_local_length(void);
+const char *ucxapp_web_local_type(void);
+const char *ucxapp_web_local_poll(void);
 void ucxapp_register_usecase_cmds(void);    /* usecase.* fit checks (ucxapp_cmds_usecase.c) */
 void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
 

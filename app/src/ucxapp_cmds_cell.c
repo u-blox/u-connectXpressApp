@@ -735,9 +735,9 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     if (gStream == NULL && !needOpen()) {
         return UCXAPP_ERR_FAILED;
     }
-    if (gStream != NULL && (strcasecmp(argv[1], "off") == 0 || strcasecmp(argv[1], "status") == 0)) {
+    if (gStream != NULL) {
         int r = ucxapp_stream_bridge_cmd(gStream, app, argc, argv, 2323);
-        if (strcasecmp(argv[1], "off") == 0) {
+        if (!ucxapp_stream_bridge_active(gStream)) {   /* last bridge gone: back to command mode */
             char port[32];
             int32_t baud = ucxapp_stream_baud(gStream);
             snprintf(port, sizeof(port), "%s", ucxapp_stream_port(gStream));
@@ -753,10 +753,6 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     if (strcasecmp(argv[1], "off") == 0 || strcasecmp(argv[1], "status") == 0) {
         ucxapp_print("bridge: off\n");
         return UCXAPP_OK;
-    }
-    if (gStream != NULL) {
-        ucxapp_print("ERROR: already bridged (cell.bridge off first)\n");
-        return UCXAPP_ERR_FAILED;
     }
     char port[32];
     int32_t baud = gBaud;
@@ -789,7 +785,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Open a transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91); then use gnss.bridge cell or imu.bridge cell", 0, cmdConnect },
     { "cell.disconnect", "", "Leave transparent mode and close the socket", 0, cmdDisconnect },
-    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART", 0, cmdBridge },
+    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 bridges at once", 0, cmdBridge },
 };
 
 void ucxapp_register_cell_cmds(void)

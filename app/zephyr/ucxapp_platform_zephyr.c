@@ -106,6 +106,7 @@ int ucxapp_platform_memory(ucxapp_mem_t *areas, int max)
     return n;
 }
 
+#ifdef CONFIG_THREAD_MONITOR
 typedef struct {
     ucxapp_mem_t *rows;
     int max;
@@ -117,7 +118,6 @@ static void threadRow(const struct k_thread *thread, void *userData)
     threadWalk_t *walk = (threadWalk_t *)userData;
     ucxapp_mem_t *row;
     const char *name = k_thread_name_get((k_tid_t)thread);
-    size_t unused = 0;
 
     if (walk->n >= walk->max) {
         return;
@@ -125,16 +125,28 @@ static void threadRow(const struct k_thread *thread, void *userData)
     row = &walk->rows[walk->n++];
     strncpy(row->name, (name != NULL && name[0] != '\0') ? name : "?", sizeof(row->name) - 1);
     row->name[sizeof(row->name) - 1] = '\0';
+    row->size = 0;
+    row->used = 0;
+#if defined(CONFIG_THREAD_STACK_INFO) && defined(CONFIG_INIT_STACKS)
+    size_t unused = 0;
     row->size = thread->stack_info.size;
     row->used = k_thread_stack_space_get(thread, &unused) == 0 && unused <= row->size ? row->size - unused : 0;
+#endif
 }
+#endif
 
 int ucxapp_platform_tasks(ucxapp_mem_t *tasks, int max)
 {
+#ifdef CONFIG_THREAD_MONITOR
     threadWalk_t walk = { tasks, max, 0 };
 
     k_thread_foreach(threadRow, &walk);
     return walk.n;
+#else
+    (void)tasks;
+    (void)max;
+    return 0;
+#endif
 }
 
 bool ucxapp_platform_local_ip(char *out, size_t size)

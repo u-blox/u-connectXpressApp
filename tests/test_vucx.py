@@ -242,6 +242,46 @@ def test_gnss_commands_on_a_virtual_receiver(app_exe, nora, tmp_path):
     assert "5546" in out.stdout or "55.7" in out.stdout, out.stdout[-3000:]
 
 
+def test_gnss_runs_several_bridges_at_once(app_exe, nora):
+    """Up to 4 bridges side by side on one receiver, numbered, stopped one by one; a fifth is refused."""
+    from harness.vucx import Feeder
+
+    gnss = Feeder(NMEA, 0.2)
+    port = gnss.start()
+    try:
+        out = _shell(app_exe, nora.port, [
+            f"gnss.open {port} 9600", "gnss.bridge tcp 2947", "gnss.bridge udp 192.168.1.10 10110",
+            "gnss.bridge ble nus", "gnss.bridge status", "gnss.bridge off 2", "gnss.bridge status",
+            "gnss.bridge udps 9000", "gnss.bridge tcp 2948", "bridge.list", "gnss.status",
+            "gnss.bridge udps 9001"])
+    finally:
+        gnss.stop()
+    text = out.stdout
+    assert out.returncode == 1, text[-3000:]
+    for n, kind in ((1, "TCP server port 2947"), (2, "UDP port 10110"), (3, "BLE Nordic UART")):
+        assert f"bridge {n}: {kind}" in text, text[-3000:]
+    assert "bridge 2 stopped" in text, text[-3000:]
+    after_off = text.split("bridge 2 stopped", 1)[1]
+    first_status = after_off.split("bridge 3: BLE", 1)[0]
+    assert "bridge 2:" not in first_status, text[-3000:]
+    assert "bridge 2: UDP port 0" in after_off and "bridge 4: TCP server port 2948" in after_off, text[-3000:]
+    assert "4 bridges are already running on the gnss (gnss.bridge off <n> first)" in text, text[-3000:]
+    assert text.count("bridge 1: TCP server port 2947") >= 4, text[-3000:]   # status twice, bridge.list, gnss.status
+
+
+def test_hw_bridges_share_the_stream_until_the_last_one_stops(app_exe, nora):
+    """hw.bridge keeps its stream while one bridge is left; only one BLE bridge per stream."""
+    out = _shell(app_exe, nora.port, [
+        "hw.bridge udps 7000", "hw.bridge ble nus", "hw.bridge status", "hw.bridge off 1", "hw.bridge status",
+        "hw.bridge off", "hw.bridge status", "hw.bridge tcp", "hw.bridge ble nus", "hw.bridge ble sps"])
+    text = out.stdout
+    assert out.returncode == 1, text[-3000:]
+    assert "bridge 1: UDP port 0" in text and "bridge 2: BLE Nordic UART" in text, text[-3000:]
+    assert "bridge 1 stopped" in text and "bridge 2 stopped" not in text, text[-3000:]
+    assert text.count("bridge: off") == 1, text[-3000:]
+    assert "ERROR: a BLE bridge is already running on the hw" in text, text[-3000:]
+
+
 def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
     from harness.vucx import Feeder
 

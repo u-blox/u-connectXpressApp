@@ -33,6 +33,9 @@ static const example_t kExamples[] = {
       "gnss.bridge ble nus\n# open nRF Connect or a Serial Bluetooth Terminal app and connect" },
     { "gnss", "Stream to a server or chart plotter",
       "gnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udp 192.168.1.10 10110" },
+    { "gnss", "Several bridges at once (up to 4): u-center, OpenCPN and a phone",
+      "gnss.bridge tcp\ngnss.bridge udp 192.168.1.10 10110\ngnss.bridge ble nus\ngnss.bridge status\n"
+      "# stop one by its number, or all of them\ngnss.bridge off 2\ngnss.bridge off" },
     { "gnss", "RTK / PPP corrections from an NTRIP caster (PointPerfect, RTK2go)",
       "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 EU ${NTRIP_USER} ${NTRIP_PASS}\n"
       "gnss.bridge status\ngnss.watch 60" },
@@ -51,6 +54,9 @@ static const example_t kExamples[] = {
       "gnss.log drive.ubx ubx\n# ...drive...\ngnss.log off\ngnss.export drive.ubx drive.kml\ngnss.replay drive.ubx 5" },
     { "gnss", "Geofence from Google My Maps (draw the area, Export to KML)",
       "gnss.fence garden.kml\ngnss.open\ngnss.fence status\n# FENCE: lines report leaving and coming back" },
+    { "gnss", "Fast first fix with u-blox AssistNow (token from the Thingstream portal)",
+      "wifi.profile.auto\ngnss.open\ngnss.assist register ${ASSISTNOW_TOKEN}\ngnss.assist online\ngnss.watch 30\n"
+      "# later runs only need: gnss.assist online" },
     { "gnss", "Recover a stuck receiver",
       "gnss.restart cold\ngnss.status" },
     { "gnss", "PC tool through a second COM port",
@@ -252,8 +258,9 @@ static const example_t kExamples[] = {
       "wifi.ap.enable BoatNet BoatPass123\nwifi.ap.status" },
     { "uc-boat", "NMEA to the chart app over TCP 10110",
       "gnss.bridge tcp 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
-    { "uc-boat", "NMEA to a phone over BLE instead",
-      "gnss.bridge off\ngnss.bridge ble nus\n# connect a GNSS app to the Nordic UART service" },
+    { "uc-boat", "NMEA to a phone over BLE as well",
+      "gnss.bridge ble nus\n# connect a GNSS app to the Nordic UART service\ngnss.bridge status\n"
+      "# bridge 1 is the TCP server, bridge 2 the BLE link; gnss.bridge off 2 stops only the phone" },
     { "uc-boat", "Log the trip",
       "gnss.log trip.nmea nmea\n# ...sail...\ngnss.log off\n# at home: gnss.close, then gnss.replay trip.nmea 10" },
     { "uc-rtk", "Home Wi-Fi and the receiver",
@@ -273,6 +280,10 @@ static const example_t kExamples[] = {
       "gnss.watch 3\ngnss.bridge status" },
     { "uc-mower", "Theft alert: position to your server over cellular",
       "gnss.bridge off\ncell.disconnect\ncell.connect myserver.example.com 5000\ngnss.bridge cell\ngnss.bridge status" },
+    { "uc-mower", "Corrections over Wi-Fi and the theft link over cellular together",
+      "gnss.bridge off\ncell.disconnect\n"
+      "gnss.bridge ntrip ppntrip.services.u-blox.com 2101 NEAR-SPARTN ${NTRIP_USER} ${NTRIP_PASS} ble\n"
+      "cell.connect myserver.example.com 5000\ngnss.bridge cell\ngnss.bridge status" },
     { "uc-farm", "HP receiver and the cellular modem in the field",
       "gnss.open\ngnss.status\ncell.open\ncell.attach on" },
     { "uc-farm", "PointPerfect over cellular, corrected NMEA to the cab tablet over BLE",

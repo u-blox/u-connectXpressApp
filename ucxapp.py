@@ -1486,6 +1486,14 @@ def web_preview(exe, port):
                 hits = [c for c in commands if (c["n"].startswith(text) if "p" in q
                                                 else text in c["n"].lower() or text in c["h"].lower())]
                 self.reply(json.dumps(hits[:60]))
+            elif u.path == "/api/complete":
+                line = q.get("q", [""])[0].replace("\\", "\\\\").replace('"', '\\"')
+                out = subprocess.run([str(exe), "--offline", "--exec", f'app.complete "{line}"'], capture_output=True,
+                                     text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout
+                m = re.search(r"^(\d+) match(?:es)?: (.*)$", out, re.M)
+                rest = out[m.end():].lstrip("\r\n").splitlines() if m else []
+                self.reply(json.dumps({"l": m.group(2) if m else "", "n": int(m.group(1)) if m else 0,
+                                       "c": rest[0].strip() if m and int(m.group(1)) > 1 and rest else ""}))
             elif u.path == "/api/files":
                 self.reply("[]")
             elif u.path == "/events":

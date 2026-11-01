@@ -11,6 +11,7 @@
 #include "u_port.h"
 #include "u_port_uart.h"
 #include "ucxapp_platform.h"
+#include "ucxapp_store.h"
 #include "ucxapp_stream.h"
 #include "ucxapp_thread.h"
 
@@ -90,6 +91,9 @@ typedef struct {
     int nsat;
     uint32_t ubxSatMs;
     uint32_t usedStamp[SYS_COUNT][256];
+    uint8_t uniqid[40];   /* whole UBX-SEC-UNIQID and MON-VER frames, for AssistNow registration */
+    uint8_t monver[400];
+    size_t uniqidLen, monverLen;
 } gnss_t;
 
 enum { ST_IDLE, ST_NMEA, ST_SYNC2, ST_CLS, ST_ID, ST_LEN1, ST_LEN2, ST_PAY, ST_CKA, ST_CKB };
@@ -303,6 +307,23 @@ static void nmeaLine(parser_t *p)
     nmeaSentence(p, p->line + 1);
 }
 
+static void keepFrame(const parser_t *p, uint8_t *out, size_t size, size_t *outLen)
+{
+    *outLen = 0;
+    if (p->len + 8 <= size) {
+        out[0] = 0xB5;
+        out[1] = 0x62;
+        out[2] = p->cls;
+        out[3] = p->id;
+        out[4] = (uint8_t)p->len;
+        out[5] = (uint8_t)(p->len >> 8);
+        memcpy(out + 6, p->pay, p->len);
+        out[6 + p->len] = p->ca;
+        out[7 + p->len] = p->cb;
+        *outLen = p->len + 8;
+    }
+}
+
 static void ubxFrame(parser_t *p)
 {
     gnss_t *s = &p->st;
@@ -310,6 +331,11 @@ static void ubxFrame(parser_t *p)
 
     s->ubx++;
     s->lastMs = ucxapp_platform_tick_ms();
+    if (p->cls == 0x27 && p->id == 0x03) {                            /* SEC-UNIQID */
+        keepFrame(p, s->uniqid, sizeof(s->uniqid), &s->uniqidLen);
+    } else if (p->cls == 0x0A && p->id == 0x04) {
+        keepFrame(p, s->monver, sizeof(s->monver), &s->monverLen);
+    }
     if (p->cls == 0x01 && p->id == 0x07 && p->len >= 92) {            /* NAV-PVT */
         s->year = (int)le16(d + 4);
         s->month = d[6];
@@ -1194,7 +1220,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
                  (ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off"));
     fenceStatus();
     ucxapp_print("Bridge:    ");
-    ucxapp_stream_bridge_status(gStream);
+    ucxapp_stream_bridge_status(gStream, "           ");
     return UCXAPP_OK;
 }
 
@@ -1955,6 +1981,320 @@ static int cmdRate(ucxapp_t *app, int argc, char *argv[])
     return ucxapp_stream_write(gStream, buf, n) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+/* ---- AssistNow: UBX-MGA assistance (time, orbits, almanac) from u-blox, fetched over the module's Wi-Fi ---- */
+
+#define ASSIST_FILE  "assistnow.ubx"
+#define ASSIST_STORE "ucxapp.assistnow"   /* chipcode line, then the allowed data types */
+#define ASSIST_URL   "https://assistnow.services.u-blox.com/GetAssistNowData.ashx"
+#define ASSIST_ZTP   "https://api.thingstream.io/ztp/assistnow/credentials"
+#define ASSIST_LEGACY "https://online-live1.services.u-blox.com/GetOnlineData.ashx"
+
+/* Sends every UBX-MGA frame of an AssistNow answer to the receiver, unchanged and in order; other bytes are skipped. */
+static int assistSend(const uint8_t *d, size_t len, const char *name)
+{
+    unsigned frames = 0;
+    size_t bytes = 0;
+
+    for (size_t i = 0; i + 8 <= len;) {
+        size_t pl = le16(d + i + 4);
+        uint8_t a = 0;
+        uint8_t b = 0;
+
+        if (d[i] != 0xB5 || d[i + 1] != 0x62 || d[i + 2] != 0x13 || i + 8 + pl > len) {
+            i++;
+            continue;
+        }
+        for (size_t k = i + 2; k < i + 6 + pl; k++) {
+            a = (uint8_t)(a + d[k]);
+            b = (uint8_t)(b + a);
+        }
+        if (a != d[i + 6 + pl] || b != d[i + 7 + pl]) {
+            i++;
+            continue;
+        }
+        if (!ucxapp_stream_write(gStream, d + i, pl + 8)) {
+            ucxapp_print("ERROR: write to the receiver failed after %u messages\n", frames);
+            return UCXAPP_ERR_FAILED;
+        }
+        frames++;
+        bytes += pl + 8;
+        i += pl + 8;
+        ucxapp_platform_sleep_ms(2);   /* lets the receiver keep up at low baud rates */
+    }
+    if (frames == 0) {
+        size_t n = 0;
+        while (n < len && n < 160 && d[n] >= 0x20 && d[n] < 0x7F) {
+            n++;
+        }
+        ucxapp_print("ERROR: no UBX-MGA messages in %s%s%.*s\n", name, n > 0 ? ": " : "", (int)n, (const char *)d);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%u UBX-MGA messages (%u bytes) sent to the receiver; gnss.watch shows the time to first fix\n",
+                 frames, (unsigned)bytes);
+    return UCXAPP_OK;
+}
+
+static int assistFile(const char *name)
+{
+    size_t len = 0;
+    uint8_t *d = ucxapp_store_load(name, &len);
+
+    if (d == NULL) {
+        ucxapp_print("ERROR: cannot read %s\n", name);
+        return UCXAPP_ERR_FAILED;
+    }
+    int rc = assistSend(d, len, name);
+    free(d);
+    return rc;
+}
+
+static void appendHex(char *out, size_t size, size_t *n, const uint8_t *d, size_t len)
+{
+    for (size_t i = 0; i < len && *n + 3 < size; i++) {
+        *n += (size_t)snprintf(out + *n, size - *n, "%02X", d[i]);
+    }
+}
+
+/* Polls UBX-SEC-UNIQID and UBX-MON-VER and builds the ZTP request body (token may be empty). */
+static bool assistZtpBody(const char *token, char *out, size_t size)
+{
+    static const uint8_t kPoll[] = { 0xB5, 0x62, 0x27, 0x03, 0x00, 0x00, 0x2A, 0xA5,
+                                     0xB5, 0x62, 0x0A, 0x04, 0x00, 0x00, 0x0E, 0x34 };
+    size_t n;
+
+    ucxapp_stream_lock(gStream);
+    gP.st.uniqidLen = 0;
+    gP.st.monverLen = 0;
+    ucxapp_stream_unlock(gStream);
+    if (!ucxapp_stream_write(gStream, kPoll, sizeof(kPoll))) {
+        return false;
+    }
+    for (int i = 0; i < 60; i++) {
+        snapshot();
+        if (gSnap.uniqidLen != 0 && gSnap.monverLen != 0) {
+            break;
+        }
+        ucxapp_platform_sleep_ms(50);
+    }
+    if (gSnap.uniqidLen == 0 || gSnap.monverLen == 0) {
+        ucxapp_print("ERROR: the receiver did not answer UBX-%s (AssistNow needs a u-blox M8 or later)\n",
+                     gSnap.uniqidLen == 0 ? "SEC-UNIQID" : "MON-VER");
+        return false;
+    }
+    n = (size_t)snprintf(out, size, "{\"token\":\"%s\",\"messages\":{\"UBX-SEC-UNIQID\":\"", token);
+    appendHex(out, size, &n, gSnap.uniqid, gSnap.uniqidLen);
+    n += (size_t)snprintf(out + n, size - n, "\",\"UBX-MON-VER\":\"");
+    appendHex(out, size, &n, gSnap.monver, gSnap.monverLen);
+    n += (size_t)snprintf(out + n, size - n, "\"}}");
+    return n < size;
+}
+
+/* Characters allowed in a token, chipcode or list argument that goes into a URL or JSON string. */
+static bool assistSafe(const char *s, const char *extra)
+{
+    if (s[0] == '\0' || strlen(s) > 200) {
+        return false;
+    }
+    for (; *s != '\0'; s++) {
+        if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || *s == '_' ||
+              *s == '-' || strchr(extra, *s) != NULL)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Copies the string value of "key" (or the items of a string array, comma separated) from a JSON text. */
+static bool jsonValue(const char *json, const char *key, char *out, size_t size)
+{
+    char pat[40];
+    const char *p;
+    size_t n = 0;
+
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    p = strstr(json, pat);
+    if (p == NULL || (p = strchr(p + strlen(pat), ':')) == NULL) {
+        return false;
+    }
+    p += strspn(p + 1, " \t\r\n") + 1;
+    char end = *p == '[' ? ']' : '"';
+    if (*p != '[' && *p != '"') {
+        return false;
+    }
+    for (p++; *p != '\0' && *p != end && n + 1 < size; p++) {
+        if (end == '"' || (*p != '"' && *p != ' ' && *p != '\r' && *p != '\n' && *p != '\t')) {
+            out[n++] = *p;
+        }
+    }
+    out[n] = '\0';
+    return *p == end && n > 0;
+}
+
+static bool assistSave(const char *chipcode, const char *allowed)
+{
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf), "%s\n%s\n", chipcode, allowed);
+
+    if (n <= 0 || (size_t)n >= sizeof(buf) || !ucxapp_store_save(ASSIST_STORE, buf, (size_t)n)) {
+        ucxapp_print("ERROR: cannot save %s\n", ASSIST_STORE);
+        return false;
+    }
+    ucxapp_store_make_private(ASSIST_STORE);
+    return true;
+}
+
+static int assistRegister(ucxapp_t *app, const char *token)
+{
+    static char body[2048];
+    const char *resp = "";
+    char chip[256];
+    char allowed[256];
+
+    if (app->ucx == NULL) {
+        return UCXAPP_ERR_NOT_CONNECTED;
+    }
+    if (!assistZtpBody(token, body, sizeof(body))) {
+        return UCXAPP_ERR_FAILED;
+    }
+    int status = ucxapp_http_post(app, ASSIST_ZTP, body, "application/json", &resp);
+    if (status < 200 || status >= 300 || !jsonValue(resp, "chipcode", chip, sizeof(chip))) {
+        ucxapp_print("ERROR: registration failed (HTTP %d)%s%.200s\n", status, resp[0] != '\0' ? ": " : "", resp);
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!jsonValue(resp, "allowedData", allowed, sizeof(allowed))) {
+        allowed[0] = '\0';
+    }
+    if (!assistSave(chip, allowed)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("registered; chipcode saved to %s\nallowed data: %s\n", ASSIST_STORE,
+                 allowed[0] != '\0' ? allowed : "(not listed)");
+    return UCXAPP_OK;
+}
+
+/* The saved chipcode and allowed data types; false when none is saved. */
+static bool assistLoad(char *chip, size_t chipSize, char *allowed, size_t allowedSize)
+{
+    size_t len = 0;
+    char *d = (char *)ucxapp_store_load(ASSIST_STORE, &len);
+    char *nl;
+
+    chip[0] = '\0';
+    allowed[0] = '\0';
+    if (d == NULL) {
+        return false;
+    }
+    char *text = (char *)malloc(len + 1);
+    if (text != NULL) {
+        memcpy(text, d, len);
+        text[len] = '\0';
+        nl = text + strcspn(text, "\r\n");
+        snprintf(chip, chipSize, "%.*s", (int)(nl - text), text);
+        nl += strspn(nl, "\r\n");
+        snprintf(allowed, allowedSize, "%.*s", (int)strcspn(nl, "\r\n"), nl);
+        free(text);
+    }
+    free(d);
+    return chip[0] != '\0';
+}
+
+static int assistDownload(ucxapp_t *app, const char *url)
+{
+    char line[1100];
+
+    if (snprintf(line, sizeof(line), "http.download \"%s\" " ASSIST_FILE, url) >= (int)sizeof(line)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    int rc = ucxapp_cmd_exec(app, line);
+    return rc == UCXAPP_OK ? assistFile(ASSIST_FILE) : rc;
+}
+
+static int cmdAssist(ucxapp_t *app, int argc, char *argv[])
+{
+    char url[1024];
+    char chip[256];
+    char allowed[256];
+    const char *sub = argc > 1 ? argv[1] : "";
+
+    if (argc < 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcasecmp(sub, "chipcode") == 0) {
+        if (argc != 3 || !assistSafe(argv[2], "+/=")) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!assistSave(argv[2], "")) {
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("chipcode saved to %s\n", ASSIST_STORE);
+        return UCXAPP_OK;
+    }
+    if (strcasecmp(sub, "id") == 0 || strcasecmp(sub, "register") == 0) {
+        static char body[2048];
+        bool reg = strcasecmp(sub, "register") == 0;
+        const char *token = argc > 2 ? argv[2] : "";
+        if (argc > 3 || (reg && argc != 3) || (argc == 3 && !assistSafe(token, ""))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        if (reg) {
+            return assistRegister(app, token);
+        }
+        if (!assistZtpBody(token, body, sizeof(body))) {
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("POST %s (Content-Type: application/json)\n%s\n", ASSIST_ZTP, body);
+        return UCXAPP_OK;
+    }
+    if (strcasecmp(sub, "online") == 0) {
+        const char *gnss = argc > 2 ? argv[2] : "gps,gal,bds,glo";
+        const char *data;
+        char code[3 * 256];
+        size_t n = 0;
+
+        if (argc > 4 || !assistSafe(gnss, ",") || (argc > 3 && !assistSafe(argv[3], ","))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!assistLoad(chip, sizeof(chip), allowed, sizeof(allowed))) {
+            ucxapp_print("ERROR: no chipcode (gnss.assist register <ztp-token> or gnss.assist chipcode <code>)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        data = argc > 3 ? argv[3]
+               : (allowed[0] == '\0' || strstr(allowed, "ulorb_l1") != NULL) ? "ulorb_l1,ukion,usvht" : "uporb_1,ualm";
+        for (const char *c = chip; *c != '\0' && n + 4 < sizeof(code); c++) {
+            n += (size_t)(strchr("+/=", *c) != NULL ? snprintf(code + n, sizeof(code) - n, "%%%02X", (unsigned char)*c)
+                                                     : snprintf(code + n, sizeof(code) - n, "%c", *c));
+        }
+        snprintf(url, sizeof(url), "%s?chipcode=%s&gnss=%s&data=%s", ASSIST_URL, code, gnss, data);
+        ucxapp_print("AssistNow %s for %s\n", data, gnss);
+        return assistDownload(app, url);
+    }
+    if (strcasecmp(sub, "legacy") == 0) {
+        const char *gnss = argc > 3 ? argv[3] : "gps,glo";
+        if (argc < 3 || argc > 4 || !assistSafe(argv[2], "") || !assistSafe(gnss, ",")) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snprintf(url, sizeof(url), "%s?token=%s;gnss=%s;datatype=eph,alm,aux;", ASSIST_LEGACY, argv[2], gnss);
+        ucxapp_print("AssistNow Online (legacy token) for %s\n", gnss);
+        return assistDownload(app, url);
+    }
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    return assistFile(argv[1]);
+}
+
 static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t port;
@@ -2019,7 +2359,8 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
-    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble] [cell]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "gnss.assist", "<file.ubx>|online [gnss] [data]|register <ztp-token>|chipcode <code>|id [ztp-token]|legacy <token> [gnss]", "u-blox AssistNow: fetch UBX-MGA time, orbits and almanac over the module's Wi-Fi (or take a file) and send them to the receiver for a fast first fix", 0, cmdAssist },
+    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble] [cell]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off [n]|status>", "Two-way bridges of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART); up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

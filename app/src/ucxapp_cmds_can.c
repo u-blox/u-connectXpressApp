@@ -298,10 +298,6 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("bridge: off\n");
         return UCXAPP_OK;
     }
-    if (gStream != NULL && !off && !status) {
-        ucxapp_print("ERROR: already bridged (can.bridge off first)\n");
-        return UCXAPP_ERR_FAILED;
-    }
     if (gStream == NULL) {
         gStream = ucxapp_stream_open("virt:can", 0, &cfg);
         if (gStream == NULL) {
@@ -310,7 +306,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         gPartLen = 0;
     }
     r = ucxapp_stream_bridge_cmd(gStream, app, argc, argv, CAN_BRIDGE_PORT);
-    if ((off || r != UCXAPP_OK || !ucxapp_stream_bridge_active(gStream)) && !(status && r == UCXAPP_OK)) {
+    if (!ucxapp_stream_bridge_active(gStream)) {
         ucxapp_stream_close(gStream);
         gStream = NULL;
     }
@@ -341,7 +337,7 @@ static const ucxapp_cmd_t gCanCmds[] = {
     { "can.recv",     "",              "Take the next received CAN frame", 0, cmdRecv },
     { "can.status",   "",              "Controller, counters and bridge state", 0, cmdStatus },
     { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
-      "uart <port> [baud] | off | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8])", 0,
+      "uart <port> [baud] | off [n] | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]); up to 4 bridges at once", 0,
       cmdBridge },
     { "can.selftest", "",              "Offline check of the CAN record format", 0, cmdSelftest },
 };

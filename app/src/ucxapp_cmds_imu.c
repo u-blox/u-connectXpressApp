@@ -605,7 +605,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("Steps:    %u\n", (unsigned)gSnap.steps);
     ucxapp_print("Log:      %s\n", ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off");
     ucxapp_print("Bridge:   ");
-    ucxapp_stream_bridge_status(gStream);
+    ucxapp_stream_bridge_status(gStream, "          ");
     return UCXAPP_OK;
 }
 
@@ -728,7 +728,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "imu.log", "<file|off>", "Record the raw IMU byte stream to a file", 0, cmdLog },
     { "imu.send", "<hex..>", "Send raw bytes to the sensor (e.g. WitMotion configuration frames)", 0, cmdSend },
     { "imu.rate", "<hz>", "Set the WitMotion output rate (0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200 Hz)", 0, cmdRate },
-    { "imu.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the IMU stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "imu.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off [n]|status>", "Two-way bridges of the IMU stream (TCP server/client, UDP, BLE NUS/SPS, PC UART); up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_imu_cmds(void)

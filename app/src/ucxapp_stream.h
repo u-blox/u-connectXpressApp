@@ -33,7 +33,9 @@ uint32_t ucxapp_stream_rx_bytes(const ucxapp_stream_t *s);
 bool ucxapp_stream_log(ucxapp_stream_t *s, const char *file);
 const char *ucxapp_stream_log_name(const ucxapp_stream_t *s);   /* "" when off */
 
-/* Bridges: the raw byte stream is forwarded through the module. Only one bridge per stream. */
+/* Bridges: the raw byte stream is forwarded through the module. Up to UCXAPP_STREAM_MAX_BRIDGES run side by side,
+   each with its own buffer; at most one BLE bridge and one NTRIP client per stream. */
+#define UCXAPP_STREAM_MAX_BRIDGES 4
 bool ucxapp_stream_bridge_tcp(ucxapp_stream_t *s, ucxapp_t *app, int32_t port);
 /* TCP server with TLS terminated in the app (certificate tls-<certName>.crt); clientAuth requires a client certificate from the local CA. */
 bool ucxapp_stream_bridge_tls(ucxapp_stream_t *s, ucxapp_t *app, int32_t port, const char *certName, bool clientAuth);
@@ -56,10 +58,13 @@ bool ucxapp_stream_bridge_ble_custom(ucxapp_stream_t *s, ucxapp_t *app, const ui
                                      const uint8_t tx[16]);
 /* Second PC serial port, both directions, no module needed. */
 bool ucxapp_stream_bridge_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud);
-/* Shared "bridge tcp|udp|ble|uart|off|status" handler; argv[0] is the command name. */
+/* Shared "bridge tcp|udp|ble|uart|off [n]|status" handler; argv[0] is the command name. */
 int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], int32_t defaultPort);
-void ucxapp_stream_bridge_stop(ucxapp_stream_t *s);
-void ucxapp_stream_bridge_status(ucxapp_stream_t *s);   /* prints one line */
+void ucxapp_stream_bridge_stop(ucxapp_stream_t *s);   /* every bridge */
+bool ucxapp_stream_bridge_stop_one(ucxapp_stream_t *s, int n);   /* bridge n (1-based); false if there is none */
+int ucxapp_stream_bridge_count(const ucxapp_stream_t *s);
+/* "bridge: off" or one "bridge N: ..." line per bridge; lines after the first start with indent. */
+void ucxapp_stream_bridge_status(ucxapp_stream_t *s, const char *indent);
 bool ucxapp_stream_bridge_active(const ucxapp_stream_t *s);
 /* Port of the open stream of this kind ("gnss", "imu", "cell"), or NULL. */
 const char *ucxapp_stream_open_port(const char *kind);

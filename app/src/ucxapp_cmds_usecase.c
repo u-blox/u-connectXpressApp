@@ -114,7 +114,7 @@ static const ucRow_t kBoat[] = {
     { 0, "[ok]", "Chart app", "NMEA over TCP port 10110 (OpenCPN, Navionics, iNavX): gnss.bridge tcp 10110", "gnss.bridge" },
     { 0, "[ok]", "Phone over BLE", "NMEA over Nordic UART instead: gnss.bridge ble nus", "gnss.bridge" },
     { 0, "[ok]", "Trip log", "the raw receiver stream to a file: gnss.log trip.nmea", "gnss.log" },
-    { 0, "[limit]", "One bridge", "one gnss.bridge at a time: TCP for the tablet or BLE for the phone", NULL },
+    { 0, "[ok]", "Both at once", "tablet and phone together: both bridges run side by side (up to 4)", "gnss.bridge" },
 };
 
 static const ucRow_t kRtk[] = {
@@ -133,7 +133,8 @@ static const ucRow_t kMower[] = {
     { 0, "[ok]", "Phone status", "add ble: the corrected position to the owner's app over Nordic UART", "gnss.bridge" },
     { 0, "[check]", "Edge of garden", "corrections stop where Wi-Fi ends: add cell to gnss.bridge ntrip", "cell.connect" },
     { 0, "[ok]", "Theft alert", "position to your server over cellular: cell.connect, gnss.bridge cell", "gnss.bridge" },
-    { 0, "[limit]", "One bridge", "corrections and the theft link share the receiver; one gnss.bridge at a time", NULL },
+    { 0, "[ok]", "Both at once", "NTRIP over Wi-Fi and the theft link run side by side (up to 4 bridges)", "gnss.bridge" },
+    { 0, "[limit]", "One cell link", "the modem carries one socket: NTRIP over cell or the theft link, not both", NULL },
 };
 
 static const ucRow_t kFarm[] = {

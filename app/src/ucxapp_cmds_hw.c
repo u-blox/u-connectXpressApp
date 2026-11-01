@@ -796,10 +796,6 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("bridge: off\n");
         return UCXAPP_OK;
     }
-    if (gStream != NULL && !off && strcasecmp(argv[1], "status") != 0) {
-        ucxapp_print("ERROR: already bridged (hw.bridge off first)\n");
-        return UCXAPP_ERR_FAILED;
-    }
     if (gStream == NULL) {
         gStream = ucxapp_stream_open("virt:hw", 0, &cfg);
         if (gStream == NULL) {
@@ -811,11 +807,9 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         }
     }
     r = ucxapp_stream_bridge_cmd(gStream, app, argc, argv, 7000);
-    if (off || r != UCXAPP_OK || !ucxapp_stream_bridge_active(gStream)) {
-        if (!(strcasecmp(argv[1], "status") == 0 && r == UCXAPP_OK)) {
-            ucxapp_stream_close(gStream);
-            gStream = NULL;
-        }
+    if (!ucxapp_stream_bridge_active(gStream)) {
+        ucxapp_stream_close(gStream);
+        gStream = NULL;
     }
     return r;
 }
@@ -826,7 +820,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "hw.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
     { "hw.exec", "<command...>", "Run a bridge line such as 'gpio.read 3' and print the OK/ERR reply", 0, cmdExec },
     { "hw.bridge", "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
-      "uart <port> [baud] | off | status", "Expose these commands as a line protocol, with EVT lines for events", 0,
+      "uart <port> [baud] | off [n] | status", "Expose these commands as a line protocol, with EVT lines for events; up to 4 bridges at once", 0,
       cmdBridge },
 };
 

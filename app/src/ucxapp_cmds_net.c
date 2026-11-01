@@ -537,6 +537,13 @@ static int cmdHttpPost(ucxapp_t *app, int argc, char *argv[])
     return status >= 200 && status < 400 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+int ucxapp_http_post(ucxapp_t *app, const char *url, const char *body, const char *ctype, const char **resp)
+{
+    int status = httpRequest(app, url, body, ctype, NULL);
+    *resp = gReqBody;
+    return status;
+}
+
 /* ---- wifi.portal: hotel / guest Wi-Fi login pages (captive portals) ---- */
 
 static const char *findCi(const char *h, const char *lowerNeedle)

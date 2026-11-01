@@ -403,7 +403,8 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `gnss.send` | `<hex..\|$NMEA\|ubx cls id [hex]>` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
 | `gnss.restart` | `<hot\|warm\|cold>` | Restart the receiver (UBX-CFG-RST) |
 | `gnss.rate` | `<hz>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
-| `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|ntrip <host> <port> <mount> [user pass] [ble] [cell]\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the receiver stream. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `ntrip` is an NTRIP v1 client (plain TCP, e.g. PointPerfect Flex/Live on port 2101 or RTK2go): corrections (RTCM or SPARTN) go to the receiver and its latest GGA goes to the caster every 10 s; `ble` also sends the corrected NMEA to a phone over BLE Nordic UART (RTK rover); `cell` runs the NTRIP client over a cellular modem instead of Wi-Fi (it uses the `cell.connect` data link, or opens one to `<host> <port>`; needs `cell.open` and `cell.attach on`; no reconnect over cellular); keep credentials out of scripts with `${NTRIP_USER}` `${NTRIP_PASS}`, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
+| `gnss.assist` | `<file.ubx>\|online [gnss] [data]\|register <ztp-token>\|chipcode <code>\|id [ztp-token]\|legacy <token> [gnss]` | u-blox AssistNow for a fast first fix (u-blox M8 and later). `online` downloads UBX-MGA data over the module's Wi-Fi with `http.download` from `assistnow.services.u-blox.com` into `assistnow.ubx` and sends every message to the receiver unchanged and in order; `gnss` defaults to `gps,gal,bds,glo`, `data` to Live Orbits `ulorb_l1,ukion,usvht` (or `uporb_1,ualm` when the plan only has Predictive Orbits). It needs a chipcode: `register <ztp-token>` reads UBX-SEC-UNIQID and UBX-MON-VER from the receiver, posts them with the device profile token from the Thingstream portal (Location Services, AssistNow device profile) to the zero-touch provisioning API and saves the chipcode and allowed data types in `ucxapp.assistnow` (private); `chipcode <code>` saves one taken from the portal; `id [ztp-token]` only prints the ZTP request body. `legacy <token> [gnss]` uses an old AssistNow Online token (`online-live1.services.u-blox.com`, default `gps,glo`). `<file.ubx>` sends the UBX-MGA messages of a file (an earlier download, or one fetched elsewhere); other bytes are skipped and an answer without messages is shown as the error |
+| `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|ntrip <host> <port> <mount> [user pass] [ble] [cell]\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Two-way bridges of the receiver stream; up to 4 run at once (each with its own buffer, at most one BLE bridge and one NTRIP client), `status` lists them as `bridge 1:`, `bridge 2:` and so on, `off` stops all of them and `off <n>` only bridge n. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `ntrip` is an NTRIP v1 client (plain TCP, e.g. PointPerfect Flex/Live on port 2101 or RTK2go): corrections (RTCM or SPARTN) go to the receiver and its latest GGA goes to the caster every 10 s; `ble` also sends the corrected NMEA to a phone over BLE Nordic UART (RTK rover); `cell` runs the NTRIP client over a cellular modem instead of Wi-Fi (it uses the `cell.connect` data link, or opens one to `<host> <port>`; needs `cell.open` and `cell.attach on`; no reconnect over cellular); keep credentials out of scripts with `${NTRIP_USER}` `${NTRIP_PASS}`, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
 | `imu.detect` | `[port]` | Find a WitMotion or Bosch BNO055 IMU |
 | `imu.open` | `[port] [baud] [wit\|bno055]` | Open an IMU; detects port, baud and type when omitted |
 | `imu.close` | | Close the IMU |
@@ -411,15 +412,15 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `imu.log` | `<file\|off>` | Record the raw IMU byte stream to a file |
 | `imu.send` | `<hex..>` | Send raw bytes (WitMotion configuration frames) |
 | `imu.rate` | `<hz>` | WitMotion output rate (0.2 to 200 Hz) |
-| `imu.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the IMU stream, same modes as `gnss.bridge` |
+| `imu.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Two-way bridges of the IMU stream, same modes as `gnss.bridge` (up to 4 at once) |
 
 ### Bridges
 
-Each source has its own bridge (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `can.bridge`, `hw.bridge`), and they run at the same time.
+Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `can.bridge`, `hw.bridge`), up to 4 per source, and they all run at the same time.
 
 | Command | Arguments | Description |
 |---|---|---|
-| `bridge.list` | | Every open source and where its bridge goes |
+| `bridge.list` | | Every open source and where its bridges go, one line per bridge |
 | `bridge.off` | | Stop every running bridge |
 
 ### Cellular modules
@@ -438,7 +439,7 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 | `cell.apn` | `[apn [ip\|ipv6\|ipv4v6]]` | Show or set the APN of context 1 |
 | `cell.attach` | `[on\|off]` | Attach and activate data, detach, or show the state |
 | `cell.ping` | `<host>` | Ping over the cellular link (Quectel and u-blox only) |
-| `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (`off` returns to command mode) |
+| `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off [n]\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (up to 4 at once; the last `off` returns to command mode) |
 | `cell.connect` | `<host> <port> [tcp\|udp]` | Open a transparent socket through the modem. Vendor paths: u-blox (default, `AT+USOCR`/`AT+USOCO`), Quectel (`AT+QIOPEN` access mode 2), SIMCom (`AT+CIPMODE=1`, `AT+CIPOPEN`), Telit (`AT#SGACT`, `AT#SD`), Nordic nRF91 (`AT#XSOCKET`, `AT#XCONNECT`). The modem's UART then carries the payload: bridge to it with `gnss.bridge cell` or `imu.bridge cell` |
 | `cell.disconnect` | | Stop the bridge using the link first; sends `+++` after the guard time and closes the socket |
 
@@ -482,7 +483,7 @@ not wired in yet.
 | `hw.pwm.set` | `<ch> <hz> <duty%>` | Start PWM on a channel |
 | `hw.pwm.off` | `<ch>` | Stop PWM on a channel |
 | `hw.exec` | `<command...>` | Run one bridge line, for example `hw.exec gpio.read 3`, and print the reply |
-| `hw.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Same modes as `gnss.bridge` (TCP default port 7000) |
+| `hw.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Same modes as `gnss.bridge` (TCP default port 7000, up to 4 at once) |
 
 The bridge speaks lines: the peer sends a command without the `hw.` prefix (`i2c.reg 0x68 0x75`) and gets `OK <text>`
 or `ERR <text>`. While bridged, GPIO input changes arrive as `EVT gpio <pin> <level>`.

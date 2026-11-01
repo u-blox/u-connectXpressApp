@@ -96,7 +96,7 @@ def test_ntrip_corrections_reach_the_receiver(app_exe, port_a, gnss, wifi_peers,
         pytest.skip(f"module could not reach {host}:{caster.port} (PC firewall?): {out.stdout[-400:]}")
     assert out.returncode == 0, out.stdout
     assert "streaming corrections" in out.stdout, out.stdout
-    assert re.search(r"bridge: NTRIP .* [1-9]\d* bytes of corrections", out.stdout), out.stdout
+    assert re.search(r"bridge \d: NTRIP .* [1-9]\d* bytes of corrections", out.stdout), out.stdout
     assert PASS not in out.stdout, out.stdout
     assert caster.gga, f"no GGA reached the caster: {out.stdout}"
 

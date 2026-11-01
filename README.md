@@ -8,7 +8,9 @@ ucxapp wifi.connect MySsid MyPassword
 ucxapp mqtt.publish test/ucx hello
 ```
 
-**Platforms:** Windows | Linux | STM32
+**Platforms:** Windows | Linux | STM32 | [Browser](https://u-blox.github.io/u-connectXpressApp/)
+
+**Try it now:** [u-blox.github.io/u-connectXpressApp](https://u-blox.github.io/u-connectXpressApp/) runs the app in Chrome or Edge and talks to the module over Web Serial, nothing to install.
 
 | Connect | Build | Develop | Maintain |
 |---|---|---|---|

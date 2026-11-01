@@ -49,7 +49,7 @@ def test_long_usage_is_one_alternative_per_line(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "help gnss.bridge", "gnss.bridge")
     lines = [ln.strip() for ln in out.stdout.splitlines()]
     for alt in ("tcp [port]", "tls [port] [cert] [clientauth]", "tcpc <host> <port>", "udps <port>",
-                "ble [nus|sps|custom <uuid> [rx tx]]", "uart <port> [baud]", "cell", "off", "status"):
+                "ble [nus|sps|custom <uuid> [rx tx]]", "uart <port> [baud]", "cell", "off [n]", "status"):
         assert alt in lines, alt
         assert f"gnss.bridge {alt}" in lines, alt
     assert not any("<tcp" in ln for ln in lines)

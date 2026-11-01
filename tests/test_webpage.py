@@ -78,7 +78,7 @@ class Mock(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        if self.path == "/":
+        if self.path.split("?")[0] == "/":
             self.reply(PAGE, "text/html")
         elif self.path.startswith("/api/groups"):
             self.reply(json.dumps(["wifi"]))
@@ -88,6 +88,9 @@ class Mock(BaseHTTPRequestHandler):
                  "f": [["ssid", 0, ""], ["password", 1, ""]]},
                 {"n": "wifi.security", "h": "Security", "u": "[wpa|open]", "f": [["mode", 1, "wpa|open"]]},
             ]))
+        elif self.path.startswith("/api/examples"):
+            self.reply(json.dumps([{"t": "Fit check", "l": "usecase.tool\nusecase.tool 2.5"},
+                                   {"t": "Join with PEAP", "l": "# factory\nwifi.peap FactoryNet u p ca.pem"}]))
         elif self.path.startswith("/events"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -128,7 +131,8 @@ def test_page_in_a_browser(server):
         assert page.inner_text("#out .fg") == "green"
         assert "\x1b" not in page.inner_text("#out")
         assert page.inner_text(".chip.on") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
-        assert "wifi:link up" in page.inner_text("#ev")
+        assert page.inner_text("#ev .e.wifi .x") == "link up"
+        assert page.locator("#ev .e.wifi .t").count() == 1
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
         assert page.locator(".c select option").count() == 3
@@ -143,4 +147,14 @@ def test_page_in_a_browser(server):
         assert any("cmd=wifi.connect" in u and "a0=stenmo" in u and "a1=secret" in u for u in server.posted)
         assert "wifi.connect stenmo secret" in page.inner_text(".blk .bh")
         assert page.is_disabled("#run")
+        # the password is not remembered, the ssid is
+        assert "secret" not in page.evaluate("localStorage.getItem('ucxf')")
+        assert "stenmo" in page.evaluate("localStorage.getItem('ucxf')")
+        # use case view: diagram lit from the live state, steps from usecase.ex
+        page.click("#vw button[data-v='1']")
+        assert page.is_visible("#pu") and not page.is_visible("#pc")
+        assert "on" in page.get_attribute("#n-mes", "class") and "on" in page.get_attribute("#n-tool", "class")
+        page.wait_for_selector("#steps .card")
+        assert page.locator("#steps .card").count() == 1
+        assert page.inner_text("#steps h3") == "Join with PEAP"
         browser.close()

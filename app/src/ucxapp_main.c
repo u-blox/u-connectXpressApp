@@ -458,6 +458,7 @@ int main(int argc, char *argv[])
     ucxapp_register_hw_cmds();
     ucxapp_register_hid_cmds();
     ucxapp_register_web_cmds();
+    ucxapp_register_usecase_cmds();
     ucxapp_register_examples_cmds();
 
     ucxapp_t app = { NULL };

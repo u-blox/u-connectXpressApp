@@ -79,6 +79,12 @@ bool ucxapp_platform_clock_adjust(int64_t deltaSeconds)
 
 bool ucxapp_platform_key_pressed(void)
 {
+    DWORD mode;
+
+    /* _kbhit() reads the console even when stdin is redirected; stray console input must not stop a scripted run */
+    if (!GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode)) {
+        return false;
+    }
     return _kbhit() != 0;
 }
 

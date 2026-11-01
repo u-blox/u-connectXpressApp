@@ -349,6 +349,7 @@ static void appTask(void *arg)
     ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_ymodem_cmds();
+    ucxapp_register_usecase_cmds();
     ucxapp_register_examples_cmds();
 #endif
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 # Zephyr build of the command layer. Build with
-#   west build -b nucleo_h753zi app/zephyr
+#   west build -b <board> app/zephyr      (boards: app/zephyr/boards/*.overlay)
 # u-connectClient is added as a Zephyr module straight from the submodule.
 
 get_filename_component(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/../.. ABSOLUTE)
@@ -33,14 +33,31 @@ target_sources(app PRIVATE
     ${APP_SRC}/ucxapp_cmds_bt.c
     ${APP_SRC}/ucxapp_adv.c
     ${APP_SRC}/ucxapp_cmds_gatt.c
-    ${APP_SRC}/ucxapp_cmds_mqtt.c
-    ${APP_SRC}/ucxapp_cmds_net.c
-    ${APP_SRC}/ucxapp_cmds_time.c
-    ${APP_SRC}/ucxapp_cmds_cert.c
-    ${APP_SRC}/ucxapp_cmds_examples.c
-    ${APP_SRC}/ucxapp_cmds_ymodem.c
-    ${APP_SRC}/ucxapp_ymodem.c
 )
+# 128 KB flash boards get the lite command set (Wi-Fi and Bluetooth/GATT), as in the FreeRTOS build.
+if(BOARD MATCHES "^(nucleo_f103rb|nucleo_g071rb)$")
+    target_compile_definitions(app PRIVATE UCXAPP_LITE
+        UCXAPP_RX_BUFFER_SIZE=1024 UCXAPP_URC_BUFFER_SIZE=512 UCXAPP_CONSOLE_RX_SIZE=256
+        LISTED_MAX=8 LISTED_NAME_LEN=32 SCAN_MAX=8
+        BT_SCAN_MAX_DEVICES=8 MAX_SVC=8 MAX_CHR=24 MAX_SRV_CHARS=8 WPS_QUEUE=2)
+    zephyr_compile_definitions(U_PORT_UART_RX_BUFFER_SIZE=512 U_PORT_UART_TX_BUFFER_SIZE=256)
+else()
+    target_sources(app PRIVATE
+        ${APP_SRC}/ucxapp_cmds_mqtt.c
+        ${APP_SRC}/ucxapp_cmds_net.c
+        ${APP_SRC}/ucxapp_cmds_time.c
+        ${APP_SRC}/ucxapp_cmds_cert.c
+        ${APP_SRC}/ucxapp_cmds_examples.c
+        ${APP_SRC}/ucxapp_cmds_usecase.c
+        ${APP_SRC}/ucxapp_cmds_ymodem.c
+        ${APP_SRC}/ucxapp_ymodem.c
+    )
+endif()
+# 96-128 KB RAM boards: Zephyr's own RAM leaves no room for the full-size buffers next to a heap.
+if(BOARD MATCHES "^(nucleo_f401re|nucleo_f446re|stm32f4_disco)$")
+    target_compile_definitions(app PRIVATE HTTP_MAX_URL=512 REQ_BODY_SIZE=2048
+        UCXAPP_RX_BUFFER_SIZE=4096 UCXAPP_CONSOLE_RX_SIZE=1024 LISTED_MAX=32)
+endif()
 
 target_include_directories(app PRIVATE ${APP_SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(app PRIVATE -Wall -Wextra)

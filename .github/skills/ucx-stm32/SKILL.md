@@ -12,12 +12,12 @@ description: Build, flash and use u-connectXpressApp as FreeRTOS or Zephyr firmw
 ## Build, flash, log
 ```powershell
 .\ucxapp --stm32-freertos --board h753 --build --flash --log   # h753 (default), f767, f439, f407, f401, f446, f103, g071 or all
-.\ucxapp --stm32-zephyr --board h753 --build --flash --log       # Zephyr build, H753 only so far
+.\ucxapp --stm32-zephyr --board h753 --build --flash --log       # Zephyr build, same boards (or all)
 ```
 Only official ST NUCLEO and Discovery boards are supported. `--stm32` still works as the old name of `--stm32-freertos`.
 On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
 
-## Zephyr (`--stm32-zephyr`, NUCLEO-H753ZI only so far)
+## Zephyr (`--stm32-zephyr`)
 - Needs `west` and an upstream Zephyr workspace with the Zephyr SDK (hal_stm32 comes with it):
   ```powershell
   pip install west
@@ -25,7 +25,7 @@ On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--cle
   west sdk install
   ```
 - `ZEPHYR_BASE` defaults to `C:/zephyrproject/zephyr` (or `~/zephyrproject/zephyr`). An nRF Connect SDK under `C:/ncs` also works with [hal_stm32](https://github.com/zephyrproject-rtos/hal_stm32) in `C:\ncs\extra\hal_stm32`, but its `nrf` module warns that the SoC is not supported. `UCXAPP_ZEPHYR_MODULES` sets extra modules.
-- Output: `build/zephyr_h753/zephyr/zephyr.bin` (single image, no sysbuild). Same wiring and console as the FreeRTOS build (`app/zephyr/boards/nucleo_h753zi.overlay`).
+- Output: `build/zephyr_<board>/zephyr/zephyr.bin` (single image, no sysbuild). Same boards, wiring and console as the FreeRTOS build (`app/zephyr/boards/<zephyr board>.overlay`; the F4 Discovery is `stm32f4_disco` in Zephyr). `<board>.conf` sets the heap per board; F103 and G071 build lite like FreeRTOS (no MQTT, net, time, cert, YMODEM).
 - Run `west` from the repo root with relative paths: it fails when the source and the current directory are on different drives. In PowerShell quote `'-DEXTRA_ZEPHYR_MODULES=C:/...'`, or the colon splits the argument.
 - Files are kept in RAM only for now.
 

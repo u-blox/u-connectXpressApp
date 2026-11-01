@@ -544,6 +544,8 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS). Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
+| `usecase.list` | | Use cases with a fit check and ready-made steps (`usecase.ex`) |
+| `usecase.tool` | `[mbit/s]` | Fit check of the connected tool use case (factory Wi-Fi with Enterprise security, AP for laptops, HTTPS page on the host, 900 MB history in 30 min, 8 socket trays, BLE) against the NORA-W36 limits: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, plus the station state when a module is connected. With a measured rate (e.g. from `net.iperf`) it prints the download time |
 
 ```powershell
 ucxapp COM13 --exec "utils.qr.wifi MySsid MyPassword WPA"
@@ -552,12 +554,16 @@ ucxapp COM13 --shell        # then: wifi.profile.auto, web.start
 
 #### Web UI
 
-`web.start` serves a page with four parts: a **Commands** panel generated from the command table
+`web.start` serves a page with two views. **Toolbox** has four parts: a **Commands** panel generated from the command table
 (one section per group, one form per command built from its usage string, so a new command shows up
 without touching the page), a **Log** pane that mirrors everything the app prints (the
 same text as the console), an **Events** pane that shows module events as they arrive (Wi-Fi link and
 network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a command line with history
-(up/down arrows) and quick buttons. Commands run one at a time; the `web.*` commands are not allowed
+(up/down arrows) and quick buttons. Handle fields (`[handle]` of `sock.*`, `[conn]`) are lists of the open
+sockets and links (empty means the current one), fields remember the last value typed (never passwords), and
+the last commands sit as one-click chips above the groups. **Use cases** shows the connected tool: a live
+diagram (factory network, AP, laptops, trays, phone), the `usecase.tool` fit check and the `usecase.ex` steps as
+cards that run with one click. Commands run one at a time; the `web.*` commands are not allowed
 from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
 API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `?t=`, as EventSource cannot set headers.

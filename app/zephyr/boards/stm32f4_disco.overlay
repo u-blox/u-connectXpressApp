@@ -1,0 +1,15 @@
+/* STM32F4DISCOVERY (same wiring as the FreeRTOS build): module TX -> PB11 (USART3_RX),
+ * module RX <- PB10 (USART3_TX). The shell is on USART2 (PA2/PA3, zephyr,console) via a USB-UART adapter. */
+
+/ {
+	aliases {
+		ucxapp-module = &usart3;
+	};
+};
+
+&usart3 {
+	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};

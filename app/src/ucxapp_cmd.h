@@ -152,6 +152,7 @@ void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_
 bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
+void ucxapp_register_usecase_cmds(void);    /* usecase.* fit checks (ucxapp_cmds_usecase.c) */
 void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
 
 /* Reboots the module and restores the session settings (dev.reboot). */

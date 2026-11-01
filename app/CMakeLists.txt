@@ -125,6 +125,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_dash.c
     src/ucxapp_cmds_hid.c
     src/ucxapp_cmds_examples.c
+    src/ucxapp_cmds_usecase.c
     third-party/qrcodegen/qrcodegen.c
 
     src/ucxapp_platform_posix.c
@@ -238,6 +239,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_dash.c
   src/ucxapp_cmds_hid.c
   src/ucxapp_cmds_examples.c
+  src/ucxapp_cmds_usecase.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
   ucxapp.rc

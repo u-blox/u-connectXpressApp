@@ -1,0 +1,15 @@
+/* NUCLEO-64 (same wiring as the FreeRTOS build): module TX -> D2 = PA10 (USART1_RX),
+ * module RX <- D8 = PA9 (USART1_TX). The shell stays on the ST-Link virtual COM port (USART2, zephyr,console). */
+
+/ {
+	aliases {
+		ucxapp-module = &usart1;
+	};
+};
+
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};

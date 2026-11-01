@@ -192,7 +192,7 @@ def host_clean(configs):
     print("Cleaned", bd)
 
 
-def cache_moved(cache):
+def cache_moved(cache, source=None):
     """True when the CMake cache was made in another folder or for other sources (repo moved or renamed)."""
     try:
         text = cache.read_text(errors="replace")
@@ -201,7 +201,7 @@ def cache_moved(cache):
     m = re.search(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", text, re.M)
     src = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", text, re.M)
     return ((m is not None and Path(m.group(1).strip()).resolve() != cache.parent.resolve())
-            or (src is not None and Path(src.group(1).strip()).resolve() != (ROOT / "app").resolve()))
+            or (src is not None and Path(src.group(1).strip()).resolve() != (source or ROOT / "app").resolve()))
 
 
 def host_build(configs, fresh=False):
@@ -554,9 +554,15 @@ def stm32_build(board, family, hal_dir, portdir, bd):
     if hal is None:
         fail(f"{hal_dir} not found. Set STM32CUBE{family}_PATH or run: "
              f"git -C u-connectClient submodule update --init ports/extra/{portdir}/{hal_dir}")
+    src = ROOT / "app" / "stm32_freertos"
+    if cache_moved(bd / "CMakeCache.txt", src):
+        print(f"{bd.name} was configured for another source folder; reconfiguring")
+        for name in ("CMakeCache.txt", "build.ninja"):
+            (bd / name).unlink(missing_ok=True)
+        shutil.rmtree(bd / "CMakeFiles", ignore_errors=True)
     if not (bd / "build.ninja").exists():
         toolchain = ROOT / "u-connectClient" / "cmake" / "arm-none-eabi-gcc.cmake"
-        check(["cmake", "-G", "Ninja", "-S", ROOT / "app" / "stm32_freertos", "-B", bd,
+        check(["cmake", "-G", "Ninja", "-S", src, "-B", bd,
                f"-DCMAKE_TOOLCHAIN_FILE={toolchain.as_posix()}", f"-DSTM32_BOARD={board}",
                f"-DSTM32_HAL_PATH={Path(hal).as_posix()}", "-DCMAKE_BUILD_TYPE=Release"], "CMake configure")
     check(["cmake", "--build", bd], "STM32 build")
@@ -1077,13 +1083,24 @@ def zephyr_env():
     return modules
 
 
+def zephyr_board(key):
+    """Zephyr's name for a BOARDS key; only the F4 Discovery differs from the FreeRTOS name."""
+    return {"f407": "stm32f4_disco"}.get(key, BOARDS[key][0])
+
+
 def zephyr(args, extra):
     if extra:
         fail(f"unknown Zephyr argument(s): {' '.join(extra)}")
     if not (args.clean or args.build or args.rebuild or args.flash or args.log is not None):
         fail("--stm32-zephyr needs --build, --rebuild, --clean, --flash or --log")
+    if args.board == "all":
+        if args.log is not None:
+            fail("--board all supports only --clean, --build, --rebuild and --flash")
+        flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild),
+                                 ("--flash", args.flash)) if on]
+        return build_many(args, {f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in BOARDS})
     boards = sorted(p.stem for p in (ROOT / "app" / "zephyr" / "boards").glob("*.overlay"))
-    board, name = BOARDS[args.board][:2] if args.board in BOARDS else (args.board, args.board)
+    board, name = zephyr_board(args.board), BOARDS[args.board][1]
     if board not in boards:
         fail(f"--stm32-zephyr supports {', '.join(boards)} (app/zephyr/boards)")
     bd = Path("build") / f"zephyr_{args.board}"

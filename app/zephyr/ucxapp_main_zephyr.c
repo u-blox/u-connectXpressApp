@@ -1,5 +1,5 @@
 /* Zephyr entry: command shell on the zephyr,console UART, u-connectXpress module on the UART with the
- * devicetree alias "ucxapp-module" (USART1 on NUCLEO-H753ZI, see boards/<board>.overlay). */
+ * devicetree alias "ucxapp-module" (see boards/<board>.overlay). */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +32,10 @@
 #define UCXAPP_URC_BUFFER_SIZE 4096
 #endif
 /* Holds a YMODEM 1 KB packet with room to spare. */
-#define CONSOLE_RX_SIZE 2048
+#ifndef UCXAPP_CONSOLE_RX_SIZE
+#define UCXAPP_CONSOLE_RX_SIZE 2048
+#endif
+#define CONSOLE_RX_SIZE UCXAPP_CONSOLE_RX_SIZE
 
 /* ---- console I/O ---------------------------------------------------------- */
 
@@ -346,12 +349,15 @@ int main(void)
     ucxapp_register_app_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_gatt_cmds();
+#ifndef UCXAPP_LITE
     ucxapp_register_mqtt_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_ymodem_cmds();
+    ucxapp_register_usecase_cmds();
     ucxapp_register_examples_cmds();
+#endif
 
     if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {
         ucxapp_print("continuing without a device\n");

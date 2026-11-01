@@ -22,6 +22,21 @@ def test_cmake_references_existing_submodule_files():
         assert (ROOT / rel).is_file(), f"{rel} referenced by CMakeLists.txt is missing (submodule not initialised?)"
 
 
+def test_cache_from_an_old_source_folder_is_detected(tmp_path):
+    spec = importlib.util.spec_from_file_location("launcher", ROOT / "ucxapp.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cache = tmp_path / "CMakeCache.txt"
+    src = ROOT / "app" / "stm32_freertos"
+    cache.write_text(f"CMAKE_CACHEFILE_DIR:INTERNAL={tmp_path.as_posix()}\n"
+                     f"CMAKE_HOME_DIRECTORY:INTERNAL={(ROOT / 'app' / 'stm32').as_posix()}\n")
+    assert mod.cache_moved(cache, src)
+    cache.write_text(f"CMAKE_CACHEFILE_DIR:INTERNAL={tmp_path.as_posix()}\n"
+                     f"CMAKE_HOME_DIRECTORY:INTERNAL={src.as_posix()}\n")
+    assert not mod.cache_moved(cache, src)
+    assert mod.cache_moved(cache)
+
+
 def test_no_stale_ucxclient_paths_in_build_files():
     for rel in ("ucxapp.py", "app/CMakeLists.txt"):
         text = (ROOT / rel).read_text(encoding="utf-8")
@@ -70,6 +85,15 @@ def test_launcher_passes_unknown_and_raw_args_to_the_app():
     args, extra, _ = _launcher().parse(["COM13", "--exec", "dev.info", "--", "--build"])
     assert not args.build
     assert extra == ["COM13", "--exec", "dev.info", "--build"]
+
+
+def test_every_stm32_board_has_a_zephyr_overlay():
+    launcher = _launcher()
+    boards = ROOT / "app" / "zephyr" / "boards"
+    for key in launcher.BOARDS:
+        name = launcher.zephyr_board(key)
+        assert (boards / f"{name}.overlay").is_file(), f"--board {key}: app/zephyr/boards/{name}.overlay is missing"
+        assert "ucxapp-module" in (boards / f"{name}.overlay").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

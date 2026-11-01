@@ -397,6 +397,7 @@ static const struct {
     { "dash",   "One status card for the module and every attached peripheral" },
     { "session", "Record commands to a .ucx script and replay it" },
     { "prod",   "Production test with per-unit reports" },
+    { "usecase", "Use cases: fit check against the module limits and ready-made steps" },
 };
 
 const char *ucxapp_ui_group_help(const char *group)
@@ -413,7 +414,7 @@ const char *ucxapp_ui_group_help(const char *group)
  * Every other group sends AT commands that the NORA module executes. */
 static const char *const kHostGroups[] = {
     "app", "file", "web", "dtls", "coap", "tftp", "ft", "qr", "utils", "gnss", "imu", "cell",
-    "can", "bridge", "dash", "session", "prod"
+    "can", "bridge", "dash", "session", "prod", "usecase"
 };
 
 static void groupOf(const char *name, char *out)

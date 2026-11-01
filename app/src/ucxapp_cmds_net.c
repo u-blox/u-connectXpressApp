@@ -26,7 +26,9 @@
 #define HTTP_HDR_CHUNK    1000          /* AT+UHTCGH is a string read, max 1000 */
 #define HTTP_MAX_BODY     (64 * 1024)   /* bytes read from the module before giving up */
 #define HTTP_DEFAULT_SHOW 512
+#ifndef HTTP_MAX_URL
 #define HTTP_MAX_URL      2048          /* u-connectXpress 3.5.0 and later */
+#endif
 
 static int cmdNetPing(ucxapp_t *app, int argc, char *argv[])
 {
@@ -415,10 +417,12 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
 
 #define PORTAL_PROBE "http://connectivitycheck.gstatic.com/generate_204"
 #define PORTAL_MAX_FIELDS 16
+#ifndef REQ_BODY_SIZE
 #if defined(_WIN32) || defined(__linux__)
 #define REQ_BODY_SIZE (32 * 1024)
 #else
 #define REQ_BODY_SIZE (8 * 1024)
+#endif
 #endif
 
 static char gReqHdr[2048];

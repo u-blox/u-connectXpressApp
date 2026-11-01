@@ -75,6 +75,7 @@ else()
         ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
         ${APP_SRC}/ucxapp_cmds_examples.c
+        ${APP_SRC}/ucxapp_cmds_usecase.c
         ${APP_SRC}/ucxapp_cmds_ymodem.c
         ${APP_SRC}/ucxapp_ymodem.c
     )
@@ -119,3 +120,8 @@ else()
 endif()
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE}
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h")
+# 96-128 KB RAM boards: shorter URLs and request bodies, smaller receive buffers (same as the Zephyr build).
+if(STM32_BOARD MATCHES "^(nucleo_f401re|nucleo_f446re|f407_disc)$")
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE HTTP_MAX_URL=512 REQ_BODY_SIZE=2048
+        UCXAPP_RX_BUFFER_SIZE=4096 UCXAPP_CONSOLE_RX_SIZE=1024 LISTED_MAX=32)
+endif()

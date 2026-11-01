@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import threading
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -57,12 +58,55 @@ def test_script_listens_for_the_server_events():
         assert f'"{name}"' in source, name
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+W3C_NU = "https://validator.w3.org/nu/?out=json"
+
+
+def vnu_messages(path):
+    """Nu Html Checker (the W3C validator) messages: local vnu.jar (pip html5validator + Java), else the W3C service."""
+    java = shutil.which("java")
+    try:
+        import html5validator
+        jar = Path(html5validator.__file__).parent / "vnu" / "vnu.jar"
+    except ImportError:
+        jar = None
+    if java and jar and jar.exists():
+        result = subprocess.run([java, "-jar", str(jar), "--format", "json", "--also-check-css", str(path)],
+                                capture_output=True, text=True, timeout=120)
+        return json.loads(result.stderr or '{"messages": []}')["messages"]
+    request = urllib.request.Request(W3C_NU, path.read_bytes(),
+                                     {"Content-Type": "text/html; charset=utf-8", "User-Agent": "ucxapp-tests"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as reply:
+            return json.load(reply)["messages"]
+    except OSError as exc:
+        pytest.skip(f"no vnu.jar/Java and the W3C validator is unreachable: {exc}")
+
+
+def test_page_passes_the_w3c_validator():
+    problems = [f"{m.get('lastLine')}: {m.get('type')} {m.get('message')}" for m in vnu_messages(PAGE_FILE)
+                if m.get("type") != "info" or m.get("subType") == "warning"]
+    assert not problems, "\n".join(problems)
+
+
 def test_script_syntax(tmp_path):
-    js = tmp_path / "page.js"
-    js.write_text(SCRIPT, encoding="utf-8")
-    result = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    if shutil.which("node"):
+        js = tmp_path / "page.js"
+        js.write_text(SCRIPT, encoding="utf-8")
+        result = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        return
+    sync_api = pytest.importorskip("playwright.sync_api", reason="needs node or playwright")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        # compile only (strict mode too), nothing runs
+        error = browser.new_page().evaluate(
+            "s => { try { new Function(s); new Function('\"use strict\";' + s); return ''; }"
+            " catch (e) { return e.name + ': ' + e.message; } }", SCRIPT)
+        browser.close()
+    assert error == ""
 
 
 class Mock(BaseHTTPRequestHandler):
@@ -125,6 +169,9 @@ def test_page_in_a_browser(server):
         except Exception as exc:
             pytest.skip(f"no browser: {exc}")
         page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.on("console", lambda msg: msg.type == "error" and js_errors.append(msg.text))
         page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
         page.wait_for_selector("#st.ok")
         assert "ready" in page.inner_text("#out")
@@ -157,4 +204,7 @@ def test_page_in_a_browser(server):
         page.wait_for_selector("#steps .card")
         assert page.locator("#steps .card").count() == 1
         assert page.inner_text("#steps h3") == "Join with PEAP"
+        page.click("#vw button[data-v='0']")
+        assert page.is_visible("#pc")
         browser.close()
+    assert not js_errors, js_errors

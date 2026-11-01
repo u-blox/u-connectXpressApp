@@ -2,5 +2,6 @@ pytest
 pytest-cov
 pyyaml
 ruff
+html5validator
 cryptography
 pyserial; sys_platform == "win32"

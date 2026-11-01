@@ -22,8 +22,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          python -m pip install --upgrade pip pytest pytest-cov ruff
-      - name: Run pytest (ruff + shellcheck + repo checks)
+          python -m pip install --upgrade pip pytest pytest-cov ruff html5validator
+      - name: Run pytest (ruff + shellcheck + repo checks, W3C vnu + node --check of the web page)
         shell: bash
         run: python -m pytest --cov --cov-report=term-missing --cov-report=xml
 

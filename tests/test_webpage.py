@@ -85,16 +85,25 @@ def vnu_messages(path):
         pytest.skip(f"no vnu.jar/Java and the W3C validator is unreachable: {exc}")
 
 
-def test_page_passes_the_w3c_validator():
-    problems = [f"{m.get('lastLine')}: {m.get('type')} {m.get('message')}" for m in vnu_messages(PAGE_FILE)
+WASM_SITE_PAGE = ROOT / "build" / "wasm" / "site" / "index.html"
+WASM_JS = ROOT / "app" / "wasm" / "ucxapp-wasm.js"
+
+
+@pytest.mark.parametrize("path", [PAGE_FILE, WASM_SITE_PAGE], ids=["app", "wasm-site"])
+def test_page_passes_the_w3c_validator(path):
+    if not path.exists():
+        pytest.skip("no browser build (ucxapp --wasm --build)")
+    problems = [f"{m.get('lastLine')}: {m.get('type')} {m.get('message')}" for m in vnu_messages(path)
                 if m.get("type") != "info" or m.get("subType") == "warning"]
     assert not problems, "\n".join(problems)
 
 
-def test_script_syntax(tmp_path):
+@pytest.mark.parametrize("source", ["page", "wasm"])
+def test_script_syntax(tmp_path, source):
+    script = SCRIPT if source == "page" else WASM_JS.read_text(encoding="utf-8")
     if shutil.which("node"):
         js = tmp_path / "page.js"
-        js.write_text(SCRIPT, encoding="utf-8")
+        js.write_text(script, encoding="utf-8")
         result = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         return
@@ -107,7 +116,7 @@ def test_script_syntax(tmp_path):
         # compile only (strict mode too), nothing runs
         error = browser.new_page().evaluate(
             "s => { try { new Function(s); new Function('\"use strict\";' + s); return ''; }"
-            " catch (e) { return e.name + ': ' + e.message; } }", SCRIPT)
+            " catch (e) { return e.name + ': ' + e.message; } }", script)
         browser.close()
     assert error == ""
 
@@ -186,6 +195,9 @@ def test_page_in_a_browser(server):
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
         assert page.locator(".c select option").count() == 3
+        # an optional choice starts on its first value; leaving it out is the last option
+        assert page.eval_on_selector(".c select", "e => e.value") == "wpa"
+        assert page.eval_on_selector(".c select", "e => e.options[e.options.length - 1].text") == "(default)"
         page.fill(".c input >> nth=0", "stenmo")
         page.fill(".c input >> nth=1", "secret")
         page.click(".c >> nth=0 >> button")

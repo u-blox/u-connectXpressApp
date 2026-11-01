@@ -183,7 +183,8 @@ function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),
  b.title=c.h+'  '+c.u;d.appendChild(b);
  f.forEach(x=>{let e;const key=c.n+'|'+x[0],hk=x[0]==='conn'?'conn':x[0]==='handle'&&/^sock\./.test(c.n)?'sock':'';
   if(hk&&x[1]){e=el('select','h');e.dataset.k=hk;e.title='open '+(hk==='conn'?'BLE links':'sockets');fillSel(e);HSEL.push(e)}
-  else if(x[2]){e=el('select');if(x[1])e.add(new Option('',''));x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(FV[key])e.value=FV[key]}
+  else if(x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
+   e.value=FV[key]||e.options[0].value;if(e.selectedIndex<0)e.selectedIndex=0}
   else{e=el('input');e.placeholder=x[0];e.title=c.u;if(/^(pass|password|pw)$/.test(x[0]))e.type='password';
    e.value=FV[key]||(x[1]?'':dv(c.n,x[0]))}
   e._k=SECRET.test(x[0])?'':key;ins.push(e);d.appendChild(e)});

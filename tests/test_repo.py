@@ -16,6 +16,21 @@ def test_submodule_is_u_connect_client():
     assert "ucxclient" not in text
 
 
+# First major version of each action that runs on Node.js 24 (older ones print "Node.js 20 is deprecated").
+NODE24_ACTIONS = {
+    "actions/checkout": 5, "actions/setup-python": 6, "actions/cache": 5, "actions/upload-artifact": 5,
+    "actions/download-artifact": 5, "actions/upload-pages-artifact": 5, "actions/deploy-pages": 5,
+    "emscripten-core/setup-emsdk": 16,
+}
+
+
+def test_workflows_use_node24_actions():
+    for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
+        for action, major in re.findall(r"uses:\s*([\w.-]+/[\w.-]+)@v(\d+)", wf.read_text(encoding="utf-8")):
+            assert action in NODE24_ACTIONS, f"{wf.name}: {action} is not checked for its Node.js runtime"
+            assert int(major) >= NODE24_ACTIONS[action], f"{wf.name}: {action}@v{major} runs on Node.js 20"
+
+
 def test_cmake_references_existing_submodule_files():
     cmake = (ROOT / "app" / "CMakeLists.txt").read_text(encoding="utf-8")
     for rel in re.findall(r"\.\./(u-connectClient/[\w./-]+\.(?:cmake|c))\b", cmake):

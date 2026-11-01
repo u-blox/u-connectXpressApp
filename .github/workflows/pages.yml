@@ -24,14 +24,14 @@ jobs:
         run: |
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: emscripten-core/setup-emsdk@v16
       - name: Build the browser app
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
           emcmake cmake -S app -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build/wasm
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: build/wasm/site
 
@@ -43,4 +43,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -149,7 +149,7 @@ jobs:
         run: |
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: emscripten-core/setup-emsdk@v16
       - name: Build
         run: |
           sudo apt-get update

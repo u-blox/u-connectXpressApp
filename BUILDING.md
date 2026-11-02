@@ -32,7 +32,7 @@ git submodule update --init u-connectClient
 | Target | Command |
 |---|---|
 | Windows | `.\ucxapp` |
-| Linux | `./ucxapp.py` (from Windows: `.\ucxapp --linux` runs it in WSL) |
+| Linux | `./ucxapp.py` (from Windows: `.\ucxapp --linux` runs it in WSL, `--linux-host user@host` on a Linux machine over SSH; fresh setup: `sudo apt install -y git cmake build-essential ninja-build python3-pytest` and `sudo usermod -aG dialout $USER`) |
 | STM32 (FreeRTOS) | `.\ucxapp --stm32-freertos` |
 | STM32 (Zephyr) | `.\ucxapp --stm32-zephyr` |
 

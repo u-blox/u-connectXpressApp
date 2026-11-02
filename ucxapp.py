@@ -24,15 +24,19 @@ import binascii
 import concurrent.futures
 import glob
 import hashlib
+import io
 import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import time
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -99,7 +103,11 @@ def parse(argv):
     p = argparse.ArgumentParser(prog="ucxapp", description=__doc__, allow_abbrev=False,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     g = p.add_argument_group("target (default: this OS)")
-    g.add_argument("--linux", action="store_true", help="Linux build; on Windows run it inside WSL")
+    g.add_argument("--linux", action="store_true",
+                   help="Linux build; on Windows run it inside WSL, or on --linux-host")
+    g.add_argument("--linux-host", metavar="USER@HOST[:DIR]", default=os.environ.get("UCX_LINUX_HOST") or None,
+                   help="run the Linux build, tests and app on this machine over SSH (key login); the working tree "
+                        "is copied to DIR (default ~/ucxapp) first, changed files only (default: UCX_LINUX_HOST)")
     g.add_argument("--stm32-freertos", "--stm32", dest="stm32", action="store_true",
                    help="FreeRTOS firmware for STM32 boards (--stm32 is the old name)")
     g.add_argument("--stm32-zephyr", action="store_true",
@@ -270,6 +278,105 @@ def wsl_serial_hint():
     if not glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"):
         print("NOTE: WSL sees no USB serial ports. Attach the EVK from Windows (admin PowerShell):\n"
               "  usbipd list; usbipd bind --busid <id>; usbipd attach --wsl --busid <id>")
+
+
+# Not needed to build or test on Linux: reference-only submodules and the STM32Cube HALs (tens of thousands of files).
+LINUX_HOST_SKIP = ("sps", "u-connectXpress", "u-connectClient/ports/extra")
+
+
+def linux_host_split(spec):
+    host, _, path = spec.partition(":")
+    return host, path or "~/ucxapp"
+
+
+def remote_path(path):
+    return "~/" + shlex.quote(path[2:]) if path.startswith("~/") else shlex.quote(path)
+
+
+def linux_host_files():
+    """{path: (source, to_lf)} for the working tree and its initialized submodules, as a Linux checkout has them."""
+    repos, todo = [""], [""]
+    while todo:
+        repo = todo.pop()
+        staged = subprocess.run(["git", "ls-files", "--stage", "-z"], cwd=ROOT / repo, capture_output=True).stdout
+        for rec in staged.decode("utf-8", "replace").split("\0"):
+            if rec.startswith("160000 "):
+                sub = f"{repo}/{rec.partition(chr(9))[2]}".lstrip("/")
+                if not sub.startswith(LINUX_HOST_SKIP) and (ROOT / sub / ".git").exists():
+                    repos.append(sub)
+                    todo.append(sub)
+    files = {}
+    for repo in repos:
+        cwd = ROOT / repo
+        listed = subprocess.run(["git", "ls-files", "--eol", "-z"], cwd=cwd, capture_output=True).stdout
+        for rec in listed.decode("utf-8", "replace").split("\0"):
+            info, _, name = rec.partition("\t")
+            path = f"{repo}/{name}" if repo else name
+            if name and (ROOT / path).is_file():
+                files[path] = "i/lf" in info and "eol=crlf" not in info and "w/lf" not in info
+        new = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=cwd,
+                             capture_output=True).stdout
+        for name in new.decode("utf-8", "replace").split("\0"):
+            path = f"{repo}/{name}" if repo else name
+            if name and (ROOT / path).is_file() and path not in files:
+                files[path] = False
+    return files
+
+
+def linux_host_sync(spec):
+    """Copy the working tree (uncommitted edits too) to spec = user@host[:dir]; only changed files after the first
+    time. The local manifest and the remote .ucxapp-sync id must match, otherwise everything is     sent again."""
+    require("ssh", "Install the OpenSSH client and set up key login: ssh-copy-id " + linux_host_split(spec)[0])
+    host, path = linux_host_split(spec)
+    manifest = ROOT / "build" / "linux-host" / (re.sub(r"[^\w.-]", "_", spec) + ".json")
+    try:
+        old = json.loads(manifest.read_text())
+    except (OSError, ValueError):
+        old = {"id": "", "files": {}}
+    rid = subprocess.run(["ssh", "-o", "BatchMode=yes", host, f"cat {remote_path(path)}/.ucxapp-sync 2>/dev/null"],
+                         capture_output=True, text=True)
+    if rid.returncode == 255:
+        fail(f"ssh {host} failed (key login needed: ssh-copy-id {host}): {rid.stderr.strip()}")
+    known = old["files"] if old["id"] and rid.stdout.strip() == old["id"] else {}
+    files = linux_host_files()
+    stamps, changed = {}, []
+    for name, to_lf in files.items():
+        st = (ROOT / name).stat()
+        stamps[name] = [st.st_mtime_ns, st.st_size]
+        if known.get(name) != stamps[name]:
+            changed.append((name, to_lf, st))
+    gone = sorted(set(known) - set(files))
+    new_id = uuid.uuid4().hex
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        def add(name, data, mode=0o644, mtime=None):
+            info = tarfile.TarInfo(name)
+            info.size, info.mode = len(data), mode
+            info.mtime = time.time() if mtime is None else mtime
+            tar.addfile(info, io.BytesIO(data))
+        for name, to_lf, st in changed:
+            data = (ROOT / name).read_bytes()
+            if to_lf:
+                data = data.replace(b"\r\n", b"\n")
+            add(name, data, 0o755 if name.endswith((".sh", ".py")) else 0o644, st.st_mtime)
+        add(".ucxapp-deleted", "\n".join(gone).encode())
+        add(".ucxapp-sync", new_id.encode())
+    remote = (f"mkdir -p {remote_path(path)} && cd {remote_path(path)} && tar -xzf - && "
+              "tr '\\n' '\\0' < .ucxapp-deleted | xargs -0 -r rm -f -- && rm -f .ucxapp-deleted")
+    print(f"Syncing to {host}:{path}: {len(changed)} changed, {len(gone)} removed "
+          f"({len(buf.getvalue()) // 1024} KB)")
+    if subprocess.run(["ssh", "-o", "BatchMode=yes", host, remote], input=buf.getvalue()).returncode != 0:
+        fail(f"copying the tree to {host} failed")
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({"id": new_id, "files": stamps}))
+    return host, path
+
+
+def linux_host_run(spec, forward):
+    host, path = linux_host_sync(spec)
+    tty = ["-t"] if sys.stdin.isatty() and sys.stdout.isatty() else []
+    cmd = f"cd {remote_path(path)} && python3 ucxapp.py {' '.join(shlex.quote(a) for a in forward)}"
+    return subprocess.call(["ssh", *tty, host, cmd])
 
 
 def run_app(exe, app_args):
@@ -935,9 +1042,9 @@ def everything(args):
         fail("--everything needs --build, --clean or --rebuild")
     jobs = {"win": flags} if IS_WINDOWS else {}
     jobs["linux"] = ["--linux", *flags]
-    if IS_WINDOWS and not shutil.which("wsl"):
+    if IS_WINDOWS and not args.linux_host and not shutil.which("wsl"):
         del jobs["linux"]
-        print("WSL not found, skipping the Linux build")
+        print("WSL not found and no --linux-host, skipping the Linux build")
     stm32_tools()
     jobs.update({b: ["--stm32", "--board", b, *flags] for b in BOARDS})
     if zephyr_available():
@@ -1575,6 +1682,8 @@ def web_preview(exe, port):
 
 def main(argv):
     args, extra, parsed_argv = parse(argv)
+    if args.linux_host:
+        os.environ["UCX_LINUX_HOST"] = args.linux_host
     if args.ports and not (args.detect or args.test or args.put or args.get):
         extra = [args.ports[0], *extra]
     if args.release:
@@ -1597,6 +1706,20 @@ def main(argv):
         return run_script(exe, args.script, extra, args.junit)
     if args.everything:
         return everything(args)
+    explicit_host = any(a == "--linux-host" or a.startswith("--linux-host=") for a in parsed_argv)
+    if args.linux_host and (explicit_host or ((args.linux or args.coverage) and IS_WINDOWS)):
+        forward, skip = [], False
+        for a in parsed_argv:
+            if skip or a == "--linux" or a.startswith("--linux-host="):
+                skip = False
+                continue
+            if a == "--linux-host":
+                skip = True
+                continue
+            forward.append(a)
+        if "--" in argv:
+            forward += argv[argv.index("--"):]
+        return linux_host_run(args.linux_host, forward)
     if (args.linux or args.coverage) and IS_WINDOWS:
         require("wsl", "Install WSL with: wsl --install")
         forward = [a for a in parsed_argv if a != "--linux"]

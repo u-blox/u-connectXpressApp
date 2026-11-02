@@ -980,8 +980,8 @@ static int cmdNetNtp(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gNetCmds[] = {
     { "net.ping", "<host> [count=4]",    "ICMP ping (count 1-10, default 4)",     UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
-    { "net.ntp", "<status|on|off|server> [args...]", "NTP client: 'status', 'on [manual|auto]', 'off', 'server <0|1> <host|->' ('-' removes)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
-    { "net.iperf", "<server|client|stop> [args...]", "iperf throughput: 'server [tcp|udp] [port]', 'client <ip> [tcp|udp] [seconds] [port]', 'stop'", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
+    { "net.ntp", "status | on [manual|auto] | off | server <0|1> <host|->", "NTP client: 'status', 'on [manual|auto]', 'off', 'server <0|1> <host|->' ('-' removes)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
+    { "net.iperf", "server [tcp|udp] [port] | client <ip> [tcp|udp] [seconds] [port] | stop", "iperf throughput: 'server [tcp|udp] [port]', 'client <ip> [tcp|udp] [seconds] [port]', 'stop'", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
     { "http.get", "<url> [show_bytes]", "HTTP/HTTPS GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
     { "http.download", "<url> <file>", "Download to a file, following redirects", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownload },

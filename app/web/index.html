@@ -43,7 +43,7 @@ summary{cursor:pointer;padding:.3rem .2rem;font-weight:700;text-transform:upperc
 .c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--bd)}
 .c b{width:100%;font:12px Consolas,monospace;color:var(--ac);cursor:help}.c.dgr b{color:#ff8fa8}
 .c small{width:100%;color:var(--mut);font-size:11px;max-height:2.6em;overflow:hidden}
-.fs{display:contents}.fl,.fx{font-size:12px;white-space:nowrap}.c .rest{flex:3}.c select.fm{flex-basis:100%}.lg{font-size:11px;color:#ff8fa8}
+.fs{display:contents}.combo{display:flex;flex:1;gap:.3rem;min-width:0}.combo select{flex:0 1 auto;max-width:9rem}.fl,.fx{font-size:12px;white-space:nowrap}.c .rest{flex:3}.c select.fm{flex-basis:100%}.lg{font-size:11px;color:#ff8fa8}
 .c input,.c select{flex:1;min-width:4rem;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c button{padding:.25rem .7rem}.c select.h{border-color:#2d4a6a}.c input:autofill{-webkit-text-fill-color:var(--tx);box-shadow:0 0 0 9em var(--bg2) inset}
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
@@ -191,11 +191,16 @@ function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t
  else if(k==='f'){e=el('label','fl');const cb=el('input');cb.type='checkbox';cb.checked=FV[key]==='1';e.append(cb,' '+x[0]);
   e.val=()=>cb.checked?x[0]:null;e.keep=()=>+cb.checked+'';return Object.assign(e,{_k:key})}
  else if(k==='s'&&x[2]&&!x[2].includes('|')&&!x[1]){e=el('span','fx',x[2]);e.val=()=>x[2];return e}
+ else if(k==='o'&&x[2]){const lits=x[2].split('|'),free=nm.split('|').filter(p=>!lits.includes(p)).join(' or ')||'value',
+   s=el('select'),i=el('input'),req=x[1]?'':' *';e=el('span','combo');
+  s.add(new Option('type '+free+req,''));lits.forEach(v=>s.add(new Option(v,v)));i.placeholder=free+req;
+  if(/^(pass|pw)/.test(nm))i.type='password';
+  const v0=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm);if(lits.includes(v0))s.value=v0;else i.value=v0;
+  const sync=()=>{i.hidden=!!s.value};s.onchange=sync;sync();e.append(s,i);
+  e.keep=()=>s.value||i.value.trim();e._k=SECRET.test(nm)?'':key;e.val=()=>s.value||i.value.trim();return e}
  else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
   e.value=FV[key]!==undefined?FV[key]:x[3]||(x[1]?'':e.options[0].value);if(e.selectedIndex<0)e.selectedIndex=0}
  else{e=el('input');const ph=nm.split('|').join(' or ');e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
-    if(k==='o'&&x[2]){const l=el('datalist');l.id='dl'+Math.random();x[2].split('|').forEach(v=>l.appendChild(new Option(v)));
-   e.setAttribute('list',l.id);document.body.appendChild(l)}
   if(/^(pass|pw)/.test(nm))e.type='password';
   if(k==='r')e.className='rest';e.value=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm)}
  e._k=SECRET.test(nm)?'':key;

@@ -121,3 +121,10 @@ def test_can_usage(app_exe, tmp_path, command):
     out = _run_in(app_exe, tmp_path, command)
     assert out.returncode == 1
     assert "usage" in out.stdout.lower()
+
+
+@pytest.mark.parametrize("kind", ["gatt", "slcan"])
+def test_can_bridge_ble_needs_a_module(app_exe, tmp_path, kind):
+    out = _run_in(app_exe, tmp_path, f"can.bridge ble {kind}", "can.bridge status")
+    assert out.returncode == 1, out.stdout
+    assert "can bridge:" not in out.stdout, out.stdout

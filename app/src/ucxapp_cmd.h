@@ -230,6 +230,9 @@ bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, 
 bool ucxapp_hid_client_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
 bool ucxapp_ft_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
 bool ucxapp_notify_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
+/* CAN BLE bridge (ucxapp_cmds_can.c): writes to its GATT service, and NUS writes while SLCAN runs; true if consumed. */
+bool ucxapp_can_gatt_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);
+bool ucxapp_can_nus_rx(const uint8_t *data, size_t len);
 bool ucxapp_ft_client_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */
 /* Socket URCs for ft over TCP (ucxapp_cmds_ft.c). */
 void ucxapp_ft_on_sock_data(int32_t sock);

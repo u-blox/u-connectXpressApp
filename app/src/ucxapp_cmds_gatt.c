@@ -1498,14 +1498,16 @@ static volatile bool gServerQuiet;
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     ucxapp_stats_add(UCXAPP_STATS_GATT, 0, len);
-    if (ucxapp_ft_server_write(conn, handle, data, len) || ucxapp_hid_server_write(conn, handle, data, len) ||
-        ucxapp_notify_server_write(conn, handle, data, len)) {
+    if (ucxapp_can_gatt_write(conn, handle, data, len) || ucxapp_ft_server_write(conn, handle, data, len) ||
+        ucxapp_hid_server_write(conn, handle, data, len) || ucxapp_notify_server_write(conn, handle, data, len)) {
         return;
     }
     const srvRec_t *ctrl = findSrv("wps.ctrl");
     const srvRec_t *nusRx = findSrv("nus.rx");
     if (nusRx != NULL && nusRx->value == handle) {
-        ucxapp_stream_on_ble_rx(data, len);
+        if (!ucxapp_can_nus_rx(data, len)) {
+            ucxapp_stream_on_ble_rx(data, len);
+        }
         return;
     }
     const srvRec_t *customRx = findSrv("custom.rx");

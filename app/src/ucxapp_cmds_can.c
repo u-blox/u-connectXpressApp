@@ -14,8 +14,19 @@
 #include "ucxapp_platform.h"
 #include "u_port.h"
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
+#include "u_cx_bluetooth.h"
+#include "u_cx_gatt_server.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #ifndef UCXAPP_CAN_HW
 #include "ucxapp_stream.h"
+#include "ucxapp_thread.h"
 #else
 #include "u_cx_socket.h"
 #include "u_cx_sps.h"
@@ -561,7 +572,7 @@ static int cmdWatch(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* ---- bridge: 17-byte records both ways ---- */
+/* ---- bridge: 17-byte records both ways (SLCAN text over NUS is the exception) ---- */
 
 static uint8_t gPart[UCXAPP_CAN_REC_LEN];
 static size_t gPartLen;
@@ -605,6 +616,564 @@ static size_t takeBatch(uint8_t *batch)
     return n;
 }
 
+/* Bridges run by this file (on the board all of them, on the host the BLE ones; the host's other bridges are
+   ucxapp_stream.c's). One at a time, serviced from a task (board) or thread (host) of their own under gBrLock. */
+#ifdef UCXAPP_CAN_HW
+enum { BR_OFF, BR_GATT, BR_SLCAN, BR_TCP, BR_TCPC, BR_UDP, BR_SPS };
+static const char *const kBrNames[] = { "off", "ble gatt", "ble slcan", "tcp", "tcpc", "udp", "ble sps" };
+#else
+enum { BR_OFF, BR_GATT, BR_SLCAN };
+static const char *const kBrNames[] = { "off", "ble gatt", "ble slcan" };
+#endif
+
+static U_CX_MUTEX_HANDLE gBrLock;
+static volatile int gBr = BR_OFF;
+static ucxapp_t *gBrApp;
+static uint32_t gBrSent;                   /* bytes */
+static uint32_t gBrRecv;
+static uint32_t gBrLost;                   /* bytes nobody took (no peer yet, or the write failed) */
+static uint8_t gBrOut[UCXAPP_CAN_BATCH * UCXAPP_CAN_REC_LEN];
+static uint8_t gBrIn[256];
+
+static bool due(uint32_t at)
+{
+    return (int32_t)(ucxapp_platform_tick_ms() - at) >= 0;
+}
+
+/* ---- BLE bridge: the u-blox CAN GATT service, or SLCAN (Lawicel) text over the Nordic UART Service ----
+ * Service 81ea0001-f62b-4fec-94ee-7169818db897
+ *   RX     81ea0002-...  Write, Write Without Response: records to send on the bus (a record may span writes)
+ *   TX     81ea0003-...  Notify: received frames, as many records per notification as the MTU takes
+ *   Config 81ea0004-...  Read, Write: bit rate u32 LE, mode u8 (0 normal, 1 loopback, 2 listen-only)
+ *   Status 81ea0005-...  Read, Notify: bus rx, bus tx, dropped, bad records (u32 LE each), once a second */
+
+#define BLE_IN_SIZE   1024
+#define BLE_REC_MAX   14u      /* (247 - 3) / 17 records per notification at the largest MTU */
+#define BLE_PAYLOAD   20u      /* notification payload at the default MTU of 23 */
+#define BLE_PAYLOAD_MAX 244u
+#define BLE_STATUS_MS 1000
+#define BLE_RETRY_MS  1000
+#define BLE_PROP_READ     0x02
+#define BLE_PROP_WRITE_NR 0x04
+#define BLE_PROP_WRITE    0x08
+#define BLE_PROP_NOTIFY   0x10
+#define SL_LINE       40
+#define SL_OUT        512
+#define SL_FRAME_MAX  32       /* T + 8 id + dlc + 16 data + 4 timestamp + CR */
+
+#define CAN_UUID(n) { 0x81, 0xea, 0x00, (n), 0xf6, 0x2b, 0x4f, 0xec, 0x94, 0xee, 0x71, 0x69, 0x81, 0x8d, 0xb8, 0x97 }
+
+enum { H_RX, H_TX, H_CFG, H_STAT, H_COUNT };
+
+static bool gBleDefined;
+static int32_t gH[H_COUNT];
+static int32_t gHCccd[H_COUNT];
+static U_CX_MUTEX_HANDLE gInLock;          /* the URC task fills gBleIn, the bridge task empties it */
+static uint8_t gBleIn[BLE_IN_SIZE];
+static size_t gBleInHead;
+static size_t gBleInLen;
+static uint32_t gBleInDropped;             /* bytes of writes that did not fit */
+static uint8_t gCfgNew[5];
+static volatile bool gCfgPending;
+static volatile bool gBleWake;             /* a CCCD write: ask for the MTU again and retry notifying */
+static volatile bool gStatSub;
+static int32_t gBleConn;
+static size_t gBlePayload;
+static bool gTxOk;
+static uint32_t gTxRetry;
+static uint32_t gLostFrames;
+static uint32_t gStatAt;
+static uint8_t gStatLast[16];
+static int32_t gCfgBitrate;                /* what the config characteristic holds */
+static ucxapp_can_mode_t gCfgMode;
+
+static bool gSlOpen;
+static bool gSlTs;
+static bool gSlLong;                       /* the current line is too long; it is answered with an error */
+static int32_t gSlRate;
+static char gSlLine[SL_LINE];
+static size_t gSlLineLen;
+static uint8_t gSlOut[SL_OUT];
+static size_t gSlOutLen;
+
+/* URC task (ucxapp_cmds_gatt.c): only copies and flags here, the bridge task does the AT work. A write that does
+   not fit is dropped whole so records stay aligned. */
+static void bleInPut(const uint8_t *d, size_t n)
+{
+    U_CX_MUTEX_LOCK(gInLock);
+    if (gBleInLen + n > BLE_IN_SIZE) {
+        gBleInDropped += (uint32_t)n;
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            gBleIn[(gBleInHead + gBleInLen++) % BLE_IN_SIZE] = d[i];
+        }
+    }
+    U_CX_MUTEX_UNLOCK(gInLock);
+}
+
+static size_t bleInTake(uint8_t *out, size_t max)
+{
+    size_t n = 0;
+
+    U_CX_MUTEX_LOCK(gInLock);
+    while (n < max && gBleInLen > 0) {
+        out[n++] = gBleIn[gBleInHead];
+        gBleInHead = (gBleInHead + 1) % BLE_IN_SIZE;
+        gBleInLen--;
+    }
+    U_CX_MUTEX_UNLOCK(gInLock);
+    return n;
+}
+
+bool ucxapp_can_gatt_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
+{
+    (void)conn;
+    if (!gBleDefined || handle <= 0) {
+        return false;
+    }
+    if (handle == gH[H_RX]) {
+        if (gBr == BR_GATT) {
+            bleInPut(data, len);
+        }
+    } else if (handle == gH[H_CFG]) {
+        if (len == sizeof(gCfgNew)) {
+            U_CX_MUTEX_LOCK(gInLock);
+            memcpy(gCfgNew, data, sizeof(gCfgNew));
+            gCfgPending = true;
+            U_CX_MUTEX_UNLOCK(gInLock);
+        }
+    } else if (handle == gHCccd[H_TX]) {
+        gBleWake = true;
+    } else if (handle == gHCccd[H_STAT]) {
+        gStatSub = len >= 1 && (data[0] & 0x01) != 0;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool ucxapp_can_nus_rx(const uint8_t *data, size_t len)
+{
+    if (gBr != BR_SLCAN) {
+        return false;
+    }
+    bleInPut(data, len);
+    return true;
+}
+
+static void cfgBytes(uint8_t out[5])
+{
+    put32(out, (uint32_t)gBitrate);
+    out[4] = (uint8_t)gMode;
+}
+
+static bool bleDefine(ucxapp_t *app)
+{
+    static const uint8_t kSvc[16] = CAN_UUID(0x01);
+    static const uint8_t kUuid[H_COUNT][16] = { CAN_UUID(0x02), CAN_UUID(0x03), CAN_UUID(0x04), CAN_UUID(0x05) };
+    static const uint8_t kProps[H_COUNT] = { BLE_PROP_WRITE | BLE_PROP_WRITE_NR, BLE_PROP_NOTIFY,
+                                             BLE_PROP_READ | BLE_PROP_WRITE, BLE_PROP_READ | BLE_PROP_NOTIFY };
+    static const uint8_t kLen[H_COUNT] = { 1, 1, 5, 16 };
+    uint8_t init[16];
+    int32_t svc;
+    int32_t r;
+
+    if (gBleDefined) {
+        return true;
+    }
+    r = uCxGattServerServiceDefine(app->ucx, kSvc, 16, &svc);
+    for (int i = 0; r == 0 && i < H_COUNT; i++) {
+        uint8_t props = kProps[i];
+        uCxGattServerCharDefine_t rsp;
+
+        memset(init, 0, sizeof(init));
+        if (i == H_CFG) {
+            cfgBytes(init);
+        }
+        /* Writing to the bus or changing its bit rate needs an encrypted link. */
+        r = uCxGattServerCharDefine6(app->ucx, kUuid[i], 16, &props, 1, U_GATT_SERVER_READ_SECURITY_NONE,
+                                     (props & (BLE_PROP_WRITE | BLE_PROP_WRITE_NR)) != 0
+                                         ? U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED
+                                         : U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                     init, kLen[i], (int32_t)BLE_PAYLOAD_MAX, &rsp);
+        if (r == 0) {
+            gH[i] = rsp.value_handle;
+            gHCccd[i] = rsp.cccd_handle;
+        }
+    }
+    if (r == 0) {
+        r = uCxGattServerServiceActivate(app->ucx);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: cannot define the CAN GATT service (%d%s)\n", (int)r, ucxapp_errname(r));
+        return false;
+    }
+    gBleDefined = true;
+    return true;
+}
+
+static void bleMtu(uCxHandle_t *ucx)
+{
+    int32_t mtu = 0;
+
+    gBlePayload = BLE_PAYLOAD;
+    if (gBleConn >= 0 && uCxBluetoothGetConnectionStatus(ucx, gBleConn, U_BT_PROP_ID_MTU_SIZE, &mtu) == 0 &&
+        mtu > 23) {
+        gBlePayload = (size_t)mtu - 3 > BLE_PAYLOAD_MAX ? BLE_PAYLOAD_MAX : (size_t)mtu - 3;
+    }
+}
+
+/* Config characteristic write: bit rate and mode, applied like can.cfg. */
+static void bleApplyCfg(void)
+{
+    uint8_t c[5];
+    uint32_t rate;
+
+    U_CX_MUTEX_LOCK(gInLock);
+    memcpy(c, gCfgNew, sizeof(c));
+    gCfgPending = false;
+    U_CX_MUTEX_UNLOCK(gInLock);
+    rate = get32(c);
+    if (rate < 10000 || rate > 1000000 || c[4] > UCXAPP_CAN_LISTEN) {
+        gCfgBitrate = -1;   /* republish the settings in use */
+        return;
+    }
+    U_CX_MUTEX_LOCK(gLock);
+    gBitrate = (int32_t)rate;
+    gMode = (ucxapp_can_mode_t)c[4];
+    (void)start();
+    U_CX_MUTEX_UNLOCK(gLock);
+}
+
+static bool bleNotify(uCxHandle_t *ucx, const uint8_t *d, size_t n)
+{
+    if (gBr == BR_GATT) {
+        return uCxGattServerSendNotification(ucx, gBleConn, gH[H_TX], d, (int32_t)n) == 0;
+    }
+    return ucxapp_gatt_notify_nus(gBrApp, d, n);
+}
+
+/* Sends n bytes in pieces of at most `piece`; on a failure the rest is lost and sending pauses for a while. */
+static void bleSend(uCxHandle_t *ucx, const uint8_t *d, size_t n, size_t piece)
+{
+    size_t off = 0;
+
+    if (gBleConn >= 0 && !gTxOk && due(gTxRetry)) {
+        gTxOk = true;
+        bleMtu(ucx);
+    }
+    while (off < n && gBleConn >= 0 && gTxOk) {
+        size_t k = n - off < piece ? n - off : piece;
+        if (!bleNotify(ucx, d + off, k)) {
+            gTxOk = false;   /* not subscribed, or the link went away */
+            gTxRetry = ucxapp_platform_tick_ms() + BLE_RETRY_MS;
+            break;
+        }
+        gBrSent += (uint32_t)k;
+        off += k;
+    }
+    gBrLost += (uint32_t)(n - off);
+    if (gBr == BR_GATT) {
+        gLostFrames += (uint32_t)((n - off) / UCXAPP_CAN_REC_LEN);
+    }
+}
+
+/* ---- SLCAN ---- */
+
+static void slPut(const char *s, size_t n)
+{
+    if (gSlOutLen + n > SL_OUT) {
+        gBrLost += (uint32_t)n;
+        return;
+    }
+    memcpy(gSlOut + gSlOutLen, s, n);
+    gSlOutLen += n;
+}
+
+static bool slHex(const char *s, size_t n, uint32_t *v)
+{
+    *v = 0;
+    for (size_t i = 0; i < n; i++) {
+        int h = hexVal(s[i]);
+        if (h < 0) {
+            return false;
+        }
+        *v = *v * 16u + (uint32_t)h;
+    }
+    return true;
+}
+
+/* tIIILDD.. or TIIIIIIIILDD..; the reply, or NULL for an error. */
+static const char *slFrame(const char *l, size_t n)
+{
+    bool ext = l[0] == 'T';
+    size_t idLen = ext ? 8 : 3;
+    uint32_t id;
+    uint32_t dlc;
+    ucxapp_can_frame_t f;
+
+    if (n < idLen + 2 || !slHex(l + 1, idLen, &id) || !slHex(l + 1 + idLen, 1, &dlc) || dlc > 8 ||
+        n != idLen + 2 + dlc * 2 || id > (ext ? 0x1FFFFFFFu : 0x7FFu)) {
+        return NULL;
+    }
+    memset(&f, 0, sizeof(f));
+    f.id = id;
+    f.len = (uint8_t)dlc;
+    for (uint32_t i = 0; i < dlc; i++) {
+        uint32_t b;
+        if (!slHex(l + idLen + 2 + i * 2, 2, &b)) {
+            return NULL;
+        }
+        f.data[i] = (uint8_t)b;
+    }
+    if (!gSlOpen || !ucxapp_can_send(&f)) {
+        return NULL;
+    }
+    return ext ? "Z\r" : "z\r";
+}
+
+static void slCommand(const char *l, size_t n)
+{
+    static const int32_t kRates[9] = { 10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000 };
+    const char *reply = NULL;
+
+    switch (l[0]) {
+    case 'S':
+        if (n == 2 && !gSlOpen && l[1] >= '0' && l[1] <= '8') {
+            gSlRate = kRates[l[1] - '0'];
+            reply = "\r";
+        }
+        break;
+    case 'O':
+    case 'L':
+        if (n == 1 && !gSlOpen) {
+            const char *err;
+            U_CX_MUTEX_LOCK(gLock);
+            gBitrate = gSlRate;
+            gMode = l[0] == 'O' ? UCXAPP_CAN_NORMAL : UCXAPP_CAN_LISTEN;
+            err = start();
+            U_CX_MUTEX_UNLOCK(gLock);
+            gSlOpen = err == NULL;
+            reply = gSlOpen ? "\r" : NULL;
+        }
+        break;
+    case 'C':
+        if (n == 1) {
+            gSlOpen = false;
+            reply = "\r";
+        }
+        break;
+    case 't':
+    case 'T':
+        reply = slFrame(l, n);
+        break;
+    case 'V':
+        reply = n == 1 ? "V1013\r" : NULL;
+        break;
+    case 'N':
+        reply = n == 1 ? "NUCX1\r" : NULL;
+        break;
+    case 'F':
+        reply = n == 1 ? "F00\r" : NULL;
+        break;
+    case 'Z':
+        if (n == 2 && (l[1] == '0' || l[1] == '1')) {
+            gSlTs = l[1] == '1';
+            reply = "\r";
+        }
+        break;
+    case 'M':
+    case 'm':
+        reply = n == 9 ? "\r" : NULL;   /* acceptance filters are not applied: every frame passes */
+        break;
+    case 'X':
+        reply = n == 2 ? "\r" : NULL;
+        break;
+    default:
+        break;
+    }
+    slPut(reply != NULL ? reply : "\a", reply != NULL ? strlen(reply) : 1);
+}
+
+static void slFeed(const uint8_t *d, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        char c = (char)d[i];
+        if (c == '\r' || c == '\n') {
+            if (gSlLong) {
+                slPut("\a", 1);
+            } else if (gSlLineLen > 0) {
+                slCommand(gSlLine, gSlLineLen);
+            }
+            gSlLineLen = 0;
+            gSlLong = false;
+        } else if (gSlLineLen < SL_LINE) {
+            gSlLine[gSlLineLen++] = c;
+        } else {
+            gSlLong = true;
+        }
+    }
+}
+
+static void slEncode(const ucxapp_can_frame_t *f)
+{
+    char s[SL_FRAME_MAX + 8];
+    int n = snprintf(s, sizeof(s), f->id > 0x7FF ? "T%08X%u" : "t%03X%u", (unsigned)f->id, (unsigned)f->len);
+
+    for (int i = 0; i < f->len && i < 8; i++) {
+        n += snprintf(s + n, sizeof(s) - (size_t)n, "%02X", f->data[i]);
+    }
+    if (gSlTs) {
+        n += snprintf(s + n, sizeof(s) - (size_t)n, "%04X", (unsigned)(ucxapp_platform_tick_ms() % 60000u));
+    }
+    s[n++] = '\r';
+    slPut(s, (size_t)n);
+}
+
+/* ---- the BLE bridge round, from the bridge task with gBrLock held; true if it moved data ---- */
+
+static void bleStatus(uCxHandle_t *ucx)
+{
+    uint8_t st[16];
+    uint32_t dropped = gDropped + gLostFrames + gBleInDropped / UCXAPP_CAN_REC_LEN;
+
+#ifdef UCXAPP_CAN_HW
+    dropped += gRxLost;
+#endif
+    if (gCfgBitrate != gBitrate || gCfgMode != gMode) {
+        uint8_t c[5];
+        cfgBytes(c);
+        if (uCxGattServerSetAttrValue(ucx, gH[H_CFG], c, (int32_t)sizeof(c)) == 0) {
+            gCfgBitrate = gBitrate;
+            gCfgMode = gMode;
+        }
+    }
+    if (!due(gStatAt)) {
+        return;
+    }
+    gStatAt = ucxapp_platform_tick_ms() + BLE_STATUS_MS;
+    put32(st, gRx);
+    put32(st + 4, gTx);
+    put32(st + 8, dropped);
+    put32(st + 12, gBadRecords);
+    if (memcmp(st, gStatLast, sizeof(st)) == 0 ||
+        uCxGattServerSetAttrValue(ucx, gH[H_STAT], st, (int32_t)sizeof(st)) != 0) {
+        return;
+    }
+    memcpy(gStatLast, st, sizeof(st));
+    if (gStatSub && gBleConn >= 0) {
+        (void)uCxGattServerSendNotification(ucx, gBleConn, gH[H_STAT], st, (int32_t)sizeof(st));
+    }
+}
+
+static bool bleService(uCxHandle_t *ucx)
+{
+    int32_t conn = ucxapp_handle_current(UCXAPP_HANDLE_CONN);
+    bool busy = false;
+    size_t n;
+
+    if (conn != gBleConn || gBleWake) {
+        gBleConn = conn;
+        gBleWake = false;
+        gTxOk = true;
+        bleMtu(ucx);
+    }
+    if (gCfgPending) {
+        bleApplyCfg();
+    }
+    n = bleInTake(gBrIn, sizeof(gBrIn));
+    if (n > 0) {
+        gBrRecv += (uint32_t)n;
+        if (gBr == BR_GATT) {
+            feedRecords(gBrIn, n);
+        } else {
+            slFeed(gBrIn, n);
+        }
+        busy = true;
+    }
+    if (gBr == BR_GATT) {
+        size_t per = gBlePayload / UCXAPP_CAN_REC_LEN;
+        n = takeBatch(gBrOut);
+        if (n > 0) {
+            per = per < 1 ? 1 : per > BLE_REC_MAX ? BLE_REC_MAX : per;
+            bleSend(ucx, gBrOut, n * UCXAPP_CAN_REC_LEN, per * UCXAPP_CAN_REC_LEN);
+            busy = true;
+        }
+        bleStatus(ucx);
+    } else {
+        ucxapp_can_frame_t f;
+        while (gSlOutLen + SL_FRAME_MAX <= SL_OUT && ucxapp_can_recv(&f)) {
+            if (gSlOpen) {
+                slEncode(&f);
+            }
+            busy = true;
+        }
+        if (gSlOutLen > 0) {
+            bleSend(ucx, gSlOut, gSlOutLen, gBlePayload);
+            gSlOutLen = 0;
+            busy = true;
+        }
+    }
+    return busy;
+}
+
+static void bleReset(ucxapp_t *app)
+{
+    U_CX_MUTEX_LOCK(gInLock);
+    gBleInHead = gBleInLen = 0;
+    gBleInDropped = 0;
+    gCfgPending = false;
+    U_CX_MUTEX_UNLOCK(gInLock);
+    gBrApp = app;
+    gBrSent = gBrRecv = gBrLost = 0;
+    gLostFrames = 0;
+    gPartLen = 0;
+    gBleConn = -2;   /* the first round asks for the MTU */
+    gBlePayload = BLE_PAYLOAD;
+    gTxOk = true;
+    gStatAt = 0;
+    memset(gStatLast, 0xFF, sizeof(gStatLast));
+    gCfgBitrate = -1;
+    gSlOpen = gSlTs = gSlLong = false;
+    gSlRate = gBitrate;
+    gSlLineLen = gSlOutLen = 0;
+}
+
+/* Defines the service (or NUS) and resets the bridge; the caller starts the task and sets gBr. */
+static bool blePrepare(ucxapp_t *app, int kind)
+{
+    if (kind == BR_GATT ? !bleDefine(app) : ucxapp_gatt_server_ensure(app, "nus") != UCXAPP_OK) {
+        return false;
+    }
+    ucxapp_gatt_ensure_advertising(app);
+    bleReset(app);
+    return true;
+}
+
+static void blePrintStarted(int kind)
+{
+    if (kind == BR_GATT) {
+        ucxapp_print("can bridge: BLE CAN service 81ea0001-f62b-4fec-94ee-7169818db897 (17-byte records on TX "
+                     "and RX, bit rate and mode on Config)\n");
+    } else {
+        ucxapp_print("can bridge: SLCAN over the Nordic UART Service; the client sends S6 and O to open the bus\n");
+    }
+}
+
+static void blePrintStatus(void)
+{
+    ucxapp_print("bridge: %s, %s", kBrNames[gBr], gBleConn >= 0 ? "connected" : "no client");
+    if (gBleConn >= 0) {
+        ucxapp_print(" (conn %d, %u B per notification%s)", (int)gBleConn, (unsigned)gBlePayload,
+                     gTxOk ? "" : ", not subscribed");
+    }
+    if (gBr == BR_SLCAN) {
+        ucxapp_print(", bus %s", gSlOpen ? "open" : "closed");
+    }
+    ucxapp_print(", sent %u B, received %u B, not delivered %u B\n", (unsigned)gBrSent, (unsigned)gBrRecv,
+                 (unsigned)(gBrLost + gBleInDropped));
+}
+
 #ifndef UCXAPP_CAN_HW
 
 static ucxapp_stream_t *gStream;
@@ -629,6 +1198,57 @@ static bool bridgeWrite(void *ctx, const uint8_t *data, size_t len)
     return true;
 }
 
+static ucxapp_thread_t *gBleThread;
+
+static void bleLoop(void *arg)
+{
+    (void)arg;
+    while (gBr != BR_OFF) {
+        bool busy = false;
+
+        U_CX_MUTEX_LOCK(gBrLock);
+        if (gBr != BR_OFF && gBrApp->ucx != NULL) {
+            busy = bleService(gBrApp->ucx);
+        }
+        U_CX_MUTEX_UNLOCK(gBrLock);
+        if (!busy) {
+            ucxapp_platform_sleep_ms(CAN_POLL_MS);
+        }
+    }
+}
+
+static int bleStart(ucxapp_t *app, int kind)
+{
+    if (app->ucx == NULL) {
+        return UCXAPP_ERR_NOT_CONNECTED;
+    }
+    if (gStream != NULL) {
+        ucxapp_print("ERROR: a CAN bridge is on (can.bridge off first)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!blePrepare(app, kind)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    gBr = kind;
+    gBleThread = ucxapp_thread_start(bleLoop, NULL);
+    if (gBleThread == NULL) {
+        gBr = BR_OFF;
+        ucxapp_print("ERROR: cannot start the bridge thread\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    blePrintStarted(kind);
+    return UCXAPP_OK;
+}
+
+static void bleStop(void)
+{
+    U_CX_MUTEX_LOCK(gBrLock);
+    gBr = BR_OFF;
+    U_CX_MUTEX_UNLOCK(gBrLock);
+    ucxapp_thread_join(gBleThread);
+    gBleThread = NULL;
+}
+
 static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 {
     ucxapp_stream_cfg_t cfg = { "can", NULL, bridgePoll, CAN_POLL_MS, NULL, bridgeWrite };
@@ -641,6 +1261,22 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     }
     off = strcasecmp(argv[1], "off") == 0;
     status = strcasecmp(argv[1], "status") == 0;
+    if (gBr != BR_OFF) {
+        if (status && argc == 2) {
+            blePrintStatus();
+        } else if (off && argc == 2) {
+            bleStop();
+            ucxapp_print("bridge stopped\n");
+        } else {
+            ucxapp_print("ERROR: the %s bridge is on (can.bridge off first)\n", kBrNames[gBr]);
+            return UCXAPP_ERR_FAILED;
+        }
+        return UCXAPP_OK;
+    }
+    if (argc == 3 && strcasecmp(argv[1], "ble") == 0 &&
+        (strcasecmp(argv[2], "gatt") == 0 || strcasecmp(argv[2], "slcan") == 0)) {
+        return bleStart(app, strcasecmp(argv[2], "gatt") == 0 ? BR_GATT : BR_SLCAN);
+    }
     if (gStream == NULL && (off || status)) {
         ucxapp_print("bridge: off\n");
         return UCXAPP_OK;
@@ -662,7 +1298,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 
 static const char *bridgeState(void)
 {
-    return gStream != NULL ? "on" : "off";
+    return gStream != NULL ? "on" : kBrNames[gBr];
 }
 
 #else
@@ -675,13 +1311,7 @@ static const char *bridgeState(void)
 #define BR_READS         4
 #define BR_IDLE_MS       20
 
-enum { BR_OFF, BR_TCP, BR_TCPC, BR_UDP, BR_SPS };
-static const char *const kBrNames[] = { "off", "tcp", "tcpc", "udp", "ble sps" };
-
-static U_CX_MUTEX_HANDLE gBrLock;
-static volatile int gBr = BR_OFF;
 static bool gBrTask;
-static ucxapp_t *gBrApp;
 static int32_t gBrSock = -1;               /* the UDP socket, the TCP client or the accepted TCP peer */
 static int32_t gBrListenSock = -1;
 static volatile int32_t gBrAccepted = -1;  /* tcp: peer accepted in the URC, adopted by the task */
@@ -695,11 +1325,6 @@ static bool gBrUdpListen;
 static char gBrHost[64];
 static uint32_t gBrNextTry;
 static size_t gBrChunk;
-static uint32_t gBrSent;                   /* bytes */
-static uint32_t gBrRecv;
-static uint32_t gBrLost;                   /* bytes nobody took (no peer yet, or the write failed) */
-static uint8_t gBrOut[UCXAPP_CAN_BATCH * UCXAPP_CAN_REC_LEN];
-static uint8_t gBrIn[256];
 
 /* Module URCs (ucxapp_urc.c), from the AT client's receive task: only flags here, the bridge task does the AT. */
 void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock)
@@ -728,11 +1353,6 @@ void ucxapp_stream_on_sps_data(void)
     if (gBr == BR_SPS) {
         gBrPending = true;
     }
-}
-
-static bool due(uint32_t at)
-{
-    return (int32_t)(ucxapp_platform_tick_ms() - at) >= 0;
 }
 
 static void brConnect(uCxHandle_t *ucx)
@@ -897,7 +1517,7 @@ static void brTask(void)
         U_CX_MUTEX_LOCK(gBrLock);
         on = gBr != BR_OFF;
         if (on && gBrApp->ucx != NULL) {
-            busy = brService(gBrApp->ucx);
+            busy = gBr <= BR_SLCAN ? bleService(gBrApp->ucx) : brService(gBrApp->ucx);
         }
         U_CX_MUTEX_UNLOCK(gBrLock);
         if (!busy) {
@@ -975,7 +1595,9 @@ static int brStart(ucxapp_t *app, int kind, const char *host, int32_t port, int3
     gBrPending = gBrClosed = false;
     gBrChunk = BR_BLE_CHUNK;
     gPartLen = 0;
-    if (kind == BR_TCP) {
+    if (kind == BR_GATT || kind == BR_SLCAN) {
+        ok = blePrepare(app, kind);
+    } else if (kind == BR_TCP) {
         if (uCxSocketCreate1(ucx, U_SOCKET_PROTOCOL_TCP, &gBrListenSock) != 0 ||
             uCxSocketListen2(ucx, gBrListenSock, port) != 0) {
             ucxapp_print("ERROR: cannot listen on TCP port %d (is Wi-Fi connected?)\n", (int)port);
@@ -1011,9 +1633,11 @@ static int brStart(ucxapp_t *app, int kind, const char *host, int32_t port, int3
     } else if (kind == BR_UDP && host != NULL) {
         ucxapp_print("can bridge: UDP to %s:%d, listening on %d\n", host, (int)port, (int)gBrLocal);
     } else if (kind == BR_UDP) {
-        ucxapp_print("can bridge: UDP listening on %d, replies go to the last sender\n", (int)gBrLocal);
-    } else {
+        ucxapp_print("can bridge: UDP listening on %d, replies go to the last sender\n",         (int)gBrLocal);
+    } else if (kind == BR_SPS) {
         ucxapp_print("can bridge: connect a BLE client to the u-blox Serial Port Service\n");
+    } else {
+        blePrintStarted(kind);
     }
     return UCXAPP_OK;
 }
@@ -1034,6 +1658,8 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     if (strcasecmp(argv[1], "status") == 0 && argc == 2) {
         if (gBr == BR_OFF) {
             ucxapp_print("bridge: off\n");
+        } else if (gBr <= BR_SLCAN) {
+            blePrintStatus();
         } else {
             ucxapp_print("bridge: %s%s, sent %u B, received %u B, not delivered %u B\n", kBrNames[gBr],
                          (gBr == BR_TCP || gBr == BR_TCPC) && gBrSock < 0 ? " (no peer)" : "", (unsigned)gBrSent,
@@ -1073,6 +1699,12 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     }
     if (strcasecmp(argv[1], "ble") == 0 && argc == 3 && strcasecmp(argv[2], "sps") == 0) {
         return brStart(app, BR_SPS, NULL, 0, 0);
+    }
+    if (strcasecmp(argv[1], "ble") == 0 && argc == 3 && strcasecmp(argv[2], "gatt") == 0) {
+        return brStart(app, BR_GATT, NULL, 0, 0);
+    }
+    if (strcasecmp(argv[1], "ble") == 0 && argc == 3 && strcasecmp(argv[2], "slcan") == 0) {
+        return brStart(app, BR_SLCAN, NULL, 0, 0);
     }
     return UCXAPP_ERR_USAGE;
 }
@@ -1125,12 +1757,17 @@ static const ucxapp_cmd_t gCanCmds[] = {
     { "can.status",   "",              "Controller, counters and bridge state", 0, cmdStatus },
 #ifndef UCXAPP_CAN_HW
     { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
-      "uart <port> [baud] | cell | off [n] | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]); cell sends them over the cellular data link (cell.connect) and reconnects it when it drops; up to 4 bridges at once", 0,
+      "ble gatt | ble slcan | uart <port> [baud] | cell | off [n] | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]); "
+      "ble gatt is the u-blox CAN GATT service (records plus bit rate, mode and counters), ble slcan is SLCAN text over "
+      "the Nordic UART Service; cell sends records over the cellular data link (cell.connect) and reconnects it when it "
+      "drops; up to 4 bridges at once (ble gatt and ble slcan run alone)", 0,
       cmdBridge },
 #else
-    { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble sps | off | status",
+    { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble sps | ble gatt | "
+      "ble slcan | off | status",
       "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]) through the module, from a task of "
-      "its own; one bridge at a time", 0, cmdBridge },
+      "its own; ble gatt is the u-blox CAN GATT service, ble slcan is SLCAN text over the Nordic UART Service; one "
+      "bridge at a time", 0, cmdBridge },
 #endif
     { "can.selftest", "",              "Offline check of the CAN record format", 0, cmdSelftest },
 };
@@ -1141,9 +1778,8 @@ void ucxapp_register_can_cmds(void)
 
     if (!init) {
         U_CX_MUTEX_CREATE(gLock);
-#ifdef UCXAPP_CAN_HW
         U_CX_MUTEX_CREATE(gBrLock);
-#endif
+        U_CX_MUTEX_CREATE(gInLock);
         init = true;
     }
     ucxapp_cmd_register(gCanCmds, sizeof(gCanCmds) / sizeof(gCanCmds[0]));
@@ -1153,6 +1789,22 @@ void ucxapp_register_can_cmds(void)
 
 void ucxapp_register_can_cmds(void)
 {
+}
+
+bool ucxapp_can_gatt_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
+{
+    (void)conn;
+    (void)handle;
+    (void)data;
+    (void)len;
+    return false;
+}
+
+bool ucxapp_can_nus_rx(const uint8_t *data, size_t len)
+{
+    (void)data;
+    (void)len;
+    return false;
 }
 
 #endif /* UCXAPP_LITE */

@@ -165,7 +165,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 |---|---|
 | Device | `dev.info`, `dev.reboot`, `dev.factory confirm`, `at <raw AT command>` |
 | Settings | `cfg.show`, `cfg.save <file>`, `cfg.load <file>`, `cfg.diff <file> [file2]` (back up, clone and compare module settings) |
-| AT trace | `at.trace <file>`, `at.trace.stop`, `at.trace.show <file>`, `at.decode <urc>`, `at.replay <file>` (timed, decoded AT log) |
+| AT trace | `at.trace <file>`, `at.trace.stop`, `at.trace.show <file>`, `at.trace.pcap <file>`, `at.decode <urc>`, `at.replay <file>` (timed, decoded AT log; Wireshark pcapng export) |
 | Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*`, `wifi.locate` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |

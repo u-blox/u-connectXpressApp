@@ -459,10 +459,24 @@ def test_at_trace_show_and_replay(app_exe, wifi_module, tmp_path):
                "at.trace.stop", "at.trace.show t.trace", "at.replay t.trace", cwd=tmp_path)
     trace = (tmp_path / "storage" / "t.trace").read_text()
     assert out.returncode == 0, out.stdout
-    assert " TX AT+GMM" in trace and " RX OK" in trace, trace
+    assert "\n# start " in trace and " TX AT+GMM" in trace and " RX OK" in trace, trace
     assert "secret123" not in trace and "****" in trace, trace
     assert "Wi-Fi network up" in out.stdout and "slowest" in out.stdout.lower(), out.stdout
     assert "0 different" in out.stdout or "differ" not in out.stdout, out.stdout
+
+
+def test_at_trace_to_pcapng(app_exe, wifi_module, tmp_path):
+    from harness import pcapng
+
+    out = _run(app_exe, wifi_module.port, "at.trace t.pcapng", "wifi.connect vucx-net secret123", "at.trace.stop",
+               cwd=tmp_path)
+    assert out.returncode == 0 and "Wireshark pcapng" in out.stdout, out.stdout
+    _, frames = pcapng.read(tmp_path / "storage" / "t.pcapng")
+    payloads = b"".join(f["payload"] for f in frames)
+    assert f"{len(frames)} lines written" in out.stdout, out.stdout
+    assert b"secret123" not in payloads and b"****" in payloads, payloads
+    assert any(f["out"] and f["payload"].startswith(b"AT+UWS") for f in frames), payloads
+    assert frames[0]["ts"] > 1_600_000_000_000, frames[0]
 
 
 @pytest.mark.parametrize("proto,host", [("udp", "192.168.1.20"), ("tcp", "example.com")])

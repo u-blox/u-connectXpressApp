@@ -244,6 +244,8 @@ static const example_t kExamples[] = {
       "at.trace boot.trace\nwifi.connect\nat.trace.stop\nat.trace.show boot.trace" },
     { "at", "Decode a URC or response", "at.decode +UEWSNU\nat.decode +UEWLD:0,3" },
     { "at", "Replay a recorded trace and compare the replies", "at.replay boot.trace" },
+    { "at", "Open a trace in Wireshark (next to a BLE or Wi-Fi sniffer capture)",
+      "at.trace.pcap boot.trace\n# or record straight to pcapng:\nat.trace boot.pcapng\nwifi.connect\nat.trace.stop" },
     { "perf", "Round-trip time and throughput through the u-blox echo server (TCP and UDP)",
       "wifi.connect MyNetwork MyPassword\nperf.rtt tcp echo.u-blox.com 7 20\nperf.tput tcp echo.u-blox.com 7 10 512\n"
       "perf.rtt udp echo.u-blox.com 7 20\nperf.tput udp echo.u-blox.com 7 10 512" },

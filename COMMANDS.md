@@ -58,16 +58,31 @@ Recording works on Windows, Linux and in the browser (not in the STM32 firmware)
 
 | Command | Arguments | Description |
 |---|---|---|
-| `at.trace` | `<file>` | Record every AT command, response and URC with its time (seconds since the start) until `at.trace.stop`; passwords are written as `****`. Lines look like `12.345 TX AT+UWSC=0` / `12.400 RX OK` |
+| `at.trace` | `<file>` | Record every AT command, response and URC with its time (seconds since the start) until `at.trace.stop`; passwords are written as `****`. Lines look like `12.345 TX AT+UWSC=0` / `12.400 RX OK`, after a `# start` line with the wall-clock start time. A name ending in `.pcapng` writes a Wireshark capture instead |
 | `at.trace.stop` | | Stop `at.trace` and write the file |
 | `at.trace.show` | `<file> [errors]` | Show a trace decoded: each command with its time to OK/ERROR and up to 4 response lines, URCs with their meaning (`+UEWLD:0,3` = Wi-Fi link down), then counts per URC and the 5 slowest commands; `errors` shows only failures |
+| `at.trace.pcap` | `<file> [out.pcapng]` | Convert a text trace to a Wireshark capture (default `<file>.pcapng`), see below |
 | `at.decode` | `<urc...>` | Explain one URC line with its parameter names (`at.decode +UEWLD:0,3`) |
 | `at.replay` | `<file>` | Send the commands of a trace again and compare OK/ERROR with the recording; skips lines with masked passwords, binary data, reboot, factory reset, firmware update and baud rate changes; fails when a result differs |
 
 ```powershell
 ucxapp COM13 --exec "at.trace join.trace" --exec "wifi.profile.auto" --exec "at.trace.stop"
 ucxapp --exec "at.trace.show join.trace"
+ucxapp --exec "at.trace.pcap join.trace"
 ```
+
+**Wireshark.** The text trace stays the main format; the pcapng capture is for Wireshark. Each AT line is one frame
+for Wireshark's own AT dissector, with its direction (sent/received) and wall-clock time. That lets you merge the
+capture with a Bluetooth sniffer or Wi-Fi capture (*File > Merge*) and see the AT commands next to the packets on air.
+The Info column shows each URC's meaning and the time from each command to its OK/ERROR. Filter with
+`at.cmd == "+UEWLU"`. Traces recorded before the `# start` line existed get times from 1970-01-01.
+
+For more, load [scripts/wireshark/ucxapp_at.lua](scripts/wireshark/ucxapp_at.lua) (copy it to the personal Lua
+plugins folder from *Help > About Wireshark > Folders*, or run `wireshark -X lua_script:ucxapp_at.lua x.pcapng`).
+It adds `ucx.*` fields and links each command to its final response: `ucx.cmd == "USPSWB"`, `ucx.time > 100`
+(slow commands), `ucx.result == "ERROR"`, `ucx.kind == "urc"`. It also flags failed commands and commands left
+without an answer by the next command or a module restart (`ucx.no_reply`); *Analyze > Expert Information* lists
+them all.
 
 ### Settings backup (cfg)
 

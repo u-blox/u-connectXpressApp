@@ -141,6 +141,8 @@ static bool decodeUrc(const char *line, char *out, size_t size)
     return true;
 }
 
+static bool savePcapng(const char *text, const char *name, unsigned *frames, bool *dated);
+
 /* ---- recording (host builds: the library prints the AT trace through ucxappLibPrintf) ---- */
 
 #if defined(_WIN32) || defined(U_PORT_POSIX)
@@ -148,6 +150,13 @@ static bool decodeUrc(const char *line, char *out, size_t size)
 #endif
 
 #ifdef TRACE_CAPTURE
+#include <time.h>
+
+static bool isPcapngName(const char *name)
+{
+    size_t n = strlen(name);
+    return n >= 7 && strcmp(name + n - 7, ".pcapng") == 0;
+}
 static char *gBuf;
 static size_t gLen;
 static size_t gCap;
@@ -227,8 +236,23 @@ static int cmdTrace(ucxapp_t *app, int argc, char *argv[])
     gFull = false;
     gStartMs = ucxapp_platform_tick_ms();
     append("# u-connectXpressApp AT trace: <seconds> <TX|RX> <line>; passwords are written as \"****\"\n");
+    struct timespec now;
+    if (timespec_get(&now, TIME_UTC) == TIME_UTC) {
+        /* Wall-clock start, so at.trace.pcap can line the trace up with sniffer captures in Wireshark. */
+        time_t sec = now.tv_sec;
+        struct tm *tm = gmtime(&sec);
+        unsigned ms = (unsigned)(now.tv_nsec / 1000000);
+        char line[128];
+        if (tm != NULL) {
+            snprintf(line, sizeof(line), "# start %llu ms since 1970 UTC (%04d-%02d-%02d %02d:%02d:%02d.%03u UTC)\n",
+                     (unsigned long long)sec * 1000u + ms, tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                     tm->tm_hour, tm->tm_min, tm->tm_sec, ms);
+            append(line);
+        }
+    }
     ucxappLogAtSetTrace(traceSink);
-    ucxapp_print("tracing AT traffic to %s until at.trace.stop\n", gFile);
+    ucxapp_print("tracing AT traffic to %s until at.trace.stop%s\n", gFile,
+                 isPcapngName(gFile) ? " (Wireshark pcapng)" : "");
     return UCXAPP_OK;
 }
 
@@ -246,13 +270,21 @@ static int cmdTraceStop(ucxapp_t *app, int argc, char *argv[])
     if (gFull) {
         append("# trace truncated: buffer limit reached\n");
     }
-    bool ok = ucxapp_store_save(gFile, gBuf != NULL ? gBuf : "", gLen);
+    bool ok;
     size_t lines = 0;
-    for (size_t i = 0; i < gLen; i++) {
-        lines += gBuf[i] == '\n';
+    if (isPcapngName(gFile)) {
+        unsigned frames = 0;
+        bool dated;
+        ok = savePcapng(gBuf != NULL ? gBuf : "", gFile, &frames, &dated);
+        lines = frames;
+    } else {
+        ok = ucxapp_store_save(gFile, gBuf != NULL ? gBuf : "", gLen);
+        for (size_t i = 0; i < gLen; i++) {
+            lines += (i == 0 || gBuf[i - 1] == '\n') && gBuf[i] != '#';
+        }
     }
     if (ok) {
-        ucxapp_print("%u lines written to %s%s\n", (unsigned)(lines - 1), gFile, gFull ? " (truncated)" : "");
+        ucxapp_print("%u lines written to %s%s\n", (unsigned)lines, gFile, gFull ? " (truncated)" : "");
     } else {
         ucxapp_print("ERROR: cannot write %s\n", gFile);
     }
@@ -434,6 +466,230 @@ static int cmdTraceShow(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* ---- Wireshark export: pcapng, one exported-PDU record per AT line for Wireshark's own AT dissector ---- */
+
+#define PCAPNG_SHB        0x0A0D0D0Au
+#define PCAPNG_IDB        1u
+#define PCAPNG_EPB        6u
+#define LINKTYPE_UPPER_PDU 252u
+#define EXP_PDU_NAME      12u
+#define EXP_PDU_DIR       35u
+#define EXP_PDU_INFO      36u
+
+typedef struct {
+    uint8_t *data;
+    size_t len;
+    size_t cap;
+    bool failed;
+} bytes_t;
+
+static void put(bytes_t *b, const void *data, size_t n)
+{
+    if (b->failed || n == 0) {
+        return;
+    }
+    if (b->len + n > b->cap) {
+        size_t cap = b->cap == 0 ? 16384 : b->cap;
+        while (cap < b->len + n) {
+            cap *= 2;
+        }
+        uint8_t *p = realloc(b->data, cap);
+        if (p == NULL) {
+            b->failed = true;
+            return;
+        }
+        b->data = p;
+        b->cap = cap;
+    }
+    memcpy(b->data + b->len, data, n);
+    b->len += n;
+}
+
+/* pcapng fields are in host byte order; the byte-order magic in the section header tells the reader. */
+static void put32(bytes_t *b, uint32_t v)
+{
+    put(b, &v, 4);
+}
+
+static void put16(bytes_t *b, uint16_t v)
+{
+    put(b, &v, 2);
+}
+
+static void putPad(bytes_t *b)
+{
+    static const uint8_t zero[4] = { 0 };
+    put(b, zero, (4u - b->len % 4u) % 4u);
+}
+
+static void putOption(bytes_t *b, uint16_t code, const void *value, size_t n)
+{
+    put16(b, code);
+    put16(b, (uint16_t)n);
+    put(b, value, n);
+    putPad(b);
+}
+
+/* Exported-PDU tags are big-endian. */
+static void putTag(bytes_t *b, uint16_t tag, const void *value, size_t n)
+{
+    uint8_t head[4] = { (uint8_t)(tag >> 8), (uint8_t)tag, (uint8_t)(n >> 8), (uint8_t)n };
+    put(b, head, sizeof(head));
+    put(b, value, n);
+}
+
+static size_t blockBegin(bytes_t *b, uint32_t type)
+{
+    size_t at = b->len;
+    put32(b, type);
+    put32(b, 0);
+    return at;
+}
+
+static void blockEnd(bytes_t *b, size_t at)
+{
+    putPad(b);
+    putOption(b, 0, NULL, 0);
+    uint32_t total = (uint32_t)(b->len - at + 4u);
+    put32(b, total);
+    if (!b->failed) {
+        memcpy(b->data + at + 4, &total, sizeof(total));
+    }
+}
+
+/* Converts a text trace to pcapng. Each line becomes one frame for Wireshark's "at" dissector, with its direction,
+ * its wall-clock time (from the "# start" line; without it the times count from 1970) and an Info text: the meaning
+ * of a known URC, or the time from the command to OK/ERROR. */
+static bool savePcapng(const char *text, const char *name, unsigned *frames, bool *dated)
+{
+    static const char kApp[] = "u-connectXpressApp";
+    static const char kIf[] = "u-connectXpress AT";
+    static const char kDissector[4] = { 'a', 't', 0, 0 };
+    bytes_t b = { 0 };
+    unsigned long long startMs = 0;
+    const char *s = strncmp(text, "# start ", 8) == 0 ? text : strstr(text, "\n# start ");
+
+    *frames = 0;
+    *dated = false;
+    if (s != NULL) {
+        const char *num = s + (*s == '\n') + 8;
+        char *end;
+        startMs = strtoull(num, &end, 10);
+        *dated = end != num;
+    }
+
+    size_t at = blockBegin(&b, PCAPNG_SHB);
+    put32(&b, 0x1A2B3C4Du);
+    put16(&b, 1);
+    put16(&b, 0);
+    put32(&b, 0xFFFFFFFFu);  /* section length: not given */
+    put32(&b, 0xFFFFFFFFu);
+    putOption(&b, 4, kApp, sizeof(kApp) - 1);
+    blockEnd(&b, at);
+
+    at = blockBegin(&b, PCAPNG_IDB);
+    put16(&b, (uint16_t)LINKTYPE_UPPER_PDU);
+    put16(&b, 0);
+    put32(&b, 0);
+    putOption(&b, 2, kIf, sizeof(kIf) - 1);
+    uint8_t tsresol = 3;  /* milliseconds */
+    putOption(&b, 9, &tsresol, 1);
+    blockEnd(&b, at);
+
+    char buf[TRACE_LINE_MAX];
+    char cmd[TRACE_LINE_MAX] = "";
+    char info[512];
+    trace_line_t t;
+    const char *p = text;
+    bool pending = false;
+    uint32_t txMs = 0;
+
+    while ((p = nextTraceLine(p, buf, sizeof(buf), &t)) != NULL) {
+        bool ok;
+        info[0] = '\0';
+        if (t.tx) {
+            snprintf(cmd, sizeof(cmd), "%s", t.text);
+            pending = true;
+            txMs = t.ms;
+        } else if (isUrc(t.text) && !(pending && strncmp(t.text + 1, cmd + 3, strcspn(t.text + 1, ":")) == 0)) {
+            if (!decodeUrc(t.text, info, sizeof(info))) {
+                info[0] = '\0';
+            }
+        } else if (pending && isFinal(t.text, &ok)) {
+            snprintf(info, sizeof(info), "%u ms %.200s", (unsigned)(t.ms - txMs), cmd);
+            pending = false;
+        }
+        size_t textLen = strlen(t.text);
+        size_t infoLen = strlen(info);
+        size_t eol = t.tx ? 1u : 2u;  /* commands end with CR, responses and URCs with CR LF */
+        uint8_t dir[4] = { 0, 0, 0, t.tx ? 0 : 1 };  /* P2P_DIR_SENT, P2P_DIR_RECV */
+        uint32_t pduLen = (uint32_t)(4u + sizeof(kDissector) + 4u + sizeof(dir) + (infoLen > 0 ? 4u + infoLen : 0u) +
+                                     4u + textLen + eol);
+        unsigned long long ts = startMs + t.ms;
+        uint32_t flags = t.tx ? 2u : 1u;              /* outbound, inbound */
+
+        at = blockBegin(&b, PCAPNG_EPB);
+        put32(&b, 0);
+        put32(&b, (uint32_t)(ts >> 32));
+        put32(&b, (uint32_t)ts);
+        put32(&b, pduLen);
+        put32(&b, pduLen);
+        putTag(&b, EXP_PDU_NAME, kDissector, sizeof(kDissector));
+        putTag(&b, EXP_PDU_DIR, dir, sizeof(dir));
+        if (infoLen > 0) {
+            putTag(&b, EXP_PDU_INFO, info, infoLen);
+        }
+        putTag(&b, 0, NULL, 0);
+        put(&b, t.text, textLen);
+        put(&b, "\r\n", eol);
+        putPad(&b);
+        putOption(&b, 2, &flags, sizeof(flags));
+        blockEnd(&b, at);
+        (*frames)++;
+    }
+    bool ok = !b.failed && ucxapp_store_save(name, b.data, b.len);
+    free(b.data);
+    return ok;
+}
+
+static int cmdTracePcap(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc < 2 || argc > 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    char out[256];
+    if (argc == 3) {
+        snprintf(out, sizeof(out), "%s", argv[2]);
+    } else {
+        const char *dot = strrchr(argv[1], '.');
+        const char *slash = strpbrk(dot != NULL ? dot : "", "/\\");
+        size_t base = dot != NULL && slash == NULL ? (size_t)(dot - argv[1]) : strlen(argv[1]);
+        if (base + sizeof(".pcapng") > sizeof(out)) {
+            ucxapp_print("ERROR: file name too long\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        snprintf(out, sizeof(out), "%.*s.pcapng", (int)base, argv[1]);
+    }
+    size_t len;
+    char *text = (char *)ucxapp_store_load(argv[1], &len);
+    if (text == NULL) {
+        ucxapp_print("ERROR: cannot read %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    unsigned frames;
+    bool dated;
+    bool ok = savePcapng(text, out, &frames, &dated);
+    free(text);
+    if (!ok) {
+        ucxapp_print("ERROR: cannot write %s\n", out);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%u frames written to %s%s\n", frames, out,
+                 dated ? "" : " (the trace has no '# start' line: times count from 1970-01-01)");
+    return UCXAPP_OK;
+}
+
 static int cmdDecode(ucxapp_t *app, int argc, char *argv[])
 {
     char line[TRACE_LINE_MAX];
@@ -543,11 +799,15 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gTraceCmds[] = {
     { "at.trace", "<file>", "Record every AT command, response and URC with its time (seconds since the start) "
-      "until at.trace.stop; passwords are written as \"****\". Windows, Linux and the browser", 0, cmdTrace },
+      "until at.trace.stop; passwords are written as \"****\". A name ending in .pcapng writes a Wireshark capture "
+      "instead of text. Windows, Linux and the browser", 0, cmdTrace },
     { "at.trace.stop", "", "Stop at.trace and write the file", 0, cmdTraceStop },
     { "at.trace.show", "<file> [errors]", "Show a trace decoded: each command with its time to OK/ERROR and its "
       "responses, URCs with their meaning, then counts and the slowest commands; 'errors' shows only failures",
       0, cmdTraceShow },
+    { "at.trace.pcap", "<file> [out.pcapng]", "Convert a text trace to a Wireshark capture (pcapng, default name "
+      "<file>.pcapng): wall-clock times to merge with sniffer captures, TX/RX direction, URC meanings and command "
+      "times in the Info column; scripts/wireshark/ucxapp_at.lua adds ucx.* fields", 0, cmdTracePcap },
     { "at.decode", "<urc...>", "Explain one URC line, e.g. at.decode +UEWLD:0,3", 0, cmdDecode },
     { "at.replay", "<file>", "Send the commands of a trace again and compare OK/ERROR with the recording; skips "
       "lines with masked passwords, binary data, reboot, factory reset, firmware update and baud rate changes",

@@ -173,7 +173,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 | Phone app | `xplorer.connect`, `xplorer.info`, `xplorer.call`, `xplorer.echo` (remote control of u-connectXplorer, so the phone is the other end of a test) |
 | MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
 | App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
-| Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
+| Bluetooth | `bt.scan`, `bt.connect`, `bt.filter`, `bt.name`, `bt.addr`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
 | GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.*`, `gatt.server.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
 | HID | `hid.setup`, `hid.text`, `hid.key`, `hid.mouse`, `hid.click`, `hid.media` (Bluetooth keyboard, mouse and media keys); `hid.client` (read a BLE keyboard or mouse) |
 | Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
@@ -212,8 +212,8 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 | `f407` | STM32F4DISCOVERY | 467 KB | 1024 KB | 46% | 104 KB | 128 KB | 82% |
 | `f401` | NUCLEO-F401RE | 448 KB | 512 KB | 88% | 87 KB | 96 KB | 91% |
 | `f446` | NUCLEO-F446RE | 448 KB | 512 KB | 88% | 103 KB | 128 KB | 81% |
-| `f103` | NUCLEO-F103RB | 121 KB | 128 KB | 95% | 15 KB | 20 KB | 79% |
-| `g071` | NUCLEO-G071RB | 125 KB | 128 KB | 98% | 25 KB | 36 KB | 72% |
+| `f103` | NUCLEO-F103RB | 123 KB | 128 KB | 96% | 15 KB | 20 KB | 80% |
+| `g071` | NUCLEO-G071RB | 127 KB | 128 KB | 100% | 26 KB | 36 KB | 72% |
 <!-- /memory -->
 
 ## Documentation

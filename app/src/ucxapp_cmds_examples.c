@@ -154,6 +154,14 @@ static const example_t kExamples[] = {
 
     { "bt", "Find and connect a device",
       "bt.scan\nbt.connect 1\nbt.list\nbt.disconnect" },
+    { "bt", "Connect by name without a scan first (filtered scan on the name, case must match)",
+      "bt.connect NINA-B5\nbt.list" },
+    { "bt", "Read and set the module's own name and address",
+      "bt.name\nbt.addr\nbt.name MySensor" },
+#ifndef UCXAPP_LITE
+    { "bt", "Scan only for NORA-W36 names or u-blox manufacturer data (text or hex)",
+      "bt.filter 0 9 NORA-W36\nbt.filter 1 0xFF 0x1701\nbt.filter\nbt.scan filter\nbt.filter clear" },
+#endif
     { "bt", "Save a device and reconnect later",
       "bt.profile.add sensor C0:FF:EE:00:11:22\nbt.profile.connect sensor" },
     { "bt", "Secure pairing",

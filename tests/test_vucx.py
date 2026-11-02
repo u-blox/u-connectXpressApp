@@ -504,3 +504,39 @@ def test_perf_rtt_and_tput_over_the_echo(app_exe, proto, host):
 def test_perf_sps_needs_a_connection(app_exe, vucx):
     out = _run(app_exe, vucx.port, "perf.rtt sps 2")
     assert out.returncode != 0 and "no Bluetooth connection" in out.stdout, out.stdout
+
+def test_bt_addr_name_and_filter(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["bt.addr", "bt.name", "bt.name MySensor", "bt.addr 54:F8:2A:14:C9:EF",
+                                      "bt.filter", "bt.filter 0 9 4E:49:4E:41", "bt.filter 1 0xFF 0102",
+                                      "bt.filter 2 9 NORA-W36", "bt.filter 0 clear", "bt.filter clear"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "C0:FF:EE:00:11:44" in out.stdout and "vucx" in out.stdout, out.stdout
+    assert '"NORA"' in out.stdout and "2 data filter(s)" in out.stdout, out.stdout
+    assert '"NINA"' in out.stdout and "all data filters cleared" in out.stdout, out.stdout
+    sent = nora.log
+    assert 'AT+UBTLN="MySensor"' in sent and "AT+USYLA=0,54F82A14C9EF" in sent and "AT&W" in sent, sent
+    assert "AT+UBTDFD=0,9,4E494E41" in sent and "AT+UBTDFD=1,255,0102" in sent, sent
+    assert "AT+UBTDFD=2,9,4E4F52412D573336" in sent and '"NORA-W36"' in out.stdout, sent
+    assert sum(cmd.startswith("AT+UBTDFD=") and cmd.endswith(",0,") for cmd in sent) == 11, sent
+
+
+@pytest.mark.parametrize("args", ["bt.filter 10 9 41", "bt.filter 0 9 0x4G", "bt.filter 0 9 ABCDEFGHIJK",
+                                  "bt.filter 0 300 41", "bt.filter 0 9 0102030405060708090A0B",
+                                  "bt.filter 0 9", "bt.addr 11:22:33", "bt.name a b"])
+def test_bt_filter_addr_name_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith(("AT+UBTDFD=", "AT+USYLA=0,", "AT+UBTLN=")) for cmd in nora.log), nora.log
+
+
+def test_bt_connect_by_name_scans_with_a_filter(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["bt.connect vucx-hrs-sensor"], log=nora.log)
+    assert 'scanning for "vucx-hrs-s"' in out.stdout, out.stdout
+    sent = nora.log
+    # first 10 bytes of the name on AD type 9 in slot 9, scan, slot 9 restored, then connect
+    name = sent.index("AT+UBTDFD=9,9,767563782D6872732D73")
+    scan = next(i for i, cmd in enumerate(sent) if cmd.startswith("AT+UBTD=") and i > name)
+    restore = sent.index("AT+UBTDFD=9,0,")
+    assert name < scan < restore, sent
+    out = _shell(app_exe, nora.port, ["bt.connect vucx-hrs"], log=nora.log)
+    assert out.returncode == 0 and "AT+UBTC=C0FFEE001122p" in nora.log, out.stdout + str(nora.log[-10:])

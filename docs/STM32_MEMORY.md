@@ -12,5 +12,5 @@ after that heap. Flash is code, read-only data and the initial values of `.data`
 | `f407` | STM32F4DISCOVERY | 467 KB | 1024 KB | 46% | 104 KB | 128 KB | 82% |
 | `f401` | NUCLEO-F401RE | 448 KB | 512 KB | 88% | 87 KB | 96 KB | 91% |
 | `f446` | NUCLEO-F446RE | 448 KB | 512 KB | 88% | 103 KB | 128 KB | 81% |
-| `f103` | NUCLEO-F103RB | 121 KB | 128 KB | 95% | 15 KB | 20 KB | 79% |
-| `g071` | NUCLEO-G071RB | 125 KB | 128 KB | 98% | 25 KB | 36 KB | 72% |
+| `f103` | NUCLEO-F103RB | 123 KB | 128 KB | 96% | 15 KB | 20 KB | 80% |
+| `g071` | NUCLEO-G071RB | 127 KB | 128 KB | 100% | 26 KB | 36 KB | 72% |

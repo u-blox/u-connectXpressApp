@@ -134,8 +134,11 @@ ucxapp COM13 --exec "at +GMR"
 
 | Command | Arguments | Description |
 |---|---|---|
-| `bt.scan` | `[full]` | Scan for BLE devices (up to 30 s). One line per device (duplicates merged, named first, strongest first) with what it advertises: services, manufacturer, iBeacon/Eddystone, appearance. `full` decodes the whole advertising data. The results are kept for `bt.connect` |
-| `bt.connect` | `[addr[,random]\|n\|name]` | With no argument: connect to the last used profile, else scan and take the strongest known device (same as `bt.profile.auto`). Otherwise connect by address, by the number from the last `bt.scan`, or by profile or scanned device name (a unique start of the name is enough). Suggests `bt.profile.add` for devices not yet saved |
+| `bt.scan` | `[full] [filter]` | Scan for BLE devices (up to 30 s). One line per device (duplicates merged, named first, strongest first) with what it advertises: services, manufacturer, iBeacon/Eddystone, appearance. `full` decodes the whole advertising data; `filter` shows only devices matching a `bt.filter` entry. The results are kept for `bt.connect` |
+| `bt.connect` | `[addr[,random]\|n\|name]` | With no argument: connect to the last used profile, else scan and take the strongest known device (same as `bt.profile.auto`). Otherwise connect by address, by the number from the last `bt.scan`, or by profile or device name (a unique start of the name is enough). A name that is not in the last scan is looked for with a filtered scan: filter slot 9 is set to the first 10 bytes of the name on AD type 9 (complete local name) and restored afterwards; the module compares bytes, so the case must match. Suggests `bt.profile.add` for devices not yet saved |
+| `bt.addr` | `[addr]` | Show the module's Bluetooth address, or set it as `XX:XX:XX:XX:XX:XX`; a new address is stored and takes effect after `dev.reboot` |
+| `bt.name` | `[name]` | Show the module's Bluetooth device name, or set it; a new name is active at once and stored |
+| `bt.filter` | `[<0-9> <ad_type> <text\|hex>\|<0-9> clear\|clear]` | Scan data filters. Without arguments: list them. Otherwise set filter 0-9 to an AD type (decimal or `0x..`: 9 complete name, 8 short name, 0xFF manufacturer data, 3 16-bit UUIDs) and up to 10 bytes to match, as text (`NORA`, case-sensitive) or hex (`4E4F5241`, `0x4E4F5241`, `4E:4F:52:41`; a text that is valid hex, like `CAFE`, is read as hex), or clear one or all. Used by `bt.scan filter` and kept in the module. Not in lite builds |
 | `bt.disconnect` | `<handle>` | Close a BLE connection |
 | `bt.list` |  | List BLE connections |
 | `bt.pairing` | `<on\|off>` | Enable or disable pairing mode |

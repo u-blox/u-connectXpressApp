@@ -14,6 +14,7 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_bluetooth.h"
+#include "u_cx_system.h"
 #include "u_port.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -25,6 +26,10 @@
 #define BT_SCAN_TIMEOUT_MS  30000
 
 #define BT_ADV_MAX          64
+#define BT_FILTER_SLOTS     10   /* discovery data filter index 0..9 */
+#define BT_FILTER_MAX       10   /* bytes per filter pattern */
+#define BT_NAME_FILTER_SLOT 9    /* bt.connect <name> borrows this slot and restores it */
+#define BT_AD_COMPLETE_NAME 9
 
 typedef struct {
     uBtLeAddress_t addr;
@@ -77,6 +82,51 @@ static bool parseAddr(const char *s, uBtLeAddress_t *addr)
     return true;
 }
 
+#ifndef UCXAPP_LITE   /* bt.filter: not in the 128 KB lite builds */
+static int hexDigit(char c)
+{
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* "4E494E41", "4E:49:4E:41" or "4E-49" into bytes; -1 on an odd digit count, a bad character or more than max. */
+static int parseHexBytes(const char *s, uint8_t *out, int max)
+{
+    int n = 0;
+
+    while (*s != '\0') {
+        if (*s == ':' || *s == '-') {
+            s++;
+            continue;
+        }
+        int hi = hexDigit(s[0]);
+        int lo = hi < 0 ? -1 : hexDigit(s[1]);
+        if (lo < 0 || n == max) {
+            return -1;
+        }
+        out[n++] = (uint8_t)(hi << 4 | lo);
+        s += 2;
+    }
+    return n;
+}
+
+/* A filter pattern: hex bytes ("4E494E41", "0x4E494E41", "4E:49") or else the text itself ("NORA"). */
+static int parsePattern(const char *s, uint8_t *out, int max)
+{
+    const char *hex = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? s + 2 : s;
+    int n = parseHexBytes(hex, out, max);
+    size_t len = strlen(s);
+
+    if (n > 0 || hex != s) {
+        return n;
+    }
+    if (len == 0 || len > (size_t)max) {
+        return -1;
+    }
+    memcpy(out, s, len);
+    return (int)len;
+}
+#endif
+
 static bool containsChunk(const uint8_t *buf, size_t len, const uint8_t *chunk, size_t clen)
 {
     for (size_t i = 0; i + clen <= len; i++) {
@@ -101,15 +151,38 @@ static int compareScan(const void *pa, const void *pb)
     return (int)(b->rssi - a->rssi);
 }
 
+/* One discovery report; filtered reports only devices matching a data filter (bt.filter). */
+static bool nextDevice(ucxapp_t *app, bool filtered, uCxBtDiscovery_t *dev)
+{
+    uCxBtDiscoveryDefault_t d;
+
+    if (filtered) {
+        return uCxBluetoothDiscovery2GetNext(app->ucx, dev);
+    }
+    if (!uCxBluetoothDiscoveryDefaultGetNext(app->ucx, &d)) {
+        return false;
+    }
+    dev->bd_addr = d.bd_addr;
+    dev->rssi = d.rssi;
+    dev->device_name = d.device_name;
+    dev->data_type = d.data_type;
+    dev->data = d.data;
+    return true;
+}
+
 /* Fills gLastScan: one entry per address with the best RSSI, the longest name and the merged AD data. */
-static int scanDevices(ucxapp_t *app)
+static int scanDevices(ucxapp_t *app, bool filtered)
 {
     int count = 0;
-    uCxBtDiscoveryDefault_t dev;
+    uCxBtDiscovery_t dev;
 
     uCxAtClientSetCommandTimeout(app->ucx->pAtClient, BT_SCAN_TIMEOUT_MS, false);
-    uCxBluetoothDiscoveryDefaultBegin(app->ucx);
-    while (uCxBluetoothDiscoveryDefaultGetNext(app->ucx, &dev)) {
+    if (filtered) {
+        uCxBluetoothDiscovery2Begin(app->ucx, U_BT_DISCOVERY_TYPE_DATA_FILTER, U_BT_DISCOVERY_MODE_ACTIVE);
+    } else {
+        uCxBluetoothDiscoveryDefaultBegin(app->ucx);
+    }
+    while (nextDevice(app, filtered, &dev)) {
         int i = 0;
         scanEntry_t *e;
 
@@ -164,17 +237,56 @@ static int scanDevices(ucxapp_t *app)
     return count;
 }
 
+/* Filtered discovery for a device name: the first BT_FILTER_MAX bytes on the Complete Local Name, in
+ * BT_NAME_FILTER_SLOT, which is restored afterwards. The module compares bytes, so the case must match.
+ * Returns the device count, -1 when the filter could not be set. */
+static int scanByName(ucxapp_t *app, const char *name)
+{
+    uCxBtGetDiscoveryDataFilter_t old;
+    uint8_t saved[BT_FILTER_MAX];
+    int32_t savedType = 0;
+    int32_t savedLen = 0;
+    size_t len = strlen(name);
+
+    if (uCxBluetoothGetDiscoveryDataFilterBegin(app->ucx, BT_NAME_FILTER_SLOT, &old) && old.data_filter.pData != NULL) {
+        savedType = old.ad_type;
+        savedLen = old.data_filter.length < BT_FILTER_MAX ? (int32_t)old.data_filter.length : BT_FILTER_MAX;
+        memcpy(saved, old.data_filter.pData, (size_t)savedLen);
+    }
+    uCxEnd(app->ucx);
+    if (len > BT_FILTER_MAX) {
+        len = BT_FILTER_MAX;
+    }
+    int32_t r = uCxBluetoothSetDiscoveryDataFilter(app->ucx, BT_NAME_FILTER_SLOT, BT_AD_COMPLETE_NAME,
+                                                   (const uint8_t *)name, (int32_t)len);
+    if (r != 0) {
+        ucxapp_print("ERROR: cannot set the name filter (%d%s)\n", (int)r, ucxapp_errname(r));
+        return -1;
+    }
+    ucxapp_print("scanning for \"%.*s\"...\n", (int)len, name);
+    int count = scanDevices(app, true);
+    (void)uCxBluetoothSetDiscoveryDataFilter(app->ucx, BT_NAME_FILTER_SLOT, savedType, saved, savedLen);
+    return count;
+}
+
 static int cmdBtScan(ucxapp_t *app, int argc, char *argv[])
 {
-    bool full = argc == 2 && strcmp(argv[1], "full") == 0;
+    bool full = false;
+    bool filtered = false;
     bool seenNamed = false;
     bool separated = false;
 
-    if (argc > 2 || (argc == 2 && !full)) {
-        return UCXAPP_ERR_USAGE;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "full") == 0 && !full) {
+            full = true;
+        } else if (strcmp(argv[i], "filter") == 0 && !filtered) {
+            filtered = true;
+        } else {
+            return UCXAPP_ERR_USAGE;
+        }
     }
-    ucxapp_print("scanning...\n");
-    int count = scanDevices(app);
+    ucxapp_print(filtered ? "scanning (only devices matching bt.filter)...\n" : "scanning...\n");
+    int count = scanDevices(app, filtered);
     for (int i = 0; i < count; i++) {
         const scanEntry_t *e = &gLastScan[i];
         char summary[96], addr[32];
@@ -340,12 +452,31 @@ static bool ciPrefix(const char *text, const char *prefix)
     return *prefix == '\0';
 }
 
-/* Address, scan number, saved profile name, or a scanned device name (whole or the start of it). */
-static bool resolveTarget(const char *s, uBtLeAddress_t *addr, char *label, size_t labelSize)
+/* Scanned devices whose name is s (case-insensitive) or starts with it; *match is the last hit, or the exact one. */
+static int matchScanName(const char *s, int *match)
+{
+    int matches = 0;
+
+    for (int i = 0; i < gLastScanCount; i++) {
+        if (ciEqual(gLastScan[i].name, s)) {
+            *match = i;
+            return 1;
+        }
+        if (s[0] != '\0' && ciPrefix(gLastScan[i].name, s)) {
+            *match = i;
+            matches++;
+        }
+    }
+    return matches;
+}
+
+/* Address, scan number, saved profile name, or a device name (whole or the start of it): from the last scan,
+ * else from a filtered scan for that name. */
+static bool resolveTarget(ucxapp_t *app, const char *s, uBtLeAddress_t *addr, char *label, size_t labelSize)
 {
     btProfile_t profiles[BT_MAX_PROFILES];
     int match = -1;
-    int matches = 0;
+    int matches;
 
     label[0] = '\0';
     if (parseAddr(s, addr)) {
@@ -372,16 +503,9 @@ static bool resolveTarget(const char *s, uBtLeAddress_t *addr, char *label, size
         snprintf(label, labelSize, "%s", profiles[idx].name);
         return true;
     }
-    for (int i = 0; i < gLastScanCount; i++) {
-        if (ciEqual(gLastScan[i].name, s)) {
-            match = i;
-            matches = 1;
-            break;
-        }
-        if (s[0] != '\0' && ciPrefix(gLastScan[i].name, s)) {
-            match = i;
-            matches++;
-        }
+    matches = matchScanName(s, &match);
+    if (matches == 0 && s[0] != '\0' && scanByName(app, s) > 0) {
+        matches = matchScanName(s, &match);
     }
     if (matches == 1) {
         *addr = gLastScan[match].addr;
@@ -391,7 +515,7 @@ static bool resolveTarget(const char *s, uBtLeAddress_t *addr, char *label, size
     if (matches > 1) {
         ucxapp_print("ERROR: '%s' matches %d scanned devices; use the number from bt.scan\n", s, matches);
     } else {
-        ucxapp_print("ERROR: '%s' is not an address, a scan number, a profile or a scanned device name\n", s);
+        ucxapp_print("ERROR: '%s' is not an address, a scan number, a profile or the name of a device in range\n", s);
     }
     return false;
 }
@@ -425,7 +549,7 @@ static int cmdBtConnect(ucxapp_t *app, int argc, char *argv[])
     if (argc != 2) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!resolveTarget(argv[1], &addr, label, sizeof(label))) {
+    if (!resolveTarget(app, argv[1], &addr, label, sizeof(label))) {
         return UCXAPP_ERR_FAILED;
     }
     fmtAddr(&addr, text, sizeof(text));
@@ -592,7 +716,7 @@ static int cmdBtProfileAuto(ucxapp_t *app, int argc, char *argv[])
     }
 
     ucxapp_print("Scanning for known devices...\n");
-    int n = scanDevices(app);
+    int n = scanDevices(app, false);
     for (int i = 0; i < n; i++) {
         for (int p = 0; p < count; p++) {
             uBtLeAddress_t addr;
@@ -945,9 +1069,162 @@ static int cmdBtUnbond(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdBtAddr(ucxapp_t *app, int argc, char *argv[])
+{
+    uMacAddress_t mac;
+    uBtLeAddress_t addr;
+    int32_t r;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        if (!parseAddr(argv[1], &addr) || addr.type != U_BD_ADDRESS_TYPE_PUBLIC) {
+            return UCXAPP_ERR_USAGE;
+        }
+        memcpy(mac.address, addr.address, sizeof(mac.address));
+        r = uCxSystemSetLocalAddress(app->ucx, U_INTERFACE_ID_BLUETOOTH, &mac);
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+        if (r != 0) {
+            ucxapp_print("ERROR: set the Bluetooth address failed (%d%s)\n", (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("Bluetooth address stored; it takes effect after dev.reboot\n");
+        return UCXAPP_OK;
+    }
+    r = uCxSystemGetLocalAddress(app->ucx, U_INTERFACE_ID_BLUETOOTH, &mac);
+    if (r != 0) {
+        ucxapp_print("ERROR: read the Bluetooth address failed (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    memcpy(addr.address, mac.address, sizeof(addr.address));
+    addr.type = U_BD_ADDRESS_TYPE_PUBLIC;
+    printAddr(&addr);
+    ucxapp_print("\n");
+    return UCXAPP_OK;
+}
+
+static int cmdBtName(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *name = NULL;
+    int32_t r;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        r = uCxBluetoothSetLocalName(app->ucx, argv[1]);
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+        if (r != 0) {
+            ucxapp_print("ERROR: set the Bluetooth name failed (%d%s)\n", (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("Bluetooth name \"%s\" set and stored\n", argv[1]);
+        return UCXAPP_OK;
+    }
+    bool ok = uCxBluetoothGetLocalNameBegin(app->ucx, &name) && name != NULL;
+    if (ok) {
+        ucxapp_print("%s\n", name);
+    }
+    r = uCxEnd(app->ucx);
+    if (!ok || r != 0) {
+        ucxapp_print("ERROR: read the Bluetooth name failed (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    return UCXAPP_OK;
+}
+
+#ifndef UCXAPP_LITE
+static void printFilter(int32_t index, int32_t adType, const uint8_t *data, size_t len)
+{
+    char text[BT_FILTER_MAX + 1];
+    bool printable = len > 0;
+
+    ucxapp_print("%d  AD type 0x%02X  ", (int)index, (unsigned)adType);
+    for (size_t i = 0; i < len; i++) {
+        ucxapp_print("%02X", data[i]);
+        printable = printable && data[i] >= 0x20 && data[i] < 0x7F;
+        if (i < BT_FILTER_MAX) {
+            text[i] = (char)data[i];
+        }
+    }
+    text[len < BT_FILTER_MAX ? len : BT_FILTER_MAX] = '\0';
+    ucxapp_print(printable ? "  \"%s\"\n" : "\n", text);
+}
+
+static int cmdBtFilter(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t index, adType = 0;
+    uint8_t data[BT_FILTER_MAX];
+    int len = 0;
+    int32_t r;
+
+    if (argc == 1) {
+        uCxBtListDiscoveryDataFilters_t f;
+        int n = 0;
+
+        uCxBluetoothListDiscoveryDataFiltersBegin(app->ucx);
+        while (uCxBluetoothListDiscoveryDataFiltersGetNext(app->ucx, &f)) {
+            if (f.data_filter.length > 0) {
+                printFilter(f.data_filter_index, f.ad_type, f.data_filter.pData, f.data_filter.length);
+                n++;
+            }
+        }
+        r = uCxEnd(app->ucx);
+        if (r != 0) {
+            ucxapp_print("ERROR: read the data filters failed (%d%s)\n", (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("%d data filter(s)%s\n", n, n > 0 ? "; bt.scan filter shows only matching devices"
+                                                     : "; set one with bt.filter <0-9> <ad_type> <text|hex>");
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "clear") == 0) {
+        for (index = 0; index < BT_FILTER_SLOTS; index++) {
+            r = uCxBluetoothSetDiscoveryDataFilter(app->ucx, index, 0, data, 0);
+            if (r != 0) {
+                ucxapp_print("ERROR: clear data filter %d failed (%d%s)\n", (int)index, (int)r, ucxapp_errname(r));
+                return UCXAPP_ERR_FAILED;
+            }
+        }
+        ucxapp_print("all data filters cleared\n");
+        return UCXAPP_OK;
+    }
+    if (!ucxapp_parse_int(argv[1], &index) || index < 0 || index >= BT_FILTER_SLOTS) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 3 && strcmp(argv[2], "clear") == 0) {
+        len = 0;
+    } else if (argc != 4 || !ucxapp_parse_int(argv[2], &adType) || adType < 0 || adType > 255 ||
+               (len = parsePattern(argv[3], data, BT_FILTER_MAX)) <= 0) {
+        return UCXAPP_ERR_USAGE;
+    }
+    r = uCxBluetoothSetDiscoveryDataFilter(app->ucx, index, adType, data, len);
+    if (r != 0) {
+        ucxapp_print("ERROR: set data filter %d failed (%d%s)\n", (int)index, (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    if (len == 0) {
+        ucxapp_print("data filter %d cleared\n", (int)index);
+    } else {
+        printFilter(index, adType, data, (size_t)len);
+    }
+    return UCXAPP_OK;
+}
+#endif
+
 static const ucxapp_cmd_t gBtCmds[] = {
-    { "bt.scan",       "[full]",              "Scan for BLE devices (up to 30 s): named first, strongest first, with what they advertise; full decodes the data", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
-    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, by number from bt.scan, or by profile or device name; with no argument: the last used profile (same as bt.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
+    { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s): named first, strongest first, with what they advertise; full decodes the data, filter shows only devices matching bt.filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
+    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, by number from bt.scan, or by profile or device name (a name not in the last scan is looked for with a filtered scan; the case must match); with no argument: the last used profile (same as bt.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
+    { "bt.name",       "[name]",              "Show the module's Bluetooth device name, or set it (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
+    { "bt.addr",       "[addr]",              "Show the module's Bluetooth address, or set it (XX:XX:XX:XX:XX:XX; takes effect after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
+#ifndef UCXAPP_LITE
+    { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "List the scan data filters, or set one: AD type (9 = complete name, 0xFF = manufacturer data) and up to 10 bytes to match, as text (NORA) or hex (4E4F5241); used by bt.scan filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
+#endif
     { "bt.disconnect", "[conn]",            "Close a BLE connection",                         UCXAPP_CMD_NEEDS_DEVICE, cmdBtDisconnect },
     { "bt.list",       "",                    "List BLE connections",                           UCXAPP_CMD_NEEDS_DEVICE, cmdBtList },
     { "bt.pairing",    "<on|off>",            "Enable or disable pairing mode",                 UCXAPP_CMD_NEEDS_DEVICE, cmdBtPairing },

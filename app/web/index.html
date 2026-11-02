@@ -170,7 +170,7 @@ cmd.onkeydown=e=>{if(e.key==='Enter')submit();
 /* ---- command panel ---- */
 const DF={url:'http://example.com',host:'example.com',port:'80',count:'4',topic:'test/ucx',text:'hello',
  lat:'59.3293',lon:'18.0686',file:'download.bin',key:'a',command:'AT',seconds:'10'};
-function dv(n,k){return n==='sock.bind'&&k==='port'?'5000':DF[k.replace(/[.]+$/,'')]||''}
+function dv(n,k){return n==='sock.bind'&&k==='port'?'5000':k==='file'&&!n.startsWith('http.')?'':DF[k.replace(/[.]+$/,'')]||''}
 /* handle fields list the open sockets and links; '' lets the command use the current one */
 let HS={conn:[],sock:[]},HSEL=[],FV={},apOn=false;try{FV=JSON.parse(localStorage.getItem('ucxf')||'{}')}catch(x){}
 const SECRET=/pass|pw|secret|token|key/i;
@@ -183,6 +183,11 @@ const q=v=>v&&!/[\s"]/.test(v)?v:'"'+v.replace(/["\\]/g,'\\$&')+'"';
 function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t'),nm=x[5]?x[5].slice(0,-1):x[0].replace(/[<>]/g,''),
   hk=x[0]==='conn'?'conn':x[0]==='handle'&&/^sock\./.test(c.n)?'sock':'';
  if(hk&&x[1]){e=el('select','h');e.dataset.k=hk;e.title='open '+(hk==='conn'?'BLE links':'sockets');fillSel(e);HSEL.push(e)}
+ else if(nm==='number'&&(/\.ex$/.test(c.n)||c.n==='examples')){e=el('select');
+  const fill=g=>{e.textContent='';e.add(new Option(g?'list them':'pick a group first',''));if(!g)return;
+   api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>xs.forEach((v,i)=>e.add(new Option((i+1)+'. '+v.t,String(i+1))))).catch(()=>{})};
+  if(c.n==='examples')setTimeout(()=>{const gi=e.parentNode&&e.parentNode.querySelector('input');if(gi){gi.onchange=()=>fill(gi.value.trim());fill(gi.value.trim())}});
+  else fill(c.n.slice(0,-3));e.val=()=>e.value||null;e._k='';return e}
  else if(k==='f'){e=el('label','fl');const cb=el('input');cb.type='checkbox';cb.checked=FV[key]==='1';e.append(cb,' '+x[0]);
   e.val=()=>cb.checked?x[0]:null;e.keep=()=>+cb.checked+'';return Object.assign(e,{_k:key})}
  else if(k==='s'&&x[2]&&!x[2].includes('|')&&!x[1]){e=el('span','fx',x[2]);e.val=()=>x[2];return e}

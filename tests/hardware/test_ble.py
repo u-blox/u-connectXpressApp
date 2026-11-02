@@ -86,6 +86,26 @@ def test_bt_cs_reflector_on_a_nora_b26(app_exe):
 
 
 @pytest.mark.hardware
+def test_bt_cs_initiator_settings_on_a_nora_b26(app_exe):
+    """Settings only: ranging and bonding (bt.cs.range, bt.bond) need a second NORA-B26 as reflector."""
+    ports = [p for p in (os.environ.get("UCX_PORT_A"), os.environ.get("UCX_PORT_B")) if p]
+    b26 = [p for p in ports if "NORA-B2" in _run(app_exe, p, "dev.info").stdout]
+    if not b26:
+        pytest.skip("no NORA-B26/B27 on UCX_PORT_A or UCX_PORT_B")
+    if _run(app_exe, b26[0], "bt.cs.rate").returncode != 0:
+        pytest.skip("the NORA-B26 does not run the cs_initiator evaluation firmware")
+    out = _run(app_exe, b26[0], "bt.cs initiator", "bt.cs", "bt.cs.rate 40", "bt.cs.rate", "bt.cs.filter 5 200",
+               "bt.cs.filter off", "bt.cs.filter", "bt.cs.filter default", "bt.cs.pct on", "bt.cs.pct",
+               "bt.cs.pct off", "bt.cs.rate 20", "bt.cs off")
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.count("Channel Sounding initiator") == 2, out.stdout
+    assert out.stdout.count("every 40 connection intervals") == 2, out.stdout
+    assert "Kalman filter off (raw distances): Q 0.005, R 0.200" in out.stdout, out.stdout
+    assert "Kalman filter on: Q 0.001, R 0.120" in out.stdout, out.stdout
+    assert out.stdout.count("PCT reporting on") == 2 and "Channel Sounding off" in out.stdout, out.stdout
+
+
+@pytest.mark.hardware
 def test_bt_settings_and_bonds(app_exe, port_a):
     out = _run(app_exe, port_a, "bt.defaults", "bt.pairing on", "bt.iocap none", "bt.security none",
                "bt.autoconfirm on", "bt.bonds", "bt.list")

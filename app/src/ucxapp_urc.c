@@ -5,6 +5,7 @@
 
 #include "u_cx_bluetooth.h"
 #include "u_cx_channel_sounding.h"
+#include "u_cx_channel_sounding_initiator.h"
 #include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
@@ -99,6 +100,18 @@ static void btCsUrc(struct uCxHandle *h, int32_t c, uBtChannelSoundingEvent_t e,
     (void)h;
     evt("bt: channel sounding %s, conn %d%s", (unsigned)e < 4 ? kCsEvents[e] : "event", (int)c, s != 0 ? " (failed)" : "");
 }
+static void btCsDistanceUrc(struct uCxHandle *h, int32_t c, int32_t mm)
+{
+    (void)h;
+    evt("bt: distance %d.%03d m, conn %d", (int)(mm / 1000), (int)((mm < 0 ? -mm : mm) % 1000), (int)c);
+    ucxapp_bt_cs_distance(c, mm);
+}
+static void btCsPctUrc(struct uCxHandle *h, int32_t c, int32_t ant, int32_t n, const uint8_t *d, size_t len)
+{
+    (void)h; (void)d;
+    evt("bt: PCT conn %d antenna %d, %d channels (%u bytes)", (int)c, (int)ant, (int)n, (unsigned)len);
+    ucxapp_bt_cs_pct(c, ant, n);
+}
 #endif
 
 static void gattNotifyUrc(struct uCxHandle *h, int32_t conn, int32_t handle, uByteArray_t *data)
@@ -183,6 +196,8 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
     uCxBluetoothRegisterPasskeyRequest(ucx, btPasskeyAskUrc);
 #ifndef UCXAPP_LITE
     uCxChannelSoundingRegisterCsStatus(ucx, btCsUrc);
+    uCxChannelSoundingRegisterDistance(ucx, btCsDistanceUrc);
+    uCxChannelSoundingRegisterPct(ucx, btCsPctUrc);
 #endif
 
     uCxGattClientRegisterNotification(ucx, gattNotifyUrc);

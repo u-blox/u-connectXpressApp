@@ -15,6 +15,7 @@
 #endif
 #include "u_cx_bluetooth.h"
 #include "u_cx_channel_sounding.h"
+#include "u_cx_channel_sounding_initiator.h"
 #include "u_cx_system.h"
 #include "u_port.h"
 #ifdef _MSC_VER
@@ -794,12 +795,14 @@ static volatile bool gConfirmPending;
 static volatile bool gPasskeyPending;
 static uBtLeAddress_t gPendingAddr;
 static bool gDefaultsApplied;
+static volatile int32_t gBondResult = -1;   /* last bond status from the module, -1 while waiting */
 
 void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status)
 {
     if (addr == NULL) {
         return;
     }
+    gBondResult = status;
     ucxapp_print("[BT] bonding %s: ", status == 0 ? "succeeded" : "FAILED");
     printAddr(addr);
     if (status != 0) {
@@ -1084,6 +1087,62 @@ static int cmdBtUnbond(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static bool connAddr(ucxapp_t *app, int32_t conn, uBtLeAddress_t *addr)
+{
+    uCxBtListConnections_t c;
+    bool found = false;
+
+    uCxBluetoothListConnectionsBegin(app->ucx);
+    while (uCxBluetoothListConnectionsGetNext(app->ucx, &c)) {
+        if (c.conn_handle == conn) {
+            *addr = c.bd_addr;
+            found = true;
+        }
+    }
+    uCxEnd(app->ucx);
+    return found;
+}
+
+/* Starts bonding and waits up to seconds for the module's bond status; true when bonded. */
+static bool btBond(ucxapp_t *app, const uBtLeAddress_t *addr, int32_t seconds)
+{
+    ucxapp_bt_security_defaults(app);
+    gBondResult = -1;
+    int32_t r = uCxBluetoothBond(app->ucx, (uBtLeAddress_t *)addr);
+    if (r != 0) {
+        ucxapp_print("ERROR: bond request failed (%d%s); is the device connected (bt.list)?\n", (int)r, ucxapp_errname(r));
+        return false;
+    }
+    uint32_t start = ucxapp_platform_tick_ms();
+    while (gBondResult < 0 && ucxapp_platform_tick_ms() - start < (uint32_t)seconds * 1000u) {
+        ucxapp_platform_sleep_ms(20);
+    }
+    if (gBondResult < 0) {
+        ucxapp_print("no bond result in %d s; if the peer shows a code, enter it with bt.passkey\n", (int)seconds);
+    }
+    return gBondResult == 0;
+}
+
+static int cmdBtBond(ucxapp_t *app, int argc, char *argv[])
+{
+    uBtLeAddress_t a;
+    int32_t conn = 0;
+    int32_t seconds = 15;
+
+    if (argc < 2 || argc > 3 || (argc == 3 && (!ucxapp_parse_int(argv[2], &seconds) || seconds < 1 || seconds > 120))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strlen(argv[1]) <= 3 && ucxapp_parse_int(argv[1], &conn)) {
+        if (!connAddr(app, conn, &a)) {
+            ucxapp_print("ERROR: connection %d not found (bt.list)\n", (int)conn);
+            return UCXAPP_ERR_FAILED;
+        }
+    } else if (!parseAddr(argv[1], &a)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    return btBond(app, &a, seconds) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
 static int cmdBtAddr(ucxapp_t *app, int argc, char *argv[])
 {
     uMacAddress_t mac;
@@ -1236,11 +1295,14 @@ static int cmdBtCs(ucxapp_t *app, int argc, char *argv[])
     uBtChannelSoundingMode_t mode;
     int32_t r;
 
-    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0)) {
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0 &&
+                     strcmp(argv[1], "initiator") != 0)) {
         return UCXAPP_ERR_USAGE;
     }
     if (argc == 2) {
-        mode = strcmp(argv[1], "on") == 0 ? U_BT_CHANNEL_SOUNDING_MODE_REFLECTOR : U_BT_CHANNEL_SOUNDING_MODE_DISABLE;
+        mode = strcmp(argv[1], "on") == 0          ? U_BT_CHANNEL_SOUNDING_MODE_REFLECTOR :
+               strcmp(argv[1], "initiator") == 0   ? U_CX_CS_MODE_INITIATOR :
+                                                     U_BT_CHANNEL_SOUNDING_MODE_DISABLE;
         r = uCxChannelSoundingSetChannelSoundingMode(app->ucx, mode);
         if (r == 0) {
             r = uCxSystemStoreConfiguration(app->ucx);
@@ -1249,15 +1311,221 @@ static int cmdBtCs(ucxapp_t *app, int argc, char *argv[])
         r = uCxChannelSoundingGetChannelSoundingMode(app->ucx, &mode);
     }
     if (r != 0) {
-        ucxapp_print("ERROR: Channel Sounding failed (%d%s); it needs a NORA-B26 or NORA-B27 with 3.4 or later\n",
-                     (int)r, ucxapp_errname(r));
+        ucxapp_print("ERROR: Channel Sounding failed (%d%s); it needs a NORA-B26 or NORA-B27 with 3.4 or later%s\n",
+                     (int)r, ucxapp_errname(r),
+                     argc == 2 && strcmp(argv[1], "initiator") == 0 ? ", the initiator the cs_initiator evaluation firmware" : "");
         return UCXAPP_ERR_FAILED;
     }
     if (mode == U_BT_CHANNEL_SOUNDING_MODE_REFLECTOR) {
         ucxapp_print("Channel Sounding on: reflector, a connected initiator (phone or tag reader) measures the distance\n");
+    } else if (mode == U_CX_CS_MODE_INITIATOR) {
+        ucxapp_print("Channel Sounding initiator: bond with a reflector, then bt.cs.range <conn> shows the module's distance\n");
     } else {
         ucxapp_print("Channel Sounding off\n");
     }
+    return UCXAPP_OK;
+}
+
+/* Distances come from the module (+UEBTCSM, median filtered, Kalman filter per bt.cs.filter); nothing is
+ * computed here. The URC handler queues them so a burst is not lost between two polls. */
+#define CS_RING 16
+static struct {
+    int32_t conn[CS_RING];
+    int32_t mm[CS_RING];
+    uint32_t head;
+    uint32_t pctCount;
+} gCs;
+
+void ucxapp_bt_cs_distance(int32_t conn, int32_t mm)
+{
+    ucxapp_events_lock();
+    gCs.conn[gCs.head % CS_RING] = conn;
+    gCs.mm[gCs.head % CS_RING] = mm;
+    gCs.head++;
+    ucxapp_events_unlock();
+}
+
+void ucxapp_bt_cs_pct(int32_t conn, int32_t antenna, int32_t channels)
+{
+    (void)conn;
+    (void)antenna;
+    (void)channels;
+    ucxapp_events_lock();
+    gCs.pctCount++;
+    ucxapp_events_unlock();
+}
+
+static int csFailed(const char *what, int32_t r)
+{
+    ucxapp_print("ERROR: %s failed (%d%s); it needs the NORA-B26 cs_initiator evaluation firmware\n", what, (int)r,
+                 ucxapp_errname(r));
+    return UCXAPP_ERR_FAILED;
+}
+
+/* Ranging needs an encrypted, bonded link: bond with the peer of conn, then start again. */
+static int32_t csBondAndStart(ucxapp_t *app, int32_t conn)
+{
+    uBtLeAddress_t addr;
+
+    if (!connAddr(app, conn, &addr)) {
+        ucxapp_print("ERROR: connection %d not found (bt.list)\n", (int)conn);
+        return -1;
+    }
+    ucxapp_print("ranging refused, bonding with the reflector...\n");
+    if (!btBond(app, &addr, 15)) {
+        return -1;
+    }
+    return uCxChannelSoundingSetProcedure(app->ucx, conn, true);
+}
+
+static int cmdBtCsRange(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t conn = 0;
+    int32_t seconds = 10;
+    bool toggle = argc == 3 && (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0);
+
+    if (argc < 2 || argc > 3 || !ucxapp_parse_int(argv[1], &conn) || conn < 0 ||
+        (argc == 3 && !toggle && (!ucxapp_parse_int(argv[2], &seconds) || seconds < 1 || seconds > 3600))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (toggle) {
+        int32_t r = uCxChannelSoundingSetProcedure(app->ucx, conn, strcmp(argv[2], "on") == 0);
+        if (r != 0) {
+            return csFailed("ranging", r);
+        }
+        ucxapp_print("ranging %s on conn %d%s\n", argv[2], (int)conn,
+                     strcmp(argv[2], "on") == 0 ? "; distances appear in the events (app.log.events.on)" : "");
+        return UCXAPP_OK;
+    }
+    ucxapp_events_lock();
+    uint32_t seen = gCs.head;
+    ucxapp_events_unlock();
+    int32_t r = uCxChannelSoundingSetProcedure(app->ucx, conn, true);
+    if (r != 0) {
+        r = csBondAndStart(app, conn);
+    }
+    if (r != 0) {
+        ucxapp_print("hint: this module must be in initiator mode (bt.cs initiator) and the reflector accept bonding\n");
+        return csFailed("ranging", r);
+    }
+    ucxapp_print("ranging on conn %d for %d s, distance from the module (any key stops)\n", (int)conn, (int)seconds);
+    uint32_t start = ucxapp_platform_tick_ms();
+    uint32_t got = 0;
+    int32_t lo = INT32_MAX;
+    int32_t hi = INT32_MIN;
+    while (ucxapp_platform_tick_ms() - start < (uint32_t)seconds * 1000u) {
+        if (ucxapp_platform_key_pressed()) {
+            (void)ucxapp_platform_get_key();
+            break;
+        }
+        int32_t batch[CS_RING];
+        int n = 0;
+        ucxapp_events_lock();
+        if (gCs.head - seen > CS_RING) {
+            seen = gCs.head - CS_RING;
+        }
+        for (; seen != gCs.head; seen++) {
+            if (gCs.conn[seen % CS_RING] == conn) {
+                batch[n++] = gCs.mm[seen % CS_RING];
+            }
+        }
+        ucxapp_events_unlock();
+        for (int i = 0; i < n; i++) {
+            got++;
+            lo = batch[i] < lo ? batch[i] : lo;
+            hi = batch[i] > hi ? batch[i] : hi;
+            ucxapp_print("%6.2f m\n", batch[i] / 1000.0);
+        }
+        ucxapp_platform_sleep_ms(20);
+    }
+    (void)uCxChannelSoundingSetProcedure(app->ucx, conn, false);
+    if (got == 0) {
+        ucxapp_print("no distance in %d s; check bt.cs on the reflector and bt.cs.rate\n", (int)seconds);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%u readings, %.2f..%.2f m\n", (unsigned)got, lo / 1000.0, hi / 1000.0);
+    return UCXAPP_OK;
+}
+
+static int cmdBtCsRate(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t rate = 0;
+    int32_t r;
+
+    if (argc > 2 || (argc == 2 && (!ucxapp_parse_int(argv[1], &rate) || rate < 1 || rate > 65535))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    r = argc == 2 ? uCxChannelSoundingSetRate(app->ucx, rate) : uCxChannelSoundingGetRate(app->ucx, &rate);
+    if (r != 0) {
+        return csFailed("Channel Sounding rate", r);
+    }
+    ucxapp_print("one measurement every %d connection intervals\n", (int)rate);
+    return UCXAPP_OK;
+}
+
+static int cmdBtCsFilter(ucxapp_t *app, int argc, char *argv[])
+{
+    uCxCsKalman_t k = { 1, 120, true };
+    int32_t r;
+
+    if (argc == 2 && (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0 || strcmp(argv[1], "default") == 0)) {
+        if (strcmp(argv[1], "default") != 0 && (r = uCxChannelSoundingGetKalman(app->ucx, &k)) != 0) {
+            return csFailed("Kalman filter", r);
+        }
+        if (strcmp(argv[1], "default") != 0) {
+            k.enabled = strcmp(argv[1], "on") == 0;
+        }
+    } else if (argc == 3) {
+        if (!ucxapp_parse_int(argv[1], &k.processNoise) || k.processNoise < 0 || k.processNoise > 1000 ||
+            !ucxapp_parse_int(argv[2], &k.measurementNoise) || k.measurementNoise < 10 || k.measurementNoise > 10000) {
+            return UCXAPP_ERR_USAGE;
+        }
+    } else if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    r = argc == 1 ? uCxChannelSoundingGetKalman(app->ucx, &k) : uCxChannelSoundingSetKalman(app->ucx, &k);
+    if (r != 0) {
+        return csFailed("Kalman filter", r);
+    }
+    ucxapp_print("Kalman filter %s: Q %.3f, R %.3f\n", k.enabled ? "on" : "off (raw distances)",
+                 k.processNoise / 1000.0, k.measurementNoise / 1000.0);
+    return UCXAPP_OK;
+}
+
+static int cmdBtCsPct(ucxapp_t *app, int argc, char *argv[])
+{
+    static const char *const kRefs[] = { "off", "500", "1000", "10000" };
+    int ref = -1;
+    bool on = false;
+    int32_t r;
+
+    if (argc == 3 && strcmp(argv[1], "ref") == 0) {
+        for (int i = 0; i < 4; i++) {
+            ref = strcmp(argv[2], kRefs[i]) == 0 ? i : ref;
+        }
+        if (ref < 0) {
+            return UCXAPP_ERR_USAGE;
+        }
+        r = uCxChannelSoundingSetReference(app->ucx, (uCxCsReference_t)ref);
+        if (r != 0) {
+            return csFailed("PCT reference", r);
+        }
+        ucxapp_print(ref == 0 ? "PCT from real measurements\n" : "PCT replaced by the stored %s mm reference\n", kRefs[ref]);
+        return UCXAPP_OK;
+    }
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    r = argc == 2 ? uCxChannelSoundingSetPctReporting(app->ucx, strcmp(argv[1], "on") == 0)
+                  : uCxChannelSoundingGetPctReporting(app->ucx, &on);
+    if (r != 0) {
+        return csFailed("PCT reporting", r);
+    }
+    on = argc == 2 ? strcmp(argv[1], "on") == 0 : on;
+    ucxapp_events_lock();
+    uint32_t n = gCs.pctCount;
+    ucxapp_events_unlock();
+    ucxapp_print("PCT reporting %s, %u reports so far\n", on ? "on" : "off", (unsigned)n);
     return UCXAPP_OK;
 }
 #endif
@@ -1269,7 +1537,11 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.addr",       "[addr]",              "Show the module's Bluetooth address, or set it (XX:XX:XX:XX:XX:XX; takes effect after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
 #ifndef UCXAPP_LITE
     { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "List the scan data filters, or set one: AD type (9 = complete name, 0xFF = manufacturer data) and up to 10 bytes to match, as text (NORA) or hex (4E4F5241); used by bt.scan filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
-    { "bt.cs",         "[on|off]",            "Bluetooth Channel Sounding (NORA-B26/B27): on makes the module a reflector so a connected initiator can measure the distance (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
+    { "bt.cs",         "[on|off|initiator]",  "Bluetooth Channel Sounding (NORA-B26/B27): on makes the module a reflector so a connected initiator can measure the distance; initiator (cs_initiator evaluation firmware) measures it (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
+    { "bt.cs.range",   "<conn> [seconds=10|on|off]", "Channel Sounding initiator: range a reflector (bonding first if needed) and print the module's distance (filtered in the module) for some seconds, or start/stop ranging in the background (distances in the events)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRange },
+    { "bt.cs.rate",    "[intervals=20]",      "Channel Sounding initiator: connection intervals between measurements (1-65535; stored with dev.save)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRate },
+    { "bt.cs.filter",  "[on|off|default|<q> <r>]", "Channel Sounding initiator: the module's Kalman filter; off gives raw distances, Q 0-1000 and R 10-10000 in 0.001 (default 1 and 120)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsFilter },
+    { "bt.cs.pct",     "[on|off|ref off|500|1000|10000]", "Channel Sounding initiator: phase correction term reports for your own algorithms, or a stored reference instead of real data (debug)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsPct },
 #endif
     { "bt.disconnect", "[conn]",            "Close a BLE connection",                         UCXAPP_CMD_NEEDS_DEVICE, cmdBtDisconnect },
     { "bt.list",       "",                    "List BLE connections",                           UCXAPP_CMD_NEEDS_DEVICE, cmdBtList },
@@ -1281,6 +1553,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.confirm",    "<yes|no>",            "Answer a waiting pairing request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtConfirm },
     { "bt.passkey",    "<digits|deny>",       "Answer a waiting passkey request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtPasskey },
     { "bt.bonds",      "",                    "List bonded devices",                            UCXAPP_CMD_NEEDS_DEVICE, cmdBtBonds },
+    { "bt.bond",       "<conn|addr> [seconds=15]", "Bond (pair and store keys) with a connected device and wait for the result; a code from the peer goes in with bt.passkey", UCXAPP_CMD_NEEDS_DEVICE, cmdBtBond },
     { "bt.unbond",     "<addr|all>",          "Remove one or all bonds",                        UCXAPP_CMD_NEEDS_DEVICE, cmdBtUnbond },
     { "bt.profile.add", "<name> <addr[,random]>", "Save a BLE device as a named profile",          0, cmdBtProfileAdd },
     { "bt.profile.list", "",                  "List saved BLE profiles",                        0, cmdBtProfileList },

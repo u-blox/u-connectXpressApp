@@ -140,7 +140,11 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.addr` | `[addr]` | Show the module's Bluetooth address, or set it as `XX:XX:XX:XX:XX:XX`; a new address is stored and takes effect after `dev.reboot` |
 | `bt.name` | `[name]` | Show the module's Bluetooth device name, or set it; a new name is active at once and stored |
 | `bt.filter` | `[<0-9> <ad_type> <text\|hex>\|<0-9> clear\|clear]` | Scan data filters. Without arguments: list them. Otherwise set filter 0-9 to an AD type (decimal or `0x..`: 9 complete name, 8 short name, 0xFF manufacturer data, 3 16-bit UUIDs) and up to 10 bytes to match, as text (`NORA`, case-sensitive) or hex (`4E4F5241`, `0x4E4F5241`, `4E:4F:52:41`; a text that is valid hex, like `CAFE`, is read as hex), or clear one or all. Used by `bt.scan filter` and kept in the module. Not in lite builds |
-| `bt.cs` | `[on\|off]` | Bluetooth Channel Sounding (NORA-B26/B27, firmware 3.4 or later). Without arguments: the mode. `on` makes the module a reflector, so a connected initiator (a phone or tag reader that supports Channel Sounding) measures the distance to it; the setting is stored. Progress (capabilities exchanged, security, procedure on or off) is printed as it happens. Read the result on the initiator, or with `gatt.client.ras` when the module is the client. Not in lite builds |
+| `bt.cs` | `[on\|off\|initiator]` | Bluetooth Channel Sounding (NORA-B26/B27, firmware 3.4 or later). Without arguments: the mode. `on` makes the module a reflector, so a connected initiator (a phone or tag reader that supports Channel Sounding) measures the distance to it; `initiator` (NORA-B26 cs_initiator evaluation firmware) makes the module measure it; the setting is stored. Progress (capabilities exchanged, security, procedure on or off) is printed as it happens. Read the result on the initiator, or with `gatt.client.ras` when the module is the client. Not in lite builds |
+| `bt.cs.range` | `<conn> [seconds=10\|on\|off]` | Initiator: range a reflector and print the distance the module computes (median filter plus Kalman filter, see `bt.cs.filter`), then the count and range of readings; any key stops. Ranging needs a bonded link; when the module refuses, the command bonds and retries for 15 s. `on`/`off` starts or stops ranging in the background, with distances in the events. Not in lite builds |
+| `bt.cs.rate` | `[intervals=20]` | Initiator: connection intervals between measurements (1-65535); use a connection interval of 10 ms or more. Not in lite builds |
+| `bt.cs.filter` | `[on\|off\|default\|<q> <r>]` | Initiator: the module's Kalman filter. `off` gives raw distances; Q 0-1000 and R 10-10000 in units of 0.001 (default 1 and 120; a larger R is smoother but slower). Not in lite builds |
+| `bt.cs.pct` | `[on\|off\|ref off\|500\|1000\|10000]` | Initiator: phase correction term reports (binary, per antenna path) for your own algorithms, and a count of those received; `ref` replaces the measured data with a stored 500 mm, 1 m or 10 m reference (debug). Not in lite builds |
 | `bt.disconnect` | `<handle>` | Close a BLE connection |
 | `bt.list` |  | List BLE connections |
 | `bt.pairing` | `<on\|off>` | Enable or disable pairing mode |
@@ -151,6 +155,7 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.confirm` | `<yes\|no>` | Answer a waiting pairing request (autoconfirm off) |
 | `bt.passkey` | `<digits\|deny>` | Answer a waiting passkey request |
 | `bt.bonds` |  | List bonded devices |
+| `bt.bond` | `<conn\|addr> [seconds=15]` | Bond (pair and store keys) with a connected device, by connection number from `bt.list` or by address, and wait up to the given seconds for the result. When the peer shows a code, enter it with `bt.passkey`. Ranging with `bt.cs.range` and encrypted GATT need a bond |
 | `bt.unbond` | `<addr\|all>` | Remove one or all bonds |
 | `bt.profile.add` | `<name> <addr[,random]>` | Save a BLE device as a named profile in `ucxapp.ble` (current directory; max 16) |
 | `bt.profile.list` |  | List saved BLE profiles |

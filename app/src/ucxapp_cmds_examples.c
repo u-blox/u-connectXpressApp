@@ -169,6 +169,8 @@ static const example_t kExamples[] = {
       "bt.filter 0 9 NORA-W36\nbt.filter 1 0xFF 0x1701\nbt.filter\nbt.scan filter\nbt.filter clear" },
     { "bt", "Channel Sounding: let a phone or tag reader measure the distance (NORA-B26/B27)",
       "bt.cs on\nbt.pairing on\n# connect from the initiator; procedure events are printed as they come\nbt.cs off" },
+    { "bt", "Channel Sounding initiator: measure the distance to a reflector (NORA-B26 cs_initiator evaluation firmware)",
+      "bt.cs initiator\nbt.connect reflector\nbt.bond 0\nbt.cs.range 0 30\n# smoother or raw distances\nbt.cs.filter 1 500\nbt.cs.filter off\nbt.cs.rate 10" },
 #endif
     { "bt", "Save a device and reconnect later",
       "bt.profile.add sensor C0:FF:EE:00:11:22\nbt.profile.connect sensor" },

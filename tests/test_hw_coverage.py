@@ -12,6 +12,8 @@ ENTRY = re.compile(r'\{\s*"([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)",\s*"[^\n]*?(UCXAPP_
 
 # Destructive, interactive or needing extra hardware; covered by hand.
 UNTESTED = {
+    "bt.bond": "needs a second module that accepts bonding; offline in tests/test_cs_initiator.py",
+    "bt.cs.range": "needs a second NORA-B26 as reflector; offline in tests/test_cs_initiator.py",
     "dev.factory": "erases the module",
     "at.reset": "alias of dev.reboot (same handler), tested there",
     "fw.flash": "rewrites the firmware",

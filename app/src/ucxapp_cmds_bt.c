@@ -670,7 +670,9 @@ void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status)
     if (status == U_BT_BOND_STATUS_BONDING_FAILED_AUTH) {
         ucxapp_print("[BT] the peer rejected pairing; if it shows a code, enter it with bt.passkey; to retry run bt.unbond <addr> first\n");
     } else if (status == U_BT_BOND_STATUS_BONDING_FAILED_PEER_LOST_BOND) {
-        ucxapp_print("[BT] the peer lost its bond: run bt.unbond <addr> and connect again\n");
+        ucxapp_print("[BT] stale bond: one side still has keys the other forgot; run bt.unbond <addr> here and/or "
+                     "remove this module from the peer's Bluetooth settings (e.g. Windows: Bluetooth & devices), "
+                     "then connect again\n");
     } else if (status == U_BT_BOND_STATUS_BONDING_FAILED_MITM) {
         ucxapp_print("[BT] MITM protection not possible with these I/O capabilities: try bt.iocap keydisplay\n");
     }

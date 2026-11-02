@@ -161,7 +161,7 @@ static const example_t kExamples[] = {
     { "bt", "Find and connect a device",
       "bt.scan\nbt.connect 1\nbt.list\nbt.disconnect" },
     { "bt", "Connect by name without a scan first (filtered scan on the name, case must match)",
-      "bt.connect NINA-B5\nbt.list" },
+      "bt.connect NORA-W36\nbt.list" },
     { "bt", "Read and set the module's own name and address",
       "bt.name\nbt.addr\nbt.name MySensor" },
 #ifndef UCXAPP_LITE

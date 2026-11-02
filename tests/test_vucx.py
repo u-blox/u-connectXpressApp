@@ -540,16 +540,16 @@ def test_perf_sps_needs_a_connection(app_exe, vucx):
 def test_bt_addr_name_and_filter(app_exe, nora):
     out = _shell(app_exe, nora.port, ["bt.addr", "bt.name", "bt.name MySensor", "bt.addr 54:F8:2A:14:C9:EF",
                                       "bt.addr a:b:c:d:e:f,public",
-                                      "bt.filter", "bt.filter 0 9 4E:49:4E:41", "bt.filter 1 0xFF 0102",
+                                      "bt.filter", "bt.filter 0 9 4E:4F:52:41", "bt.filter 1 0xFF 0102",
                                       "bt.filter 2 9 NORA-W36", "bt.filter 0 clear", "bt.filter clear"], log=nora.log)
     assert out.returncode == 0, out.stdout + out.stderr
     assert "C0:FF:EE:00:11:44" in out.stdout and "vucx" in out.stdout, out.stdout
     assert '"NORA"' in out.stdout and "2 data filter(s)" in out.stdout, out.stdout
-    assert '"NINA"' in out.stdout and "all data filters cleared" in out.stdout, out.stdout
+    assert '"NORA-W36"' in out.stdout and "all data filters cleared" in out.stdout, out.stdout
     sent = nora.log
     assert 'AT+UBTLN="MySensor"' in sent and "AT+USYLA=0,54F82A14C9EF" in sent and "AT&W" in sent, sent
     assert "AT+USYLA=0,0A0B0C0D0E0F" in sent, sent
-    assert "AT+UBTDFD=0,9,4E494E41" in sent and "AT+UBTDFD=1,255,0102" in sent, sent
+    assert "AT+UBTDFD=0,9,4E4F5241" in sent and "AT+UBTDFD=1,255,0102" in sent, sent
     assert "AT+UBTDFD=2,9,4E4F52412D573336" in sent and '"NORA-W36"' in out.stdout, sent
     assert sum(cmd.startswith("AT+UBTDFD=") and cmd.endswith(",0,") for cmd in sent) == 11, sent
 

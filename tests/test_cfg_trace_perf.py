@@ -169,7 +169,10 @@ def test_trace_pcap_in_wireshark(app_exe, tmp_path):
         pytest.skip("Wireshark (tshark) is not installed")
     trace = _write(tmp_path, "a.trace", _dated(TRACE) + "3.000 TX AT+GMM\n4.000 RX +STARTUP\n")
     assert _run_in(app_exe, tmp_path, f"at.trace.pcap {trace}").returncode == 0
-    out = subprocess.run([tshark, "-X", f"lua_script:{LUA}", "-2", "-r", str(tmp_path / "a.pcapng"), "-T", "fields",
+    # Ubuntu's AppArmor profile for tshark blocks reading from most of $HOME, so load the dissector from /tmp
+    lua = tmp_path / LUA.name
+    shutil.copyfile(LUA, lua)
+    out = subprocess.run([tshark, "-X", f"lua_script:{lua}", "-2", "-r", str(tmp_path / "a.pcapng"), "-T", "fields",
                           "-E", "separator=|", "-e", "at.role", "-e", "at.cmd", "-e", "ucx.kind", "-e", "ucx.cmd",
                           "-e", "ucx.result", "-e", "ucx.time", "-e", "ucx.request_in", "-e", "ucx.response_in",
                           "-e", "ucx.meaning", "-e", "_ws.expert.message"],

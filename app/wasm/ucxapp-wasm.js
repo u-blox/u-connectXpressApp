@@ -239,7 +239,16 @@
     try {
       await ready;
       const p = await lastPort();
-      if (p && !port && !virt) await openPort(p);
+      /* After a reload the old page may still hold the port for a moment: retry before giving up. */
+      for (let i = 0; p && !port && !virt; i++) {
+        try {
+          await openPort(p);
+        } catch (e) {
+          port = null;
+          if (i >= 20) throw e;
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
     } catch (e) {
       port = null;
       console.warn('reopen last port', e);   /* busy in another tab or app: the button still works */
@@ -300,6 +309,10 @@
     if (navigator.serial) {
       navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(); });
       navigator.serial.addEventListener('connect', reopen);   /* the remembered EVK plugged back in */
+      window.addEventListener('pagehide', () => {
+        reading = false;
+        try { if (reader) reader.cancel(); if (writer) writer.releaseLock(); if (port) port.close(); } catch (e) { /* unloading */ }
+      });
       reopen();
     }
   }

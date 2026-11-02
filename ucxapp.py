@@ -375,7 +375,9 @@ def linux_host_sync(spec):
 def linux_host_run(spec, forward):
     host, path = linux_host_sync(spec)
     tty = ["-t"] if sys.stdin.isatty() and sys.stdout.isatty() else []
-    cmd = f"cd {remote_path(path)} && python3 ucxapp.py {' '.join(shlex.quote(a) for a in forward)}"
+    env = " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(os.environ.items())
+                   if k.startswith("UCX_") and k != "UCX_LINUX_HOST")
+    cmd = f"cd {remote_path(path)} && {env + ' ' if env else ''}python3 ucxapp.py {' '.join(shlex.quote(a) for a in forward)}"
     return subprocess.call(["ssh", *tty, host, cmd])
 
 

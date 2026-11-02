@@ -95,3 +95,15 @@ def test_linux_host_paths_are_quoted_for_the_remote_shell():
     assert ucxapp.linux_host_split("me@box") == ("me@box", "~/ucxapp")
     assert ucxapp.linux_host_split("me@box:/srv/a b") == ("me@box", "/srv/a b")
     assert ucxapp.remote_path("~/my dir") == "~/'my dir'"
+
+
+def test_linux_host_run_forwards_the_test_variables(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ucxapp, "linux_host_sync", lambda spec: ("me@box", "~/ucxapp"))
+    monkeypatch.setattr(ucxapp.subprocess, "call", lambda cmd: calls.append(cmd) or 0)
+    monkeypatch.setenv("UCX_WIFI_SSID", "my net")
+    monkeypatch.setenv("UCX_LINUX_HOST", "me@box")
+    ucxapp.linux_host_run("me@box", ["--test", "tests/hardware"])
+    remote = calls[0][-1]
+    assert "UCX_WIFI_SSID='my net'" in remote and "UCX_LINUX_HOST" not in remote
+    assert remote.endswith("python3 ucxapp.py --test tests/hardware")

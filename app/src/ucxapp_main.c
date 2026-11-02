@@ -34,7 +34,7 @@ static uCxHandle_t gUcxHandle;
 static char gRxBuffer[8192];
 static char gUrcBuffer[4096];
 static bool gConnected;
-static char gPortName[32];
+static char gPortName[128];
 
 const char *ucxapp_device_port(void)
 {
@@ -49,7 +49,11 @@ static bool connectModule(const char *port)
     gAtConfig.rxBufferLen = sizeof(gRxBuffer);
     gAtConfig.pUrcBuffer = gUrcBuffer;
     gAtConfig.urcBufferLen = sizeof(gUrcBuffer);
-    gAtConfig.pUartDevName = port;
+    /* The AT client keeps this pointer (fw.flash reopens it), so it must outlive the caller's buffer. */
+    if (port != gPortName) {
+        snprintf(gPortName, sizeof(gPortName), "%s", port);
+    }
+    gAtConfig.pUartDevName = gPortName;
 
     uCxAtClientInit(&gAtConfig, &gAtClient);
     int32_t result = uCxAtClientOpen(&gAtClient, UART_BAUD, false);
@@ -92,7 +96,6 @@ static bool connectModule(const char *port)
     ucxapp_adopt_connections(&gUcxHandle);
     ucxapp_udp_reset_limit();
     gConnected = true;
-    snprintf(gPortName, sizeof(gPortName), "%s", port);
     ucxapp_caps_reset();
     return true;
 }

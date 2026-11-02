@@ -53,6 +53,13 @@ def test_reboot_waits_for_startup_event(app_exe, vucx):
     assert "module rebooted" in out.stdout, out.stdout
 
 
+def test_dev_crash_shows_the_stored_record(app_exe, vucx):
+    out = _run(app_exe, vucx.port, "dev.crash")
+    assert out.returncode == 0, out.stdout
+    assert '+USYCI:"Assert","","u_buffer.c",267,"3.5.0-0"' in out.stdout, out.stdout
+    assert "no crash information" not in out.stdout, out.stdout
+
+
 def test_unknown_command_reports_error(app_exe, vucx):
     out = _run(app_exe, vucx.port, "at +UNKNOWN")
     assert "ERROR" in out.stdout, out.stdout

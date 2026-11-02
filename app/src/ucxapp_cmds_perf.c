@@ -85,9 +85,14 @@ static int32_t linkRecv(link_t *l, uint8_t *buf, int32_t max)
     return n;
 }
 
-/* True once the peer has closed the connection (UESOCL / SPS disconnect); some echo servers close after one reply. */
+/* True once the peer has closed the connection (UESOCL / SPS disconnect); some echo servers close after one reply.
+ * A +STARTUP means the module itself restarted, which ends every link. */
 static bool linkClosed(link_t *l)
 {
+    if (!l->closed && ucxapp_events_take(URC_FLAG_STARTUP)) {
+        ucxapp_print("ERROR: the module restarted (+STARTUP) during the run; the link is gone\n");
+        l->closed = true;
+    }
     if (!l->closed && l->kind != LINK_UDP) {
         l->closed = ucxapp_events_take(l->kind == LINK_TCP ? URC_FLAG_SOCK_CLOSED : URC_FLAG_SPS_DISCONNECTED);
     }
@@ -147,6 +152,7 @@ static bool linkOpen(ucxapp_t *app, link_t *l, link_kind_t kind, const char *hos
     l->kind = kind;
     l->handle = -1;
     l->port = port;
+    ucxapp_events_clear(URC_FLAG_STARTUP);
     if (kind == LINK_SPS) {
         l->handle = ucxapp_handle_current(UCXAPP_HANDLE_CONN);
         if (l->handle < 0) {
@@ -718,7 +724,7 @@ static int phoneRun(ucxapp_t *app, phone_mode_t mode, int32_t seconds, int32_t s
     if (!phoneFind(name, id, sizeof(id)) || !ucxapp_json_quote(id, qid, sizeof(qid))) {
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_events_clear(URC_FLAG_SPS_CONNECTED | URC_FLAG_SPS_DISCONNECTED | URC_FLAG_SPS_DATA);
+    ucxapp_events_clear(URC_FLAG_SPS_CONNECTED | URC_FLAG_SPS_DISCONNECTED | URC_FLAG_SPS_DATA | URC_FLAG_STARTUP);
     ucxapp_gatt_server_quiet(true);   /* the phone's CCCD writes are not news during the run */
     snprintf(params, sizeof(params), "{\"deviceId\":%s}", qid);
     char *c = ucxapp_xplorer_call("ble.connect", params, PHONE_CALL_MS);

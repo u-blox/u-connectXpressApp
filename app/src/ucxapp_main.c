@@ -418,6 +418,7 @@ int main(int argc, char *argv[])
     int posCount = 0;
 
     ucxapp_platform_init();
+    ucxapp_platform_args(&argc, &argv);
     ucxapp_io_set(&ucxapp_io_stdio);
     ucxapp_store_set_dir("storage/");
 

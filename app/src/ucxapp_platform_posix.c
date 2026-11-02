@@ -32,6 +32,12 @@ void ucxapp_platform_init(void)
 {
 }
 
+void ucxapp_platform_args(int *argc, char ***argv)
+{
+    (void)argc;
+    (void)argv;
+}
+
 void ucxapp_platform_sleep_ms(uint32_t ms)
 {
     usleep((useconds_t)ms * 1000u);

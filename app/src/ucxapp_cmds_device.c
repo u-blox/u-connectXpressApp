@@ -199,8 +199,9 @@ static int cmdDeviceCrash(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     uCxAtClientCmdBeginF(client, "AT+USYCI?", "", NULL);
-    while ((line = uCxAtClientCmdGetRspParamLine(client, NULL, NULL, NULL)) != NULL) {
-        ucxapp_print("%s\n", line);
+    /* The client only returns lines that match the prefix; with NULL the record would be read (and cleared) unseen. */
+    while ((line = uCxAtClientCmdGetRspParamLine(client, "+USYCI:", NULL, NULL)) != NULL) {
+        ucxapp_print("+USYCI:%s\n", line);
         rows++;
     }
     if (uCxAtClientCmdEnd(client) != 0) {

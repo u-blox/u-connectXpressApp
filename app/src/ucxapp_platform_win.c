@@ -20,6 +20,8 @@
 #include <cfgmgr32.h>
 #include <devpropdef.h>
 #include <psapi.h>
+#include <shellapi.h>
+#include <timeapi.h>
 
 #include "u_cx_log.h"
 
@@ -28,6 +30,8 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "cfgmgr32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "winmm.lib")
 
 /* DEVPKEY_Device_BusReportedDeviceDesc, defined here to avoid INITGUID issues */
 static const DEVPROPKEY MY_DEVPKEY_BusReportedDeviceDesc = {
@@ -56,9 +60,38 @@ static PFN_FT_OpenEx gpFT_OpenEx = NULL;
 static PFN_FT_GetComPortNumber gpFT_GetComPortNumber = NULL;
 static PFN_FT_Close gpFT_Close = NULL;
 
+static LARGE_INTEGER gQpcFreq;
+
 void ucxapp_platform_init(void)
 {
     SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    /* The default 15.6 ms timer would turn every 1 ms idle poll of a bridge or perf loop into 15.6 ms. */
+    timeBeginPeriod(1);
+    QueryPerformanceFrequency(&gQpcFreq);
+}
+
+void ucxapp_platform_args(int *argc, char ***argv)
+{
+    int n = 0;
+    LPWSTR *wide = CommandLineToArgvW(GetCommandLineW(), &n);
+    char **utf8 = wide != NULL && n > 0 ? (char **)calloc((size_t)n + 1, sizeof(char *)) : NULL;
+
+    if (utf8 != NULL) {
+        for (int i = 0; i < n; i++) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, NULL, 0, NULL, NULL);
+            utf8[i] = len > 0 ? (char *)malloc((size_t)len) : NULL;
+            if (utf8[i] == NULL || WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, utf8[i], len, NULL, NULL) <= 0) {
+                LocalFree(wide);
+                return;   /* keep the ANSI argv; the strings stay allocated for the run */
+            }
+        }
+        *argc = n;
+        *argv = utf8;   /* lives for the whole run */
+    }
+    if (wide != NULL) {
+        LocalFree(wide);
+    }
 }
 
 void ucxapp_platform_sleep_ms(uint32_t ms)
@@ -68,7 +101,12 @@ void ucxapp_platform_sleep_ms(uint32_t ms)
 
 uint32_t ucxapp_platform_tick_ms(void)
 {
-    return (uint32_t)GetTickCount64();
+    LARGE_INTEGER now;
+
+    if (gQpcFreq.QuadPart == 0 || !QueryPerformanceCounter(&now)) {
+        return (uint32_t)GetTickCount64();
+    }
+    return (uint32_t)(now.QuadPart / gQpcFreq.QuadPart * 1000 + now.QuadPart % gQpcFreq.QuadPart * 1000 / gQpcFreq.QuadPart);
 }
 
 bool ucxapp_platform_clock_adjust(int64_t deltaSeconds)

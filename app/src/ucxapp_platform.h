@@ -23,8 +23,11 @@ typedef struct {
     uint16_t vid, pid;                            /* USB vendor/product ID, 0 if unknown */
 } ucxapp_serial_port_t;
 
-/** One-time setup (UTF-8 console output). */
+/** One-time setup (UTF-8 console, 1 ms timer resolution on Windows). */
 void ucxapp_platform_init(void);
+
+/** Replaces argv with UTF-8 strings where the C runtime gives another code page (Windows); no-op elsewhere. */
+void ucxapp_platform_args(int *argc, char ***argv);
 
 /** Milliseconds since an arbitrary start point; wraps after 49 days. */
 uint32_t ucxapp_platform_tick_ms(void);

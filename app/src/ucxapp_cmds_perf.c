@@ -17,6 +17,7 @@
 
 #define PERF_MAX_SIZE   1000   /* fits one socket or UDP read on every firmware */
 #define PERF_POLL_MS    20     /* read without a data URC this often */
+#define PERF_SPS_POLL_MS 1000  /* SPS: fallback read without +UESPSDA (see linkRecv) */
 #define PERF_WINDOW     8      /* tput: packets in flight */
 #define PERF_STALL_MS   500    /* tput: no echo for this long counts the packets in flight as lost */
 
@@ -58,14 +59,18 @@ static bool linkSend(link_t *l, const uint8_t *data, int32_t len)
 }
 
 /* Bytes read (0 when nothing is waiting). Reads when the data URC came, or every PERF_POLL_MS in case it was
- * missed; the next call reads straight away after data, so a backlog drains without waiting. */
+ * missed; for sockets the next call reads straight away after data, so a backlog drains without waiting.
+ * SPS reads only on +UESPSDA (fallback every PERF_SPS_POLL_MS): the module sends it again after each
+ * AT+USPSRB that leaves data behind, and an AT+USPSRB that overlaps the module raising +UESPSDA asserts
+ * NORA-W36 3.5.0 (u_buffer.c line 267). */
 static int32_t linkRecv(link_t *l, uint8_t *buf, int32_t max)
 {
     uint32_t now = ucxapp_platform_tick_ms();
     uint32_t flag = l->kind == LINK_SPS ? URC_FLAG_SPS_DATA : URC_FLAG_SOCK_DATA;
+    uint32_t pollMs = l->kind == LINK_SPS ? PERF_SPS_POLL_MS : PERF_POLL_MS;
     int32_t n;
 
-    if (!ucxapp_events_take(flag) && now - l->lastRead < PERF_POLL_MS) {
+    if (!ucxapp_events_take(flag) && now - l->lastRead < pollMs) {
         return 0;
     }
     l->lastRead = now;
@@ -80,7 +85,9 @@ static int32_t linkRecv(link_t *l, uint8_t *buf, int32_t max)
     if (n <= 0) {
         return 0;
     }
-    l->lastRead = now - PERF_POLL_MS;
+    if (l->kind != LINK_SPS) {
+        l->lastRead = now - PERF_POLL_MS;
+    }
     ucxapp_stats_add(linkStats(l), 0, (size_t)n);
     return n;
 }

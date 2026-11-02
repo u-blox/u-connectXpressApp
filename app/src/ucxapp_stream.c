@@ -49,6 +49,7 @@ enum { BR_NONE, BR_TCP, BR_UDP, BR_BLE, BR_UART, BR_SPS, BR_MQTT };
 #define MQTT_BUF      5000u    /* largest binary MQTT message the module hands over */
 #define MQTT_RETRY_MS 10000u
 #define MQTT_POLL_MS  5000u
+#define SPS_POLL_MS   1000u    /* SPS: fallback read without +UESPSDA */
 #define MQTT_TOPICS   2
 
 typedef struct bridge bridge_t;
@@ -102,6 +103,7 @@ struct bridge {
     uint32_t nextRetry;
     bool udpListen;                /* reply to whoever sent last */
     int32_t spsConn;
+    uint32_t spsLastRead;          /* BR_SPS: tick of the last AT+USPSRB */
     ucxapp_tls_server_t *tlsSrv;   /* BR_TCP server with TLS; NULL for plain TCP */
     ucxapp_tls_conn_t *tls[MAX_CLIENTS];
     bool ntrip;                    /* BR_TCP client (or BR_UART data link) speaking NTRIP v1 to a caster */
@@ -656,11 +658,11 @@ static void pullInbound(bridge_t *b)
             ucxapp_stats_add(UCXAPP_STATS_UDP, 0, (size_t)n);
         }
     } else if (b->bridge == BR_SPS && b->spsConn >= 0) {
-        for (int i = 0; i < 8; i++) {
-            int32_t n = uCxSpsRead(ucx, b->spsConn, (int32_t)sizeof(buf), buf);
-            if (n <= 0) {
-                break;
-            }
+        /* One read per +UESPSDA: the module raises it again after an AT+USPSRB that leaves data behind, and a
+         * read that overlaps the module raising it asserts NORA-W36 3.5.0 (u_buffer.c line 267). */
+        b->spsLastRead = ucxapp_platform_tick_ms();
+        int32_t n = uCxSpsRead(ucx, b->spsConn, (int32_t)sizeof(buf), buf);
+        if (n > 0) {
             ucxapp_stats_add(UCXAPP_STATS_SPS, 0, (size_t)n);
             (void)ucxapp_stream_write(b->s, buf, (size_t)n);
             b->received += (uint32_t)n;
@@ -778,7 +780,17 @@ static void senderLoop(void *arg)
     while (!b->senderStop) {
         size_t n;
 
-        ucxapp_platform_sleep_ms(SEND_PERIOD);
+        if (b->bridge == BR_SPS) {
+            /* Wake on +UESPSDA: SPS reads once per URC (see pullInbound) and must not wait a full period. */
+            for (uint32_t t = 0; t < SEND_PERIOD && !b->rxPending && !b->senderStop; t++) {
+                ucxapp_platform_sleep_ms(1);
+            }
+            if (b->spsConn >= 0 && ucxapp_platform_tick_ms() - b->spsLastRead >= SPS_POLL_MS) {
+                b->rxPending = true;   /* fallback in case a URC was missed */
+            }
+        } else {
+            ucxapp_platform_sleep_ms(SEND_PERIOD);
+        }
         if (b->app->ucx == NULL) {
             continue;
         }

@@ -437,7 +437,7 @@ static int cmdLocate(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gWifiLocCmds[] = {
-    { "wifi.locate", "[google|skyhook|here|combain] [api-key]|key [<service> <api-key>]|body [service]",
+    { "wifi.locate", "[google|skyhook|here|combain] [api-key] | key [<service> <api-key>] | body [service]",
       "Position from a Wi-Fi scan: the module scans, the access points go to Google, Skyhook, HERE or Combain over "
       "the module's HTTPS (needs a Wi-Fi connection and the service's API key); 'key' saves a key and makes its "
       "service the default, 'body' prints the request without sending it", 0, cmdLocate },

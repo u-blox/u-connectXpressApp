@@ -573,7 +573,7 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     X(opI2cWrite, "i2c.write", "<addr> <hex...>", "Write bytes to an I2C device") \
     X(opI2cRead, "i2c.read", "<addr> <len>", "Read bytes from an I2C device") \
     X(opI2cReg, "i2c.reg", "<addr> <reg> [len]", "Read a register (write pointer, then read)") \
-    X(opSpiCfg, "spi.cfg", "<mode 0-3> <hz>", "Set the SPI mode and clock") \
+    X(opSpiCfg, "spi.cfg", "<mode=0> <hz=1000000>", "Set the SPI mode (0-3) and clock in Hz") \
     X(opSpiXfer, "spi.xfer", "<hex...>", "Full duplex SPI transfer, prints the bytes read") \
     X(opAdcRead, "adc.read", "<ch>", "Read an ADC channel") \
     X(opPwmSet, "pwm.set", "<ch> <hz> <duty%>", "Start PWM on a channel") \

@@ -255,7 +255,7 @@ static int cmdRemove(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gTlsCmds[] = {
     { "utils.tls.ca.create",     "[cn] [force]",            "Create the local CA (ECDSA P-256) that signs the app certificates", 0, cmdCaCreate },
-    { "utils.tls.server.create", "<name> <host|ip> [...]",  "Create a server certificate for the given host names / IPv4 addresses", 0, cmdServerCreate },
+    { "utils.tls.server.create", "<name> <host> [...]",  "Create a server certificate for the given host names / IPv4 addresses", 0, cmdServerCreate },
     { "utils.tls.client.create", "<name>",                  "Create a client certificate (for tls clientauth)", 0, cmdClientCreate },
     { "utils.tls.list",          "",                        "List the app certificates", 0, cmdList },
     { "utils.tls.pem",           "<name> [key]",            "Print a certificate (or its key) in PEM", 0, cmdPem },

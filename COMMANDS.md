@@ -121,9 +121,9 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | `dev.disconnect` | | Disconnect. Windows only |
 | `dev.use` | `<port>` | Switch the active module to another serial port; the current one is released (and kept if the new one fails). One module is active at a time |
 | `fw.download` | `[latest [file]]` or `<url> <file> [sha256]` | With no arguments (same as `latest`) looks up the newest u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip (Windows only); flash it with `fw.flash`. With a URL: download via the module (follows redirects), print SHA-256, delete the file on mismatch |
-| `fw.update` | `[force] [baud]` | Compares the module firmware with the newest GitHub release for its family; if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Download needs Windows |
-| `fw.bootloader` | `<port> <file.bin\|file.zip> [baud]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `dev.disconnect` first |
-| `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (built-in unzip), and only the `.bin` inside is flashed |
+| `fw.update` | `[force] [baud=921600]` | Compares the module firmware with the newest GitHub release for its family; if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Download needs Windows |
+| `fw.bootloader` | `<port> <file.bin\|file.zip> [baud=921600]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `dev.disconnect` first |
+| `fw.flash` | `<file.bin\|file.zip> [baud=921600]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (built-in unzip), and only the `.bin` inside is flashed |
 
 ```powershell
 ucxapp COM13 --exec "dev.info"
@@ -232,9 +232,9 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.peap` | `<ssid> <user> <password\|-> <ca> [1.2\|1.3\|any]` | Connect to a WPA2/WPA3-Enterprise network with PEAP (MSCHAPv2); `-` prompts for the password. The module requires the CA that verifies the RADIUS server. Not in lite builds |
 | `wifi.disconnect` | | Leave the network |
 | `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
-| `wifi.rssi` | `[count] [interval_s]` | Read the signal strength, repeatedly if requested |
-| `wifi.survey` | `[seconds] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
-| `wifi.locate` | `[google\|skyhook\|here\|combain] [api-key]\|key [<service> <api-key>]\|body [service]` | Position from a Wi-Fi scan, like ubxlib's `uWifiLoc`. NORA modules have no location command, so the host does the work: the module scans, the strongest access points (up to 20, at least 2; SSIDs ending in `_nomap` are left out) go to the location service as JSON over the module's HTTPS (`http.post`), and the answer is shown as `Position: <lat>, <lon> +/- <m> m`, an OpenStreetMap link and a `gnss.virtual <lat> <lon>` line to use it as a virtual receiver. Needs a Wi-Fi connection and an API key: Google Geolocation API, Skyhook, HERE Network Positioning v2 or Combain (Google, Skyhook and Combain take Google's request format, HERE its own). `key <service> <api-key>` saves the key in `ucxapp.wifiloc` (private) and makes that service the default; `key` alone lists the saved services (keys shortened). `<service> <api-key>` uses a key once without saving it. `body [service]` scans and prints the request without sending it. Not in lite builds |
+| `wifi.rssi` | `[count=1] [interval_s=1]` | Read the signal strength, repeatedly if requested |
+| `wifi.survey` | `[seconds=10] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
+| `wifi.locate` | `[google\|skyhook\|here\|combain] [api-key] \| key [<service> <api-key>] \| body [service]` | Position from a Wi-Fi scan, like ubxlib's `uWifiLoc`. NORA modules have no location command, so the host does the work: the module scans, the strongest access points (up to 20, at least 2; SSIDs ending in `_nomap` are left out) go to the location service as JSON over the module's HTTPS (`http.post`), and the answer is shown as `Position: <lat>, <lon> +/- <m> m`, an OpenStreetMap link and a `gnss.virtual <lat> <lon>` line to use it as a virtual receiver. Needs a Wi-Fi connection and an API key: Google Geolocation API, Skyhook, HERE Network Positioning v2 or Combain (Google, Skyhook and Combain take Google's request format, HERE its own). `key <service> <api-key>` saves the key in `ucxapp.wifiloc` (private) and makes that service the default; `key` alone lists the saved services (keys shortened). `<service> <api-key>` uses a key once without saving it. `body [service]` scans and prints the request without sending it. Not in lite builds |
 | `wifi.roaming` | `[on\|off]` | Show or set roaming between access points |
 | `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain for the country you operate in. It is required: `wifi.scan`, `wifi.connect`, `wifi.eap`, `wifi.peap`, `wifi.profile.*` connects, `wifi.ap.enable`, `wifi.locate` and BLE Wi-Fi provisioning refuse to use the radio until a domain is chosen (`world` is allowed everywhere, with fewer channels). Scripts and CI can set `UCX_REGDOMAIN` instead; a saved domain wins |
 | `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (passwords encrypted with AES-256-GCM, key in `ucxapp.key`; XOR-obfuscated on STM32; max 16) |
@@ -268,13 +268,13 @@ Passwords given on the command line are visible in the process list and shell hi
 
 | Command | Arguments | Description |
 |---|---|---|
-| `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
+| `net.ping` | `<host> [count=4]` | ICMP ping, count 1-10 (default 4); fails if no reply |
 | `net.iperf` | `<server\|client\|stop> [args...]` | iperf throughput test run by the module: `server [tcp\|udp] [port]` keeps running until `stop`; `client <ip> [tcp\|udp] [seconds] [port]` runs for the given time (default 10 s, port 5001). Needs a Wi-Fi connection. PC side: iperf 2 (`iperf -c <module-ip>` / `iperf -s`) |
 | `net.dns` | `<host>` | Resolve a host name |
 | `net.ntp` | `<status\|on\|off\|server> [args...]` | NTP client: `status`, `on [manual\|auto]`, `off`, `server <0\|1> <host\|->` (`-` removes) |
 | `coap.get` | `<host> <port> [path]` | CoAP GET over UDP via a module socket (confirmable, 3 tries, 2 s each) |
 | `coap.selftest` | | Offline check of CoAP request encoding and response parsing |
-| `tftp.on` | `[rw] [port] [seconds]` | TFTP server (RFC 1350, with `blksize`/`tsize` options) on a module UDP socket, default port 69; serves plain file names from the working folder, read only unless `rw`. Uploads land as `<name>.part` and are renamed when complete. With `seconds` it blocks that long, then stops. No authentication: trusted networks only |
+| `tftp.on` | `[rw] [port=69] [seconds]` | TFTP server (RFC 1350, with `blksize`/`tsize` options) on a module UDP socket, default port 69; serves plain file names from the working folder, read only unless `rw`. Uploads land as `<name>.part` and are renamed when complete. With `seconds` it blocks that long, then stops. No authentication: trusted networks only |
 | `tftp.off` | | Stop the TFTP server |
 | `tftp.status` | | Server port, mode, transfer count and the last transfer |
 | `tftp.get` | `<host> <remote> [local] [port]` | Download a file from a TFTP server |
@@ -283,7 +283,7 @@ Passwords given on the command line are visible in the process list and shell hi
 | `ft.on` | `[rw] [tcp[:port]] [seconds]` | File transfer server serving plain file names from the working folder; read only unless `rw`. Over BLE: a custom GATT service (`7a3f0001-5c1e-4d2b-9f6a-3e8b2c4d5e6f`, CTRL `...0002`, DATA `...0003`), needs an encrypted link, blocks up to 242 bytes. With `tcp`: a module TCP socket (default port 6970), the same packets framed as `[len u16][channel u8][packet]`, blocks up to 1455 bytes, one client at a time, no authentication (trusted networks only). Go-back-N with a window of 8; every file is checked with CRC-32 and size, uploads land as `<name>.part` and are renamed when verified |
 | `ft.off` | | Stop the file transfer server |
 | `ft.status` | | Server link, mode, transfer count and the last transfer |
-| `ft.get` | `<conn\|host[:port]> <remote> [local] [blk] [resume]` | Download a file from a peer's `ft` server: a BLE connection number, or a host for TCP (blk 16-242 over BLE, default 240; up to 1455 over TCP, the default). An interrupted download keeps `<local>.part`; `resume` continues from it |
+| `ft.get` | `<conn\|host[:port]> <remote> [local] [blk=240] [resume]` | Download a file from a peer's `ft` server: a BLE connection number, or a host for TCP (blk 16-242 over BLE, default 240; up to 1455 over TCP, the default). An interrupted download keeps `<local>.part`; `resume` continues from it |
 | `ft.put` | `<conn\|host[:port]> <local> [remote] [blk] [resume]` | Upload a file to a peer's `ft` server (needs `rw` there); `resume` continues from the `.part` the server kept |
 | `ft.ls` | `<conn\|host[:port]>` | List the files on a peer's `ft` server |
 | `ft.rm` | `<conn\|host[:port]> <name>` | Delete a file on a peer's `ft` server (needs `rw` there) |
@@ -316,15 +316,15 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "tftp.on rw"
 | `sock.connect` | `[handle] <host> <port>` | Connect; waits up to 10 s |
 | `sock.tls` | `[handle] <ca> [client key]` | Use TLS 1.2/1.3 on a TCP socket before `sock.connect`; names are certificates from `cert.upload` (e.g. `tls-ca.crt` from another app to reach its `bridge tls`) |
 | `sock.send` | `[handle] <text...>` | Send text (arguments are joined with single spaces, max 511 bytes; `\r`, `\n` and `\\` are converted) |
-| `sock.read` | `[handle] [max] [wait_s]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
+| `sock.read` | `[handle] [max] [wait_s=5]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
 | `sock.bind` | `[handle] <port>` | Bind a socket to a local port (UDP receive) |
 | `sock.listen` | `[handle] [port]` | Listen for TCP connections |
-| `sock.accept` | `[wait_s]` | Wait for an incoming TCP connection (default 30 s) and print its handle |
+| `sock.accept` | `[wait_s=30]` | Wait for an incoming TCP connection (default 30 s) and print its handle |
 | `sock.sendto` | `[handle] <host> <port> <text...>` | Send a UDP datagram |
-| `sock.recvfrom` | `[handle] [max] [wait_s]` | Receive a UDP datagram and print the sender |
+| `sock.recvfrom` | `[handle] [max] [wait_s=5]` | Receive a UDP datagram and print the sender |
 | `sock.close` | `[handle] \| all` | Close a socket, or every socket on the module |
 | `sock.list` | | List open sockets |
-| `sock.echo` | `<tcp\|udp> <port> [seconds]` | Echo server for latency/throughput tests (default 60 s, one TCP client) |
+| `sock.echo` | `<tcp\|udp> <port> [seconds=60]` | Echo server for latency/throughput tests (default 60 s, one TCP client) |
 
 ```powershell
 # Fetch a page over TCP
@@ -350,10 +350,10 @@ at 115200 baud the UART limits throughput to a few tens of kbit/s.
 
 | Command | Arguments | Description |
 |---|---|---|
-| `perf.rtt` | `<tcp\|udp> <host\|xplorer> <port> [count] [size] \| sps [count] [size]` | Send `count` packets (default 20) of `size` bytes (default 64, 10-1000) one at a time and wait for each echo: min/avg/max round-trip time, jitter, lost and corrupt packets; fails on any loss |
-| `perf.tput` | `<tcp\|udp> <host\|xplorer> <port> [seconds] [size] \| sps [seconds] [size]` | Send for `seconds` (default 10) with 8 packets of `size` bytes (default 512) in flight; prints kbit/s sent and echoed every second and at the end, and the breaks in the echoed 0x00-0xFF pattern (any break fails TCP and SPS) |
-| `perf.echo` | `<tcp\|udp> <port> [seconds] \| sps [seconds]` | Echo peer on a second module (default 60 s): `tcp`/`udp` is `sock.echo`; `sps` advertises, accepts the connection and echoes SPS data |
-| `perf.phone` | `<tx\|rx\|echo> [seconds] [size]` | Bluetooth SPS between the module and the u-connectXplorer phone: the phone finds the module by its name, connects and runs its own perf; the module sends (`tx`), receives (`rx`) or echoes the phone's packets (`echo`, the phone measures RTT) for `seconds` (default 10) with `size`-byte packets (default 244). Prints both ends; fails on a pattern break at the receiving end |
+| `perf.rtt` | `<tcp\|udp> <host\|xplorer> <port> [count=20] [size=64] \| sps [count=20] [size=64]` | Send `count` packets (default 20) of `size` bytes (default 64, 10-1000) one at a time and wait for each echo: min/avg/max round-trip time, jitter, lost and corrupt packets; fails on any loss |
+| `perf.tput` | `<tcp\|udp> <host\|xplorer> <port> [seconds=10] [size=512] \| sps [seconds=10] [size=512]` | Send for `seconds` (default 10) with 8 packets of `size` bytes (default 512) in flight; prints kbit/s sent and echoed every second and at the end, and the breaks in the echoed 0x00-0xFF pattern (any break fails TCP and SPS) |
+| `perf.echo` | `<tcp\|udp> <port> [seconds=60] \| sps [seconds=60]` | Echo peer on a second module (default 60 s): `tcp`/`udp` is `sock.echo`; `sps` advertises, accepts the connection and echoes SPS data |
+| `perf.phone` | `<tx\|rx\|echo> [seconds=10] [size=244]` | Bluetooth SPS between the module and the u-connectXplorer phone: the phone finds the module by its name, connects and runs its own perf; the module sends (`tx`), receives (`rx`) or echoes the phone's packets (`echo`, the phone measures RTT) for `seconds` (default 10) with `size`-byte packets (default 244). Prints both ends; fails on a pattern break at the receiving end |
 
 SPS uses the current Bluetooth connection (`bt.connect` first). The data is the s-center data pump pattern: a
 0x00-0xFF byte counter that runs on across packets, so every byte value goes through the module and back
@@ -396,10 +396,10 @@ ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.ph
 |---|---|---|
 | `mqtt.connect` | `[host] [port] [id=<client>] [user=<name>] [pass=<pw>] [tls\|ca=<name> [cert=<name> key=<name>]]` | Connect to an MQTT broker (default `broker.emqx.io:1883`, no TLS); waits up to 10 s. `user=`/`pass=` log in, `id=` sets the client ID. `ca=` turns on TLS (port 8883 unless given) and checks the server with that CA certificate; `cert=`/`key=` add a client certificate. A bare `tls` encrypts without checking the server (tests only). Certificates are uploaded with `cert.*`; keep passwords out of scripts with `${MQTT_PASS}` |
 | `mqtt.disconnect` | | Disconnect from the broker |
-| `mqtt.subscribe` | `<topic> [qos]` | Subscribe (wildcards allowed, qos 0-2) |
+| `mqtt.subscribe` | `<topic> [qos=0]` | Subscribe (wildcards allowed, qos 0-2) |
 | `mqtt.unsubscribe` | `<topic>` | Unsubscribe |
 | `mqtt.publish` | `<topic> <text...>` | Publish a QoS 0, non-retained message (max 511 bytes) |
-| `mqtt.read` | `[wait_s]` | Wait (default 10 s) for messages and print them |
+| `mqtt.read` | `[wait_s=10]` | Wait (default 10 s) for messages and print them |
 
 ```powershell
 ucxapp COM13 --exec "wifi.profile.auto" --exec "mqtt.connect" `
@@ -473,7 +473,7 @@ app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No
 | Command | Arguments | Description |
 |---|---|---|
 | `utils.tls.ca.create` | `[cn] [force]` | Create the local CA (`tls-ca.*`, valid 20 years). `force` replaces it; certificates it issued stop working |
-| `utils.tls.server.create` | `<name> <host\|ip> [...]` | Server certificate signed by the CA for up to 8 host names / IPv4 addresses (the first is the common name), valid 10 years |
+| `utils.tls.server.create` | `<name> <host> [...]` | Server certificate signed by the CA for up to 8 host names / IPv4 addresses (the first is the common name), valid 10 years |
 | `utils.tls.client.create` | `<name>` | Client certificate for `clientauth` bridges |
 | `utils.tls.list` | | Certificates with subject, issuer and validity |
 | `utils.tls.pem` | `<name> [key]` | Print a certificate, or its key, in PEM (copy `utils.tls.pem ca` to clients) |
@@ -506,16 +506,16 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `gnss.close` | | Close the receiver |
 | `gnss.status` | | Fix, position, time, satellites, DOP, receiver version and counters. `RTK:` shows the correction state (DGNSS, RTK float, RTK fixed from UBX-NAV-PVT or the GGA quality), the age of the corrections and the NAV-PVT accuracy estimate; with UBX-NAV-HPPOSLLH (`gnss.cfg msg nav-hpposllh 1`, F9 and later) `Position:` shows 1e-9 degrees and 0.1 mm height (`(high precision)`) and the accuracy is given to 0.1 mm. `Security:` shows jamming and spoofing (UBX-SEC-SIG, MON-RF, NAV-STATUS; polled from real receivers that speak UBX), the CW jamming indicator and the antenna supervisor; `Backup:` how the last start used the save-on-shutdown backup. While a receiver runs, `JAM:`, `SPOOF:` and `ANT:` lines report each change |
 | `gnss.sats` | | Satellites with elevation, azimuth, signal strength and used flag |
-| `gnss.watch` | `[seconds]` | Live card once a second: fix bars, used/seen satellites as dots, HDOP bars with a rating, position, UTC time and time to first fix since `gnss.open`; an `RTK` line with corrections and accuracy, an `ALERT` line on jamming, spoofing or an antenna fault. Default 10 s, any key stops |
+| `gnss.watch` | `[seconds=10]` | Live card once a second: fix bars, used/seen satellites as dots, HDOP bars with a rating, position, UTC time and time to first fix since `gnss.open`; an `RTK` line with corrections and accuracy, an `ALERT` line on jamming, spoofing or an antenna fault. Default 10 s, any key stops |
 | `gnss.log` | `<file\|off> [nmea\|ubx]` | Record the raw receiver stream to a file; `nmea` keeps only valid NMEA sentences, `ubx` only valid UBX frames (a `.ubx` file u-center and `gnss.replay` open) |
 | `gnss.replay` | `<file.nmea\|file.ubx> [speed]` | Virtual receiver without hardware: plays an NMEA, UBX or mixed recording in real time (epochs paced by the RMC/GGA/GNS/ZDA time, or the UBX-NAV-PVT time of week) or at `speed` 0.1 to 100, from the start again at the end. Record one with `gnss.log <file> nmea\|ubx`, in u-center, or draw a route on [nmeagen.org](https://nmeagen.org/). Status, watch, fence, bridges and the use cases work on it as on a receiver; `gnss.send`, `rate` and `restart` are accepted and dropped. `gnss.close` stops |
 | `gnss.virtual` | `[host\|malmo\|<lat> <lon> [alt]\|off]` | Virtual receiver standing still: RMC, GGA, GSA and GSV once a second with the PC's UTC time and ten satellites. The position is the host's (Windows Location service; GeoClue `where-am-i` on Linux), the u-blox office in Malmo when the host has none (or with `malmo`), or the given one. Bridges, log, fence and the use cases work on it; `off` or `gnss.close` stops |
 | `gnss.fence` | `<file.kml\|off\|status>` | Geofence from the first polygon (or line string) of a KML file: draw the area in Google My Maps and use *Export to KML/KMZ* with *Export as KML*, or save a place from Google Earth. While a receiver, replay or virtual receiver runs, `FENCE: outside <name> at <lat>, <lon>` and `FENCE: back inside <name>` report the crossings; `gnss.status` shows the state and how often it was left |
 | `gnss.export` | `<recording> <out.kml\|out.gpx>` | Track of an NMEA, UBX or mixed recording, one point per epoch with a fix: KML (Google Earth, import into Google My Maps) or GPX (with UTC times) |
-| `gnss.send` | `<hex..\|$NMEA\|ubx cls id [hex]>` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
+| `gnss.send` | `<hex...> \| <$NMEA> \| ubx <cls> <id> [hex...]` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
 | `gnss.restart` | `<hot\|warm\|cold>` | Restart the receiver (UBX-CFG-RST) |
-| `gnss.rate` | `<hz>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
-| `gnss.cfg` | `gnss <list>\|model <name>\|msg <name> <rate>\|baud <rate>\|save\|reset` | Configure the receiver and check its UBX-ACK (an ACK-NAK or no answer is an error). UBX-CFG-VALSET in RAM on PROTVER 23 and later (u-blox F9/M10), the older CFG-NAV5, CFG-MSG and CFG-PRT before. `gnss` enables only the listed systems (`gps,gal,bds,glo,qzss,sbas,navic`; VALSET only); `model` sets the dynamic model (`portable`, `stationary`, `pedestrian`, `automotive`, `sea`, `air1g`, `air2g`, `air4g`, `wrist`, `bike`, `mower`, `escooter`); `msg` sets a message rate on UART1 and USB in epochs (0 = off): `gga gll gsa gsv rmc vtg gst zda gns nav-pvt nav-hpposllh nav-sat nav-status mon-rf sec-sig`; `baud` switches UART1 (9600, 38400, 115200, 460800 or 921600: the rates `gnss.detect` tries), reopens the port at that rate, checks that data still arrives and remembers it for `gnss.open` (not on a virtual receiver or while bridges or a raw log run); `save` writes the configuration to battery-backed RAM and flash (UBX-CFG-CFG); `reset` restores the factory defaults |
+| `gnss.rate` | `<hz=1>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
+| `gnss.cfg` | `gnss <list> \| model <name> \| msg <name> <rate> \| baud <rate> \| save \| reset` | Configure the receiver and check its UBX-ACK (an ACK-NAK or no answer is an error). UBX-CFG-VALSET in RAM on PROTVER 23 and later (u-blox F9/M10), the older CFG-NAV5, CFG-MSG and CFG-PRT before. `gnss` enables only the listed systems (`gps,gal,bds,glo,qzss,sbas,navic`; VALSET only); `model` sets the dynamic model (`portable`, `stationary`, `pedestrian`, `automotive`, `sea`, `air1g`, `air2g`, `air4g`, `wrist`, `bike`, `mower`, `escooter`); `msg` sets a message rate on UART1 and USB in epochs (0 = off): `gga gll gsa gsv rmc vtg gst zda gns nav-pvt nav-hpposllh nav-sat nav-status mon-rf sec-sig`; `baud` switches UART1 (9600, 38400, 115200, 460800 or 921600: the rates `gnss.detect` tries), reopens the port at that rate, checks that data still arrives and remembers it for `gnss.open` (not on a virtual receiver or while bridges or a raw log run); `save` writes the configuration to battery-backed RAM and flash (UBX-CFG-CFG); `reset` restores the factory defaults |
 | `gnss.backup` | `<save\|clear\|status>` | Save-on-shutdown (UBX-UPD-SOS, u-blox M8 and later): `save` stops navigation, writes the receiver state to flash and waits for the confirmation; power off then, and the next start restores it for a fast fix (`gnss.restart hot` carries on instead). `status` shows how the last start went (restored, no backup, failed); `clear` deletes the backup |
 | `gnss.assist` | `<file.ubx>\|online [gnss] [data]\|register <ztp-token>\|chipcode <code>\|id [ztp-token]\|legacy <token> [gnss]` | u-blox AssistNow for a fast first fix (u-blox M8 and later). `online` downloads UBX-MGA data over the module's Wi-Fi with `http.download` from `assistnow.services.u-blox.com` into `assistnow.ubx` and sends every message to the receiver unchanged and in order; `gnss` defaults to `gps,gal,bds,glo`, `data` to Live Orbits `ulorb_l1,ukion,usvht` (or `uporb_1,ualm` when the plan only has Predictive Orbits). It needs a chipcode: `register <ztp-token>` reads UBX-SEC-UNIQID and UBX-MON-VER from the receiver, posts them with the device profile token from the Thingstream portal (Location Services, AssistNow device profile) to the zero-touch provisioning API and saves the chipcode and allowed data types in `ucxapp.assistnow` (private); `chipcode <code>` saves one taken from the portal; `id [ztp-token]` only prints the ZTP request body. `legacy <token> [gnss]` uses an old AssistNow Online token (`online-live1.services.u-blox.com`, default `gps,glo`). `<file.ubx>` sends the UBX-MGA messages of a file (an earlier download, or one fetched elsewhere); other bytes are skipped and an answer without messages is shown as the error |
 | `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|ntrip <host> <port> <mount> [user pass] [ble] [cell]\|pointperfect <client-id> [eu\|us\|kr\|au\|jp] [cert]\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Two-way bridges of the receiver stream; up to 4 run at once (each with its own buffer, at most one BLE bridge and one NTRIP client), `status` lists them as `bridge 1:`, `bridge 2:` and so on, `off` stops all of them and `off <n>` only bridge n. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `ntrip` is an NTRIP v1 client (plain TCP, e.g. PointPerfect Flex/Live on port 2101 or RTK2go): corrections (RTCM or SPARTN) go to the receiver and its latest GGA goes to the caster every 10 s; `ble` also sends the corrected NMEA to a phone over BLE Nordic UART (RTK rover); `cell` runs the NTRIP client over a cellular modem instead of Wi-Fi (it uses the `cell.connect` data link, or opens one to `<host> <port>`; needs `cell.open` and `cell.attach on`; a dropped cellular link is reopened with backoff from 1 s up to 30 s); keep credentials out of scripts with `${NTRIP_USER}` `${NTRIP_PASS}`, `pointperfect` subscribes to u-blox PointPerfect over MQTT (`pp.services.u-blox.com:8883`, TLS 1.2) with the client ID of the Thingstream PointPerfect thing and its certificates uploaded as `<cert>` (client, default `pointperfect`), `<cert>-key` and `<cert>-ca` (`cert.upload`); the SPARTN keys (`/pp/ubx/0236/ip`) and the corrections of the region (`/pp/ip/<region>`, default `eu`) go to the receiver unchanged, after SPARTN input from IP is enabled (UBX-CFG-VALSET in RAM; F9P, F9R, X20P); it reconnects every 10 s when the broker drops and uses the module's one MQTT connection (shared with `mqtt.*`), `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver. For `ntrip` and `pointperfect`, `status` also checks every correction frame on its way to the receiver, like ubxlib's `uSpartnValidate`: RTCM3 (CRC-24Q), SPARTN (frame CRC-4 and message CRC) and UBX (checksum), shown as `(RTCM 120, SPARTN 40 (1 bad), UBX 2, 37 bytes outside frames)`; a bad count means the data was damaged on the way (caster, network or the AT link) |
@@ -524,8 +524,8 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `imu.close` | | Close the IMU |
 | `imu.status` | | Accel, gyro, angle, magnetometer, quaternion, pressure, steps and counters |
 | `imu.log` | `<file\|off>` | Record the raw IMU byte stream to a file |
-| `imu.send` | `<hex..>` | Send raw bytes (WitMotion configuration frames) |
-| `imu.rate` | `<hz>` | WitMotion output rate (0.2 to 200 Hz) |
+| `imu.send` | `<hex...>` | Send raw bytes (WitMotion configuration frames) |
+| `imu.rate` | `<hz=10>` | WitMotion output rate (0.2 to 200 Hz) |
 | `imu.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Two-way bridges of the IMU stream, same modes as `gnss.bridge` (up to 4 at once) |
 
 ### Bridges
@@ -546,11 +546,11 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 | Command | Arguments | Description |
 |---|---|---|
 | `cell.detect` | `[port]` | Find a module answering AT (115200, 9600, 921600, 460800 baud) |
-| `cell.open` | `[port] [baud]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI`. Already open: says so and succeeds |
+| `cell.open` | `[port] [baud=115200]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI`. Already open: says so and succeeds |
 | `cell.close` |  | Close it |
 | `cell.status` |  | SIM, ICCID, signal in dBm, registration (LTE and 2G/3G), operator, IP |
 | `cell.at` | `<command>` | Send a raw AT command |
-| `cell.apn` | `[apn [ip\|ipv6\|ipv4v6]]` | Show or set the APN of context 1 |
+| `cell.apn` | `[<apn> [ip\|ipv6\|ipv4v6]]` | Show or set the APN of context 1 |
 | `cell.attach` | `[on\|off]` | Attach and activate data, detach, or show the state |
 | `cell.ping` | `<host>` | Ping over the cellular link (Quectel and u-blox only) |
 | `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off [n]\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (up to 4 at once; the last `off` returns to command mode) |
@@ -561,7 +561,7 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verif
 
 | Command | Arguments | Description |
 |---|---|---|
-| `dash` | `[watch [seconds]]` | One card with a line each for Wi-Fi (SSID, RSSI, IP), BLE (links, GATT listen), GNSS (fix, satellites, HDOP), cellular (registration, operator, signal) and IMU (angles or acceleration). Filled dot = active. Each line shows the port; other NORA modules found on USB are listed as `standby (dev.use <port>)` and GNSS receivers found by their USB descriptor but not opened as `found, not open`. `watch` refreshes every second (default 10 s, any key stops). Works without a module; Wi-Fi and BLE then show `no module` |
+| `dash` | `[watch [seconds=10]]` | One card with a line each for Wi-Fi (SSID, RSSI, IP), BLE (links, GATT listen), GNSS (fix, satellites, HDOP), cellular (registration, operator, signal) and IMU (angles or acceleration). Filled dot = active. Each line shows the port; other NORA modules found on USB are listed as `standby (dev.use <port>)` and GNSS receivers found by their USB descriptor but not opened as `found, not open`. `watch` refreshes every second (default 10 s, any key stops). Works without a module; Wi-Fi and BLE then show `no module` |
 
 Custom BLE service: `ble custom <uuid>` defines a 128-bit service with a write characteristic (RX, bytes go to the
 receiver) and a notify characteristic (TX). With only the service UUID, RX and TX are the service UUID with the fourth
@@ -591,7 +591,7 @@ not wired in yet.
 | `hw.i2c.write` | `<addr> <hex...>` | Write bytes to a device |
 | `hw.i2c.read` | `<addr> <len>` | Read bytes from a device |
 | `hw.i2c.reg` | `<addr> <reg> [len]` | Read a register |
-| `hw.spi.cfg` | `<mode 0-3> <hz>` | Set the SPI mode and clock |
+| `hw.spi.cfg` | `<mode=0> <hz=1000000>` | Set the SPI mode (0-3) and clock in Hz |
 | `hw.spi.xfer` | `<hex...>` | Full duplex transfer, prints the bytes read |
 | `hw.adc.read` | `<ch>` | Read an ADC channel (12 bit, 3.3 V reference) |
 | `hw.pwm.set` | `<ch> <hz> <duty%>` | Start PWM on a channel |
@@ -620,11 +620,11 @@ the interface (`sudo ip link set can0 type can bitrate 500000 [listen-only on]; 
 
 | Command | Arguments | Description |
 |---------|-----------|-------------|
-| `can.cfg` | `<bitrate> [normal\|loopback\|listen]` | Set the bit rate (10000-1000000) and mode and (re)start the controller. `loopback` receives its own frames without a bus or transceiver (the host emulation is always loopback). `listen` only receives: the controller sends no acknowledge or error frames, so it can sit on a running bus (a car, a machine) without disturbing it, and `can.send` and bridged frames are refused. On a board the controller starts at 500000 normal on the first `can.send` or `can.recv` |
+| `can.cfg` | `<bitrate=500000> [normal\|loopback\|listen]` | Set the bit rate (10000-1000000) and mode and (re)start the controller. `loopback` receives its own frames without a bus or transceiver (the host emulation is always loopback). `listen` only receives: the controller sends no acknowledge or error frames, so it can sit on a running bus (a car, a machine) without disturbing it, and `can.send` and bridged frames are refused. On a board the controller starts at 500000 normal on the first `can.send` or `can.recv` |
 | `can.open` | `[emulated\|<interface>]` | Windows and Linux: the emulated loopback (default) or, on Linux, a SocketCAN interface (`can0`, `vcan0`); without arguments it shows which |
 | `can.send` | `<id> [hex...]` | Send a CAN frame (id above 0x7FF is extended). On a bus without another node nothing acknowledges it: the error counters in `can.status` rise until the controller goes error-passive |
 | `can.recv` |  | Take the next received frame |
-| `can.watch` | `[seconds]` | Print every received frame with its time in seconds since the start (default 10 s, any key stops), then the count |
+| `can.watch` | `[seconds=10]` | Print every received frame with its time in seconds since the start (default 10 s, any key stops), then the count |
 | `can.status` |  | Controller, mode, bit rate and counters (tx, rx, queued, dropped, bad bridge records) and bridge state; on a board also the controller, its state (error-active, error-warning, error-passive, bus-off) with the transmit and receive error counters, and frames lost when the receive queue was full |
 | `can.bridge` | same modes as `hw.bridge` plus `cell` (TCP default port 7001) | Binary, both ways: 17-byte records (ts_ms u32 LE, id u32 LE, dlc, data[8]), up to 32 per write. `cell` sends them over the `cell.connect` data link and reconnects it when it drops (backoff from 1 s up to 30 s; `can.bridge status` shows the reconnect count). On a board the bridge runs on a task of its own through the module: `tcp [port]` (the newest client takes over), `tcpc <host> <port>` (reconnects every 2 s), `udp <host> <port> [local]`, `udps <port>` and `ble sps`, one at a time; `status` shows the bytes sent, received and not delivered |
 | `can.selftest` |  | Offline check of the record format |
@@ -680,7 +680,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
 | `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
-| `file.view` | `<file> [lines]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
+| `file.view` | `<file> [lines=40]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |
 | `file.recv` | `[name]` | Receive a file over the console with YMODEM (1K blocks, CRC-16) and store it under its own name or `name`; STM32 console only (Tera Term, ExtraPuTTY, `sz`, `ucxapp --stm32-freertos --put`) |

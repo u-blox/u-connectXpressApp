@@ -794,7 +794,7 @@ static const ucxapp_cmd_t gSysCmds[] = {
     { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
     { "utils.hash.text", "<md5|sha256> <text...>", "Print the hash of a text", 0, cmdHashText },
     { "utils.hash.selftest", "", "Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors", 0, cmdHashSelftest },
-    { "file.view", "<file> [lines]", "Show the first lines of a text file (read only, default 40 lines)", 0, cmdFileView },
+    { "file.view", "<file> [lines=40]", "Show the first lines of a text file (read only, default 40 lines)", 0, cmdFileView },
     { "file.list", "", "List the files in the working folder with numbers and sizes", 0, cmdFileList },
     { "file.remove", "<file|number>", "Delete a file, by name or by its number from file.list", UCXAPP_CMD_DANGER, cmdFileRemove },
     { "stats.show", "[tcp|udp|sps|gatt|http|mqtt|web] [rx|tx]", "Payload bytes sent and received per channel; with rx or tx, print just that number", 0, cmdStatsShow },

@@ -187,7 +187,7 @@ static int cmdDash(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "dash", "[watch [seconds]]", "One card with Wi-Fi, BLE, GNSS, cellular and IMU status; watch refreshes every second (default 10 s, any key stops)", 0, cmdDash },
+    { "dash", "[watch [seconds=10]]", "One card with Wi-Fi, BLE, GNSS, cellular and IMU status; watch refreshes every second (default 10 s, any key stops)", 0, cmdDash },
 };
 
 void ucxapp_register_dash_cmds(void)

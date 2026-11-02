@@ -862,19 +862,19 @@ static int cmdTput(ucxapp_t *app, int argc, char *argv[])
 #endif /* UCXAPP_XPLORER */
 
 static const ucxapp_cmd_t gPerfCmds[] = {
-    { "perf.rtt", "<tcp|udp> <host|xplorer> <port> [count] [size] | sps [count] [size]",
+    { "perf.rtt", "<tcp|udp> <host|xplorer> <port> [count=20] [size=64] | sps [count=20] [size=64]",
       "Round-trip time through the module to an echo peer: min/avg/max, jitter, lost and corrupt packets "
       "(default 20 packets of 64 bytes, max 1000 bytes); fails on any loss. Host xplorer makes the phone saved by "
       "xplorer.connect the echo peer", UCXAPP_CMD_NEEDS_DEVICE, cmdRtt },
-    { "perf.tput", "<tcp|udp> <host|xplorer> <port> [seconds] [size] | sps [seconds] [size]",
+    { "perf.tput", "<tcp|udp> <host|xplorer> <port> [seconds=10] [size=512] | sps [seconds=10] [size=512]",
       "Throughput to an echo peer: sends for the given time (default 10 s, 512-byte packets) with 8 packets in "
       "flight and reports kbit/s sent and echoed, once a second and at the end. Host xplorer makes the phone the "
       "echo peer, and it reports its own 0x00-0xFF check", UCXAPP_CMD_NEEDS_DEVICE, cmdTput },
-    { "perf.echo", "<tcp|udp> <port> [seconds] | sps [seconds]",
+    { "perf.echo", "<tcp|udp> <port> [seconds=60] | sps [seconds=60]",
       "Echo peer for perf.rtt and perf.tput on a second module (tcp/udp is sock.echo; sps advertises and echoes "
       "SPS data; default 60 s)", UCXAPP_CMD_NEEDS_DEVICE, cmdEcho },
 #if UCXAPP_XPLORER
-    { "perf.phone", "<tx|rx|echo> [seconds] [size]",
+    { "perf.phone", "<tx|rx|echo> [seconds=10] [size=244]",
       "Bluetooth SPS between the module and the u-connectXplorer phone (xplorer.connect first): the phone finds "
       "and connects to the module, then the module sends (tx), receives (rx) or echoes the phone's packets (echo, "
       "phone measures RTT) for the given time (default 10 s, 244 bytes); both ends check the 0x00-0xFF pattern",

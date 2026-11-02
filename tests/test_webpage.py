@@ -121,6 +121,19 @@ def test_script_syntax(tmp_path, source):
     assert error == ""
 
 
+# Commands in the format web.export writes: fields [name, optional, choices, default, kind, key], forms in "v"
+DEMO = [
+    {"n": "gnss.bridge", "h": "Bridges", "u": "tcp [port] | ntrip <host> <port> [ble]", "f": None,
+     "v": [{"l": "tcp", "p": "tcp", "f": [["port", 1, "", "", "t", ""]]},
+           {"l": "ntrip", "p": "ntrip", "f": [["host", 0, "", "", "t", ""], ["port", 0, "", "2101", "t", ""],
+                                              ["ble", 1, "", "", "f", ""]]}]},
+    {"n": "mqtt.connect", "h": "Connect", "u": "[host] [wait_s] [id=<client>]",
+     "f": [["host", 1, "", "", "t", ""], ["wait_s", 1, "", "5", "t", ""], ["client", 1, "", "", "t", "id="]]},
+    {"n": "mqtt.publish", "h": "Publish", "u": "<topic> <text...>",
+     "f": [["topic", 0, "", "", "t", ""], ["text ...", 0, "", "", "r", ""]]},
+]
+
+
 class Mock(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -137,7 +150,9 @@ class Mock(BaseHTTPRequestHandler):
         if self.path.split("?")[0] == "/":
             self.reply(PAGE, "text/html")
         elif self.path.startswith("/api/groups"):
-            self.reply(json.dumps(["wifi"]))
+            self.reply(json.dumps(["wifi", "demo"]))
+        elif self.path.startswith("/api/commands?g=demo"):
+            self.reply(json.dumps(DEMO))
         elif self.path.startswith("/api/commands"):
             self.reply(json.dumps([
                 {"n": "wifi.connect", "h": "Connect", "u": "<ssid> [password]",
@@ -195,8 +210,8 @@ def test_page_in_a_browser(server):
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
         assert page.locator(".c select option").count() == 3
-        # an optional choice starts on its first value; leaving it out is the last option
-        assert page.eval_on_selector(".c select", "e => e.value") == "wpa"
+        # an optional choice starts on "(default)": nothing is sent unless the user picks a value
+        assert page.eval_on_selector(".c select", "e => e.value") == ""
         assert page.eval_on_selector(".c select", "e => e.options[e.options.length - 1].text") == "(default)"
         page.fill(".c input >> nth=0", "stenmo")
         page.fill(".c input >> nth=1", "secret")
@@ -234,6 +249,54 @@ def test_page_in_a_browser(server):
     assert not js_errors, js_errors
 
 
+def test_page_forms_flags_keys_and_rest(server):
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector("#st.ok")
+        assert "Red Run" in page.inner_text(".lg")
+        page.click("summary:has-text('demo')")
+        page.wait_for_selector(".c select.fm")
+        bridge = page.locator(".c").nth(0)
+        assert bridge.locator("small").inner_text() == "Bridges"
+        assert bridge.locator("select.fm option").all_inner_texts() == ["tcp", "ntrip"]
+        # another form shows its own fields: a required default is filled in, a flag is a checkbox
+        bridge.locator("select.fm").select_option("1")
+        assert bridge.locator("input").nth(1).input_value() == "2101"
+        bridge.locator("input").nth(0).fill("caster")
+        bridge.locator("input[type=checkbox]").check()
+        bridge.locator("button").click()
+        page.wait_for_function("document.querySelector('#busy').textContent!==''")
+        assert any("cmd=gnss.bridge%20ntrip&a0=caster&a1=2101&a2=ble" in u for u in server.posted), server.posted
+        # an optional default is a hint, not a value; a key field sends key=value
+        page.evaluate("setBusy('')")
+        conn = page.locator(".c").nth(1)
+        assert conn.locator("input").nth(1).input_value() == ""
+        assert "default 5" in conn.locator("input").nth(1).get_attribute("placeholder")
+        conn.locator("input").nth(2).fill("me")
+        conn.locator("button").click()
+        page.wait_for_function("document.querySelector('#busy').textContent!==''")
+        assert any(u.endswith("cmd=mqtt.connect&a0=id%3Dme") for u in server.posted), server.posted
+        # the rest of the line goes as typed, the other values quoted
+        page.evaluate("setBusy('')")
+        pub = page.locator(".c").nth(2)
+        pub.locator("input").nth(0).fill("a b")
+        pub.locator("input").nth(1).fill("hello  world")
+        pub.locator("button").click()
+        page.wait_for_function("document.querySelector('#busy').textContent!==''")
+        want = "cmd=mqtt.publish%20%22a%20b%22%20hello%20%20world"
+        assert any(u.endswith(want) for u in server.posted), server.posted
+        browser.close()
+    assert not js_errors, js_errors
+
+
 @pytest.mark.app
 def test_web_export_writes_the_page_json(app_exe, tmp_path):
     out = subprocess.run([str(app_exe), "COM255", "--exec", f'web.export "{tmp_path.as_posix()}"'],
@@ -247,6 +310,17 @@ def test_web_export_writes_the_page_json(app_exe, tmp_path):
         assert json.loads((tmp_path / f"commands-{name}.json").read_text(encoding="utf-8")), name
     wifi = {c["n"]: c for c in json.loads((tmp_path / "commands-wifi.json").read_text(encoding="utf-8"))}
     assert wifi["wifi.connect"]["f"][0][0].startswith("ssid")
+    every = {c["n"]: c for f in tmp_path.glob("commands-*.json") for c in json.loads(f.read_text(encoding="utf-8"))}
+    assert not [n for n, c in every.items() if c["u"] and not c["f"] and not c.get("v")], "commands without a form"
+    forms = {v["l"]: v for v in every["gnss.bridge"]["v"]}
+    assert forms["ntrip"]["p"] == "ntrip" and [x[0] for x in forms["ntrip"]["f"]][:5] == ["host", "port", "mount",
+                                                                                           "user", "pass"]
+    assert [x[4] for x in forms["ntrip"]["f"]][-2:] == ["f", "f"]           # ble, cell are flags
+    assert [x[5] for x in every["mqtt.connect"]["v"][0]["f"]][2:] == ["id=", "user=", "pass="]
+    assert every["sock.read"]["f"][2][:5] == ["wait_s", 1, "", "5", "t"]   # the default from the usage
+    assert every["can.cfg"]["f"][0][3] == "500000"
+    assert every["ancs.action"]["f"][1][2] == "pos|neg"                    # a choice, not two forms
+    assert [x[4] for x in every["hid.key"]["f"]] == ["t", "r"]
     examples = json.loads((tmp_path / "examples-usecase.json").read_text(encoding="utf-8"))
     assert any("(PEAP)" in e["t"] and "wifi." in e["l"] for e in examples)
     boat = json.loads((tmp_path / "examples-uc-boat.json").read_text(encoding="utf-8"))

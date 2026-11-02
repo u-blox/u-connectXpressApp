@@ -1745,7 +1745,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gCanCmds[] = {
-    { "can.cfg",      "<bitrate> [normal|loopback|listen]", "Set the CAN bit rate and mode and (re)start the controller; "
+    { "can.cfg",      "<bitrate=500000> [normal|loopback|listen]", "Set the CAN bit rate and mode and (re)start the controller; "
       "loopback receives its own frames without a bus, listen only receives (no acknowledge, nothing sent)", 0, cmdCfg },
 #ifndef UCXAPP_CAN_HW
     { "can.open",     "[emulated|<interface>]", "CAN on the emulated loopback (default) or a SocketCAN interface "
@@ -1753,7 +1753,7 @@ static const ucxapp_cmd_t gCanCmds[] = {
 #endif
     { "can.send",     "<id> [hex...]", "Send a CAN frame (id above 0x7FF is extended)", 0, cmdSend },
     { "can.recv",     "",              "Take the next received CAN frame", 0, cmdRecv },
-    { "can.watch",    "[seconds]",     "Print received CAN frames with their time (default 10 s, any key stops)", 0, cmdWatch },
+    { "can.watch",    "[seconds=10]",     "Print received CAN frames with their time (default 10 s, any key stops)", 0, cmdWatch },
     { "can.status",   "",              "Controller, counters and bridge state", 0, cmdStatus },
 #ifndef UCXAPP_CAN_HW
     { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "

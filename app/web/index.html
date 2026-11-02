@@ -42,6 +42,8 @@ summary{cursor:pointer;padding:.3rem .2rem;font-weight:700;text-transform:upperc
 #rc{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.35rem}#rc button{font:12px Consolas,monospace;padding:.15rem .5rem;border-radius:1rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--bd)}
 .c b{width:100%;font:12px Consolas,monospace;color:var(--ac);cursor:help}.c.dgr b{color:#ff8fa8}
+.c small{width:100%;color:var(--mut);font-size:11px;max-height:2.6em;overflow:hidden}
+.fs{display:contents}.fl,.fx{font-size:12px;white-space:nowrap}.c .rest{flex:3}.c select.fm{flex-basis:100%}.lg{font-size:11px;color:#ff8fa8}
 .c input,.c select{flex:1;min-width:4rem;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c button{padding:.25rem .7rem}.c select.h{border-color:#2d4a6a}
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
@@ -176,19 +178,37 @@ function fillSel(e){const v=e.value,ids=HS[e.dataset.k],cur=(ids.find(x=>x.endsW
  e.add(new Option(cur?'current ('+cur+')':ids.length?'current':'none open',''));ids.forEach(x=>{x=x.replace('*','');e.add(new Option(x,x))});
  e.value=ids.some(x=>x.replace('*','')===v)?v:''}
 function fillHandles(){HSEL=HSEL.filter(e=>e.isConnected);HSEL.forEach(fillSel)}
-function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),raw=!c.f,f=c.f||(c.u?[['args',1,'']]:[]),ins=[];
- b.title=c.h+'  '+c.u;d.appendChild(b);
- f.forEach(x=>{let e;const key=c.n+'|'+x[0],hk=x[0]==='conn'?'conn':x[0]==='handle'&&/^sock\./.test(c.n)?'sock':'';
-  if(hk&&x[1]){e=el('select','h');e.dataset.k=hk;e.title='open '+(hk==='conn'?'BLE links':'sockets');fillSel(e);HSEL.push(e)}
-  else if(x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
-   e.value=FV[key]||e.options[0].value;if(e.selectedIndex<0)e.selectedIndex=0}
-  else{e=el('input');e.placeholder=x[0];e.title=c.u;if(/^(pass|password|pw)$/.test(x[0]))e.type='password';
-   e.value=FV[key]||(x[1]?'':dv(c.n,x[0]))}
-  e._k=SECRET.test(x[0])?'':key;ins.push(e);d.appendChild(e)});
- const g=el('button',c.d?'dg':'','Run');g.title=c.h+(c.d?' (asks before running)':'');g.disabled=busy;
- g.onclick=()=>{ins.forEach(e=>{if(e._k&&e.value.trim())FV[e._k]=e.value.trim()});localStorage.setItem('ucxf',JSON.stringify(FV));
-  run(c.n,ins.filter(e=>!(e.dataset.k&&!e.value)).map(e=>e.value.trim()),raw)};
- ins.forEach(e=>e.onkeydown=k=>{if(k.key==='Enter')g.click()});d.appendChild(g);return d}
+/* x: [name,opt,choices,default,kind t|s|o|f|r,key=]; c.v: forms {l,p,f} */
+const q=v=>v&&!/[\s"]/.test(v)?v:'"'+v.replace(/["\\]/g,'\\$&')+'"';
+function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t'),nm=x[5]?x[5].slice(0,-1):x[0].replace(/[<>]/g,''),
+  hk=x[0]==='conn'?'conn':x[0]==='handle'&&/^sock\./.test(c.n)?'sock':'';
+ if(hk&&x[1]){e=el('select','h');e.dataset.k=hk;e.title='open '+(hk==='conn'?'BLE links':'sockets');fillSel(e);HSEL.push(e)}
+ else if(k==='f'){e=el('label','fl');const cb=el('input');cb.type='checkbox';cb.checked=FV[key]==='1';e.append(cb,' '+x[0]);
+  e.val=()=>cb.checked?x[0]:null;e.keep=()=>+cb.checked+'';return Object.assign(e,{_k:key})}
+ else if(k==='s'&&x[2]&&!x[2].includes('|')&&!x[1]){e=el('span','fx',x[2]);e.val=()=>x[2];return e}
+ else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
+  e.value=FV[key]!==undefined?FV[key]:x[3]||(x[1]?'':e.options[0].value);if(e.selectedIndex<0)e.selectedIndex=0}
+ else{e=el('input');const ph=nm.split('|').join(' or ');e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
+    if(k==='o'&&x[2]){const l=el('datalist');l.id='dl'+Math.random();x[2].split('|').forEach(v=>l.appendChild(new Option(v)));
+   e.setAttribute('list',l.id);document.body.appendChild(l)}
+  if(/^(pass|pw)/.test(nm))e.type='password';
+  if(k==='r')e.className='rest';e.value=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm)}
+ e._k=SECRET.test(nm)?'':key;
+ e.val=()=>{const v=e.value.trim();if(e.dataset.k&&!v)return null;if(x[5])return v?x[5]+v:null;return v};return e}
+function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),fs=el('span','fs');let ins=[],form=null;
+ b.title=c.u+'\n'+c.h;d.append(b,el('small','',c.h||''))
+ const vs=c.v||[{l:'',p:'',f:c.f||(c.u?[['args',1,'','','r','']]:[])}];
+ const show=i=>{form=vs[i];fs.textContent='';ins=form.f.map(x=>Object.assign(field(c,x,c.n+'|'+form.p+'|'),{x}));ins.forEach(e=>{fs.appendChild(e);
+  e.onkeydown=k=>{if(k.key==='Enter')g.click()}})};
+ if(vs.length>1){const s=el('select','fm');vs.forEach((v,i)=>s.add(new Option(v.l,i)));
+  s.value=Math.min(+FV[c.n+'|#']||0,vs.length-1);s.onchange=()=>{FV[c.n+'|#']=s.value;show(+s.value)};d.appendChild(s)}
+ d.appendChild(fs);
+ const g=el('button',c.d?'dg':'','Run');g.title=c.d?'asks first':c.n;g.disabled=busy;
+ g.onclick=()=>{ins.forEach(e=>{if(e._k)FV[e._k]=e.keep?e.keep():e.value.trim()});localStorage.setItem('ucxf',JSON.stringify(FV));
+  const n=(c.n+' '+form.p).trim();let ps=ins.map(e=>({v:e.val(),r:e.x[4]==='r',k:e.x[4]==='f'||!!e.x[5]})).filter(p=>p.v!==null),s=0;
+  ps=ps.reverse().filter(p=>{if(p.v&&!p.k)s=1;return p.v||s}).reverse();
+  if(ps.some(p=>p.r))run(n+ps.map(p=>' '+(p.r?p.v:q(p.v))).join(''));else run(n,ps.map(p=>p.v))};
+ show(vs.length>1?Math.min(+FV[c.n+'|#']||0,vs.length-1):0);d.appendChild(g);return d}
 function recent(){const r=$('rc'),seen=[];r.textContent='';
  for(let i=H.length-1;i>=0&&seen.length<6;i--)if(!seen.includes(H[i]))seen.push(H[i]);
  seen.forEach(s=>{const b=el('button','',s);b.title='Run again: '+s;b.onclick=()=>run(s);r.appendChild(b)})}
@@ -300,7 +320,8 @@ function events(){const es=new EventSource('/events');
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
- let mh=0,hh=0;const side=$('grp');gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
+ let mh=0,hh=0;const side=$('grp');side.appendChild(el('div','lg','* required. Red Run: changes firmware or erases data (asks first)'));
+ gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
   if(w==='module'&&!mh){mh=1;side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}
   if(w==='host'&&!hh){hh=1;side.appendChild(el('div','wh','HOST: runs on this PC'))}
   const d=el('details'),s=el('summary','',g);let l=0;d.appendChild(s);

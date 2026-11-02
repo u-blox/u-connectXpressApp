@@ -484,9 +484,9 @@ static int cmdFwDownload(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gFwCmds[] = {
     { "fw.download", "[latest [file]] | <url> <file> [sha256]", "Download the newest GitHub firmware for this module (default), or a file via the module with SHA-256 check (latest needs Windows)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
-    { "fw.bootloader", "<port> <file.bin|file.zip> [baud]", "Flash a module that is in bootloader mode (no AT interface); disconnect first", UCXAPP_CMD_DANGER, cmdFwBootloader },
-    { "fw.flash",    "<file.bin|file.zip> [baud]", "Update the module firmware over XMODEM (default 921600 baud)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwFlash },
-    { "fw.update",   "[force] [baud]", "Compare with the newest GitHub firmware; if newer, download to the store, flash and verify the version (needs Windows)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwUpdate },
+    { "fw.bootloader", "<port> <file.bin|file.zip> [baud=921600]", "Flash a module that is in bootloader mode (no AT interface); disconnect first", UCXAPP_CMD_DANGER, cmdFwBootloader },
+    { "fw.flash",    "<file.bin|file.zip> [baud=921600]", "Update the module firmware over XMODEM (default 921600 baud)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwFlash },
+    { "fw.update",   "[force] [baud=921600]", "Compare with the newest GitHub firmware; if newer, download to the store, flash and verify the version (needs Windows)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwUpdate },
 };
 
 void ucxapp_register_fw_cmds(void)

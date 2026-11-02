@@ -604,59 +604,396 @@ int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max)
     return ctx.count;
 }
 
-static bool isChoice(const char *s, size_t len)
+/* Usage strings to form fields. Placeholders are <x> (required) and [x] (optional); a|b is a choice;
+ * x=v gives a default or a suggested value; top-level "a ... | b ..." and groups like [a|b c] are forms. */
+
+static const char *const kFlagWords[] = {
+    "force", "full", "filter", "norsp", "nostore", "hidden", "double", "resume", "all", "stop", "secure",
+    "auth", "flow", "boot", "rw", "reliable", "more", "errors", "clientauth", "ble", "cell", "watch", "latest",
+};
+
+static const char *const kValueWords[] = {
+    "seconds", "ssid", "n", "password", "name", "handle", "file", "number", "addr", "digits", "host",
+    "server", "hex", "unix", "conn", "port", "text", "url", "uuid",
+};
+
+static bool inWords(const char *const *words, size_t count, const char *s, size_t len)
 {
+    for (size_t i = 0; i < count; i++) {
+        if (strlen(words[i]) == len && strncmp(words[i], s, len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool isValueAlt(const char *s, size_t len)
+{
+    return (len > 2 && s[0] == '<' && s[len - 1] == '>') || memchr(s, ':', len) != NULL ||
+           (((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z')) && memchr(s, '.', len) != NULL) ||
+           inWords(kValueWords, sizeof(kValueWords) / sizeof(kValueWords[0]), s, len);
+}
+
+/* a|b|<c>: every alternative a keyword or a placeholder; *open when one of them is a placeholder. */
+static bool isChoice(const char *s, size_t len, bool *open)
+{
+    size_t start = 0;
     bool bar = false;
 
-    for (size_t i = 0; i < len; i++) {
-        char ch = s[i];
-        if (ch == '|') {
-            if (i == 0 || i == len - 1 || s[i - 1] == '|') {
+    *open = false;
+    for (size_t i = 0; i <= len; i++) {
+        if (i < len && s[i] != '|') {
+            char ch = s[i];
+            if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' ||
+                  ch == '-' || ch == '.' || ch == ':' || ch == '<' || ch == '>')) {
                 return false;
             }
-            bar = true;
-        } else if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-')) {
+            continue;
+        }
+        if (i == start) {
             return false;
         }
+        if (isValueAlt(s + start, i - start)) {
+            *open = true;
+        } else if (memchr(s + start, '<', i - start) != NULL || memchr(s + start, '>', i - start) != NULL) {
+            return false;
+        }
+        bar = bar || i < len;
+        start = i + 1;
     }
     return bar;
 }
 
-int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max)
+/* Length of the token at p: up to the next space or '|' outside brackets (stopBar) or space only. */
+static size_t tokenLen(const char *p, size_t len, bool stopBar)
 {
-    int count = 0;
-    const char *p = usage;
+    int depth = 0;
+    size_t i = 0;
 
-    for (;;) {
-        while (*p == ' ') {
-            p++;
-        }
-        if (*p == '\0') {
-            return count;
-        }
-        const char *start = p;
-        int depth = 0;
-        for (; *p != '\0' && !(*p == ' ' && depth == 0); p++) {
-            if (*p == '<' || *p == '[') {
-                depth++;
-            } else if (*p == '>' || *p == ']') {
-                depth--;
-            }
-        }
-        size_t len = (size_t)(p - start);
-        if (len < 3 || count >= max || (start[0] != '<' && start[0] != '[') ||
-            (start[len - 1] != '>' && start[len - 1] != ']') || memchr(start + 1, ' ', len - 2) != NULL) {
-            return -1;
-        }
-        size_t inner = len - 2;
-        ucxapp_ui_field_t *f = &fields[count++];
-        snprintf(f->name, sizeof(f->name), "%.*s", (int)inner, start + 1);
-        f->optional = start[0] == '[';
-        f->choices[0] = '\0';
-        if (isChoice(start + 1, inner) && inner < sizeof(f->choices)) {
-            snprintf(f->choices, sizeof(f->choices), "%.*s", (int)inner, start + 1);
+    for (; i < len; i++) {
+        char ch = p[i];
+        if (ch == '<' || ch == '[') {
+            depth++;
+        } else if (ch == '>' || ch == ']') {
+            depth--;
+        } else if (depth == 0 && (ch == ' ' || (stopBar && ch == '|'))) {
+            break;
         }
     }
+    return i;
+}
+
+static bool hasTopLevel(const char *s, size_t len, char what)
+{
+    int depth = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '<' || s[i] == '[') {
+            depth++;
+        } else if (s[i] == '>' || s[i] == ']') {
+            depth--;
+        } else if (depth == 0 && s[i] == what) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool hasDots(const char *s, size_t len)
+{
+    for (size_t i = 0; i + 3 <= len; i++) {
+        if (s[i] == '.' && s[i + 1] == '.' && s[i + 2] == '.') {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool isGroup(const char *t, size_t len)
+{
+    return len >= 2 && ((t[0] == '<' && t[len - 1] == '>') || (t[0] == '[' && t[len - 1] == ']'));
+}
+
+static void copyText(char *out, size_t size, const char *s, size_t len)
+{
+    snprintf(out, size, "%.*s", (int)len, s);
+}
+
+static bool addFields(ucxapp_ui_variant_t *v, const char *s, size_t len, bool inGroup, bool opt);
+
+static ucxapp_ui_field_t *newField(ucxapp_ui_variant_t *v, bool opt)
+{
+    ucxapp_ui_field_t *f;
+
+    if (v->count >= UCXAPP_UI_MAX_FIELDS) {
+        return NULL;
+    }
+    f = &v->fields[v->count++];
+    memset(f, 0, sizeof(*f));
+    f->optional = opt;
+    f->kind = UCXAPP_UI_TEXT;
+    return f;
+}
+
+/* One placeholder without spaces: name, name=default, key=<name>, a|b, name... */
+static bool addLeaf(ucxapp_ui_variant_t *v, const char *s, size_t len, bool opt)
+{
+    ucxapp_ui_field_t *f = newField(v, opt);
+    const char *eq = memchr(s, '=', len);
+    bool open;
+
+    if (f == NULL) {
+        return false;
+    }
+    if (hasDots(s, len)) {
+        copyText(f->name, sizeof(f->name), s, len);
+        f->kind = UCXAPP_UI_REST;
+        return true;
+    }
+    if (eq != NULL && eq + 1 < s + len && eq[1] == '<' && s[len - 1] == '>') {
+        copyText(f->key, sizeof(f->key), s, (size_t)(eq + 1 - s));
+        copyText(f->name, sizeof(f->name), eq + 2, (size_t)(s + len - eq - 3));
+        return true;
+    }
+    if (eq != NULL) {
+        copyText(f->def, sizeof(f->def), eq + 1, (size_t)(s + len - eq - 1));
+        len = (size_t)(eq - s);
+    }
+    copyText(f->name, sizeof(f->name), s, len);
+    if (isChoice(s, len, &open)) {
+        size_t n = 0, start = 0;
+
+        f->kind = open ? UCXAPP_UI_OPEN : UCXAPP_UI_PICK;
+        for (size_t i = 0; i <= len; i++) {
+            if (i < len && s[i] != '|') {
+                continue;
+            }
+            if (!isValueAlt(s + start, i - start) && n + (i - start) + 2 < sizeof(f->choices)) {
+                n += (size_t)snprintf(f->choices + n, sizeof(f->choices) - n, "%s%.*s", n > 0 ? "|" : "",
+                                      (int)(i - start), s + start);
+            }
+            start = i + 1;
+        }
+    } else if (opt && inWords(kFlagWords, sizeof(kFlagWords) / sizeof(kFlagWords[0]), s, len)) {
+        f->kind = UCXAPP_UI_FLAG;
+    }
+    return true;
+}
+
+static bool addToken(ucxapp_ui_variant_t *v, const char *t, size_t len, bool inGroup, bool opt)
+{
+    bool open;
+
+    if (len >= 3 && (t[0] == '<' || t[0] == '[') && hasDots(t, len)) {
+        ucxapp_ui_field_t *f = newField(v, opt || t[0] == '[');
+        size_t end = len;
+
+        if (f == NULL) {
+            return false;
+        }
+        while (end > 1 && (t[end - 1] == '.' || t[end - 1] == ']' || t[end - 1] == '>' || t[end - 1] == ' ')) {
+            end--;
+        }
+        copyText(f->name, sizeof(f->name), t + 1, end - 1);
+        snprintf(f->name + strlen(f->name), sizeof(f->name) - strlen(f->name), "%s", f->name[0] != '\0' ? " ..." : "more ...");
+        f->kind = UCXAPP_UI_REST;
+        return true;
+    }
+    if (isGroup(t, len)) {
+        const char *inner = t + 1;
+        size_t n = len - 2;
+        bool o = opt || t[0] == '[';
+
+        if (n == 0) {
+            return false;
+        }
+        if (!hasTopLevel(inner, n, ' ')) {
+            return addLeaf(v, inner, n, o);
+        }
+        return addFields(v, inner, n, true, o);
+    }
+    if (inGroup || memchr(t, '=', len) != NULL || (memchr(t, '|', len) != NULL && isChoice(t, len, &open))) {
+        return addLeaf(v, t, len, opt);
+    }
+    if (v->count == 0) {
+        size_t used = strlen(v->literal);
+        if (used + len + 2 > sizeof(v->literal)) {
+            return false;
+        }
+        snprintf(v->literal + used, sizeof(v->literal) - used, "%s%.*s", used > 0 ? " " : "", (int)len, t);
+        return true;
+    }
+    {
+        ucxapp_ui_field_t *f = newField(v, false);
+        if (f == NULL) {
+            return false;
+        }
+        copyText(f->name, sizeof(f->name), t, len);
+        copyText(f->choices, sizeof(f->choices), t, len);
+        f->kind = UCXAPP_UI_PICK;
+    }
+    return true;
+}
+
+static bool addFields(ucxapp_ui_variant_t *v, const char *s, size_t len, bool inGroup, bool opt)
+{
+    size_t i = 0;
+
+    while (i < len) {
+        size_t n;
+        if (s[i] == ' ') {
+            i++;
+            continue;
+        }
+        n = tokenLen(s + i, len - i, false);
+        if (!addToken(v, s + i, n, inGroup, opt)) {
+            return false;
+        }
+        i += n;
+    }
+    return true;
+}
+
+typedef struct {
+    ucxapp_ui_variant_t *out;
+    int max;
+    int count;
+    bool failed;
+} formCtx_t;
+
+static void trimSpan(const char **s, size_t *len)
+{
+    while (*len > 0 && **s == ' ') {
+        (*s)++;
+        (*len)--;
+    }
+    while (*len > 0 && (*s)[*len - 1] == ' ') {
+        (*len)--;
+    }
+}
+
+/* "a b | c": a top-level '|' next to a space separates forms; "<x> a|b" is one form with a choice. */
+static bool hasSpacedBar(const char *s, size_t len)
+{
+    int depth = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '<' || s[i] == '[') {
+            depth++;
+        } else if (s[i] == '>' || s[i] == ']') {
+            depth--;
+        } else if (depth == 0 && s[i] == '|' && ((i > 0 && s[i - 1] == ' ') || (i + 1 < len && s[i + 1] == ' '))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void addForm(formCtx_t *ctx, const char *s, size_t len, const char *tag, size_t tagLen, int depth)
+{
+    trimSpan(&s, &len);
+    if (ctx->failed || depth > 6) {
+        ctx->failed = true;
+        return;
+    }
+    if (depth == 0 ? hasSpacedBar(s, len) : hasTopLevel(s, len, '|')) {
+        size_t i = 0;
+        while (i <= len && !ctx->failed) {
+            size_t n = tokenLen(s + i, len - i, true);
+            while (i + n < len && s[i + n] == ' ') {
+                /* a space ends a token, not an alternative: extend to the next top-level '|' */
+                n += 1 + tokenLen(s + i + n + 1, len - i - n - 1, true);
+            }
+            addForm(ctx, s + i, n, tag != NULL ? tag : s + i, tag != NULL ? tagLen : n, depth + 1);
+            i += n + 1;
+        }
+        return;
+    }
+    for (size_t i = 0; i < len;) {
+        size_t n;
+        if (s[i] == ' ') {
+            i++;
+            continue;
+        }
+        n = tokenLen(s + i, len - i, false);
+        if (isGroup(s + i, n) && n > 2 && hasTopLevel(s + i + 1, n - 2, '|') && hasTopLevel(s + i + 1, n - 2, ' ') &&
+            !hasDots(s + i, n)) {
+            char buf[320];
+            const char *inner = s + i + 1;
+            size_t innerLen = n - 2, k = 0;
+
+            if (s[i] == '[') {
+                char without[32];
+                size_t first = tokenLen(inner, innerLen, true);
+                int w = snprintf(buf, sizeof(buf), "%.*s %.*s", (int)i, s, (int)(len - i - n), s + i + n);
+                int t = snprintf(without, sizeof(without), "no %.*s", (int)first, inner);
+
+                addForm(ctx, buf, (size_t)w < sizeof(buf) ? (size_t)w : sizeof(buf) - 1,
+                        tag != NULL ? tag : without, tag != NULL ? tagLen : (size_t)t < sizeof(without) ? (size_t)t : 0,
+                        depth + 1);
+            }
+            while (k <= innerLen && !ctx->failed) {
+                size_t m = tokenLen(inner + k, innerLen - k, true);
+                while (k + m < innerLen && inner[k + m] == ' ') {
+                    m += 1 + tokenLen(inner + k + m + 1, innerLen - k - m - 1, true);
+                }
+                int w = snprintf(buf, sizeof(buf), "%.*s %.*s %.*s", (int)i, s, (int)m, inner + k,
+                                 (int)(len - i - n), s + i + n);
+                if (w < 0 || (size_t)w >= sizeof(buf)) {
+                    ctx->failed = true;
+                    return;
+                }
+                addForm(ctx, buf, (size_t)w, inner + k, m, depth + 1);
+                k += m + 1;
+            }
+            return;
+        }
+        i += n;
+    }
+    if (ctx->count >= ctx->max) {
+        ctx->failed = true;
+        return;
+    }
+    ucxapp_ui_variant_t *v = &ctx->out[ctx->count++];
+    memset(v, 0, sizeof(*v));
+    if (!addFields(v, s, len, false, false)) {
+        ctx->failed = true;
+        return;
+    }
+    if (v->literal[0] != '\0') {
+        snprintf(v->label, sizeof(v->label), "%s", v->literal);
+    } else if (len == 0) {
+        snprintf(v->label, sizeof(v->label), "(none)");
+    } else if (tag != NULL && tagLen > 0) {
+        trimSpan(&tag, &tagLen);
+        if (tag[0] == '[' && tokenLen(tag, tagLen, false) == tagLen) {
+            tag++;
+            tagLen -= 2;
+        }
+        copyText(v->label, sizeof(v->label), tag, tagLen);
+    } else {
+        copyText(v->label, sizeof(v->label), s, len);
+    }
+}
+
+int ucxapp_ui_parse_variants(const char *usage, ucxapp_ui_variant_t *out, int max)
+{
+    formCtx_t ctx = { out, max, 0, false };
+
+    addForm(&ctx, usage, strlen(usage), NULL, 0, 0);
+    return ctx.failed ? -1 : ctx.count;
+}
+
+int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max)
+{
+    static ucxapp_ui_variant_t v[UCXAPP_UI_MAX_VARIANTS];
+    int n = ucxapp_ui_parse_variants(usage, v, UCXAPP_UI_MAX_VARIANTS);
+
+    if (n != 1 || v[0].literal[0] != '\0' || v[0].count > max) {
+        return -1;
+    }
+    memcpy(fields, v[0].fields, (size_t)v[0].count * sizeof(fields[0]));
+    return v[0].count;
 }
 
 static void put(char *out, size_t size, size_t *n, char ch)

@@ -8,14 +8,34 @@
 
 #define UCXAPP_UI_MAX_GROUPS     48
 #define UCXAPP_UI_GROUP_LEN      12
-#define UCXAPP_UI_MAX_FIELDS     6
+#define UCXAPP_UI_MAX_FIELDS     8
 #define UCXAPP_UI_MAX_GROUP_CMDS 64
+#define UCXAPP_UI_MAX_VARIANTS   24
+
+/* Field kinds: a plain value, a fixed choice (select), a value or one of the choices (open),
+ * a keyword that is there or not (flag), or the rest of the line as words (rest). */
+#define UCXAPP_UI_TEXT  't'
+#define UCXAPP_UI_PICK  's'
+#define UCXAPP_UI_OPEN  'o'
+#define UCXAPP_UI_FLAG  'f'
+#define UCXAPP_UI_REST  'r'
 
 typedef struct {
-    char name[24];       /* placeholder text, e.g. "ssid" */
+    char name[48];       /* placeholder text, e.g. "ssid" */
     bool optional;
-    char choices[48];    /* "tcp|udp" when the field is a fixed choice, else empty */
+    char choices[160];   /* "tcp|udp" for a choice, else empty */
+    char def[24];        /* default ([seconds=10]) or suggested value (<hz=1>), else empty */
+    char key[12];        /* "id=" for [id=<client>]: sent in front of the value */
+    char kind;           /* UCXAPP_UI_TEXT ... UCXAPP_UI_REST */
 } ucxapp_ui_field_t;
+
+/* One form of a command: "tcpc <host> <port>" is literal "tcpc" plus the fields host and port. */
+typedef struct {
+    char label[48];
+    char literal[32];
+    int count;
+    ucxapp_ui_field_t fields[UCXAPP_UI_MAX_FIELDS];
+} ucxapp_ui_variant_t;
 
 /* Starts the streams and the command runner; calls nest, the last release stops them. */
 bool ucxapp_ui_acquire(ucxapp_t *app);
@@ -59,8 +79,12 @@ const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd);
 /* One-line description of a command group; "" if none. */
 const char *ucxapp_ui_group_help(const char *group);
 
-/* Splits a usage string into fields; -1 when it is too complex (use one free-text field). */
+/* Splits a usage string into fields; -1 when it has more than one form or is too complex. */
 int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max);
+
+/* Splits a usage string into its forms ("tcp [port] | udps <port>", "[a|b c]") and each form into a
+ * literal and fields; returns the number of forms, -1 when it is too complex (use one free-text field). */
+int ucxapp_ui_parse_variants(const char *usage, ucxapp_ui_variant_t *out, int max);
 
 /* Builds a command line from field values: trailing empties dropped, values quoted as needed.
  * raw: values[0] is appended unchanged. */

@@ -1370,9 +1370,9 @@ static const ucxapp_cmd_t gWifiCmds[] = {
 #endif
     { "wifi.disconnect", "",                    "Disconnect from Wi-Fi",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiDisconnect },
     { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
-    { "wifi.rssi",       "[count] [interval_s]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
+    { "wifi.rssi",       "[count=1] [interval_s=1]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
 #ifndef UCXAPP_LITE
-    { "wifi.survey",     "[seconds] [host]",    "Is the Wi-Fi here good enough? Signal and stability over time (default 10 s), internet reachability, and a verdict with advice", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiSurvey },
+    { "wifi.survey",     "[seconds=10] [host]",    "Is the Wi-Fi here good enough? Signal and stability over time (default 10 s), internet reachability, and a verdict with advice", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiSurvey },
 #endif
     { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP / static IP (applies on next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
     { "wifi.profile.add", "<name> <ssid> [password]", "Save or update a Wi-Fi profile", 0, cmdProfileAdd },

@@ -476,8 +476,9 @@ static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
 
 /* ---- generated command list for the page ------------------------------------- */
 
-#define API_BUF   16384
-#define MAX_HITS  60
+#define API_BUF    65536
+#define API_MARGIN 8192   /* the largest command entry (gnss.bridge with all its forms) */
+#define MAX_HITS   60
 
 /* Response bodies must outlive the handler, hence static storage; only the pump thread runs handlers. */
 static char gBuf[API_BUF];
@@ -498,13 +499,33 @@ static void jsonStr(char *buf, size_t *n, const char *s)
     }
 }
 
-static void appendCmd(size_t *pn, bool *first, const ucxapp_cmd_t *c)
+static void appendFields(size_t *pn, const ucxapp_ui_field_t *fields, int nf)
 {
-    ucxapp_ui_field_t fields[UCXAPP_UI_MAX_FIELDS];
-    int nf = ucxapp_ui_parse_usage(c->usage, fields, UCXAPP_UI_MAX_FIELDS);
     size_t n = *pn;
 
-    if (strncmp(c->name, "web.", 4) == 0 || n + 700 >= API_BUF) {
+    gBuf[n++] = '[';
+    for (int k = 0; k < nf; k++) {
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s[\"", k > 0 ? "," : "");
+        jsonStr(gBuf, &n, fields[k].name);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",%d,\"", fields[k].optional ? 1 : 0);
+        jsonStr(gBuf, &n, fields[k].choices);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"");
+        jsonStr(gBuf, &n, fields[k].def);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"%c\",\"", fields[k].kind);
+        jsonStr(gBuf, &n, fields[k].key);
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "\"]");
+    }
+    gBuf[n++] = ']';
+    *pn = n;
+}
+
+static void appendCmd(size_t *pn, bool *first, const ucxapp_cmd_t *c)
+{
+    static ucxapp_ui_variant_t forms[UCXAPP_UI_MAX_VARIANTS];
+    int nv = ucxapp_ui_parse_variants(c->usage, forms, UCXAPP_UI_MAX_VARIANTS);
+    size_t n = *pn;
+
+    if (strncmp(c->name, "web.", 4) == 0 || n + API_MARGIN >= API_BUF) {
         return;
     }
     gBuf[n++] = *first ? ' ' : ',';
@@ -516,16 +537,20 @@ static void appendCmd(size_t *pn, bool *first, const ucxapp_cmd_t *c)
     n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"u\":\"");
     jsonStr(gBuf, &n, c->usage);
     n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",%s\"f\":", (c->flags & UCXAPP_CMD_DANGER) ? "\"d\":1," : "");
-    if (nf < 0) {
+    if (nv == 1 && forms[0].literal[0] == '\0') {
+        appendFields(&n, forms[0].fields, forms[0].count);
+    } else if (nv < 1) {
         n += (size_t)snprintf(gBuf + n, API_BUF - n, "null");
     } else {
-        gBuf[n++] = '[';
-        for (int k = 0; k < nf; k++) {
-            n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s[\"", k > 0 ? "," : "");
-            jsonStr(gBuf, &n, fields[k].name);
-            n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",%d,\"", fields[k].optional ? 1 : 0);
-            jsonStr(gBuf, &n, fields[k].choices);
-            n += (size_t)snprintf(gBuf + n, API_BUF - n, "\"]");
+        n += (size_t)snprintf(gBuf + n, API_BUF - n, "null,\"v\":[");
+        for (int k = 0; k < nv; k++) {
+            n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s{\"l\":\"", k > 0 ? "," : "");
+            jsonStr(gBuf, &n, forms[k].label);
+            n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"p\":\"");
+            jsonStr(gBuf, &n, forms[k].literal);
+            n += (size_t)snprintf(gBuf + n, API_BUF - n, "\",\"f\":");
+            appendFields(&n, forms[k].fields, forms[k].count);
+            gBuf[n++] = '}';
         }
         gBuf[n++] = ']';
     }

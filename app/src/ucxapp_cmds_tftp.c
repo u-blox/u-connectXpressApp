@@ -763,7 +763,7 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gTftpCmds[] = {
-    { "tftp.on",     "[rw] [port] [seconds]",              "TFTP server on the module (default port 69, read only; 'rw' allows uploads) serving the working folder; with seconds it serves that long, then stops", UCXAPP_CMD_NEEDS_DEVICE, cmdOn },
+    { "tftp.on",     "[rw] [port=69] [seconds]",              "TFTP server on the module (default port 69, read only; 'rw' allows uploads) serving the working folder; with seconds it serves that long, then stops", UCXAPP_CMD_NEEDS_DEVICE, cmdOn },
     { "tftp.off",    "",                                   "Stop the TFTP server",                                        UCXAPP_CMD_NEEDS_DEVICE, cmdOff },
     { "tftp.status", "",                                   "TFTP server state, transfer count and last transfer",         UCXAPP_CMD_NEEDS_DEVICE, cmdStatus },
     { "tftp.get",    "<host> <remote> [local] [port]",     "Download a file from a TFTP server",                          UCXAPP_CMD_NEEDS_DEVICE, cmdGet },

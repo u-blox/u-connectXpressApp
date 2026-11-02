@@ -825,11 +825,11 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t kCmds[] = {
     { "cell.detect", "[port]", "Find a cellular module answering AT on the PC serial ports", 0, cmdDetect },
-    { "cell.open", "[port] [baud]", "Open a cellular module on a PC serial port (default 115200; finds it when omitted)", 0, cmdOpen },
+    { "cell.open", "[port] [baud=115200]", "Open a cellular module on a PC serial port (default 115200; finds it when omitted)", 0, cmdOpen },
     { "cell.close", "", "Close the cellular module", 0, cmdClose },
     { "cell.status", "", "Show SIM, signal, registration, operator and IP", 0, cmdStatus },
     { "cell.at", "<command>", "Send a raw AT command to the cellular module", 0, cmdAt },
-    { "cell.apn", "[apn [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },
+    { "cell.apn", "[<apn> [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },
     { "cell.attach", "[on|off]", "Attach and activate data (on), detach (off) or show the state", 0, cmdAttach },
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Open a transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91); then use gnss.bridge cell or imu.bridge cell", 0, cmdConnect },

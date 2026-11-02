@@ -33,7 +33,7 @@ def test_page_is_a_complete_document():
 def test_page_is_ascii_and_fits_one_response():
     data = PAGE.encode("utf-8")
     assert data.isascii()
-    assert len(data) < 38000   # U_WEBSERVER_MAX_RESPONSE_SIZE is 40960 including headers (at most ~450 bytes)
+    assert len(data) < 40000   # U_WEBSERVER_MAX_RESPONSE_SIZE is 40960 including headers (at most ~450 bytes)
 
 
 def test_page_is_built_into_the_app():

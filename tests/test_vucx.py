@@ -530,13 +530,19 @@ def test_bt_filter_addr_name_usage(app_exe, nora, args):
 
 
 def test_bt_connect_by_name_scans_with_a_filter(app_exe, nora):
+    # a name not in range: first 10 bytes on AD type 9 in slot 9, scan, slot 9 restored, then an error
     out = _shell(app_exe, nora.port, ["bt.connect vucx-hrs-sensor"], log=nora.log)
-    assert 'scanning for "vucx-hrs-s"' in out.stdout, out.stdout
+    assert out.returncode != 0 and 'scanning for "vucx-hrs-s"' in out.stdout, out.stdout
+    assert "name of a device in range" in out.stdout, out.stdout
     sent = nora.log
-    # first 10 bytes of the name on AD type 9 in slot 9, scan, slot 9 restored, then connect
     name = sent.index("AT+UBTDFD=9,9,767563782D6872732D73")
     scan = next(i for i, cmd in enumerate(sent) if cmd.startswith("AT+UBTD=") and i > name)
     restore = sent.index("AT+UBTDFD=9,0,")
-    assert name < scan < restore, sent
+    assert name < scan < restore and not any(cmd.startswith("AT+UBTC=") for cmd in sent), sent
+    # the device's own name: filtered scan, slot 9 restored, then connect to the device found
+    # (the virtual module always lists a link to it, so the app answers "already connected")
+    first = len(nora.log)
     out = _shell(app_exe, nora.port, ["bt.connect vucx-hrs"], log=nora.log)
-    assert out.returncode == 0 and "AT+UBTC=C0FFEE001122p" in nora.log, out.stdout + str(nora.log[-10:])
+    sent = nora.log[first:]
+    assert out.returncode == 0 and "connecting to vucx-hrs (C0:FF:EE:00:11:22)" in out.stdout, out.stdout
+    assert sent.index("AT+UBTDFD=9,9,767563782D687273") < sent.index("AT+UBTDFD=9,0,"), sent

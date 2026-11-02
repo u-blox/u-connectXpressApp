@@ -116,6 +116,12 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return false;
 }
 
+bool ucxapp_platform_pulse_dtr(void *uartHandle)
+{
+    (void)uartHandle;
+    return false;
+}
+
 uint32_t ucxapp_platform_tick_ms(void)
 {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);

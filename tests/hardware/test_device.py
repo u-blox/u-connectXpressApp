@@ -1,5 +1,6 @@
 """Single module: identity, AT passthrough, certificates, GNSS and IMU detection."""
 
+import os
 import re
 import subprocess
 import time
@@ -23,6 +24,45 @@ def test_device_info_and_wifi_status(app_exe, port_a):
     assert "NORA-W36" in out.stdout
     assert "wifi:" in out.stdout
     assert "socket(s)" in out.stdout
+
+
+@pytest.mark.hardware
+def test_power_save_level_or_light_sleep(app_exe):
+    """NORA-W36: the power save level round trip; NORA-B26: light sleep, wake, and full replies after it."""
+    ports = [p for p in (os.environ.get("UCX_PORT_A"), os.environ.get("UCX_PORT_B")) if p]
+    if not ports:
+        pytest.skip("no module on UCX_PORT_A or UCX_PORT_B")
+    for port in ports:
+        if "NORA-B2" in _run(app_exe, port, "dev.info").stdout:
+            out = _run(app_exe, port, "dev.power sleep", "dev.power wake", "dev.info")
+            assert out.returncode == 0 and "awake" in out.stdout, out.stdout
+            assert "Firmware Version:" in out.stdout.split("awake", 1)[1], out.stdout
+        else:
+            out = _run(app_exe, port, "dev.power save 1 2000", "dev.power save 0", "dev.power")
+            assert out.returncode == 0 and "power save level 0 (off" in out.stdout, out.stdout
+
+
+@pytest.mark.hardware
+def test_deep_sleep_wakes_on_dtr_pulse(app_exe):
+    """Deep sleep, then dev.power wake pulses DTR; needs a host that wires DTR to WAKE_UP (UCX_WAKE_DTR=1)."""
+    port = os.environ.get("UCX_WAKE_DTR")
+    if not port:
+        pytest.skip("UCX_WAKE_DTR not set (port whose board routes the USB UART DTR to WAKE_UP)")
+    out = _run(app_exe, port, "dev.power deep", "dev.power wake", "dev.info", timeout=60)
+    assert out.returncode == 0 and "awake after" in out.stdout, out.stdout
+    assert "Firmware Version:" in out.stdout.split("awake", 1)[1], out.stdout
+
+
+@pytest.mark.hardware
+def test_nora_b26_deep_sleep_wakes_on_uart(app_exe):
+    """NORA-B26: deep sleep with UART wake-up; dev.power wake's first character restarts it."""
+    ports = [os.environ.get(v) for v in ("UCX_PORT_A", "UCX_PORT_B", "UCX_PORT_C")]
+    ports = [p for p in ports if p and "NORA-B2" in _run(app_exe, p, "dev.info").stdout]
+    if not ports:
+        pytest.skip("no NORA-B26 on UCX_PORT_A/B/C")
+    out = _run(app_exe, ports[0], "dev.power deep uart", "dev.power wake", "dev.info", timeout=60)
+    assert out.returncode == 0 and "awake after" in out.stdout, out.stdout
+    assert "Firmware Version:" in out.stdout.split("awake", 1)[1], out.stdout
 
 
 @pytest.mark.hardware

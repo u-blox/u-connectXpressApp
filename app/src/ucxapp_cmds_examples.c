@@ -142,6 +142,12 @@ static const example_t kExamples[] = {
       "mqtt.connect\nmqtt.subscribe ucx/demo/#\nmqtt.publish ucx/demo/hello \"hi from NORA\"\nmqtt.read 10" },
     { "mqtt", "Own broker",
       "mqtt.connect mybroker.local 1883\nmqtt.subscribe sensors/+/temp 1\nmqtt.read 30" },
+    { "mqtt", "TLS with a server check and a login",
+      "cert.upload ca broker-ca.pem broker-ca\nmqtt.connect mybroker.example.com ca=broker-ca user=device1 pass=${MQTT_PASS}\n"
+      "mqtt.publish sensors/device1/temp 21.5" },
+    { "mqtt", "Mutual TLS with a client certificate (AWS IoT, Azure IoT Hub)",
+      "cert.upload ca root-ca.pem root-ca\ncert.upload client device.pem device\ncert.upload key device.key device-key\n"
+      "mqtt.connect xxxxxx-ats.iot.eu-west-1.amazonaws.com ca=root-ca cert=device key=device-key id=device1" },
 
     { "cert", "Install and check certificates",
       "cert.upload ca ca.pem myca\ncert.upload client client.pem mycert\ncert.upload key client.key mykey\ncert.list\ncert.info myca" },
@@ -161,6 +167,8 @@ static const example_t kExamples[] = {
 #ifndef UCXAPP_LITE
     { "bt", "Scan only for NORA-W36 names or u-blox manufacturer data (text or hex)",
       "bt.filter 0 9 NORA-W36\nbt.filter 1 0xFF 0x1701\nbt.filter\nbt.scan filter\nbt.filter clear" },
+    { "bt", "Channel Sounding: let a phone or tag reader measure the distance (NORA-B26/B27)",
+      "bt.cs on\nbt.pairing on\n# connect from the initiator; procedure events are printed as they come\nbt.cs off" },
 #endif
     { "bt", "Save a device and reconnect later",
       "bt.profile.add sensor C0:FF:EE:00:11:22\nbt.profile.connect sensor" },
@@ -204,6 +212,10 @@ static const example_t kExamples[] = {
       "dev.info\ndev.status\ndev.diagnose" },
     { "dev", "Start clean",
       "dev.factory confirm" },
+    { "dev", "Save power: NORA-W36 power save, NORA-B26 light sleep",
+      "dev.power save 1 1000\ndev.power\n# NORA-B26: links stay up while it sleeps\ndev.power sleep\ndev.power wake" },
+    { "dev", "Deep sleep until the wake-up pin is pulled low",
+      "dev.power deep\n# the module starts as after a reset" },
 
     { "cell", "Cellular data link",
       "cell.detect\ncell.open COM30\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
@@ -211,9 +223,17 @@ static const example_t kExamples[] = {
       "cell.open COM30\ncell.bridge tcp 7000" },
 
     { "can", "Loopback test",
-      "can.cfg 500000\ncan.send 0x123 11 22 33\ncan.recv\ncan.status" },
-    { "can", "CAN frames to a PC over UDP",
-      "can.bridge udp 192.168.1.10 6000" },
+      "can.cfg 500000 loopback\ncan.send 0x123 11 22 33\ncan.recv\ncan.status" },
+    { "can", "Listen on a real bus without disturbing it (STM32 board with a CAN transceiver)",
+      "can.cfg 250000 listen\ncan.watch 30\ncan.status" },
+    { "can", "CANable on Linux (SocketCAN, set up with: sudo ip link set can0 type can bitrate 500000 up)",
+      "can.open can0\ncan.send 0x123 11 22 33\ncan.watch 10\ncan.open emulated" },
+    { "can", "CAN frames to a PC over UDP (Windows, Linux or the STM32 board)",
+      "can.bridge udp 192.168.1.10 6000\ncan.bridge status" },
+    { "can", "CAN frames to a phone over SPS from the STM32 board",
+      "can.cfg 500000 listen\ncan.bridge ble sps\ncan.bridge status" },
+    { "can", "CAN frames to a server over cellular (reconnects when the link drops)",
+      "cell.open COM30\ncell.attach on\ncell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
 
     { "hw", "Blink an LED and read a pin",
       "hw.load app/boards/h753.json\nhw.led 0 on\nhw.gpio.read 3" },

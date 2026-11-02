@@ -7,6 +7,7 @@ Empty by default: it only answers the AT setup commands. A YAML profile decides 
       "AT+UWSC?": ["+UWSC:0,1", "OK"]
     urcs:                           # lines sent after the response to a matching command
       "AT+CPWROFF": ["+STARTUP"]
+      "AT+USODL=*": {after: 2, lines: ["NO CARRIER"], times: 1}   # later, and only the first n times
     include: [wifi.yaml]            # profiles merged in first (this one wins)
     default: ["OK"]                 # answer to unmatched commands (default ERROR)
     state:                          # commands that set state variables, for keys like "AT+X=* [page=login]"
@@ -239,6 +240,7 @@ class Vucx:
         self.log = []   # every command received, for the tests
         self.payloads = []   # (command, binary data) for commands that carried data (AT+X=... SOH len data)
         self._turn = {}
+        self._urc_sent = {}
         self._fd = None
         self._stop = threading.Event()
 
@@ -285,9 +287,21 @@ class Vucx:
             answer = (self._lookup(self.commands, cmd) or self.default, self._lookup(self.urcs, cmd))
         self.state.update(self._lookup(self.setters, cmd) or {})
         self._send(answer[0])
-        if answer[1]:
+        urc = answer[1]
+        if isinstance(urc, dict):   # {after: s, lines: [...], times: n}: later, e.g. a link that drops
+            done = self._urc_sent.get(id(urc), 0)
+            if done < urc.get("times", 1 << 30):
+                self._urc_sent[id(urc)] = done + 1
+                threading.Timer(urc["after"], self._send_quiet, [urc["lines"]]).start()
+        elif urc:
             time.sleep(0.05)
-            self._send(answer[1])
+            self._send(urc)
+
+    def _send_quiet(self, lines):
+        try:
+            self._send(lines)
+        except OSError:   # stop() closed the pty first
+            pass
 
     def start(self):
         """Opens the pty and serves it in a thread; returns the port name for the app.

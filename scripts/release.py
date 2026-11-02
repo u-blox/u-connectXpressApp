@@ -60,7 +60,7 @@ def out(*cmd):
 
 
 def read_version():
-    header_path = ROOT / "u-connectClient" / "ucx_api" / "generated" / "NORA-W36X" / "u_cx_version.h"
+    header_path = ROOT / "u-connectClient" / "ucx_api" / "generated" / "MERGED" / "u_cx_version.h"
     header = header_path.read_text(encoding="utf-8")
     parts = []
     for n in ("MAJOR", "MINOR", "PATCH"):

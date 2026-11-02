@@ -9,6 +9,7 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_general.h"
+#include "u_cx_power.h"
 #include "u_cx_security.h"
 #include "u_cx_system.h"
 #include "u_port.h"
@@ -170,7 +171,17 @@ static int cmdDeviceStack(ucxapp_t *app, int argc, char *argv[])
         }
         name[n] = '\0';
         p = strchr(p, ',');
-        if (p == NULL || sscanf(p, ",%lu,%lu", &size, &used) != 2) {
+        if (p != NULL) {
+            char *end;
+
+            size = strtoul(p + 1, &end, 10);
+            p = end > p + 1 && *end == ',' ? end + 1 : NULL;
+            if (p != NULL) {
+                used = strtoul(p, &end, 10);
+                p = end > p ? end : NULL;
+            }
+        }
+        if (p == NULL) {
             ucxapp_print("%s\n", line);
             continue;
         }
@@ -328,6 +339,106 @@ static int cmdDeviceDiagnose(ucxapp_t *app, int argc, char *argv[])
     return d.failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+#ifndef UCXAPP_LITE
+#define POWER_WAKE_TRIES      12
+#define POWER_WAKE_TIMEOUT_MS 300
+#define POWER_SLEEP_SETTLE_MS 500
+
+static int powerFailed(const char *what, int32_t r, const char *needs)
+{
+    ucxapp_print("ERROR: %s failed (%d%s); %s\n", what, (int)r, ucxapp_errname(r), needs);
+    return UCXAPP_ERR_FAILED;
+}
+
+static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t level, timeoutMs = 0, r;
+
+    if (argc == 1) {
+        r = uCxPowerGetPowerSaveLevel(app->ucx, &level);
+        if (r != 0) {
+            ucxapp_print("no power save level on this module: dev.power sleep for light sleep (NORA-B26), "
+                         "dev.power deep for deep sleep\n");
+            return UCXAPP_OK;
+        }
+        ucxapp_print("power save level %d%s\n", (int)level, level == 0 ? " (off, fastest response)" : " (saves power after the idle timeout)");
+        return UCXAPP_OK;
+    }
+    if (strcmp(argv[1], "save") == 0) {
+        if (argc < 3 || argc > 4 || !ucxapp_parse_int(argv[2], &level) || level < 0 || level > 1 ||
+            (argc == 4 && (!ucxapp_parse_int(argv[3], &timeoutMs) || timeoutMs < 1))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        r = uCxPowerSetPowerSaveLevel(app->ucx, level);
+        if (r == 0 && argc == 4) {
+            r = uCxPowerSetPowerSaveTimeout(app->ucx, timeoutMs);
+        }
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+        if (r != 0) {
+            return powerFailed("set the power save level", r, "it needs a NORA-W36 (NORA-B26: dev.power sleep)");
+        }
+        ucxapp_print("power save level %d stored", (int)level);
+        if (argc == 4) {
+            ucxapp_print(", idle timeout %d ms", (int)timeoutMs);
+        }
+        ucxapp_print(level == 1 ? "; use 115200 baud or lower, more latency after the idle time\n" : "\n");
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "sleep") == 0) {
+        r = uCxPowerSleep(app->ucx);
+        if (r != 0) {
+            return powerFailed("light sleep", r, "it needs a NORA-B26 (NORA-W36: dev.power save 1)");
+        }
+        /* The module falls asleep a little after its OK; a command in between is lost half way. */
+        U_CX_PORT_SLEEP_MS(POWER_SLEEP_SETTLE_MS);
+        ucxapp_print("light sleep: Bluetooth links stay up and events still come; dev.power wake (or the WAKE_UP pin) "
+                     "wakes it for commands\n");
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "wake") == 0) {
+        bool pulsed = false;
+        uint32_t startMs = ucxapp_platform_tick_ms();
+        /* A character wakes light sleep; deep sleep needs a falling edge on WAKE_UP (DTR on EVKs), then a boot. */
+        for (int i = 0; i < POWER_WAKE_TRIES; i++) {
+            if (i == 1) {
+                pulsed = ucxapp_platform_pulse_dtr(app->ucx->pAtClient->uartHandle);
+            }
+            uCxAtClientSetCommandTimeout(app->ucx->pAtClient, POWER_WAKE_TIMEOUT_MS, false);
+            if (uCxGeneralAttention(app->ucx) == 0) {
+                ucxapp_print(i == 0 ? "awake\n" : "awake after %u ms\n", (unsigned)(ucxapp_platform_tick_ms() - startMs));
+                return UCXAPP_OK;
+            }
+            U_CX_PORT_SLEEP_MS(50);
+        }
+        ucxapp_print("ERROR: no answer%s; pull WAKE_UP (GPIO_J9) low or press reset (NORA-B26: dev.power deep uart "
+                     "wakes on UART)\n", pulsed ? " after a WAKE_UP pulse through DTR" : "");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (strcmp(argv[1], "deep") == 0 && argc <= 3) {
+        static const char *const kWake[] = { "pin", "reset", "uart" };
+        int mode = 0;
+
+        while (argc == 3 && mode < 3 && strcmp(argv[2], kWake[mode]) != 0) {
+            mode++;
+        }
+        if (mode == 3) {
+            return UCXAPP_ERR_USAGE;
+        }
+        r = mode == 0 ? uCxPowerDeepSleepWithGpioWakeup(app->ucx) : uCxPowerDeepSleep(app->ucx, (uPowerWakeupMode_t)mode);
+        if (r != 0) {
+            return powerFailed("deep sleep", r, "wake-up by reset or UART needs a NORA-B26");
+        }
+        U_CX_PORT_SLEEP_MS(POWER_SLEEP_SETTLE_MS);
+        ucxapp_print("deep sleep: no radio; wake it with the %s, then it starts as after a reset\n",
+                     mode == 0 ? "wake-up pin (pull low)" : mode == 1 ? "reset pin" : "UART RX pin");
+        return UCXAPP_OK;
+    }
+    return UCXAPP_ERR_USAGE;
+}
+#endif
+
 static const ucxapp_cmd_t gDeviceCmds[] = {
     { "dev.caps", "", "Module capabilities: model, firmware, Wi-Fi, Bluetooth LE and the features this build has", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
     { "dev.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
@@ -340,6 +451,9 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "dev.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
     { "dev.crash", "", "Developer: last crash info stored in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
+#ifndef UCXAPP_LITE
+    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|deep [pin|reset|uart]]", "Power: show or set the power save level (NORA-W36, stored), light sleep that keeps Bluetooth links (NORA-B26), wake it, or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
+#endif
 };
 
 int ucxapp_find_modules(char names[][UCXAPP_PLATFORM_PORT_NAME_LEN], int maxNames)
@@ -411,11 +525,16 @@ bool ucxapp_last_port_load(const char *kind, char *port, size_t size, int32_t *b
         return false;
     }
     if (fgets(line, sizeof(line), f) != NULL) {
-        char name[UCXAPP_PLATFORM_PORT_NAME_LEN];
-        if (sscanf(line, "%31s %d", name, &b) == 2 && b > 0) {
-            snprintf(port, size, "%s", name);
-            *baud = b;
-            ok = true;
+        size_t n = strcspn(line, " \t\r\n");
+        char *end;
+
+        if (n > 0 && n < UCXAPP_PLATFORM_PORT_NAME_LEN) {
+            b = (int)strtol(line + n, &end, 10);
+            if (end > line + n && b > 0) {
+                snprintf(port, size, "%.*s", (int)n, line);
+                *baud = b;
+                ok = true;
+            }
         }
     }
     fclose(f);

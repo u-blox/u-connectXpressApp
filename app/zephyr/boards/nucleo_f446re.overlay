@@ -5,6 +5,14 @@
 	aliases {
 		ucxapp-module = &usart1;
 	};
+	chosen {
+		/* can.* on CAN1, RX PB8 (D15), TX PB9 (D14), as in the FreeRTOS build; CAN2 PB12/PB13 is the SD card bus. */
+		zephyr,canbus = &can1;
+	};
+};
+
+&can2 {
+	status = "disabled";
 };
 
 &usart1 {

@@ -156,6 +156,12 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return false;
 }
 
+bool ucxapp_platform_pulse_dtr(void *uartHandle)
+{
+    (void)uartHandle;
+    return false;
+}
+
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
 {
     if (bufferSize > 0) {

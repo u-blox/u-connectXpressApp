@@ -5,7 +5,12 @@ project(u-connectXpressApp-stm32 C ASM)
 #   -DCMAKE_TOOLCHAIN_FILE=<repo>/u-connectClient/cmake/arm-none-eabi-gcc.cmake -DSTM32_BOARD=nucleo_h753zi
 # (ucxapp.py --stm32-freertos does this).
 
-set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
+set(UCX_MODULE "MERGED" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated (MERGED: NORA-W36X + NORA-B26X)")
+if(UCX_MODULE MATCHES "^NORA-(W36X|B26X)$")
+  # The app uses both modules' commands (Channel Sounding, power), so the single-module APIs no longer build it.
+  message(STATUS "UCX_MODULE ${UCX_MODULE} -> MERGED")
+  set(UCX_MODULE "MERGED" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated (MERGED: NORA-W36X + NORA-B26X)" FORCE)
+endif()
 include(../../u-connectClient/u-connectClient.cmake)
 
 if(NOT DEFINED STM32_BOARD)
@@ -83,6 +88,11 @@ else()
         ${APP_SRC}/ucxapp_ymodem.c
     )
 endif()
+# Boards with a CAN controller get can.* on it (bxCAN CAN1, FDCAN1 on the H753); the F401 has none.
+if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc|nucleo_f446re)$")
+    list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_can.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_can_stm32.c)
+    set(UCXAPP_CAN_HW ON)
+endif()
 
 string(TOLOWER "${STM32_BOARD}" _board)
 set(UCXAPP_STM32_NAME "ucxapp_${_board}")
@@ -103,6 +113,9 @@ endif()
 
 target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${APP_SRC} ${LITTLEFS_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${FATFS_DIR})
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE LFS_THREADSAFE LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)
+if(UCXAPP_CAN_HW)
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_CAN_HW)
+endif()
 # The command layer needs more heap than the examples (32 KB default); the F439ZI and F407VG have little RAM.
 if(UCXAPP_LITE)
     if(STM32_BOARD STREQUAL "nucleo_g071rb")

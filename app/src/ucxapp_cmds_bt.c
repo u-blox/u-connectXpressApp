@@ -14,6 +14,7 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_bluetooth.h"
+#include "u_cx_channel_sounding.h"
 #include "u_cx_system.h"
 #include "u_port.h"
 #ifdef _MSC_VER
@@ -57,26 +58,40 @@ static void printAddr(const uBtLeAddress_t *a)
     ucxapp_print("%s", text);
 }
 
-/* "XX:XX:XX:XX:XX:XX" or "XX:XX:XX:XX:XX:XX,random"; public if no type is given. */
+static int hexVal(char c)
+{
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* "XX:XX:XX:XX:XX:XX" or "XX:XX:XX:XX:XX:XX,random"; public if no type is given. Parsed by hand: sscanf links
+ * the floating-point scanf on picolibc, too big for the 128 KB lite builds. */
 static bool parseAddr(const char *s, uBtLeAddress_t *addr)
 {
-    unsigned int v[6];
-    int used = 0;
-
-    if (sscanf(s, "%2x:%2x:%2x:%2x:%2x:%2x%n", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &used) != 6) {
-        return false;
-    }
     for (int i = 0; i < 6; i++) {
-        addr->address[i] = (uint8_t)v[i];
-    }
-    addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
-    if (s[used] == ',') {
-        if (strcmp(&s[used + 1], "random") == 0) {
-            addr->type = U_BD_ADDRESS_TYPE_RANDOM;
-        } else if (strcmp(&s[used + 1], "public") != 0) {
+        int hi = hexVal(*s);
+        int lo;
+
+        if (hi < 0) {
             return false;
         }
-    } else if (s[used] != '\0') {
+        lo = hexVal(*++s);
+        if (lo >= 0) {
+            hi = hi * 16 + lo;
+            s++;
+        }
+        addr->address[i] = (uint8_t)hi;
+        if (i < 5 && *s++ != ':') {
+            return false;
+        }
+    }
+    addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
+    if (*s == ',') {
+        if (strcmp(s + 1, "random") == 0) {
+            addr->type = U_BD_ADDRESS_TYPE_RANDOM;
+        } else if (strcmp(s + 1, "public") != 0) {
+            return false;
+        }
+    } else if (*s != '\0') {
         return false;
     }
     return true;
@@ -1215,6 +1230,36 @@ static int cmdBtFilter(ucxapp_t *app, int argc, char *argv[])
     }
     return UCXAPP_OK;
 }
+
+static int cmdBtCs(ucxapp_t *app, int argc, char *argv[])
+{
+    uBtChannelSoundingMode_t mode;
+    int32_t r;
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        mode = strcmp(argv[1], "on") == 0 ? U_BT_CHANNEL_SOUNDING_MODE_REFLECTOR : U_BT_CHANNEL_SOUNDING_MODE_DISABLE;
+        r = uCxChannelSoundingSetChannelSoundingMode(app->ucx, mode);
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+    } else {
+        r = uCxChannelSoundingGetChannelSoundingMode(app->ucx, &mode);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: Channel Sounding failed (%d%s); it needs a NORA-B26 or NORA-B27 with 3.4 or later\n",
+                     (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    if (mode == U_BT_CHANNEL_SOUNDING_MODE_REFLECTOR) {
+        ucxapp_print("Channel Sounding on: reflector, a connected initiator (phone or tag reader) measures the distance\n");
+    } else {
+        ucxapp_print("Channel Sounding off\n");
+    }
+    return UCXAPP_OK;
+}
 #endif
 
 static const ucxapp_cmd_t gBtCmds[] = {
@@ -1224,6 +1269,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.addr",       "[addr]",              "Show the module's Bluetooth address, or set it (XX:XX:XX:XX:XX:XX; takes effect after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
 #ifndef UCXAPP_LITE
     { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "List the scan data filters, or set one: AD type (9 = complete name, 0xFF = manufacturer data) and up to 10 bytes to match, as text (NORA) or hex (4E4F5241); used by bt.scan filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
+    { "bt.cs",         "[on|off]",            "Bluetooth Channel Sounding (NORA-B26/B27): on makes the module a reflector so a connected initiator can measure the distance (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
 #endif
     { "bt.disconnect", "[conn]",            "Close a BLE connection",                         UCXAPP_CMD_NEEDS_DEVICE, cmdBtDisconnect },
     { "bt.list",       "",                    "List BLE connections",                           UCXAPP_CMD_NEEDS_DEVICE, cmdBtList },

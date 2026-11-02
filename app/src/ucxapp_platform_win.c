@@ -24,6 +24,7 @@
 #include <timeapi.h>
 
 #include "u_cx_log.h"
+#include "u_port_uart.h"
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -264,6 +265,15 @@ void ucxapp_platform_tcp_close(intptr_t sock)
     if (sock >= 0) {
         closesocket((SOCKET)sock);
     }
+}
+
+bool ucxapp_platform_pulse_dtr(void *uartHandle)
+{
+    if (uPortUartSetDtr(uartHandle, false) != 0) {
+        return false;
+    }
+    Sleep(20);
+    return uPortUartSetDtr(uartHandle, true) == 0;
 }
 
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)

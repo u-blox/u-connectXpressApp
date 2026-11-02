@@ -96,6 +96,9 @@ struct bridge {
     uPortUartHandle_t out;         /* BR_UART: the other serial port */
     char outPort[32];
     int32_t outBaud;
+    bool cellLink;                 /* BR_UART: the port is a cellular data link that reconnects when it drops */
+    uint8_t linkLost[2];           /* bytes matched of each "link dropped" line */
+    uint32_t relinks;
     volatile bool rxPending;       /* the module has data for us (TCP client or UDP socket) */
     uint32_t received;             /* bytes that came back from the far side */
     char connectHost[64];          /* BR_TCP client mode; empty when serving */
@@ -834,15 +837,69 @@ static void senderLoop(void *arg)
 
 /* Serial to serial: no module needed, both directions. With NTRIP the other port is a data link to the caster:
    only GGA goes up, the corrections come down after the response header. */
+static void ntripStart(bridge_t *b)
+{
+    b->ntripStreaming = false;
+    b->ntripHdrLen = 0;
+    (void)uPortUartWrite(b->out, (const uint8_t *)b->ntripReq, strlen(b->ntripReq));
+}
+
+/* A modem in transparent mode leaves it with one of these lines when the far side or the network drops the socket. */
+static bool cellLinkLost(bridge_t *b, const uint8_t *d, size_t n)
+{
+    static const char *const kLost[2] = { "\r\nNO CARRIER\r\n", "\r\nCLOSED\r\n" };
+
+    for (size_t i = 0; i < n; i++) {
+        for (int k = 0; k < 2; k++) {
+            if ((char)d[i] == kLost[k][b->linkLost[k]]) {
+                b->linkLost[k]++;
+            } else {
+                b->linkLost[k] = (char)d[i] == kLost[k][0] ? 1 : 0;
+            }
+            if (kLost[k][b->linkLost[k]] == '\0') {
+                b->linkLost[0] = b->linkLost[1] = 0;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* Connects the modem again (backing off up to 30 s) and takes its port back; false only when the bridge stops. */
+static bool cellRelink(bridge_t *b)
+{
+    uint32_t waitMs = 1000;
+
+    ucxapp_print("%s bridge: cellular link on %s lost, reconnecting\n", b->s->cfg.kind, b->outPort);
+    uPortUartClose(b->out);
+    b->out = NULL;
+    while (!b->senderStop) {
+        if (ucxapp_cell_relink()) {
+            b->out = uPortUartOpen(b->outPort, b->outBaud, false);
+            if (b->out != NULL) {
+                b->relinks++;
+                ucxapp_print("%s bridge: cellular link on %s reconnected\n", b->s->cfg.kind, b->outPort);
+                if (b->ntrip) {
+                    ntripStart(b);
+                }
+                return true;
+            }
+        }
+        for (uint32_t t = 0; t < waitMs && !b->senderStop; t += 100) {
+            ucxapp_platform_sleep_ms(100);
+        }
+        waitMs = waitMs < 15000 ? waitMs * 2 : 30000;
+    }
+    return false;
+}
+
 static void uartBridgeLoop(void *arg)
 {
     bridge_t *b = arg;
     uint8_t chunk[NET_CHUNK];
 
     if (b->ntrip) {
-        b->ntripStreaming = false;
-        b->ntripHdrLen = 0;
-        (void)uPortUartWrite(b->out, (const uint8_t *)b->ntripReq, strlen(b->ntripReq));
+        ntripStart(b);
     }
     while (!b->senderStop) {
         size_t n = ringGet(b, chunk, sizeof(chunk));
@@ -864,6 +921,12 @@ static void uartBridgeLoop(void *arg)
         }
         int32_t r = uPortUartRead(b->out, chunk, sizeof(chunk), 20);
         int32_t skip = 0;
+        if (r > 0 && b->cellLink && cellLinkLost(b, chunk, (size_t)r)) {
+            if (!cellRelink(b)) {
+                break;
+            }
+            continue;
+        }
         if (r > 0 && b->ntrip && !b->ntripStreaming) {
             skip = b->ntripFailed ? r : ntripHeader(b, chunk, r);
             if (skip < 0) {
@@ -1398,6 +1461,11 @@ static bridge_t *uartOpen(ucxapp_stream_t *s, ucxapp_t *app, const char *port, i
     }
     snprintf(b->outPort, sizeof(b->outPort), "%s", port);
     b->outBaud = baud;
+    {
+        char cport[32];
+        int32_t cbaud;
+        b->cellLink = ucxapp_cell_data_link(cport, sizeof(cport), &cbaud) && strcmp(cport, port) == 0;
+    }
     return b;
 }
 
@@ -1623,6 +1691,9 @@ static void bridgeDescribe(const bridge_t *b)
         ucxapp_print(" port %d", (int)b->udpPort);
     } else if (b->bridge == BR_UART) {
         ucxapp_print(" %s at %d baud", b->outPort, (int)b->outBaud);
+        if (b->cellLink) {
+            ucxapp_print(", cellular, %s%u reconnect(s)", b->out == NULL ? "reconnecting, " : "", (unsigned)b->relinks);
+        }
     } else {
         ucxapp_print(", %s", ucxapp_handle_current(UCXAPP_HANDLE_CONN) < 0 ? "no client connected" : "client connected");
     }

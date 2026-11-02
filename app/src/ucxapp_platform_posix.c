@@ -4,6 +4,9 @@
 #define _DEFAULT_SOURCE
 
 #include "ucxapp_platform.h"
+#ifndef __EMSCRIPTEN__
+#include "u_port_uart.h"
+#endif
 
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -335,6 +338,20 @@ void ucxapp_platform_tcp_close(intptr_t sock)
 }
 
 #endif /* __EMSCRIPTEN__ */
+
+bool ucxapp_platform_pulse_dtr(void *uartHandle)
+{
+#ifdef __EMSCRIPTEN__
+    (void)uartHandle;
+    return false;
+#else
+    if (uPortUartSetDtr(uartHandle, false) != 0) {
+        return false;
+    }
+    ucxapp_platform_sleep_ms(20);
+    return uPortUartSetDtr(uartHandle, true) == 0;
+#endif
+}
 
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)
 {

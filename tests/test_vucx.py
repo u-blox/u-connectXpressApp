@@ -3,6 +3,7 @@
 import re
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -421,6 +422,37 @@ def test_cell_commands_on_a_virtual_modem(app_exe, nora):
     assert any(c.startswith("AT+CSQ") for c in modem.log), modem.log
 
 
+def test_can_bridge_cell_reconnects_a_dropped_link(app_exe, nora):
+    from harness.vucx import Vucx
+
+    modem = Vucx("cell.yaml")
+    modem.urcs["AT+USODL=*"] = {"after": 2, "lines": ["NO CARRIER"], "times": 1}
+    port = modem.start()
+    proc = subprocess.Popen([str(app_exe), nora.port, "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace")
+    try:
+        proc.stdin.write(f"cell.open {port}\ncell.connect caster.local 2101\ncan.bridge cell\n")
+        proc.stdin.flush()
+        deadline = time.time() + 20
+        while time.time() < deadline and sum(c.startswith("AT+USODL=") for c in modem.log) < 2:
+            time.sleep(0.2)
+        time.sleep(0.5)
+        out, _ = proc.communicate("can.bridge status\ncan.bridge off\n", timeout=30)
+    finally:
+        proc.kill()
+        modem.stop()
+    assert "can bridge: cellular link on" in out and "reconnected" in out, out[-3000:]
+    assert "cellular, 1 reconnect(s)" in out, out[-3000:]
+    assert sum(c.startswith("AT+USODL=") for c in modem.log) == 2, modem.log
+    assert sum(c.startswith('AT+USOCO=0,"caster.local",2101') for c in modem.log) == 2, modem.log
+    assert "AT+USOCL=0" in modem.log, modem.log
+
+
+def test_can_bridge_cell_needs_a_data_link(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["can.bridge cell", "can.bridge status"]).stdout
+    assert "no cellular data link (use cell.connect first)" in out, out[-2000:]
+
+
 def test_cfg_save_diff_load_round_trip(app_exe, tmp_path):
     from harness.vucx import Vucx
 
@@ -507,6 +539,7 @@ def test_perf_sps_needs_a_connection(app_exe, vucx):
 
 def test_bt_addr_name_and_filter(app_exe, nora):
     out = _shell(app_exe, nora.port, ["bt.addr", "bt.name", "bt.name MySensor", "bt.addr 54:F8:2A:14:C9:EF",
+                                      "bt.addr a:b:c:d:e:f,public",
                                       "bt.filter", "bt.filter 0 9 4E:49:4E:41", "bt.filter 1 0xFF 0102",
                                       "bt.filter 2 9 NORA-W36", "bt.filter 0 clear", "bt.filter clear"], log=nora.log)
     assert out.returncode == 0, out.stdout + out.stderr
@@ -515,6 +548,7 @@ def test_bt_addr_name_and_filter(app_exe, nora):
     assert '"NINA"' in out.stdout and "all data filters cleared" in out.stdout, out.stdout
     sent = nora.log
     assert 'AT+UBTLN="MySensor"' in sent and "AT+USYLA=0,54F82A14C9EF" in sent and "AT&W" in sent, sent
+    assert "AT+USYLA=0,0A0B0C0D0E0F" in sent, sent
     assert "AT+UBTDFD=0,9,4E494E41" in sent and "AT+UBTDFD=1,255,0102" in sent, sent
     assert "AT+UBTDFD=2,9,4E4F52412D573336" in sent and '"NORA-W36"' in out.stdout, sent
     assert sum(cmd.startswith("AT+UBTDFD=") and cmd.endswith(",0,") for cmd in sent) == 11, sent
@@ -522,11 +556,67 @@ def test_bt_addr_name_and_filter(app_exe, nora):
 
 @pytest.mark.parametrize("args", ["bt.filter 10 9 41", "bt.filter 0 9 0x4G", "bt.filter 0 9 ABCDEFGHIJK",
                                   "bt.filter 0 300 41", "bt.filter 0 9 0102030405060708090A0B",
-                                  "bt.filter 0 9", "bt.addr 11:22:33", "bt.name a b"])
+                                  "bt.filter 0 9", "bt.addr 11:22:33", "bt.name a b", "bt.addr 11:22:33:44:55:66x",
+                                  "bt.addr 11:22:33:44:55:66,other", "bt.addr 11:22:33:44:5566",
+                                  "bt.addr 111:22:33:44:55:66", "bt.addr :11:22:33:44:55"])
 def test_bt_filter_addr_name_usage(app_exe, nora, args):
     out = _shell(app_exe, nora.port, [args], log=nora.log)
     assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
     assert not any(cmd.startswith(("AT+UBTDFD=", "AT+USYLA=0,", "AT+UBTLN=")) for cmd in nora.log), nora.log
+
+
+def test_bt_cs_sets_reflector_and_explains_a_module_without_it(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["bt.cs on", "bt.cs off"], log=nora.log)
+    assert out.returncode == 0 and "Channel Sounding on: reflector" in out.stdout, out.stdout
+    assert "Channel Sounding off" in out.stdout, out.stdout
+    assert "AT+UBTCSM=1" in nora.log and "AT+UBTCSM=0" in nora.log and "AT&W" in nora.log, nora.log
+    # the W36 profile has no mode to read back, as a real NORA-W36
+    out = _shell(app_exe, nora.port, ["bt.cs"], log=nora.log)
+    assert out.returncode != 0 and "needs a NORA-B26 or NORA-B27" in out.stdout, out.stdout
+    out = _shell(app_exe, nora.port, ["bt.cs maybe"], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+
+
+def test_mqtt_connect_with_login_and_tls(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["mqtt.connect broker.local user=me pass=pw ca=myca cert=dev key=devkey",
+                                      "mqtt.connect broker.local 1884 id=plant7 tls", "mqtt.connect"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    sent = nora.log
+    login = [cmd for cmd in sent if cmd.startswith('AT+UMQCP=0,"broker.local",8883,"ucxapp-')]
+    assert login and login[0].endswith(',"me","pw"'), sent
+    assert 'AT+UMQTLS=0,3,"myca","dev","devkey"' in sent, sent
+    assert 'AT+UMQCP=0,"broker.local",1884,"plant7"' in sent and "AT+UMQTLS=0,3" in sent, sent
+    assert "AT+UMQTLS=0,0" in sent, sent
+    assert "user me, TLS with client certificate" in out.stdout, out.stdout
+    assert "TLS (server not verified)" in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("args", ["mqtt.connect h cert=c key=k", "mqtt.connect h ca=a cert=c",
+                                  "mqtt.connect h pass=pw", "mqtt.connect h id=", "mqtt.connect h 1883 x",
+                                  "mqtt.connect h 70000", "mqtt.connect h color=red"])
+def test_mqtt_connect_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith(("AT+UMQCP=", "AT+UMQTLS=")) for cmd in nora.log), nora.log
+
+
+def test_dev_power_levels_sleep_and_deep_sleep(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["dev.power", "dev.power save 1 2000", "dev.power save 0", "dev.power sleep",
+                                      "dev.power wake", "dev.power deep", "dev.power deep uart"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "power save level 0 (off" in out.stdout and "idle timeout 2000 ms" in out.stdout, out.stdout
+    assert "light sleep" in out.stdout and "awake" in out.stdout and "UART RX pin" in out.stdout, out.stdout
+    sent = nora.log
+    for cmd in ("AT+UPMPSL=1", "AT+UPMPSTO=2000", "AT+UPMPSL=0", "AT&W", "AT+UPMS", "AT", "AT+UPMDS", "AT+UPMDS=2"):
+        assert cmd in sent, (cmd, sent)
+
+
+@pytest.mark.parametrize("args", ["dev.power save 2", "dev.power save 1 0", "dev.power save", "dev.power deep gpio",
+                                  "dev.power sleep now", "dev.power nap"])
+def test_dev_power_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith("AT+UPM") for cmd in nora.log), nora.log
 
 
 def test_bt_connect_by_name_scans_with_a_filter(app_exe, nora):

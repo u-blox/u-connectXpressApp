@@ -1,5 +1,6 @@
 """Bluetooth LE: scan, profiles, bonding settings, HID and GATT server/client between the two modules."""
 
+import os
 import queue
 import re
 import subprocess
@@ -16,6 +17,43 @@ def test_ble_scan_completes(app_exe, port_a):
     assert out.returncode == 0, out.stdout
 
 
+def _plain_lines(stdout):
+    return [line for line in re.sub(r"\x1b\[[0-9;]*m", "", stdout).splitlines()
+            if line and not line.startswith("[") and not line.startswith("connected to")]
+
+
+@pytest.mark.hardware
+def test_bt_addr_and_name_round_trip(app_exe, port_a):
+    out = _run(app_exe, port_a, "bt.addr")
+    assert out.returncode == 0 and re.search(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}", out.stdout, re.M | re.I), out.stdout
+    old = _run(app_exe, port_a, "bt.name")
+    assert old.returncode == 0, old.stdout
+    original = _plain_lines(old.stdout)[-1]
+    try:
+        out = _run(app_exe, port_a, "bt.name ucxtest", "bt.name")
+        assert out.returncode == 0 and 'Bluetooth name "ucxtest" set and stored' in out.stdout, out.stdout
+        assert _plain_lines(out.stdout)[-1] == "ucxtest", out.stdout
+    finally:
+        assert _run(app_exe, port_a, f'bt.name "{original}"').returncode == 0
+    assert _plain_lines(_run(app_exe, port_a, "bt.name").stdout)[-1] == original
+
+
+@pytest.mark.hardware
+def test_bt_filter_text_and_hex(app_exe, port_a):
+    try:
+        out = _run(app_exe, port_a, "bt.filter clear", "bt.filter 0 9 NORA", "bt.filter 1 0xFF 4E4F5241",
+                   "bt.filter", "bt.scan filter")
+        assert out.returncode == 0, out.stdout
+        assert re.search(r'^0  AD type 0x09  4E4F5241  "NORA"', out.stdout, re.M), out.stdout
+        assert re.search(r"^1  AD type 0xFF  4E4F5241", out.stdout, re.M), out.stdout
+        assert "2 data filter(s)" in out.stdout, out.stdout
+        out = _run(app_exe, port_a, "bt.filter 1 clear", "bt.filter")
+        assert "data filter 1 cleared" in out.stdout and "1 data filter(s)" in out.stdout, out.stdout
+    finally:
+        out = _run(app_exe, port_a, "bt.filter clear", "bt.filter")
+        assert "0 data filter(s)" in out.stdout, out.stdout
+
+
 @pytest.mark.hardware
 def test_ble_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
     (tmp_path / "storage").mkdir()
@@ -30,6 +68,21 @@ def test_ble_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
     assert out.returncode != 0
     out = _run(app_exe, port_a, "bt.profile.remove ghost")
     assert "no profile 'ghost'" in out.stdout or out.returncode == 0
+
+
+@pytest.mark.hardware
+def test_bt_cs_reflector_on_a_nora_b26(app_exe):
+    ports = [p for p in (os.environ.get("UCX_PORT_A"), os.environ.get("UCX_PORT_B")) if p]
+    b26 = [p for p in ports if "NORA-B2" in _run(app_exe, p, "dev.info").stdout]
+    if not b26:
+        pytest.skip("no NORA-B26/B27 on UCX_PORT_A or UCX_PORT_B")
+    out = _run(app_exe, b26[0], "bt.cs on", "bt.cs", "bt.cs off", "bt.cs")
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.count("Channel Sounding on: reflector") == 2, out.stdout
+    assert out.stdout.count("Channel Sounding off") == 2, out.stdout
+    for other in (p for p in ports if p not in b26):
+        out = _run(app_exe, other, "bt.cs")
+        assert out.returncode != 0 and "needs a NORA-B26 or NORA-B27" in out.stdout, out.stdout
 
 
 @pytest.mark.hardware

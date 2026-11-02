@@ -23,6 +23,7 @@ commands:
   "AT+UBTPHYR=*": ["+UBTPHYR:0,2,2", "OK"]
   "AT+UBTM?": ["+UBTM:3", "OK"]
   "AT+UBTLN?": ['+UBTLN:"vucx"', "OK"]
+  "AT+UPMPSL?": ["+UPMPSL:0", "OK"]
   "AT+UBTIOC?": ["+UBTIOC:0", "OK"]
   "AT+UBTBSM?": ["+UBTBSM:0", "OK"]
   "AT+UBTPM?": ["+UBTPM:1", "OK"]

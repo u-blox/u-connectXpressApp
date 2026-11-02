@@ -64,6 +64,16 @@ static bool connectModule(const char *port)
     ucxapp_urc_register(&gUcxHandle);
 
     bool echoOk = uCxSystemSetEchoOff(&gUcxHandle) == 0;
+    if (!echoOk && ucxapp_platform_pulse_dtr(gAtClient.uartHandle)) {
+        /* Deep sleep wakes on a WAKE_UP falling edge (DTR on u-blox EVKs), then the module boots. */
+        for (int i = 0; i < 10 && !echoOk; i++) {
+            uCxAtClientSetCommandTimeout(&gAtClient, 300, false);
+            echoOk = uCxSystemSetEchoOff(&gUcxHandle) == 0;
+        }
+        if (echoOk) {
+            ucxapp_print("woke the module from deep sleep (WAKE_UP pulsed through DTR)\n");
+        }
+    }
     if (!echoOk) {
         ucxapp_print("warning: could not disable echo\n");
     }

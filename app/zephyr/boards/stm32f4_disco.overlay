@@ -5,6 +5,14 @@
 	aliases {
 		ucxapp-module = &usart3;
 	};
+	chosen {
+		/* can.* on CAN1, RX PD0, TX PD1, as in the FreeRTOS build; CAN2's PB13 is the SD card clock. */
+		zephyr,canbus = &can1;
+	};
+};
+
+&can2 {
+	status = "disabled";
 };
 
 &usart3 {

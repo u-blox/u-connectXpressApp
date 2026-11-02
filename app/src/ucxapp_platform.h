@@ -63,6 +63,9 @@ int ucxapp_platform_read_key(void);
 /** IPv4 address of the host's main LAN/Wi-Fi interface (virtual and link-local ones skipped); false if none. */
 bool ucxapp_platform_local_ip(char *out, size_t size);
 
+/** Release DTR briefly, then assert it again: a falling edge on the EVK's WAKE_UP pin. False if the port has no DTR. */
+bool ucxapp_platform_pulse_dtr(void *uartHandle);
+
 /* Host TCP client (Windows, Linux, macOS; the browser build fails every call). Used for the phone remote control. */
 
 /** Connects to host (name or IPv4) within timeoutMs; returns the socket, or -1. */

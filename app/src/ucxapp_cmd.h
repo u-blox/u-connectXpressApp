@@ -246,6 +246,9 @@ int ucxapp_gatt_server_custom(ucxapp_t *app, const uint8_t svc[16], const uint8_
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud);
 /* cell.connect host port (TCP); UCXAPP_OK when the modem is in transparent data mode. */
 int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port);
+/* The data link dropped (the modem is back in command mode): open the same socket again; true when the link is up.
+   The caller must have closed its own handle on the link port. */
+bool ucxapp_cell_relink(void);
 /* HTTP(S) POST over the module (ucxapp_cmds_net.c): the status (-1 on failure), *resp the response body text. */
 int ucxapp_http_post(ucxapp_t *app, const char *url, const char *body, const char *ctype, const char **resp);
 bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len);

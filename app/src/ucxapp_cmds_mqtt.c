@@ -17,6 +17,7 @@
 #define MQTT_ID            0
 #define MQTT_DEFAULT_HOST  "broker.emqx.io"
 #define MQTT_DEFAULT_PORT  1883
+#define MQTT_DEFAULT_TLS_PORT 8883
 #define MQTT_MAX_PAYLOAD   512
 #define MQTT_MAX_MESSAGES  10
 
@@ -37,25 +38,92 @@ static bool parseQos(const char *s, uMqttQos_t *qos)
 #define MQTT_BUSY_DELAY_MS 100
 #define MQTT_SUBSCRIBE_WAIT_S 5
 
+/* mqtt.connect options: name=value words; a bare "tls" turns TLS on without a CA (no server check). */
+typedef struct {
+    const char *host, *id, *user, *pass, *ca, *cert, *key;
+    int32_t port;
+    bool tls;
+} mqttOpts_t;
+
+static bool parseConnectArgs(int argc, char *argv[], mqttOpts_t *o)
+{
+    static const char *const kNames[] = { "id=", "user=", "pass=", "ca=", "cert=", "key=" };
+    const char **const kDest[] = { &o->id, &o->user, &o->pass, &o->ca, &o->cert, &o->key };
+    int positional = 0;
+
+    memset(o, 0, sizeof(*o));
+    o->host = MQTT_DEFAULT_HOST;
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        size_t k = 0;
+
+        if (strcmp(a, "tls") == 0) {
+            o->tls = true;
+            continue;
+        }
+        while (k < sizeof(kNames) / sizeof(kNames[0]) && strncmp(a, kNames[k], strlen(kNames[k])) != 0) {
+            k++;
+        }
+        if (k < sizeof(kNames) / sizeof(kNames[0])) {
+            *kDest[k] = a + strlen(kNames[k]);
+            if (**kDest[k] == '\0') {
+                return false;
+            }
+        } else if (positional == 0 && a[0] != '\0' && strchr(a, '=') == NULL) {
+            o->host = a;
+            positional++;
+        } else if (positional == 1 && ucxapp_parse_int(a, &o->port) && o->port >= 1 && o->port <= 65535) {
+            positional++;
+        } else {
+            return false;
+        }
+    }
+    if ((o->cert == NULL) != (o->key == NULL) || (o->cert != NULL && o->ca == NULL) || (o->pass != NULL && o->user == NULL)) {
+        return false;
+    }
+    o->tls = o->tls || o->ca != NULL;
+    if (o->port == 0) {
+        o->port = o->tls ? MQTT_DEFAULT_TLS_PORT : MQTT_DEFAULT_PORT;
+    }
+    return true;
+}
+
 static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
 {
-    const char *host = MQTT_DEFAULT_HOST;
-    int32_t port = MQTT_DEFAULT_PORT;
+    mqttOpts_t o;
     char clientId[32];
+    int32_t result;
 
-    if (argc > 3 || (argc > 1 && argv[1][0] == '\0') ||
-        (argc > 2 && (!ucxapp_parse_int(argv[2], &port) || port < 1 || port > 65535))) {
+    if (!parseConnectArgs(argc, argv, &o)) {
         return UCXAPP_ERR_USAGE;
     }
-    if (argc > 1) {
-        host = argv[1];
+    if (o.id == NULL) {
+        /* Brokers drop a client whose ID is already in use, so derive one from the tick clock. */
+        snprintf(clientId, sizeof(clientId), "ucxapp-%u", (unsigned)(uPortGetTickTimeMs() % 100000));
+        o.id = clientId;
     }
-    /* Brokers drop a client whose ID is already in use, so derive one from the tick clock. */
-    snprintf(clientId, sizeof(clientId), "ucxapp-%u", (unsigned)(uPortGetTickTimeMs() % 100000));
-
-    int32_t result = uCxMqttSetConnectionParams4(app->ucx, MQTT_ID, host, port, clientId);
+    if (o.pass != NULL) {
+        result = uCxMqttSetConnectionParams6(app->ucx, MQTT_ID, o.host, o.port, o.id, o.user, o.pass);
+    } else if (o.user != NULL) {
+        result = uCxMqttSetConnectionParams5(app->ucx, MQTT_ID, o.host, o.port, o.id, o.user);
+    } else {
+        result = uCxMqttSetConnectionParams4(app->ucx, MQTT_ID, o.host, o.port, o.id);
+    }
     if (result != 0) {
         ucxapp_print("ERROR: cannot set connection parameters (%d%s)\n", (int)result, ucxapp_errname(result));
+        return UCXAPP_ERR_FAILED;
+    }
+    /* The TLS setting stays in the module, so set it every time (off for a plain connection). */
+    if (o.cert != NULL) {
+        result = uCxMqttSetTLS5(app->ucx, MQTT_ID, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, o.ca, o.cert, o.key);
+    } else if (o.ca != NULL) {
+        result = uCxMqttSetTLS3(app->ucx, MQTT_ID, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, o.ca);
+    } else {
+        result = uCxMqttSetTLS2(app->ucx, MQTT_ID, o.tls ? U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3 : U_WIFI_TLS_VERSION_NO_TLS);
+    }
+    if (result != 0) {
+        ucxapp_print("ERROR: cannot set TLS (%d%s); certificates must be on the module (cert.list)\n", (int)result,
+                     ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_events_clear(URC_FLAG_MQTT_CONNECTED);
@@ -68,7 +136,9 @@ static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: timeout waiting for the broker\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("connected to %s:%d as %s\n", host, (int)port, clientId);
+    ucxapp_print("connected to %s:%d as %s%s%s%s\n", o.host, (int)o.port, o.id, o.user != NULL ? ", user " : "",
+                 o.user != NULL ? o.user : "", o.cert != NULL ? ", TLS with client certificate"
+                                               : o.ca != NULL ? ", TLS" : o.tls ? ", TLS (server not verified)" : "");
     return UCXAPP_OK;
 }
 
@@ -212,7 +282,7 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gMqttCmds[] = {
-    { "mqtt.connect",     "[host] [port]",    "Connect to a broker (default broker.emqx.io:1883, no TLS)", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttConnect },
+    { "mqtt.connect",     "[host] [port] [id=<client>] [user=<name>] [pass=<pw>] [tls|ca=<name> [cert=<name> key=<name>]]", "Connect to a broker (default broker.emqx.io:1883); login with user/pass, TLS with ca= (port 8883 by default) and a client certificate with cert/key; certificates are loaded with cert.*", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttConnect },
     { "mqtt.disconnect",  "",                 "Disconnect from the broker",                               UCXAPP_CMD_NEEDS_DEVICE, cmdMqttDisconnect },
     { "mqtt.subscribe",   "<topic> [qos]",    "Subscribe to a topic (wildcards allowed, qos 0-2)",        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttSubscribe },
     { "mqtt.unsubscribe", "<topic>",          "Unsubscribe from a topic",                                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttUnsubscribe },

@@ -114,7 +114,7 @@ static const ucRow_t kIiot[] = {
     { 'w', "[ok]", "Enterprise", "WPA2/WPA3-Enterprise with certificates on the module: wifi.eap", "wifi.eap" },
     { 0, "[ok]", "TLS to the MES", "a TCP socket with TLS, CA and client certificate from cert.upload: sock.tls", "sock.tls" },
     { 0, "[ok]", "Machine data", "CAN frames from the machine to the MES: can.bridge tcpc <host> <port>", "can.bridge" },
-    { 0, "[limit]", "MQTT", "mqtt.connect has no TLS or login: a local broker, or a TLS socket instead", NULL },
+    { 0, "[ok]", "MQTT", "TLS with CA and client certificate: mqtt.connect <host> ca=<ca> cert=<c> key=<k>", "mqtt.connect" },
     { 0, "[ok]", "Baseline", "save one unit's settings, then cfg.diff every unit on the line against it", "cfg.diff" },
     { 0, "[ok]", "Health", "one PASS/FAIL report for support: dev.diagnose <mes-host>", "dev.diagnose" },
     { 0, "[ok]", "Firmware", "fw.download the newest firmware, fw.update in a service window", "fw.download" },
@@ -140,17 +140,18 @@ static const ucRow_t kSite[] = {
     { 'w', "[ok]", "Site Wi-Fi", "profiles for the site office and the depot: wifi.profile.add", "wifi.profile.add" },
     { 0, "[ok]", "Depot update", "at the depot: fw.download, then fw.update overnight", "fw.download" },
     { 0, "[ok]", "Health", "dev.diagnose before the tool goes out", "dev.diagnose" },
+    { 0, "[check]", "Find a tool", "NORA-B26/B27: bt.cs on, a Channel Sounding phone measures the distance", "bt.cs" },
     { 0, "[check]", "RF range", "steel and concrete cut the range: check the antenna and test on site", NULL },
 };
 
 static const ucRow_t kImplement[] = {
     { 0, "[ok]", "CAN bus", "ISOBUS and J1939 run at 250 kbit/s: can.cfg 250000, can.recv", "can.cfg" },
-    { 0, "[check]", "CAN adapter", "the CAN controller in this app is emulated (loopback); a real one needs a port", NULL },
+    { 0, "[ok]", "CAN adapter", "an STM32 board with a CAN transceiver runs can.* on the bus; the PC emulates it", "can.cfg" },
     { 'w', "[ok]", "Cab Wi-Fi", "the module is the cab's access point: wifi.ap.enable", NULL },
     { 0, "[ok]", "Cab tablet", "CAN frames both ways over TCP: can.bridge tcp 9100", "can.bridge" },
     { 0, "[ok]", "Phone", "or over BLE to the operator's phone: can.bridge ble nus", "can.bridge" },
     { 0, "[ok]", "Yard upload", "back at the yard: wifi.connect, then mqtt.publish the work record", "mqtt.publish" },
-    { 0, "[limit]", "Field link", "can.bridge has no cellular option; upload at the yard", NULL },
+    { 0, "[ok]", "Field link", "frames over cellular in the field: can.bridge cell (reconnects after dead zones)", "can.bridge" },
     { 0, "[limit]", "Decoding", "frames are raw (id, dlc, data); ISOBUS and J1939 decoding is in the tablet app", NULL },
 };
 
@@ -192,7 +193,7 @@ static const ucRow_t kFarm[] = {
     { 0, "[ok]", "Cab tablet", "add ble: the corrected NMEA to the guidance app over Nordic UART", "gnss.bridge" },
     { 0, "[ok]", "Field log", "the track to a file while driving: gnss.log field.nmea nmea", "gnss.log" },
     { 'w', "[ok]", "Farmyard Wi-Fi", "back at the yard: wifi.connect, then upload the log with tftp.put or ft.put", NULL },
-    { 0, "[limit]", "Coverage", "over cellular the bridge does not reconnect; restart it after a dead zone", NULL },
+    { 0, "[ok]", "Coverage", "the cellular link reconnects after a dead zone (1 s backoff, up to 30 s)", NULL },
 };
 
 static const ucRow_t kTracker[] = {
@@ -200,13 +201,13 @@ static const ucRow_t kTracker[] = {
     { 'w', "[ok]", "At home", "Wi-Fi to your server: gnss.bridge tcpc <host> <port> (reconnects)", "gnss.bridge" },
     { 0, "[check]", "On the road", "a cellular modem (u-blox, Quectel, SIMCom, Telit, nRF91): cell.connect", "cell.connect" },
     { 0, "[ok]", "Server", "receives plain NMEA lines over TCP; any TCP listener or GPS logger app", NULL },
-    { 0, "[limit]", "Power", "the host and receiver run all the time; no sleep schedule in this app", NULL },
+    { 0, "[limit]", "Power", "dev.power save 1 idles the module; the host and receiver still run all the time", "dev.power" },
 };
 
 static const ucRow_t kHome[] = {
     { 'w', "[ok]", "Home Wi-Fi", "station on the home network: wifi.connect, wifi.profile.add for next time", NULL },
     { 0, "[ok]", "MQTT", "publish and subscribe to a local broker (Mosquitto in Home Assistant)", "mqtt.connect" },
-    { 0, "[limit]", "Broker login", "mqtt.connect takes host and port only: allow anonymous on the local broker", NULL },
+    { 0, "[ok]", "Broker login", "user and password: mqtt.connect <host> user=<name> pass=${MQTT_PASS}", "mqtt.connect" },
     { 0, "[limit]", "Message size", "max 511 bytes per message, QoS 0, not retained", NULL },
     { 0, "[ok]", "Sensor", "an IMU on the washing machine or door (imu.open, imu.status)", "imu.open" },
 };

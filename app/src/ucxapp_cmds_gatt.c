@@ -1146,7 +1146,11 @@ static void put32(uint8_t *p, uint32_t v)
 static void buildCtsTime(uint8_t out[10])
 {
     time_t now = time(NULL);
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
     struct tm *t = localtime(&now);
+#else
+    struct tm *t = gmtime(&now);   /* no time zone on the boards; localtime pulls in tzset and scanf */
+#endif
 
     memset(out, 0, 10);
     if (t == NULL) {

@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "u_cx_bluetooth.h"
+#include "u_cx_channel_sounding.h"
 #include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
@@ -89,6 +90,16 @@ static void btBondUrc(struct uCxHandle *h, uBtLeAddress_t *a, uBtBondStatus_t s)
 static void btConfirmUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)            { (void)h; ucxapp_bt_user_confirmation(h, a, v); }
 static void btPasskeyShowUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)        { (void)h; ucxapp_bt_passkey_display(a, v); }
 static void btPasskeyAskUrc(struct uCxHandle *h, uBtLeAddress_t *a)                    { (void)h; ucxapp_bt_passkey_request(a); }
+#ifndef UCXAPP_LITE
+static void btCsUrc(struct uCxHandle *h, int32_t c, uBtChannelSoundingEvent_t e, uBtHciStatus_t s)
+{
+    static const char *const kCsEvents[] = { "capabilities exchanged", "security enabled", "procedure enabled",
+                                             "procedure disabled" };
+
+    (void)h;
+    evt("bt: channel sounding %s, conn %d%s", (unsigned)e < 4 ? kCsEvents[e] : "event", (int)c, s != 0 ? " (failed)" : "");
+}
+#endif
 
 static void gattNotifyUrc(struct uCxHandle *h, int32_t conn, int32_t handle, uByteArray_t *data)
 {
@@ -170,6 +181,9 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
     uCxBluetoothRegisterUserConfirmation(ucx, btConfirmUrc);
     uCxBluetoothRegisterPasskeyEntry(ucx, btPasskeyShowUrc);
     uCxBluetoothRegisterPasskeyRequest(ucx, btPasskeyAskUrc);
+#ifndef UCXAPP_LITE
+    uCxChannelSoundingRegisterCsStatus(ucx, btCsUrc);
+#endif
 
     uCxGattClientRegisterNotification(ucx, gattNotifyUrc);
     uCxGattClientRegisterIndication(ucx, gattNotifyUrc);

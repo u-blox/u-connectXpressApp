@@ -57,10 +57,13 @@ static int atCmd(const char *cmd, char *resp, size_t size, int32_t timeoutMs, in
         }
         resp[n] = '\0';
         if (result == AT_TIMEOUT) {
+            const char *connect = strstr(resp, "CONNECT");
             if (strstr(resp, "\r\nOK\r\n") != NULL || (n >= 4 && strncmp(resp, "OK\r\n", 4) == 0)) {
                 result = AT_OK;
             } else if (strstr(resp, "ERROR") != NULL) {
                 result = AT_ERROR;
+            } else if (connect != NULL && strstr(connect, "\r\n") != NULL) {
+                result = AT_OK;   /* the modem is in data mode now: no OK follows */
             }
             if (result != AT_TIMEOUT) {
                 if (extraMs <= 0) {
@@ -491,6 +494,10 @@ static int32_t gLinkBaud;
 enum { VENDOR_UBLOX, VENDOR_QUECTEL, VENDOR_SIMCOM, VENDOR_TELIT, VENDOR_NORDIC };
 static int gVendor;
 static int gSock;
+static char gLinkHost[104];   /* what cell.connect opened, so a dropped link can be opened again */
+static int32_t gLinkRemote;
+static bool gLinkUdp;
+static bool gRelinking;
 
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
 {
@@ -658,9 +665,14 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
     }
     snprintf(gLinkPort, sizeof(gLinkPort), "%s", gPort);
     gLinkBaud = gBaud;
+    snprintf(gLinkHost, sizeof(gLinkHost), "%s", argv[1]);
+    gLinkRemote = port;
+    gLinkUdp = strcmp(proto, "UDP") == 0;
     closePort();
     gDataMode = true;
-    ucxapp_print("connected to %s:%d; %s is now a data link, e.g. gnss.bridge cell\n", argv[1], (int)port, gLinkPort);
+    if (!gRelinking) {
+        ucxapp_print("connected to %s:%d; %s is now a data link, e.g. gnss.bridge cell\n", argv[1], (int)port, gLinkPort);
+    }
     return UCXAPP_OK;
 }
 
@@ -676,10 +688,60 @@ int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port)
     return cmdConnect(app, 3, argv);
 }
 
+/* Closes the transparent socket on the modem (command mode on gUart). */
+static void closeLinkSocket(void)
+{
+    char resp[RESP_SIZE];
+
+    if (gVendor == VENDOR_UBLOX) {
+        char cmd[40];
+        snprintf(cmd, sizeof(cmd), "AT+USOCL=%d", gSock);
+        (void)atCmd(cmd, resp, sizeof(resp), 10000, 0);
+    } else if (gVendor == VENDOR_SIMCOM) {
+        (void)atCmd("AT+CIPCLOSE=0", resp, sizeof(resp), 10000, 0);
+        (void)atCmd("AT+NETCLOSE", resp, sizeof(resp), 10000, 0);
+    } else if (gVendor == VENDOR_TELIT) {
+        (void)atCmd("AT#SH=1", resp, sizeof(resp), 10000, 0);
+    } else if (gVendor == VENDOR_NORDIC) {
+        (void)atCmd("AT#XSOCKET=0", resp, sizeof(resp), 10000, 0);
+    } else {
+        (void)atCmd("AT+QICLOSE=0", resp, sizeof(resp), 10000, 0);
+    }
+}
+
+bool ucxapp_cell_relink(void)
+{
+    char name[] = "cell.connect";
+    char host[sizeof(gLinkHost)];
+    char p[8];
+    char proto[] = "udp";
+    char *argv[] = { name, host, p, proto };
+    int r;
+
+    if (!gDataMode) {
+        return false;
+    }
+    if (!openPort(gLinkPort, gLinkBaud)) {
+        return false;   /* still in data mode, or the modem is gone: try again later */
+    }
+    gDataMode = false;
+    closeLinkSocket();
+    snprintf(host, sizeof(host), "%s", gLinkHost);
+    snprintf(p, sizeof(p), "%d", (int)gLinkRemote);
+    gRelinking = true;
+    r = cmdConnect(NULL, gLinkUdp ? 4 : 3, argv);
+    gRelinking = false;
+    if (r != UCXAPP_OK) {
+        closePort();
+        gDataMode = true;   /* keep the link settings so the next try connects the same way */
+        return false;
+    }
+    return true;
+}
+
 /* cell.disconnect: guard time, +++, then close the socket. Stop any bridge using the link first. */
 static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
 {
-    char resp[RESP_SIZE];
     uint8_t buf[32];
     (void)app;
     (void)argv;
@@ -709,20 +771,7 @@ static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no AT response on %s after +++, use cell.open\n", gLinkPort);
         return UCXAPP_ERR_FAILED;
     }
-    if (gVendor == VENDOR_UBLOX) {
-        char cmd[40];
-        snprintf(cmd, sizeof(cmd), "AT+USOCL=%d", gSock);
-        (void)atCmd(cmd, resp, sizeof(resp), 10000, 0);
-    } else if (gVendor == VENDOR_SIMCOM) {
-        (void)atCmd("AT+CIPCLOSE=0", resp, sizeof(resp), 10000, 0);
-        (void)atCmd("AT+NETCLOSE", resp, sizeof(resp), 10000, 0);
-    } else if (gVendor == VENDOR_TELIT) {
-        (void)atCmd("AT#SH=1", resp, sizeof(resp), 10000, 0);
-    } else if (gVendor == VENDOR_NORDIC) {
-        (void)atCmd("AT#XSOCKET=0", resp, sizeof(resp), 10000, 0);
-    } else {
-        (void)atCmd("AT+QICLOSE=0", resp, sizeof(resp), 10000, 0);
-    }
+    closeLinkSocket();
     ucxapp_print("disconnected, command mode on %s\n", gPort);
     return UCXAPP_OK;
 }

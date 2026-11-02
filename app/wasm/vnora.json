@@ -167,6 +167,18 @@
    "+USECD:2,323032363031303130303030303030",
    "OK"
   ],
+  "AT+UBTDFD=9": [
+   "+UBTDFD:9,0,",
+   "OK"
+  ],
+  "AT+UBTDFD?": [
+   "+UBTDFD:0,9,4E4F5241",
+   "+UBTDFD:3,255,0102FF",
+   "OK"
+  ],
+  "AT+UBTDFD*": [
+   "OK"
+  ],
   "AT+UBTD*": [
    "+UBTD:C0FFEE001122p,-50,\"vucx-hrs\",0,020106030D18",
    "+UBTD:C0FFEE001133r,-70,\"\",0,020106",
@@ -198,6 +210,10 @@
   ],
   "AT+UBTLN?": [
    "+UBTLN:\"vucx\"",
+   "OK"
+  ],
+  "AT+UPMPSL?": [
+   "+UPMPSL:0",
    "OK"
   ],
   "AT+UBTIOC?": [

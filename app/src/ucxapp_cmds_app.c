@@ -29,7 +29,7 @@
 #define UCC_VERSION UCX_API_VERSION
 #endif
 #ifndef UCXAPP_UCX_MODULE
-#define UCXAPP_UCX_MODULE "NORA-W36X"
+#define UCXAPP_UCX_MODULE "MERGED"
 #endif
 
 #if defined(_WIN32)
@@ -223,7 +223,9 @@ static int cmdSbom(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_print("build     u-connectXpressApp %s, %s %s, %s\n", APP_VERSION, APP_PLATFORM, APP_ARCH, APP_COMPILER);
-    ucxapp_print("AT API    %s %s\n\n", UCXAPP_UCX_MODULE, UCX_API_VERSION);
+    ucxapp_print("AT API    %s %s\n\n",
+                 strcmp(UCXAPP_UCX_MODULE, "MERGED") == 0 ? "NORA-W36X + NORA-B26X" : UCXAPP_UCX_MODULE,
+                 UCX_API_VERSION);
     for (size_t i = 0; i < COMPONENT_COUNT; i++) {
         const component_t *c = &kComponents[i];
         bool hasVersion = strcmp(c->version, "-") != 0;

@@ -7,10 +7,12 @@
 void ucxapp_web_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
 void ucxapp_web_on_data(int32_t sock, int32_t bytes) { (void)sock; (void)bytes; }
 void ucxapp_web_on_closed(int32_t sock) { (void)sock; }
+#ifndef UCXAPP_CAN_HW   /* boards with CAN take these for can.bridge (ucxapp_cmds_can.c) */
 void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
 void ucxapp_stream_on_closed(int32_t sock) { (void)sock; }
 void ucxapp_stream_on_data(int32_t sock) { (void)sock; }
 void ucxapp_stream_on_sps_data(void) { }
+#endif
 void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len) { (void)data; (void)len; }
 size_t ucxapp_gnss_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
 size_t ucxapp_imu_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }

@@ -361,6 +361,9 @@ int main(void)
     ucxapp_register_usecase_cmds();
     ucxapp_register_examples_cmds();
 #endif
+#ifdef UCXAPP_CAN_HW
+    ucxapp_register_can_cmds();
+#endif
 
     if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {
         ucxapp_print("continuing without a device\n");

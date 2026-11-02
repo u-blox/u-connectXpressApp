@@ -91,8 +91,9 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Everyday use cases. Row kinds: 'w' needs Wi-Fi on the module, 'g' a GNSS receiver, anything else is fixed.
-   A row with a command is a gap when that command is not in this build. Names stay under 15 characters. */
+/* Use cases by section (industry, everyday). Row kinds: 'w' needs Wi-Fi on the module, 'g' a GNSS receiver,
+   anything else is fixed. A row with a command is a gap when that command is not in this build. Names stay under
+   15 characters. The industry cases are not in lite builds. */
 typedef struct {
     char kind;
     const char *verdict;
@@ -107,6 +108,53 @@ typedef struct {
     const ucRow_t *rows;
     size_t rowCount;
 } ucCase_t;
+
+#ifndef UCXAPP_LITE
+static const ucRow_t kIiot[] = {
+    { 'w', "[ok]", "Enterprise", "WPA2/WPA3-Enterprise with certificates on the module: wifi.eap", "wifi.eap" },
+    { 0, "[ok]", "TLS to the MES", "a TCP socket with TLS, CA and client certificate from cert.upload: sock.tls", "sock.tls" },
+    { 0, "[ok]", "Machine data", "CAN frames from the machine to the MES: can.bridge tcpc <host> <port>", "can.bridge" },
+    { 0, "[limit]", "MQTT", "mqtt.connect has no TLS or login: a local broker, or a TLS socket instead", NULL },
+    { 0, "[ok]", "Baseline", "save one unit's settings, then cfg.diff every unit on the line against it", "cfg.diff" },
+    { 0, "[ok]", "Health", "one PASS/FAIL report for support: dev.diagnose <mes-host>", "dev.diagnose" },
+    { 0, "[ok]", "Firmware", "fw.download the newest firmware, fw.update in a service window", "fw.download" },
+    { 0, "[check]", "Lifecycle", "plan field updates around u-blox product change notices", NULL },
+};
+
+static const ucRow_t kMedical[] = {
+    { 0, "[ok]", "SOUP item", "the module and its firmware version are a SOUP item: dev.info for the record", "dev.info" },
+    { 0, "[ok]", "Secure pairing", "LE Secure Connections with numeric comparison: bt.defaults secure", "bt.defaults" },
+    { 0, "[ok]", "Bonds", "only bonded phones or gateways: bt.bonds lists them", "bt.bonds" },
+    { 0, "[ok]", "Readings", "to the phone app over the u-blox Serial Port service: gatt.server.sps", "gatt.server.sps" },
+    { 0, "[ok]", "Verification", "scripted tests with a JUnit report: ucxapp --script <file> --junit <xml>", NULL },
+    { 0, "[ok]", "Evidence", "every command and reply with its time: at.trace, at.trace.pcap for Wireshark", "at.trace.pcap" },
+    { 0, "[ok]", "Fixed config", "cfg.diff against the released settings fails when one changed", "cfg.diff" },
+    { 0, "[check]", "Safety class", "the IEC 62304 class and risk control stay with the device maker", NULL },
+};
+
+static const ucRow_t kSite[] = {
+    { 0, "[ok]", "Service app", "a technician's phone reads the tool over the u-blox Serial Port service", "gatt.server.sps" },
+    { 0, "[ok]", "Secure pairing", "only paired phones: bt.defaults secure, bt.pairing on", "bt.pairing" },
+    { 0, "[ok]", "Tool name", "each tool advertises its own name: bt.name ToolCo-1234", "bt.name" },
+    { 0, "[ok]", "Tool tracking", "find the fleet by name from a gateway: bt.filter 0 9 ToolCo, bt.scan filter", "bt.filter" },
+    { 'w', "[ok]", "Site Wi-Fi", "profiles for the site office and the depot: wifi.profile.add", "wifi.profile.add" },
+    { 0, "[ok]", "Depot update", "at the depot: fw.download, then fw.update overnight", "fw.download" },
+    { 0, "[ok]", "Health", "dev.diagnose before the tool goes out", "dev.diagnose" },
+    { 0, "[check]", "RF range", "steel and concrete cut the range: check the antenna and test on site", NULL },
+};
+
+static const ucRow_t kImplement[] = {
+    { 0, "[ok]", "CAN bus", "ISOBUS and J1939 run at 250 kbit/s: can.cfg 250000, can.recv", "can.cfg" },
+    { 0, "[check]", "CAN adapter", "the CAN controller in this app is emulated (loopback); a real one needs a port", NULL },
+    { 'w', "[ok]", "Cab Wi-Fi", "the module is the cab's access point: wifi.ap.enable", NULL },
+    { 0, "[ok]", "Cab tablet", "CAN frames both ways over TCP: can.bridge tcp 9100", "can.bridge" },
+    { 0, "[ok]", "Phone", "or over BLE to the operator's phone: can.bridge ble nus", "can.bridge" },
+    { 0, "[ok]", "Yard upload", "back at the yard: wifi.connect, then mqtt.publish the work record", "mqtt.publish" },
+    { 0, "[limit]", "Field link", "can.bridge has no cellular option; upload at the yard", NULL },
+    { 0, "[limit]", "Decoding", "frames are raw (id, dlc, data); ISOBUS and J1939 decoding is in the tablet app", NULL },
+};
+
+#endif
 
 static const ucRow_t kBoat[] = {
     { 'g', "[check]", "GNSS receiver", "any NMEA receiver on a serial port: gnss.open finds port and baud", "gnss.open" },
@@ -196,6 +244,12 @@ static const ucRow_t kRemote[] = {
 
 #define CASE(id, title, rows) { id, title, rows, sizeof(rows) / sizeof(rows[0]) }
 static const ucCase_t kCases[] = {
+#ifndef UCXAPP_LITE
+    CASE("iiot", "Factory machine: Enterprise Wi-Fi, TLS to the MES, machine data, firmware lifecycle", kIiot),
+    CASE("medical", "Medical device (IEC 62304): secure BLE, test evidence, fixed configuration", kMedical),
+    CASE("site", "Construction tools: technician's phone, tool tracking, site Wi-Fi, depot updates", kSite),
+    CASE("implement", "Farm implement (ISOBUS/CAN): machine data to the cab tablet and the cloud", kImplement),
+#endif
     CASE("boat", "Boat or camper: GPS to the chart app on a tablet", kBoat),
     CASE("rtk", "Survey pole or rover: centimetre position with RTK", kRtk),
     CASE("mower", "Robotic lawn mower: owner's phone, HP GNSS with PointPerfect, cellular theft alert", kMower),
@@ -271,9 +325,32 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
+    size_t first = 0;
+
+#ifndef UCXAPP_LITE
+    /* kCases holds the sections in this order; tool is the first industry case */
+    static const struct {
+        const char *name;
+        size_t count;
+    } kSections[] = { { "Industry", 4 }, { "Everyday", 0 } };
+
+    for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); s++) {
+        size_t end = kSections[s].count != 0 ? first + kSections[s].count : CASE_COUNT;
+
+        ucxapp_print("%s%s:\n", s == 0 ? "" : "\n", kSections[s].name);
+        if (s == 0) {
+            ucxapp_print("%-10s%s\n", "tool", "Connected tool: factory Wi-Fi (Enterprise), AP for laptops, HTTPS, trays, BLE");
+        }
+        for (; first < end; first++) {
+            ucxapp_print("%-10s%s\n", kCases[first].id, kCases[first].title);
+        }
+    }
+    ucxapp_print("\n");
+#else
     ucxapp_print("%-10s%s\n", "tool", "Connected tool: factory Wi-Fi (Enterprise), AP for laptops, HTTPS, trays, BLE");
-    for (size_t i = 0; i < CASE_COUNT; i++) {
-        ucxapp_print("%-10s%s\n", kCases[i].id, kCases[i].title);
+#endif
+    for (; first < CASE_COUNT; first++) {
+        ucxapp_print("%-10s%s\n", kCases[first].id, kCases[first].title);
     }
     ucxapp_print("Fit check: usecase.check <name>; steps: usecase.ex (tool) or examples uc-<name>\n");
     return UCXAPP_OK;

@@ -223,40 +223,48 @@ $('up').onchange=async()=>{const f=$('up').files[0];if(!f)return;const buf=new U
 $('files').onclick=()=>{$('fst').textContent='';$('fd').showModal();listFiles()};
 $('fref').onclick=listFiles;$('fclose').onclick=()=>$('fd').close();
 
-/* ---- use case view: one page per use case; diagram lit by the live state, fit check from usecase.tool/check, steps from the examples ----
-   Node keys lit by the state: hub (page live), wifi (station up), ap (wifi.ap.enable), ble (a BLE link), sock (an open socket). */
+/* ---- use cases: t title, s section, d text, h hub, n [key,label,sub,colour]; lit keys: hub wifi ap ble sock ---- */
 const UC={
- tool:{t:'Connected tool',g:'usecase',d:'A tool host (STM32H7 with Zephyr) and a NORA-W36: station on the factory network and an access point for laptops at the same time, '+
+ tool:{t:'Connected tool',s:'Industry',g:'usecase',d:'A tool host (STM32H7 with Zephyr) and a NORA-W36: station on the factory network and an access point for laptops at the same time, '+
   'an HTTPS page on the host for up to 5 laptops, 900 MB of history in under 30 minutes, up to 8 socket trays, and BLE for phone setup, service and accessories.',
-  h:['Tool','host + NORA-W36'],n:[['wifi','Factory network','Enterprise Wi-Fi, MES','--ac'],['ap','Laptops (5)','tool AP, HTTPS','--pu'],['sock','Socket trays (8)','UDP or BLE','--warm'],['ble','Phone, accessories','BLE','--ble']]},
+  h:['Tool','host + NORA-W36'],n:[['wifi','Factory network','Enterprise Wi-Fi, MES'],['ap','Laptops (5)','tool AP, HTTPS'],['sock','Socket trays (8)','UDP or BLE'],['ble','Phone, accessories','BLE']]},
+ iiot:{t:'Factory machine (IIoT)',s:'Industry',d:'Enterprise Wi-Fi, TLS to the MES, CAN data, one config per line, firmware updates.',
+  h:['Machine','NORA-W36'],n:[['wifi','Plant network','EAP-TLS'],['sock','MES','TLS'],['can','Machine','CAN'],['fw','Lifecycle','cfg, firmware','pu']]},
+ medical:{t:'Medical device (IEC 62304)',s:'Industry',d:'SOUP module, bonded secure BLE to the phone app, traces and JUnit reports as evidence.',
+  h:['Device','NORA module'],n:[['ble','Phone app','secure BLE'],['soup','SOUP','dev.info'],['trace','Evidence','trace, JUnit','warm'],['cfg','Release','cfg.diff','pu']]},
+ site:{t:'Construction tools',s:'Industry',d:'Phone service link over BLE, fleet found by name, site and depot Wi-Fi.',
+  h:['Tool','NORA-W36'],n:[['ble','Technician','BLE SPS'],['scan','Gateway','scan by name'],['wifi','Site Wi-Fi','office, depot'],['fw','Depot','updates','pu']]},
+ implement:{t:'Farm implement (ISOBUS)',s:'Industry',d:'ISOBUS CAN data to the cab tablet over the module\'s AP or BLE, the work record to the cloud.',
+  h:['Implement','NORA-W36'],n:[['can','ISOBUS','CAN 250k'],['ap','Cab tablet','AP, TCP'],['ble','Phone','BLE NUS'],['sock','Cloud','MQTT']]},
  boat:{t:'Boat or camper: GPS on the chart app',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
-  h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial','--ok'],['ap','Tablets (5)','module AP, TCP 10110','--pu'],['log','Trip log','gnss.log','--warm'],['ble','Phone','BLE NUS','--ble']]},
+  h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial'],['ap','Tablets (5)','module AP, TCP 10110'],['log','Trip log','gnss.log','warm'],['ble','Phone','BLE NUS']]},
  rtk:{t:'Survey pole or rover: RTK',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
-  h:['Host','RTK GNSS + NORA-W36'],n:[['wifi','Wi-Fi','station','--ac'],['sock','NTRIP caster','RTCM in, GGA out','--warm'],['gnss','RTK receiver','ZED-F9P, ZED-X20P','--ok'],['ble','Rover or phone','BLE NUS','--ble']]},
+  h:['Host','RTK GNSS + NORA-W36'],n:[['wifi','Wi-Fi','station'],['sock','NTRIP caster','RTCM in, GGA out'],['gnss','RTK receiver','ZED-F9P, ZED-X20P'],['ble','Rover or phone','BLE NUS']]},
  mower:{t:'Robotic lawn mower',d:'The owner sets the mower up from a phone over BLE, it joins the garden Wi-Fi and gets PointPerfect SPARTN corrections for its HP GNSS receiver; '+
   'the phone follows it over BLE, and past the Wi-Fi the corrections and a theft alert go over a cellular modem.',
-  h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status','--ble'],['wifi','Garden Wi-Fi','PointPerfect NTRIP','--ac'],['gnss','HP GNSS','ZED-F9P, ZED-X20P','--ok'],['cell','Cellular modem','edge, theft alert','--pu']]},
+  h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status'],['wifi','Garden Wi-Fi','PointPerfect NTRIP'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['cell','Cellular modem','edge, theft alert','pu']]},
  farm:{t:'Tractor or field robot: auto-steer',d:'An HP GNSS receiver gets PointPerfect corrections over a cellular modem in the field and sends the corrected NMEA to the guidance tablet in the cab over BLE; '+
   'the field log goes up over the farmyard Wi-Fi.',
-  h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','--pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P','--ok'],['ble','Cab tablet','BLE NUS','--ble'],['wifi','Farmyard Wi-Fi','log upload','--ac']]},
+  h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['ble','Cab tablet','BLE NUS'],['wifi','Farmyard Wi-Fi','log upload']]},
  tracker:{t:'Car, bike or pet tracker',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
-  h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station','--ac'],['sock','Your server','TCP, NMEA lines','--warm'],['cell','Cellular modem','on the road','--pu'],['gnss','GNSS receiver','position','--ok']]},
+  h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','Your server','TCP, NMEA lines'],['cell','Cellular modem','on the road','pu'],['gnss','GNSS receiver','position']]},
  home:{t:'Smart home sensor: MQTT',d:'A sensor on the home Wi-Fi publishes its state to Mosquitto in Home Assistant and takes commands back.',
-  h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station','--ac'],['sock','MQTT broker','Home Assistant','--warm'],['imu','Sensor','IMU, door, machine','--ok'],['ble','Phone','BLE setup','--ble']]},
+  h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','MQTT broker','Home Assistant'],['imu','Sensor','IMU, door, machine'],['ble','Phone','BLE setup']]},
  provision:{t:'Wi-Fi set up from a phone',d:'A new device has no keyboard: the phone sends the network name and password over BLE (Wi-Fi Provisioning service), or joins the device\'s own AP from a QR code.',
-  h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning','--ble'],['wifi','Home Wi-Fi','joined after setup','--ac'],['ap','Setup AP','QR code','--pu'],['sock','Cloud or app','after setup','--warm']]},
+  h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning'],['wifi','Home Wi-Fi','joined after setup'],['ap','Setup AP','QR code'],['sock','Cloud or app','after setup']]},
  hotel:{t:'Hotel or cafe Wi-Fi with a login page',d:'Guest networks hold traffic until a form is filled in: the app finds the portal page, fills in the room and surname, and checks the internet.',
-  h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2','--ac'],['portal','Login page','room, surname','--warm'],['sock','Internet','after login','--ok'],['ble','Phone','BLE','--ble']]},
+  h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2'],['portal','Login page','room, surname','warm'],['sock','Internet','after login','ok'],['ble','Phone','BLE']]},
  notify:{t:'Phone notifications',d:'Calls and messages from an iPhone (ANCS) or an Android companion app on a small display or wearable, with answer and dismiss.',
-  h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS','--ble'],['android','Android','companion app','--ok'],['disp','Display','title and text','--warm'],['act','Actions','answer, dismiss','--pu']]},
+  h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS'],['android','Android','companion app'],['disp','Display','title and text','warm'],['act','Actions','answer, dismiss','pu']]},
  remote:{t:'Clicker or media remote',d:'The module is a BLE keyboard (HID over GATT): next slide, volume and play/pause on a PC, TV or phone without a driver.',
-  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID','--ble'],['slides','Slides','space, backspace','--warm'],['media','Media','volume, play','--pu'],['text','Text','hid.text','--ok']]}};
-const XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
-Object.keys(UC).forEach(k=>$('ucs').add(new Option(UC[k].t,k)));
-function draw(){const u=UC[uc],K=k=>`style="--k:var(${k})"`;let dh='';
- u.n.forEach((n,i)=>dh+=`<line id="l-${n[0]}" x1="330" y1="130" x2="${XY[i][0]}" y2="${XY[i][1]}" ${K(n[3])}/>`);
- [['hub',u.h[0],u.h[1],'--ok']].concat(u.n).forEach((n,i)=>{const x=i?XY[i-1][0]:330,y=i?XY[i-1][1]:130;
-  dh+=`<g id="n-${n[0]}" ${K(n[3])}><rect x="${x-80}" y="${y-27}" width="160" height="54" rx="12"/><text x="${x}" y="${y-3}">${n[1]}</text><text x="${x}" y="${y+15}">${n[2]}</text></g>`});
+  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID'],['slides','Slides','space, backspace','warm'],['media','Media','volume, play','pu'],['text','Text','hid.text']]}};
+const KC={wifi:'ac',ap:'pu',sock:'warm',ble:'ble'},XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
+{const G={};Object.keys(UC).forEach(k=>{const s=UC[k].s||'Everyday';
+ if(!G[s]){G[s]=document.createElement('optgroup');G[s].label=s;$('ucs').append(G[s])}G[s].append(new Option(UC[k].t,k))})}
+function draw(){const u=UC[uc],K=n=>`style="--k:var(--${n[3]||KC[n[0]]||'ok'})"`;let dh='';
+ u.n.forEach((n,i)=>dh+=`<line id="l-${n[0]}" x1="330" y1="130" x2="${XY[i][0]}" y2="${XY[i][1]}" ${K(n)}/>`);
+ [['hub',u.h[0],u.h[1]]].concat(u.n).forEach((n,i)=>{const x=i?XY[i-1][0]:330,y=i?XY[i-1][1]:130;
+  dh+=`<g id="n-${n[0]}" ${K(n)}><rect x="${x-80}" y="${y-27}" width="160" height="54" rx="12"/><text x="${x}" y="${y-3}">${n[1]}</text><text x="${x}" y="${y+15}">${n[2]}</text></g>`});
  $('dg').innerHTML=dh;Object.keys(LS).forEach(k=>lit(k,LS[k]))}
 function lit(k,on){LS[k]=!!on;['n-','l-'].forEach(p=>{const e=document.getElementById(p+k);if(e)e.classList.toggle('on',!!on)})}
 function fitTable(b){const f=$('fit');let first=1;f.textContent='';b.body.textContent.split('\n').forEach(l=>{const m=l.match(/^\s*\[(ok|limit|check|gap)\]\s+(.+?)\s{2,}(.+)$/);

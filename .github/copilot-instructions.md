@@ -128,6 +128,10 @@ New code goes into `app/src/` as separate command modules. Add worked examples f
 .\ucxapp COM13 --exec "fw.flash <file>"
 ```
 
+## Commits
+
+Do not add a `Co-authored-by: Copilot` trailer (or any other AI co-author trailer) to commit messages.
+
 ## Release Process
 
 `python scripts/release.py` (or `.\ucxapp --release`) rebuilds, signs, tags and uploads; `--dry-run` only builds and signs. Signing alone: `.\ucxapp --rebuild --sign CERT_THUMBPRINT`.

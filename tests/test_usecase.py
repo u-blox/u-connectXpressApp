@@ -62,7 +62,28 @@ def test_use_case_list_and_examples(app_exe):
         assert word in ex.stdout
 
 
-USE_CASES = ("boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")
+USE_CASES = ("iiot", "medical", "site", "implement",
+             "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")
+SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement"),
+            "Everyday": ("boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")}
+
+
+@pytest.mark.app
+def test_use_case_list_has_sections(app_exe):
+    out = _exec(app_exe, "usecase.list").stdout
+    blocks = re.findall(r"^(\w[\w ]*):\n((?:\w+ +\S.*\n)+)", out, re.M)
+    assert [b[0] for b in blocks] == list(SECTIONS), out
+    for name, body in blocks:
+        assert tuple(re.findall(r"^(\w+) ", body, re.M)) == SECTIONS[name], (name, body)
+    assert set(USE_CASES) | {"tool"} == {uc for ids in SECTIONS.values() for uc in ids}
+
+
+def test_page_groups_use_cases_by_section():
+    assert "createElement('optgroup')" in PAGE and "UC[k].s||'Everyday'" in PAGE
+    for name, ids in SECTIONS.items():
+        for uc in ids:
+            m = re.search(rf"\n {uc}:\{{t:'[^']*'(?:,s:'([^']*)')?", PAGE)
+            assert m and (m.group(1) or "Everyday") == name, uc
 
 
 @pytest.mark.app

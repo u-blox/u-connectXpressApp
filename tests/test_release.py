@@ -1,4 +1,4 @@
-"""Release: the CI workflow builds every board on FreeRTOS and Zephyr plus the optional browser app, and
+"""Release: the CI workflow builds every board on FreeRTOS and Zephyr plus the browser app, and
 release.py refuses an incomplete tree."""
 
 import importlib.util
@@ -40,9 +40,22 @@ def test_bundle_collects_every_build(jobs):
         assert name in pattern
 
 
-def test_browser_build_is_optional(jobs):
-    assert jobs["wasm"]["continue-on-error"] is True
-    assert all(job.get("continue-on-error") is not True for name, job in jobs.items() if name != "wasm")
+def test_every_part_is_required(jobs):
+    assert all(job.get("continue-on-error") is not True for job in jobs.values())
+
+
+def test_everything_builds_freertos_zephyr_and_the_browser(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ucxapp, "stm32_tools", lambda: None)
+    monkeypatch.setattr(ucxapp, "zephyr_available", lambda: True)
+    monkeypatch.setattr(ucxapp, "emsdk_env", lambda required=True: True)
+    monkeypatch.setattr(ucxapp, "build_many", lambda _args, jobs: seen.update(jobs) or 0)
+    args = ucxapp.parse(["--everything", "--clean"])[0]
+    assert ucxapp.everything(args) == 0
+    for b in ucxapp.BOARDS:
+        assert seen[b][:3] == ["--stm32", "--board", b]
+        assert seen[f"z-{b}"][:3] == ["--stm32-zephyr", "--board", b]
+    assert seen["wasm"][0] == "--wasm"
 
 
 def test_launcher_skips_the_browser_build_without_emsdk(monkeypatch, tmp_path):
@@ -70,12 +83,11 @@ def test_package_refuses_an_incomplete_tree(tmp_path):
         rel.package(tmp_path / "t", tmp_path / "a.zip")
 
 
-def test_package_accepts_a_tree_without_the_browser_app(tmp_path):
+def test_package_refuses_a_tree_without_the_browser_app(tmp_path):
     rel = release_py()
     make_tree(tmp_path / "t", rel.STM32_BOARDS, wasm=False)
-    rel.package(tmp_path / "t", tmp_path / "a.zip")
-    with zipfile.ZipFile(tmp_path / "a.zip") as z:
-        assert not any(n.startswith("wasm/") for n in z.namelist())
+    with pytest.raises(SystemExit):
+        rel.package(tmp_path / "t", tmp_path / "a.zip")
 
 
 def test_package_writes_the_archive_and_the_browser_zip(tmp_path):

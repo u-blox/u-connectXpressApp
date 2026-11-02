@@ -45,6 +45,15 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html)
 
+# The page's /favicon.ico: app/images/ShortRange.ico as a byte array
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico _ucx_ico HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _ucx_ico "${_ucx_ico}")
+string(REGEX REPLACE "(0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,)" "\\1\n" _ucx_ico "${_ucx_ico}")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp
+  "/* Generated from app/images/ShortRange.ico by CMake; do not edit. */\nstatic const unsigned char kFavicon[] = {\n${_ucx_ico}\n};\n")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h COPYONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico)
+
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -96,6 +105,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_device.c
 
     src/ucxapp_cmds_wifi.c
+    src/ucxapp_cmds_wifiloc.c
 
     src/ucxapp_cmds_sock.c
 
@@ -121,6 +131,11 @@ if(NOT WIN32)
     src/ucxapp_cmds_ancs.c
     src/ucxapp_cmds_notify.c
     src/ucxapp_cmds_session.c
+    src/ucxapp_cmds_cfg.c
+    src/ucxapp_cmds_trace.c
+    src/ucxapp_cmds_perf.c
+    src/ucxapp_cmds_xplorer.c
+    src/ucxapp_xplorer.c
     src/ucxapp_cmds_time.c
     src/ucxapp_cmds_can.c
     src/ucxapp_cmds_fw.c
@@ -130,6 +145,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_qr.c
     src/ucxapp_cmds_utils.c
     src/ucxapp_stream.c
+    src/ucxapp_corr.c
     src/ucxapp_cmds_gnss.c
     src/ucxapp_cmds_imu.c
     src/ucxapp_cmds_hw.c
@@ -205,6 +221,7 @@ if(NOT WIN32)
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
               ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json
               ${_ucx_site}
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico ${_ucx_site}/favicon.ico
       VERBATIM)
   endif()
 
@@ -238,6 +255,7 @@ add_executable(ucxapp
   src/ucxapp_cmd.c
   src/ucxapp_cmds_device.c
   src/ucxapp_cmds_wifi.c
+  src/ucxapp_cmds_wifiloc.c
   src/ucxapp_cmds_sock.c
   src/ucxapp_cmds_net.c
   src/ucxapp_cmds_sys.c
@@ -258,6 +276,11 @@ add_executable(ucxapp
   src/ucxapp_cmds_ancs.c
   src/ucxapp_cmds_notify.c
   src/ucxapp_cmds_session.c
+  src/ucxapp_cmds_cfg.c
+  src/ucxapp_cmds_trace.c
+  src/ucxapp_cmds_perf.c
+  src/ucxapp_cmds_xplorer.c
+  src/ucxapp_xplorer.c
   src/ucxapp_cmds_time.c
   src/ucxapp_cmds_can.c
   src/ucxapp_cmds_fw.c
@@ -267,6 +290,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_qr.c
   src/ucxapp_cmds_utils.c
   src/ucxapp_stream.c
+  src/ucxapp_corr.c
   src/ucxapp_cmds_gnss.c
   src/ucxapp_cmds_imu.c
   src/ucxapp_cmds_hw.c

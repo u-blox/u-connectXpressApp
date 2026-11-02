@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_corr.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_stats.h"
 #include "ucxapp_thread.h"
@@ -16,6 +17,7 @@
 #pragma warning(push)
 #pragma warning(disable: 4200 4201)
 #endif
+#include "u_cx_mqtt.h"
 #include "u_cx_socket.h"
 #include "u_cx_sps.h"
 #include "u_port.h"
@@ -40,9 +42,14 @@
 #include <strings.h>
 #endif
 
-enum { BR_NONE, BR_TCP, BR_UDP, BR_BLE, BR_UART, BR_SPS };
+enum { BR_NONE, BR_TCP, BR_UDP, BR_BLE, BR_UART, BR_SPS, BR_MQTT };
 
 #define RECONNECT_MS  3000u
+#define MQTT_ID       0        /* NORA-W36 has one MQTT connection, shared with mqtt.* */
+#define MQTT_BUF      5000u    /* largest binary MQTT message the module hands over */
+#define MQTT_RETRY_MS 10000u
+#define MQTT_POLL_MS  5000u
+#define MQTT_TOPICS   2
 
 typedef struct bridge bridge_t;
 
@@ -110,6 +117,15 @@ struct bridge {
     char gga[100];                 /* latest GGA, sent to the caster */
     uint32_t ggaPeriodMs;
     uint32_t nextGga;
+    char mqttClient[64];           /* BR_MQTT: subscriber whose messages go to the device (PointPerfect) */
+    char mqttCert[32];
+    char mqttTopic[MQTT_TOPICS][64];
+    int nTopics;
+    bool mqttUp;
+    uint32_t mqttMsgs;
+    uint32_t mqttNextPoll;
+    uint8_t *mqttBuf;
+    ucxapp_corr_t *corr;           /* NTRIP and MQTT: RTCM/SPARTN/UBX frame check of what goes to the receiver */
 };
 
 static ucxapp_stream_t *gStreams[MAX_STREAMS];
@@ -577,6 +593,16 @@ static void deliver(bridge_t *b, const uint8_t *d, size_t n)
     }
 }
 
+/* Corrections (NTRIP, MQTT) to the serial device, checked frame by frame. */
+static void toReceiver(bridge_t *b, const uint8_t *d, size_t n)
+{
+    (void)ucxapp_stream_write(b->s, d, n);
+    b->received += (uint32_t)n;
+    if (b->corr != NULL) {
+        ucxapp_corr_feed(b->corr, d, n);
+    }
+}
+
 /* Bytes from the far side go back to the serial device. */
 static void pullInbound(bridge_t *b)
 {
@@ -610,8 +636,7 @@ static void pullInbound(bridge_t *b)
                     }
                 }
                 if (n > skip) {
-                    (void)ucxapp_stream_write(b->s, buf + skip, (size_t)(n - skip));
-                    b->received += (uint32_t)(n - skip);
+                    toReceiver(b, buf + skip, (size_t)(n - skip));
                 }
             }
         }
@@ -643,6 +668,108 @@ static void pullInbound(bridge_t *b)
     }
 }
 
+/* ---- MQTT subscriber: every message on the topics goes to the device unchanged (PointPerfect SPARTN, keys) ---- */
+
+static int32_t mqttRetry(int32_t (*op)(bridge_t *, int), bridge_t *b, int arg)
+{
+    int32_t rc = -15;
+
+    for (int i = 0; rc == -15 && i < 10; i++) {   /* ERROR:15 while the previous MQTT operation is in flight */
+        if (i > 0) {
+            ucxapp_platform_sleep_ms(100);
+        }
+        rc = op(b, arg);
+    }
+    return rc;
+}
+
+static int32_t mqttSubscribeOne(bridge_t *b, int i)
+{
+    return uCxMqttSubscribe4(b->app->ucx, MQTT_ID, U_MQTT_SUBSCRIBE_ACTION_SUBSCRIBE, b->mqttTopic[i],
+                             U_MQTT_QOS_AT_LEAST_ONCE);
+}
+
+/* TLS with the client certificate <cert>, its key <cert>-key and the broker CA <cert>-ca (cert.upload names),
+   then the subscriptions. verbose explains failures; the sender retries quietly. */
+static bool mqttConnect(bridge_t *b, bool verbose)
+{
+    uCxHandle_t *ucx = b->app->ucx;
+    char ca[48];
+    char key[48];
+
+    snprintf(ca, sizeof(ca), "%s-ca", b->mqttCert);
+    snprintf(key, sizeof(key), "%s-key", b->mqttCert);
+    b->mqttUp = false;
+    ucxapp_events_clear(URC_FLAG_MQTT_CONNECTED | URC_FLAG_MQTT_DISCONNECTED | URC_FLAG_MQTT_SUBSCRIBED);
+    if (uCxMqttSetConnectionParams4(ucx, MQTT_ID, b->connectHost, b->connectPort, b->mqttClient) != 0 ||
+        uCxMqttSetTLS5(ucx, MQTT_ID, U_WIFI_TLS_VERSION_TLS1_2, ca, b->mqttCert, key) != 0) {
+        if (verbose) {
+            ucxapp_print("ERROR: cannot set up MQTT over TLS (upload %s, %s and %s with cert.upload)\n", b->mqttCert, key,
+                         ca);
+        }
+        return false;
+    }
+    if (uCxMqttConnect(ucx, MQTT_ID) != 0 || !ucxapp_events_wait(URC_FLAG_MQTT_CONNECTED, 15)) {
+        if (verbose) {
+            ucxapp_print("ERROR: no MQTT connection to %s:%d (Wi-Fi up? client ID and certificates of the same "
+                         "PointPerfect thing?)\n", b->connectHost, (int)b->connectPort);
+        }
+        (void)uCxMqttDisconnect(ucx, MQTT_ID);
+        return false;
+    }
+    for (int i = 0; i < b->nTopics; i++) {
+        if (mqttRetry(mqttSubscribeOne, b, i) != 0 || !ucxapp_events_wait(URC_FLAG_MQTT_SUBSCRIBED, 5)) {
+            if (verbose) {
+                ucxapp_print("ERROR: cannot subscribe to %s (is the thing allowed this plan and region?)\n",
+                             b->mqttTopic[i]);
+            }
+            (void)uCxMqttDisconnect(ucx, MQTT_ID);
+            return false;
+        }
+    }
+    b->mqttUp = true;
+    b->mqttNextPoll = 0;
+    return true;
+}
+
+/* Reconnects after a drop and moves the queued messages to the device. */
+static void mqttService(bridge_t *b)
+{
+    uint32_t now = ucxapp_platform_tick_ms();
+
+    if (b->mqttUp && ucxapp_events_take(URC_FLAG_MQTT_DISCONNECTED)) {
+        b->mqttUp = false;
+        b->nextRetry = now + MQTT_RETRY_MS;
+        ucxapp_print("%s bridge: MQTT connection to %s lost, reconnecting\n", b->s->cfg.kind, b->connectHost);
+    }
+    if (!b->mqttUp) {
+        if ((int32_t)(now - b->nextRetry) >= 0) {
+            b->nextRetry = now + MQTT_RETRY_MS;
+            if (mqttConnect(b, false)) {
+                ucxapp_print("%s bridge: MQTT reconnected to %s\n", b->s->cfg.kind, b->connectHost);
+            }
+        }
+        return;
+    }
+    if (!ucxapp_events_take(URC_FLAG_MQTT_DATA) && (int32_t)(now - b->mqttNextPoll) < 0) {
+        return;
+    }
+    b->mqttNextPoll = now + MQTT_POLL_MS;
+    for (int i = 0; i < 16 && !b->senderStop; i++) {
+        const char *topic = NULL;
+        int32_t n = uCxMqttReadBegin(b->app->ucx, MQTT_ID, b->mqttBuf, (uint16_t)MQTT_BUF, &topic);
+        if (n > 0) {
+            toReceiver(b, b->mqttBuf, (size_t)n);
+            b->mqttMsgs++;
+            ucxapp_stats_add(UCXAPP_STATS_MQTT, 0, (size_t)n);
+        }
+        uCxEnd(b->app->ucx);
+        if (n <= 0) {
+            break;   /* ERROR:11: nothing queued */
+        }
+    }
+}
+
 static void senderLoop(void *arg)
 {
     bridge_t *b = arg;
@@ -653,6 +780,13 @@ static void senderLoop(void *arg)
 
         ucxapp_platform_sleep_ms(SEND_PERIOD);
         if (b->app->ucx == NULL) {
+            continue;
+        }
+        if (b->bridge == BR_MQTT) {
+            mqttService(b);
+            while (ringGet(b, chunk, sizeof(chunk)) > 0) {
+                /* subscriber only: the receiver's own output is not sent */
+            }
             continue;
         }
         if (b->bridge == BR_TCP) {
@@ -729,8 +863,7 @@ static void uartBridgeLoop(void *arg)
             }
         }
         if (r > skip) {
-            (void)ucxapp_stream_write(b->s, chunk + skip, (size_t)(r - skip));
-            b->received += (uint32_t)(r - skip);
+            toReceiver(b, chunk + skip, (size_t)(r - skip));
         } else if (r < 0) {
             ucxapp_platform_sleep_ms(20);
         }
@@ -839,6 +972,13 @@ static void bridgeStop(bridge_t *b)
             (void)uCxSocketClose(ucx, b->udpSock);
         }
     }
+    if (ucx != NULL && b->bridge == BR_MQTT && b->mqttUp) {
+        (void)uCxMqttDisconnect(ucx, MQTT_ID);
+    }
+    free(b->mqttBuf);
+    b->mqttBuf = NULL;
+    free(b->corr);
+    b->corr = NULL;
     memset(b->ntripReq, 0, sizeof(b->ntripReq));
     regLock();
     ucxapp_stream_lock(s);
@@ -1000,6 +1140,12 @@ static bool ntripSetup(bridge_t *b, ucxapp_t *app, const char *mount, const char
     memset(auth, 0, sizeof(auth));
     b->ntrip = true;
     b->ggaPeriodMs = (uint32_t)ggaSeconds * 1000u;
+    b->corr = malloc(sizeof(*b->corr));
+    if (b->corr == NULL) {
+        bridgeStop(b);
+        return false;
+    }
+    ucxapp_corr_reset(b->corr);
     return true;
 }
 
@@ -1038,6 +1184,75 @@ bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *h
     ucxapp_print("%s bridge: NTRIP client to %s:%d/%s, GGA every %d s, corrections go to the receiver%s\n", s->cfg.kind,
                  host, (int)port, b->ntripMount, (int)ggaSeconds,
                  ble ? "; corrected NMEA to BLE Nordic UART clients" : "");
+    return true;
+}
+
+/* True when any open stream already runs an MQTT bridge (the module has one MQTT connection). */
+static bool hasMqtt(void)
+{
+    bool found = false;
+
+    regLock();
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        for (int j = 0; gStreams[i] != NULL && j < MAX_BRIDGES; j++) {
+            found = found || (gStreams[i]->br[j] != NULL && gStreams[i]->br[j]->bridge == BR_MQTT);
+        }
+    }
+    regUnlock();
+    return found;
+}
+
+bool ucxapp_stream_bridge_mqtt(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *clientId,
+                               const char *certName, const char *const *topics, int nTopics)
+{
+    bridge_t *b;
+
+    if (strlen(host) >= sizeof(b->connectHost) || strlen(clientId) >= sizeof(b->mqttClient) ||
+        strlen(certName) >= sizeof(b->mqttCert) || nTopics < 1 || nTopics > MQTT_TOPICS) {
+        ucxapp_print("ERROR: host, client ID or certificate name too long\n");
+        return false;
+    }
+    for (int i = 0; i < nTopics; i++) {
+        if (strlen(topics[i]) >= sizeof(b->mqttTopic[0])) {
+            ucxapp_print("ERROR: topic too long\n");
+            return false;
+        }
+    }
+    if (hasMqtt()) {
+        ucxapp_print("ERROR: an MQTT bridge is already running (the module has one MQTT connection)\n");
+        return false;
+    }
+    b = bridgeBegin(s, app, BR_MQTT);
+    if (b == NULL) {
+        return false;
+    }
+    b->mqttBuf = malloc(MQTT_BUF);
+    b->corr = malloc(sizeof(*b->corr));
+    if (b->mqttBuf == NULL || b->corr == NULL) {
+        bridgeStop(b);
+        return false;
+    }
+    ucxapp_corr_reset(b->corr);
+    snprintf(b->connectHost, sizeof(b->connectHost), "%s", host);
+    b->connectPort = port;
+    snprintf(b->mqttClient, sizeof(b->mqttClient), "%s", clientId);
+    snprintf(b->mqttCert, sizeof(b->mqttCert), "%s", certName);
+    for (int i = 0; i < nTopics; i++) {
+        snprintf(b->mqttTopic[i], sizeof(b->mqttTopic[i]), "%s", topics[i]);
+    }
+    b->nTopics = nTopics;
+    if (!mqttConnect(b, true)) {
+        bridgeStop(b);
+        return false;
+    }
+    if (!bridgeRun(b)) {
+        return false;
+    }
+    ucxapp_print("%s bridge: MQTT %s:%d as %s, messages on", s->cfg.kind, host, (int)port, clientId);
+    for (int i = 0; i < nTopics; i++) {
+        ucxapp_print(" %s", b->mqttTopic[i]);
+    }
+    ucxapp_print(" go to the receiver\n");
     return true;
 }
 
@@ -1351,8 +1566,20 @@ void ucxapp_register_bridge_cmds(void)
 
 static void bridgeDescribe(const bridge_t *b)
 {
-    static const char *const kName[] = { "off", "TCP server", "UDP", "BLE Nordic UART", "UART", "BLE SPS" };
+    static const char *const kName[] = { "off", "TCP server", "UDP", "BLE Nordic UART", "UART", "BLE SPS", "MQTT" };
+    char frames[160] = "";
 
+    if (b->corr != NULL) {
+        frames[0] = ' ';
+        frames[1] = '(';
+        ucxapp_corr_describe(b->corr, frames + 2, sizeof(frames) - 3);
+        strcat(frames, ")");
+    }
+    if (b->bridge == BR_MQTT) {
+        ucxapp_print("MQTT %s:%d, %s, %u messages (%u bytes) to the receiver%s\n", b->connectHost, (int)b->connectPort,
+                     b->mqttUp ? "connected" : "reconnecting", (unsigned)b->mqttMsgs, (unsigned)b->received, frames);
+        return;
+    }
     if (b->ntrip) {
         char where[100];
 
@@ -1361,12 +1588,12 @@ static void bridgeDescribe(const bridge_t *b)
         } else {
             snprintf(where, sizeof(where), "%s:%d", b->connectHost, (int)b->connectPort);
         }
-        ucxapp_print("NTRIP %s/%s, %s, %u bytes of corrections\n", where,
+        ucxapp_print("NTRIP %s/%s, %s, %u bytes of corrections%s\n", where,
                      b->ntripMount, b->ntripFailed ? "refused by the caster"
                                     : b->bridge == BR_TCP && b->nClients == 0 ? "reconnecting"
                                     : !b->ntripStreaming ? "waiting for the caster"
                                     : b->gga[0] == '\0' ? "streaming, no GGA from the receiver yet" : "streaming",
-                     (unsigned)b->received);
+                     (unsigned)b->received, frames);
         return;
     }
     ucxapp_print("%s", b->bridge == BR_TCP && b->connectHost[0] ? "TCP client"

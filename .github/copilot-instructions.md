@@ -22,7 +22,7 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c`, `app/stm32_freertos/` and `app/zephyr/`.
 
-Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux, every STM32 board on FreeRTOS and Zephyr, and the WebAssembly site, which is optional: `--everything` skips it without emsdk, and a failed browser build in CI never blocks a release).
+Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux, every STM32 board on FreeRTOS and Zephyr, and the WebAssembly site; every part is required: `--everything` builds Zephyr when a west workspace is found and WebAssembly when emsdk is installed, and `release.py` refuses a tree that misses any of them).
 
 ## Scope and priorities
 

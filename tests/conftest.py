@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = ROOT / "app" / "bin" / ("ucxapp.exe" if sys.platform == "win32" else "ucxapp")
 HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu")
 
+# Wi-Fi scan, connect and AP refuse to run until a regulatory domain is chosen; the tests use the one allowed
+# everywhere unless UCX_REGDOMAIN picks another (a domain saved in storage/ucxapp.regdomain wins over both).
+os.environ.setdefault("UCX_REGDOMAIN", "world")
+
 
 FAILURE_LOG = ROOT / "build" / "test_failures.log"
 

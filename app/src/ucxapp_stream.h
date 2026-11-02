@@ -50,6 +50,10 @@ bool ucxapp_stream_bridge_ntrip(ucxapp_stream_t *s, ucxapp_t *app, const char *h
 bool ucxapp_stream_bridge_ntrip_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud,
                                      const char *mount, const char *user, const char *pass, int32_t ggaSeconds,
                                      bool ble);
+/* MQTT subscriber over TLS (client certificate certName, key certName-key, broker CA certName-ca): every message on
+ * the topics goes to the device unchanged, e.g. PointPerfect SPARTN corrections and keys. One per app. */
+bool ucxapp_stream_bridge_mqtt(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, const char *clientId,
+                               const char *certName, const char *const *topics, int nTopics);
 /* u-blox Serial Port Service over BLE. */
 bool ucxapp_stream_bridge_sps(ucxapp_stream_t *s, ucxapp_t *app);
 bool ucxapp_stream_bridge_ble(ucxapp_stream_t *s, ucxapp_t *app);

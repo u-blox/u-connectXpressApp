@@ -352,6 +352,9 @@ int main(void)
 #ifndef UCXAPP_LITE
     ucxapp_register_mqtt_cmds();
     ucxapp_register_net_cmds();
+    ucxapp_register_wifiloc_cmds();
+    ucxapp_register_cfg_cmds();
+    ucxapp_register_perf_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_ymodem_cmds();

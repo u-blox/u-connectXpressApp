@@ -1553,6 +1553,10 @@ static void wpsScan(ucxapp_t *app, int32_t conn)
     int count = 0;
     char resp[64];
 
+    if (!ucxapp_wifi_apply_regdomain(app->ucx)) {
+        wpsRespond(app, conn, "ERROR:REGDOMAIN_NOT_SET");
+        return;
+    }
     uCxAtClientSetCommandTimeout(app->ucx->pAtClient, 60000, false);
     uCxWifiStationScanDefaultBegin(app->ucx);
     while (uCxWifiStationScanDefaultGetNext(app->ucx, &net)) {
@@ -1584,6 +1588,8 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
 
         if (first == NULL || first == last || first == ssid) {
             snprintf(resp, sizeof(resp), "ERROR:INVALID_CONFIG");
+        } else if (!ucxapp_wifi_apply_regdomain(ucx)) {
+            snprintf(resp, sizeof(resp), "ERROR:REGDOMAIN_NOT_SET");
         } else {
             *first = '\0';
             *last = '\0';
@@ -1623,8 +1629,9 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
         wpsScan(app, conn);
         return;
     } else if (strcmp(cmd, "CONNECT") == 0) {
-        r = uCxWifiStationConnect(ucx, 0);
-        if (r == 0) {
+        if (!ucxapp_wifi_apply_regdomain(ucx)) {
+            snprintf(resp, sizeof(resp), "ERROR:REGDOMAIN_NOT_SET");
+        } else if ((r = uCxWifiStationConnect(ucx, 0)) == 0) {
             snprintf(resp, sizeof(resp), "OK:CONNECTING");
         } else {
             snprintf(resp, sizeof(resp), "ERROR:CONNECT_FAILED:%d", (int)r);

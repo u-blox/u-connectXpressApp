@@ -13,7 +13,7 @@
 #define UCXAPP_ERR_UNSUPPORTED   (-104)
 
 #define UCXAPP_MAX_ARGS    12
-#define UCXAPP_MAX_PACKS   40
+#define UCXAPP_MAX_PACKS   64
 
 /* Command needs a connected module (app->ucx != NULL). */
 #define UCXAPP_CMD_NEEDS_DEVICE  0x01
@@ -89,8 +89,9 @@ bool ucxapp_module_has_wifi(ucxapp_t *app);
 /* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
 
-/* Read-eval loop on the IO layer. Returns on "exit"/"quit" or end of input. */
-void ucxapp_shell_run(ucxapp_t *app);
+/* Read-eval loop on the IO layer. Returns on "exit"/"quit" or end of input with 1 when the last command failed,
+ * like sh, so a piped script can check how it ended. */
+int ucxapp_shell_run(ucxapp_t *app);
 
 /* ": U_ERROR_COMMON_TIMEOUT" for a known u-connectXpress error code, else ""; meant to follow a printed %d. */
 const char *ucxapp_errname(int32_t code);
@@ -121,6 +122,17 @@ bool ucxapp_port_is_gnss(const ucxapp_serial_port_t *sp);
 bool ucxapp_last_port_load(const char *kind, char *port, size_t size, int32_t *baud);
 void ucxapp_last_port_save(const char *kind, const char *port, int32_t baud);
 void ucxapp_register_wifi_cmds(void);
+void ucxapp_register_wifiloc_cmds(void); /* wifi.locate (empty in UCXAPP_LITE builds) */
+/* One access point from a Wi-Fi scan. */
+typedef struct {
+    char ssid[33];
+    uint8_t bssid[6];
+    int channel;
+    int rssi;
+} ucxapp_wifi_ap_t;
+/* Scans with the module (as wifi.scan) and copies up to max access points, strongest first; returns the count,
+   -1 when no regulatory domain is chosen (printed). */
+int ucxapp_wifi_scan(ucxapp_t *app, ucxapp_wifi_ap_t *out, int max);
 void ucxapp_register_sock_cmds(void);
 void ucxapp_register_dtls_cmds(void);    /* dtls.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_coap_cmds(void);    /* coap.* (host only, empty in UCXAPP_LITE builds) */
@@ -129,6 +141,10 @@ void ucxapp_register_ft_cmds(void);      /* ft.* BLE file transfer (host only) *
 void ucxapp_register_ancs_cmds(void);    /* ancs.* iPhone notifications (host only) */
 void ucxapp_register_notify_cmds(void);  /* notify.* phone notifications over a custom GATT service (host only) */
 void ucxapp_register_session_cmds(void); /* session.* record/replay and prod.test (host only) */
+void ucxapp_register_cfg_cmds(void);     /* cfg.* save/load/diff module settings (empty in UCXAPP_LITE builds) */
+void ucxapp_register_trace_cmds(void);   /* at.trace, at.decode, at.replay (host only) */
+void ucxapp_register_perf_cmds(void);    /* perf.* RTT and throughput (empty in UCXAPP_LITE builds) */
+void ucxapp_register_xplorer_cmds(void); /* xplorer.* u-connectXplorer phone remote control (host only) */
 void ucxapp_session_end(void);           /* close a running session.record at exit */
 void ucxapp_register_time_cmds(void);    /* app.time */
 void ucxapp_register_can_cmds(void);     /* can.* (host only, empty in UCXAPP_LITE builds) */
@@ -202,6 +218,8 @@ void ucxapp_sock_clear_incoming(void);
 
 /* Wi-Fi station state for other packs; false when not connected (ssid and ip are then empty). */
 bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char *ip, size_t ipSize);
+/* Sets the user's regulatory domain before any scan, connect or AP; false (printed) when none is chosen yet. */
+bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx);
 /* "ssid  rssi dBm  ch N\nip" (AT calls; command thread only); false when not connected. */
 bool ucxapp_wifi_dash(uCxHandle_t *ucx, char *out, size_t size);
 

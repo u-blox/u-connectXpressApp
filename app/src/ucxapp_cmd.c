@@ -970,9 +970,10 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     return result;
 }
 
-void ucxapp_shell_run(ucxapp_t *app)
+int ucxapp_shell_run(ucxapp_t *app)
 {
     char line[256];
+    int status = 0;
 
     ucxapp_print("Command shell. Type 'help' for commands, 'exit' to return.\n");
     for (;;) {
@@ -982,11 +983,18 @@ void ucxapp_shell_run(ucxapp_t *app)
         if (strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0) {
             break;
         }
+        const char *text = line + strspn(line, " \t");
+        if (*text == '\0' || *text == '#') {
+            continue;   /* blank lines and comments keep the last status */
+        }
         char expanded[sizeof(line)];
         if (ucxapp_at_mode_active()) {
-            ucxapp_cmd_exec(app, line);
+            status = ucxapp_cmd_exec(app, line) == UCXAPP_OK ? 0 : 1;
         } else if (ucxapp_expand_env(line, expanded, sizeof(expanded))) {
-            ucxapp_cmd_exec(app, expanded);
+            status = ucxapp_cmd_exec(app, expanded) == UCXAPP_OK ? 0 : 1;
+        } else {
+            status = 1;
         }
     }
+    return status;
 }

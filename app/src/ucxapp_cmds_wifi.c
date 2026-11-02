@@ -129,8 +129,78 @@ static void printLinkDetails(uCxHandle_t *ucx)
 }
 
 /* Disconnect if needed and set the SSID; the caller then sets the security and calls startAndWait(). */
+#define REGDOMAIN_FILE  "ucxapp.regdomain"
+#define REGDOMAIN_HINT  "world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br"
+
+static const struct { const char *name; uWifiRegDomain_t value; } gRegDomains[] = {
+    { "world", U_WIFI_REG_DOMAIN_WORLD }, { "etsi", U_WIFI_REG_DOMAIN_ETSI }, { "fcc", U_WIFI_REG_DOMAIN_FCC },
+    { "ic", U_WIFI_REG_DOMAIN_IC }, { "nz", U_WIFI_REG_DOMAIN_NZ }, { "mkk", U_WIFI_REG_DOMAIN_MKK },
+    { "ncc", U_WIFI_REG_DOMAIN_NCC }, { "acma", U_WIFI_REG_DOMAIN_ACMA }, { "kcc", U_WIFI_REG_DOMAIN_KCC },
+    { "sa", U_WIFI_REG_DOMAIN_SA }, { "br", U_WIFI_REG_DOMAIN_BR },
+};
+
+static int findRegDomain(const char *name)
+{
+    for (size_t i = 0; i < sizeof(gRegDomains) / sizeof(gRegDomains[0]); i++) {
+        if (strcmp(gRegDomains[i].name, name) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* The saved choice, else UCX_REGDOMAIN (scripts, CI); -1 when the user has not chosen one. */
+static int loadRegDomain(void)
+{
+    size_t len = 0;
+    char *saved = (char *)ucxapp_store_load(REGDOMAIN_FILE, &len);
+    int dom = saved != NULL ? findRegDomain(saved) : -1;
+    const char *env;
+
+    free(saved);
+    if (dom < 0 && (env = getenv("UCX_REGDOMAIN")) != NULL) {
+        dom = findRegDomain(env);
+    }
+    return dom;
+}
+
+static void printRegDomainRequired(void)
+{
+    ucxapp_print("ERROR: choose the Wi-Fi regulatory domain for the country you operate in first:\n"
+                 "       wifi.regdomain <" REGDOMAIN_HINT ">  ('world' is allowed everywhere, with fewer channels)\n");
+}
+
+static void resetChannelList(uCxHandle_t *ucx);
+
+static bool applyRegDomain(uCxHandle_t *ucx)
+{
+    int dom = loadRegDomain();
+
+    if (dom < 0) {
+        printRegDomainRequired();
+        return false;
+    }
+    if (uCxWifiSetRegulatoryDomain(ucx, gRegDomains[dom].value) != 0) {
+        ucxapp_print("WARNING: could not set regulatory domain '%s'\n", gRegDomains[dom].name);
+    }
+    return true;
+}
+
+/* Radio use (scan, connect, AP) needs a regulatory domain chosen by the user; false (printed) until there is one. */
+bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx)
+{
+    if (!applyRegDomain(ucx)) {
+        return false;
+    }
+    resetChannelList(ucx);
+    return true;
+}
+
 static bool prepareConnect(uCxHandle_t *ucx, const char *ssid)
 {
+    if (!ucxapp_wifi_apply_regdomain(ucx)) {
+        return false;
+    }
     if (isConnected(ucx)) {
         ucxapp_print("Already connected, disconnecting first...\n");
         uCxWifiStationDisconnect(ucx);
@@ -402,40 +472,6 @@ static int findProfile(const profile_t *list, int count, const char *name)
 }
 
 #define LAST_FILE       "ucxapp.wifilast"
-#define REGDOMAIN_FILE  "ucxapp.regdomain"
-
-static const struct { const char *name; uWifiRegDomain_t value; } gRegDomains[] = {
-    { "world", U_WIFI_REG_DOMAIN_WORLD }, { "etsi", U_WIFI_REG_DOMAIN_ETSI }, { "fcc", U_WIFI_REG_DOMAIN_FCC },
-    { "ic", U_WIFI_REG_DOMAIN_IC }, { "nz", U_WIFI_REG_DOMAIN_NZ }, { "mkk", U_WIFI_REG_DOMAIN_MKK },
-    { "ncc", U_WIFI_REG_DOMAIN_NCC }, { "acma", U_WIFI_REG_DOMAIN_ACMA }, { "kcc", U_WIFI_REG_DOMAIN_KCC },
-    { "sa", U_WIFI_REG_DOMAIN_SA }, { "br", U_WIFI_REG_DOMAIN_BR },
-};
-
-static int findRegDomain(const char *name)
-{
-    for (size_t i = 0; i < sizeof(gRegDomains) / sizeof(gRegDomains[0]); i++) {
-        if (strcmp(gRegDomains[i].name, name) == 0) {
-            return (int)i;
-        }
-    }
-    return -1;
-}
-
-/* Applies the saved regulatory domain; defaults to ETSI so channels 1-13 are scanned. */
-static void applyRegDomain(uCxHandle_t *ucx)
-{
-    size_t len = 0;
-    char *saved = (char *)ucxapp_store_load(REGDOMAIN_FILE, &len);
-    int dom = saved != NULL ? findRegDomain(saved) : -1;
-
-    free(saved);
-    if (dom < 0) {
-        dom = findRegDomain("etsi");
-    }
-    if (uCxWifiSetRegulatoryDomain(ucx, gRegDomains[dom].value) != 0) {
-        ucxapp_print("WARNING: could not set regulatory domain '%s'\n", gRegDomains[dom].name);
-    }
-}
 
 static bool loadLastUsed(char *name, size_t size)
 {
@@ -489,6 +525,52 @@ typedef struct {
 
 static scanNet_t gScan[SCAN_MAX];
 static int gScanCount;
+
+/* ---- channel list: a mixed scan uses the channels of the last scan; everything else uses the full list ---- */
+
+#ifndef UCXAPP_LITE
+#define MIX_FULL_EVERY 10   /* every 10th scan in mixed mode is a full one */
+
+static bool gMixed;         /* wifi.channels mixed */
+static int gMixScans;       /* mixed scans since the last full one */
+static int16_t gMixChannels[SCAN_MAX];
+static int gMixCount;
+static bool gListSet;       /* the module's channel list is not the full one */
+
+static void resetChannelList(uCxHandle_t *ucx)
+{
+    if (gListSet && uCxAtClientExecSimpleCmdF(ucx->pAtClient, "AT+UWCLR", "", U_CX_AT_UTIL_PARAM_LAST) == 0) {
+        gListSet = false;
+    }
+}
+
+static void rememberChannels(int count)
+{
+    gMixCount = 0;
+    for (int i = 0; i < count; i++) {
+        int16_t ch = (int16_t)gScan[i].channel;
+        bool seen = false;
+
+        for (int j = 0; j < gMixCount && !seen; j++) {
+            seen = gMixChannels[j] == ch;
+        }
+        if (!seen && ch > 0) {
+            gMixChannels[gMixCount++] = ch;
+        }
+    }
+}
+#else
+/* Lite builds (128 KB flash) always scan the full channel list: no wifi.channels. */
+static void resetChannelList(uCxHandle_t *ucx)
+{
+    (void)ucx;
+}
+
+static void rememberChannels(int count)
+{
+    (void)count;
+}
+#endif
 
 static void appendWord(char *out, size_t size, const char *word)
 {
@@ -566,17 +648,32 @@ static void printChannelSummary(void)
     ucxapp_print("Quietest for wifi.ap.enable: 2.4 GHz ch%d (%d network(s)), 5 GHz ch%d (%d)\n", ch24, n24, ch5, n5);
 }
 
-static int cmdWifiScan(ucxapp_t *app, int argc, char *argv[])
+/* Scans into gScan, strongest first; returns the number of networks, -1 without a regulatory domain (printed). */
+static int scanNetworks(ucxapp_t *app)
 {
     uCxWifiStationScanDefault_t net;
-    profile_t profiles[MAX_PROFILES];
-    int profileCount = loadProfiles(profiles);
     int count = 0;
-    (void)argc;
-    (void)argv;
 
-    applyRegDomain(app->ucx);
-    ucxapp_print("Scanning (can take up to 40 s)...\n");
+    if (!applyRegDomain(app->ucx)) {
+        return -1;
+    }
+#ifndef UCXAPP_LITE
+    bool mixed = gMixed && gMixCount > 0 && gMixScans < MIX_FULL_EVERY - 1;
+
+    if (mixed && uCxWifiSetChannelList(app->ucx, gMixChannels, gMixCount) == 0) {
+        gListSet = true;
+    } else {
+        mixed = false;
+        resetChannelList(app->ucx);
+    }
+    gMixScans = mixed ? gMixScans + 1 : 0;
+    if (mixed) {
+        ucxapp_print("Scanning the %d channel(s) of the last scan (full scan every %d)...\n", gMixCount, MIX_FULL_EVERY);
+    } else
+#endif
+    {
+        ucxapp_print("Scanning (can take up to 40 s)...\n");
+    }
     uCxAtClientSetCommandTimeout(app->ucx->pAtClient, 60000, false);
     uCxWifiStationScanDefaultBegin(app->ucx);
     while (uCxWifiStationScanDefaultGetNext(app->ucx, &net)) {
@@ -595,7 +692,37 @@ static int cmdWifiScan(ucxapp_t *app, int argc, char *argv[])
     uCxEnd(app->ucx);
     qsort(gScan, (size_t)count, sizeof(gScan[0]), compareNet);
     gScanCount = count;
+    rememberChannels(count);
+    return count;
+}
 
+int ucxapp_wifi_scan(ucxapp_t *app, ucxapp_wifi_ap_t *out, int max)
+{
+    int count = scanNetworks(app);
+
+    if (count < 0) {
+        return -1;
+    }
+    for (int i = 0; i < count && i < max; i++) {
+        snprintf(out[i].ssid, sizeof(out[i].ssid), "%.*s", (int)sizeof(out[i].ssid) - 1, gScan[i].ssid);
+        memcpy(out[i].bssid, gScan[i].bssid, sizeof(out[i].bssid));
+        out[i].channel = gScan[i].channel;
+        out[i].rssi = gScan[i].rssi;
+    }
+    return count < max ? count : max;
+}
+
+static int cmdWifiScan(ucxapp_t *app, int argc, char *argv[])
+{
+    profile_t profiles[MAX_PROFILES];
+    int profileCount = loadProfiles(profiles);
+    int count = scanNetworks(app);
+    (void)argc;
+    (void)argv;
+
+    if (count < 0) {
+        return UCXAPP_ERR_FAILED;
+    }
     for (int i = 0; i < count; i++) {
         const scanNet_t *n = &gScan[i];
         char sec[24];
@@ -618,6 +745,40 @@ static int cmdWifiScan(ucxapp_t *app, int argc, char *argv[])
     }
     return UCXAPP_OK;
 }
+
+/* wifi.channels: mixed scans use the channels of the last scan; full clears them and the module's channel list. */
+#ifndef UCXAPP_LITE
+static int cmdWifiChannels(ucxapp_t *app, int argc, char *argv[])
+{
+    if (argc == 1) {
+        if (gMixed) {
+            ucxapp_print("channels: mixed, %d from the last scan, full scan after %d more scan(s)\n", gMixCount,
+                         MIX_FULL_EVERY - 1 - gMixScans);
+        } else {
+            ucxapp_print("channels: full\n");
+        }
+        return UCXAPP_OK;
+    }
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(argv[1], "mixed") == 0) {
+        gMixed = true;
+        gMixScans = 0;
+        ucxapp_print("channels: mixed (the channels of the last scan; every %d. scan is full)\n", MIX_FULL_EVERY);
+        return UCXAPP_OK;
+    }
+    if (strcmp(argv[1], "full") == 0) {
+        gMixed = false;
+        gMixScans = 0;
+        gMixCount = 0;
+        resetChannelList(app->ucx);
+        ucxapp_print("channels: full (channel list cleared)\n");
+        return UCXAPP_OK;
+    }
+    return UCXAPP_ERR_USAGE;
+}
+#endif
 
 static int findProfileBySsid(const profile_t *list, int count, const char *ssid)
 {
@@ -806,6 +967,9 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no profiles (see wifi.profile.add)\n");
         return UCXAPP_ERR_FAILED;
     }
+    if (!ucxapp_wifi_apply_regdomain(app->ucx)) {
+        return UCXAPP_ERR_FAILED;
+    }
 
     if (loadLastUsed(last, sizeof(last)) && (idx = findProfile(list, count, last)) >= 0) {
         ucxapp_print("Trying last used profile '%s'...\n", last);
@@ -814,7 +978,6 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         }
     }
 
-    applyRegDomain(app->ucx);
     ucxapp_print("Scanning for known networks (can take up to 40 s)...\n");
     uCxAtClientSetCommandTimeout(app->ucx->pAtClient, 60000, false);
     uCxWifiStationScanDefaultBegin(app->ucx);
@@ -868,6 +1031,10 @@ static int cmdWifiRegDomain(ucxapp_t *app, int argc, char *argv[])
     for (size_t i = 0; i < sizeof(gRegDomains) / sizeof(gRegDomains[0]); i++) {
         if (gRegDomains[i].value == current) {
             ucxapp_print("regdomain=%s\n", gRegDomains[i].name);
+            if (argc == 1 && loadRegDomain() < 0) {
+                ucxapp_print("NOTE: not chosen yet; Wi-Fi scan, connect and AP stay off until you run\n"
+                             "      wifi.regdomain <" REGDOMAIN_HINT "> for the country you operate in\n");
+            }
             return UCXAPP_OK;
         }
     }
@@ -926,6 +1093,9 @@ static int cmdWifiApEnable(ucxapp_t *app, int argc, char *argv[])
     }
     if (strlen(password) < 8) {
         ucxapp_print("ERROR: password must be at least 8 characters\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!ucxapp_wifi_apply_regdomain(ucx)) {
         return UCXAPP_ERR_FAILED;
     }
     if (uCxWifiApSetConnectionParams2(ucx, ssid, channel) != 0 ||
@@ -1190,6 +1360,9 @@ static int cmdWifiSurvey(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.scan",       "",                    "Scan for networks: strongest first with band, signal and security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
+#ifndef UCXAPP_LITE
+    { "wifi.channels",   "[mixed|full]",        "Show or set the scan channels: mixed scans the channels of the last scan (full scan every 10th); full clears that and the module's channel list", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiChannels },
+#endif
     { "wifi.connect",    "[ssid|n] [password|-]", "Connect by SSID or number from wifi.scan; '-' prompts for the password; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
 #ifndef UCXAPP_LITE
     { "wifi.eap",        "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]", "Connect with WPA2/WPA3-Enterprise EAP-TLS using certificates on the module (cert.list)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiEap },
@@ -1207,7 +1380,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
     { "wifi.profile.auto", "",                   "Connect: the last used profile, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
-    { "wifi.regdomain",  "[world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br]", "Show or set (and save) the regulatory domain", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
+    { "wifi.regdomain",  "[world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br]", "Show or set (and save) the regulatory domain for your country; Wi-Fi scan, connect and AP need it (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set Wi-Fi roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
     { "wifi.ap.enable",  "[ssid] [password] [channel]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },

@@ -113,6 +113,13 @@ def test_app_runs_in_the_browser(site):
                                timeout=60000)
         page.fill("#cmd", "wifi.scan")
         page.click("#run")
+        page.wait_for_function(
+            "document.getElementById('out').innerText.includes('choose the Wi-Fi regulatory domain')", timeout=30000)
+        page.fill("#cmd", "wifi.regdomain world")
+        page.click("#run")
+        page.wait_for_function("document.getElementById('out').innerText.includes('regdomain=world')", timeout=30000)
+        page.fill("#cmd", "wifi.scan")
+        page.click("#run")
         page.wait_for_function("document.getElementById('out').innerText.includes('vucx-net')", timeout=30000)
         page.click("#wsc")
         page.wait_for_function("!document.getElementById('wsv').hidden", timeout=30000)

@@ -45,6 +45,9 @@ else()
     target_sources(app PRIVATE
         ${APP_SRC}/ucxapp_cmds_mqtt.c
         ${APP_SRC}/ucxapp_cmds_net.c
+        ${APP_SRC}/ucxapp_cmds_wifiloc.c
+        ${APP_SRC}/ucxapp_cmds_cfg.c
+        ${APP_SRC}/ucxapp_cmds_perf.c
         ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
         ${APP_SRC}/ucxapp_cmds_examples.c

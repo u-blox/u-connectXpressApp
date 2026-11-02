@@ -20,6 +20,7 @@ def test_assist_sends_only_valid_mga_frames(app_exe, tmp_path):
     (tmp_path / "mga.ubx").write_bytes(data)
     out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.assist mga.ubx", "gnss.close")
     assert f"3 UBX-MGA messages ({size} bytes) sent to the receiver" in out.stdout, out.stdout
+    assert "receiver accepted 3, refused 0, no answer 0 (UBX-MGA-ACK)" in out.stdout, out.stdout
 
 
 def test_assist_chipcode_is_saved_and_used_for_online(app_exe, tmp_path):

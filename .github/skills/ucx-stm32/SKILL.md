@@ -70,5 +70,10 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - `bridge [baud]` makes the board a transparent console-to-module bridge (AT debugging, XMODEM updates). Press Ctrl-] with 1 s of silence before and after to return to the shell.
 - Command list: `COMMANDS.md`.
 
+## Low power (host MCU)
+- FreeRTOS: a `sleep` task at idle priority (listed by `sys.tasks`) stops the core with WFI until the next interrupt, and the shell polls the console every 10 ms once it has been quiet for 200 ms. Interrupts wake the core at once, so AT and bridge latency are unchanged.
+- Zephyr: the idle thread does the same with WFI on a tickless kernel. STOP modes (`CONFIG_PM`) stay off because the UARTs would drop bytes at 115200 while the clocks restart.
+- `bridge` keeps the core busy for lowest latency until you leave it.
+
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).

@@ -49,6 +49,8 @@ import threading
 import time
 from pathlib import Path
 
+from .. import corrections
+
 PROFILES = Path(__file__).parent
 
 SETUP = {"AT": ["OK"], "ATE0": ["OK"], "ATE1": ["OK"], "AT+USYEE=1": ["OK"]}
@@ -142,7 +144,16 @@ def table(profile=None):
 class Network:
     """The sockets behind the module (AT+USO*): TCP and UDP with an echo, NTRIP caster or CoAP server far end."""
 
-    RTCM = bytes.fromhex("D300133ED00003") + bytes(16) + bytes.fromhex("8A2B5C")
+    # The caster's stream: RTCM 1005, SPARTN (plain CRC-16, encrypted CRC-24, 32-bit time tag CRC-32, CRC-8),
+    # a UBX-RXM-SPARTNKEY, then junk and an RTCM frame with a broken CRC, then a good one: RTCM 2 (1 bad)
+    RTCM = (corrections.rtcm(bytes.fromhex("3ED00003") + bytes(15))
+            + corrections.spartn(1, bytes(range(40)))
+            + corrections.spartn(0, bytes(30), crc_type=2, auth_len=1)
+            + corrections.spartn(2, b"\x55" * 12, crc_type=3, time_tag=0x12345678)
+            + corrections.spartn(1, bytes(5), crc_type=0)
+            + corrections.ubx(0x02, 0x36, bytes(16))
+            + b"junk" + corrections.corrupt(corrections.rtcm(bytes(8)))
+            + corrections.rtcm(bytes.fromhex("3ED00003") + bytes(15)))
 
     def __init__(self, cfg):
         self.servers = {int(k): v for k, v in (cfg.get("servers") or {}).items()}
@@ -226,6 +237,7 @@ class Vucx:
         self.default = t["default"]
         self.state = {}
         self.log = []   # every command received, for the tests
+        self.payloads = []   # (command, binary data) for commands that carried data (AT+X=... SOH len data)
         self._turn = {}
         self._fd = None
         self._stop = threading.Event()
@@ -261,6 +273,8 @@ class Vucx:
     def handle(self, cmd, data=b""):
         cmd = cmd[3:] if cmd.startswith("+++") else cmd   # the escape from data mode has no line end
         self.log.append(cmd)
+        if data:
+            self.payloads.append((cmd, bytes(data)))
         if not cmd[:2].upper() == "AT":
             reply = next((v for k, v in self.data.items() if fnmatch.fnmatchcase(cmd, k)), None)
             if reply is not None:
@@ -276,14 +290,15 @@ class Vucx:
             self._send(answer[1])
 
     def start(self):
-        """Opens the pty and serves it in a thread; returns the port name for the app."""
-        import tty
+        """Opens the pty and serves it in a thread; returns the port name for the app.
 
+        The tty keeps the kernel's default (cooked) settings, as a fresh /dev/ttyUSB has: ICRNL, IXON, ECHO and OPOST
+        on. The app's port layer must make it raw itself, or binary data with 0x0D, 0x11 or 0x13 gets changed."""
         self._fd, slave = os.openpty()
-        tty.setraw(self._fd)
         self._slave = slave
         self.port = os.ttyname(slave)
-        threading.Thread(target=self._serve, daemon=True).start()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
         return self.port
 
     def _serve(self):
@@ -314,7 +329,10 @@ class Vucx:
                     self.handle(line, data)
 
     def stop(self):
+        """Stops the thread before closing the pty: a closed fd number is reused by the next open(), and a thread
+        still in select/read/write would then read or write that file (a test's saved file read back empty)."""
         self._stop.set()
+        self._thread.join(timeout=5)
         for fd in (self._fd, self._slave):
             try:
                 os.close(fd)
@@ -338,7 +356,8 @@ class Feeder:
         tty.setraw(self._fd)
         tty.setraw(self._slave)
         self.port = os.ttyname(self._slave)
-        threading.Thread(target=self._serve, daemon=True).start()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
         return self.port
 
     def _serve(self):

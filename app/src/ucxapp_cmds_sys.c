@@ -85,9 +85,22 @@ bool ucxappLogEventsEnabled(void)
     return gLogEvents;
 }
 
+static void (*volatile gTraceSink)(const char *line);
+static U_CX_MUTEX_HANDLE gTraceLock;
+static char gTraceLine[1024];
+static size_t gTraceLen;
+
 bool ucxappLogAtEnabled(void)
 {
-    return gLogAt;
+    return gLogAt || gTraceSink != NULL;
+}
+
+void ucxappLogAtSetTrace(void (*sink)(const char *line))
+{
+    U_CX_MUTEX_LOCK(gTraceLock);
+    gTraceSink = sink;
+    gTraceLen = 0;
+    U_CX_MUTEX_UNLOCK(gTraceLock);
 }
 
 /* AT commands whose parameter at index idx (0-based, after '=' or ':') is a password. */
@@ -188,7 +201,47 @@ int ucxappLibPrintf(const char *format, ...)
     int n = vsnprintf(text, sizeof(text), format, args);
     va_end(args);
     ucxappLogMask(text, masked, sizeof(masked));
-    ucxapp_print("%s", masked);
+    if (gTraceSink == NULL) {
+        ucxapp_print("%s", masked);
+        return n;
+    }
+    /* The library prints a TX line in pieces: collect whole lines, give AT lines to the trace and show them only
+     * when the AT log is on. */
+    U_CX_MUTEX_LOCK(gTraceLock);
+    for (const char *p = masked; *p != '\0'; p++) {
+        if (gTraceLen < sizeof(gTraceLine) - 1) {
+            gTraceLine[gTraceLen++] = *p;
+        }
+        if (*p != '\n' && gTraceLen < sizeof(gTraceLine) - 1) {
+            continue;
+        }
+        gTraceLine[gTraceLen] = '\0';
+        char plain[sizeof(gTraceLine)];
+        size_t o = 0;
+        for (const char *s = gTraceLine; *s != '\0'; s++) {
+            if (*s == '\33') {
+                while (s[1] != '\0' && !isalpha((unsigned char)s[1])) {
+                    s++;
+                }
+                if (s[1] != '\0') {
+                    s++;
+                }
+            } else if (*s != '\n' && *s != '\r') {
+                plain[o++] = *s;
+            }
+        }
+        plain[o] = '\0';
+        bool at = strstr(plain, "[AT TX]") != NULL || strstr(plain, "[AT RX]") != NULL;
+        void (*sink)(const char *line) = gTraceSink;
+        if (at && sink != NULL) {
+            sink(plain);
+        }
+        if (!at || gLogAt) {
+            ucxapp_print("%s", gTraceLine);
+        }
+        gTraceLen = 0;
+    }
+    U_CX_MUTEX_UNLOCK(gTraceLock);
     return n;
 }
 
@@ -751,6 +804,7 @@ static const ucxapp_cmd_t gSysCmds[] = {
 void ucxapp_register_sys_cmds(void)
 {
     U_CX_MUTEX_CREATE(gStatsLock);
+    U_CX_MUTEX_CREATE(gTraceLock);
     loadLogSettings();
     ucxapp_cmd_register(gSysCmds, sizeof(gSysCmds) / sizeof(gSysCmds[0]));
 }

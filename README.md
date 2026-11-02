@@ -3,10 +3,13 @@
 **Develop, test and automate u-connectXpress applications from your PC or an STM32 board.**
 
 ```powershell
+ucxapp wifi.regdomain etsi
 ucxapp wifi.scan
 ucxapp wifi.connect MySsid MyPassword
 ucxapp mqtt.publish test/ucx hello
 ```
+
+Wi-Fi stays off until you choose the regulatory domain for the country you operate in (`wifi.regdomain <world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br>`, saved once; `world` is allowed everywhere). Scripts and CI can set `UCX_REGDOMAIN` instead.
 
 **Platforms:** Windows | Linux | STM32 | [Browser](https://u-blox.github.io/u-connectXpressApp/)
 
@@ -161,9 +164,13 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 | Area | Commands |
 |---|---|
 | Device | `dev.info`, `dev.reboot`, `dev.factory confirm`, `at <raw AT command>` |
-| Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*` |
+| Settings | `cfg.show`, `cfg.save <file>`, `cfg.load <file>`, `cfg.diff <file> [file2]` (back up, clone and compare module settings) |
+| AT trace | `at.trace <file>`, `at.trace.stop`, `at.trace.show <file>`, `at.decode <urc>`, `at.replay <file>` (timed, decoded AT log) |
+| Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*`, `wifi.locate` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
+| Performance | `perf.rtt`, `perf.tput`, `perf.echo`, `perf.phone` (round-trip time and throughput over TCP, UDP or SPS, e.g. against `echo.u-blox.com` port 7 or the u-connectXplorer phone app) |
+| Phone app | `xplorer.connect`, `xplorer.info`, `xplorer.call`, `xplorer.echo` (remote control of u-connectXplorer, so the phone is the other end of a test) |
 | MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
 | App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
 | Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
@@ -199,14 +206,14 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 464 KB | 2048 KB | 23% | 314 KB | 512 KB | 61% |
-| `f767` | NUCLEO-F767ZI | 443 KB | 2048 KB | 22% | 323 KB | 368 KB | 88% |
-| `f439` | NUCLEO-F439ZI | 446 KB | 2048 KB | 22% | 131 KB | 192 KB | 69% |
-| `f407` | STM32F4DISCOVERY | 443 KB | 1024 KB | 43% | 104 KB | 128 KB | 81% |
-| `f401` | NUCLEO-F401RE | 424 KB | 512 KB | 83% | 87 KB | 96 KB | 91% |
-| `f446` | NUCLEO-F446RE | 424 KB | 512 KB | 83% | 103 KB | 128 KB | 81% |
-| `f103` | NUCLEO-F103RB | 118 KB | 128 KB | 93% | 15 KB | 20 KB | 79% |
-| `g071` | NUCLEO-G071RB | 122 KB | 128 KB | 96% | 25 KB | 36 KB | 72% |
+| `h753` | NUCLEO-H753ZI | 494 KB | 2048 KB | 24% | 316 KB | 512 KB | 62% |
+| `f767` | NUCLEO-F767ZI | 467 KB | 2048 KB | 23% | 323 KB | 368 KB | 88% |
+| `f439` | NUCLEO-F439ZI | 470 KB | 2048 KB | 23% | 131 KB | 192 KB | 69% |
+| `f407` | STM32F4DISCOVERY | 467 KB | 1024 KB | 46% | 104 KB | 128 KB | 82% |
+| `f401` | NUCLEO-F401RE | 448 KB | 512 KB | 88% | 87 KB | 96 KB | 91% |
+| `f446` | NUCLEO-F446RE | 448 KB | 512 KB | 88% | 103 KB | 128 KB | 81% |
+| `f103` | NUCLEO-F103RB | 121 KB | 128 KB | 95% | 15 KB | 20 KB | 79% |
+| `g071` | NUCLEO-G071RB | 125 KB | 128 KB | 98% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
 ## Documentation

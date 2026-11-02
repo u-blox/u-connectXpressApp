@@ -26,6 +26,17 @@ def test_shell_starts_without_device_and_quits(app_exe):
     assert "hid.setup" in out.stdout
 
 
+@pytest.mark.parametrize("lines, rc", [
+    (["help", "gnss.ex a b"], 1),
+    (["gnss.ex a b", "help"], 0),
+    (["gnss.ex a b", "", "# note", "quit"], 1),
+])
+def test_shell_exit_code_is_the_last_command_status(app_exe, lines, rc):
+    out = subprocess.run([str(app_exe), "COM255", "--shell"], input="\n".join(lines) + "\n", capture_output=True,
+                         text=True, timeout=30, errors="replace")
+    assert out.returncode == rc, out.stdout
+
+
 def test_web_mode_needs_a_module(app_exe):
     out = subprocess.run([str(app_exe), "--web", "--offline"], capture_output=True, text=True, timeout=30,
                          errors="replace", stdin=subprocess.DEVNULL)

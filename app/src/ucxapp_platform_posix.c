@@ -7,16 +7,21 @@
 
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <limits.h>
 #include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <termios.h>
@@ -193,6 +198,137 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     freeifaddrs(all);
     return found;
 }
+
+#ifdef __EMSCRIPTEN__
+
+/* The browser cannot open TCP sockets. */
+intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs)
+{
+    (void)host;
+    (void)port;
+    (void)timeoutMs;
+    return -1;
+}
+
+bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len)
+{
+    (void)sock;
+    (void)data;
+    (void)len;
+    return false;
+}
+
+int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs)
+{
+    (void)sock;
+    (void)buf;
+    (void)max;
+    (void)timeoutMs;
+    return -1;
+}
+
+void ucxapp_platform_tcp_close(intptr_t sock)
+{
+    (void)sock;
+}
+
+#else
+
+/* Non-blocking connect so an unreachable phone (app in the background) fails within the timeout. */
+intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs)
+{
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    char service[8];
+    int one = 1;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    snprintf(service, sizeof(service), "%u", (unsigned)port);
+    if (getaddrinfo(host, service, &hints, &res) != 0 || res == NULL) {
+        return -1;
+    }
+    int s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s < 0) {
+        freeaddrinfo(res);
+        return -1;
+    }
+    int fl = fcntl(s, F_GETFL, 0);
+    fcntl(s, F_SETFL, fl | O_NONBLOCK);
+    int rc = connect(s, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+    if (rc != 0 && errno == EINPROGRESS) {
+        fd_set wr;
+        struct timeval tv = { (time_t)(timeoutMs / 1000u), (suseconds_t)(timeoutMs % 1000u) * 1000 };
+        int err = 0;
+        socklen_t len = sizeof(err);
+        FD_ZERO(&wr);
+        FD_SET(s, &wr);
+        rc = select(s + 1, NULL, &wr, NULL, &tv) == 1 && getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len) == 0 &&
+             err == 0 ? 0 : -1;
+    }
+    if (rc != 0) {
+        close(s);
+        return -1;
+    }
+    fcntl(s, F_SETFL, fl);
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+#ifdef SO_NOSIGPIPE
+    setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+    return (intptr_t)s;
+}
+
+bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+#ifdef MSG_NOSIGNAL
+    const int flags = MSG_NOSIGNAL;
+#else
+    const int flags = 0;
+#endif
+
+    while (len > 0) {
+        ssize_t n = send((int)sock, p, len, flags);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n <= 0) {
+            return false;
+        }
+        p += n;
+        len -= (size_t)n;
+    }
+    return true;
+}
+
+int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs)
+{
+    fd_set rd;
+    struct timeval tv = { (time_t)(timeoutMs / 1000u), (suseconds_t)(timeoutMs % 1000u) * 1000 };
+
+    FD_ZERO(&rd);
+    FD_SET((int)sock, &rd);
+    int ready = select((int)sock + 1, &rd, NULL, NULL, &tv);
+    if (ready == 0 || (ready < 0 && errno == EINTR)) {
+        return 0;
+    }
+    if (ready < 0) {
+        return -1;
+    }
+    ssize_t n = recv((int)sock, buf, max > 65536u ? 65536u : max, 0);
+    return n > 0 ? (int32_t)n : -1;
+}
+
+void ucxapp_platform_tcp_close(intptr_t sock)
+{
+    if (sock >= 0) {
+        close((int)sock);
+    }
+}
+
+#endif /* __EMSCRIPTEN__ */
 
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)
 {

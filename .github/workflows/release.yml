@@ -144,7 +144,6 @@ jobs:
 
   wasm:
     runs-on: ubuntu-latest
-    continue-on-error: true   # optional: the release goes out without the browser app
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
@@ -168,7 +167,7 @@ jobs:
           name: wasm
           path: pkg
 
-  # One tree for release.py: linux/, stm32/stm32_<board>/, zephyr/zephyr_<board>/ and, when it built, wasm/;
+  # One tree for release.py: linux/, stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/;
   # it adds the signed windows/ and publishes.
   bundle:
     needs: [windows, linux, stm32, zephyr, wasm]

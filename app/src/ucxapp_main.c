@@ -483,6 +483,7 @@ int main(int argc, char *argv[])
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));
     ucxapp_register_device_cmds();
     ucxapp_register_wifi_cmds();
+    ucxapp_register_wifiloc_cmds();
     ucxapp_register_sock_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_sys_cmds();
@@ -500,6 +501,10 @@ int main(int argc, char *argv[])
     ucxapp_register_ancs_cmds();
     ucxapp_register_notify_cmds();
     ucxapp_register_session_cmds();
+    ucxapp_register_cfg_cmds();
+    ucxapp_register_trace_cmds();
+    ucxapp_register_perf_cmds();
+    ucxapp_register_xplorer_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_can_cmds();
     ucxapp_register_fw_cmds();
@@ -570,7 +575,7 @@ int main(int argc, char *argv[])
             rc = 0;
         }
     } else if (rc == 0 && shellMode) {
-        ucxapp_shell_run(&app);
+        rc = ucxapp_shell_run(&app);
     }
     ucxapp_session_end();
     {

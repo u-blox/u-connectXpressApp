@@ -41,6 +41,17 @@ void ucxapp_events_clear(uint32_t flags)
     ucxapp_events_unlock();
 }
 
+bool ucxapp_events_take(uint32_t flag)
+{
+    bool set;
+
+    ucxapp_events_lock();
+    set = (gUcxappEventFlags & flag) != 0;
+    gUcxappEventFlags &= ~flag;
+    ucxapp_events_unlock();
+    return set;
+}
+
 bool ucxapp_events_wait(uint32_t flag, uint32_t timeoutS)
 {
     int32_t timeoutMs = (int32_t)(timeoutS * 1000);

@@ -94,6 +94,29 @@ typedef struct {
     uint8_t uniqid[40];   /* whole UBX-SEC-UNIQID and MON-VER frames, for AssistNow registration */
     uint8_t monver[400];
     size_t uniqidLen, monverLen;
+    int carrSoln;     /* NAV-PVT/NAV-STATUS carrier solution: 0 none, 1 RTK float, 2 RTK fixed */
+    bool diffSoln;    /* corrections applied */
+    int corrAge;      /* NAV-PVT lastCorrectionAge index, 0 = not available */
+    double diffAge;   /* GGA age of the corrections in seconds, < 0 when none */
+    bool hasAcc;
+    double hAcc, vAcc;   /* NAV-PVT accuracy estimates, metres */
+    bool hasHp;          /* NAV-HPPOSLLH: 1e-9 deg, 0.1 mm position and accuracy (F9 and later) */
+    double hpLat, hpLon, hpAlt, hpHAcc, hpVAcc;
+    int secJam, rfJam;      /* SEC-SIG, MON-RF: 0 unknown, 1 none, 2 interference, 3 interference and no fix */
+    int secSpoof, navSpoof; /* SEC-SIG, NAV-STATUS: 0 unknown, 1 none, 2 indicated, 3 affirmed */
+    bool hasRf;
+    int cw, antStatus, antPower;   /* MON-RF: CW jamming 0..255, antenna supervisor */
+    uint32_t secSeq;  /* counts SEC-SIG, MON-RF and NAV-STATUS frames */
+    uint8_t ackCls, ackId;
+    bool ackOk;
+    uint32_t ackSeq;  /* counts UBX-ACK-ACK/NAK */
+    uint8_t mgaId, mgaInfo;
+    bool mgaOk;
+    uint32_t mgaSeq;  /* counts UBX-MGA-ACK-DATA0 */
+    int sosRestore;   /* UPD-SOS restore status of the last start: 0 unknown, 1 failed, 2 restored, 3 no backup */
+    uint32_t sosSeq;
+    int sosAck;       /* UPD-SOS backup creation: 1 acknowledged */
+    uint32_t sosAckSeq;
 } gnss_t;
 
 enum { ST_IDLE, ST_NMEA, ST_SYNC2, ST_CLS, ST_ID, ST_LEN1, ST_LEN2, ST_PAY, ST_CKA, ST_CKB };
@@ -212,6 +235,7 @@ static void nmeaSentence(parser_t *p, char *body)
 
     if (strncmp(type, "GGA", 3) == 0) {
         s->quality = atoi(f[6]);
+        s->diffAge = f[13][0] != '\0' ? atof(f[13]) : -1.0;
         setTime(s, f[1]);
         if (s->quality > 0) {
             s->lat = coord(f[2], f[3]);
@@ -355,6 +379,67 @@ static void ubxFrame(parser_t *p)
         s->pdop = (double)le16(d + 76) * 0.01;
         s->hasPos = (d[21] & 0x01) != 0 && s->fixType >= 2;
         s->posSeq += s->hasPos ? 1u : 0u;
+        s->diffSoln = (d[21] & 0x02) != 0;
+        s->carrSoln = (d[21] >> 6) & 3;
+        s->hAcc = le32(d + 40) * 1e-3;
+        s->vAcc = le32(d + 44) * 1e-3;
+        s->hasAcc = true;
+        s->corrAge = (int)((le16(d + 78) >> 1) & 0x0F);
+    } else if (p->cls == 0x01 && p->id == 0x14 && p->len >= 36) {   /* NAV-HPPOSLLH */
+        s->hasHp = (d[3] & 0x01) == 0;
+        if (s->hasHp) {
+            s->hpLon = s32(d + 8) * 1e-7 + (int8_t)d[24] * 1e-9;
+            s->hpLat = s32(d + 12) * 1e-7 + (int8_t)d[25] * 1e-9;
+            s->hpAlt = s32(d + 20) * 1e-3 + (int8_t)d[27] * 1e-4;
+            s->hpHAcc = le32(d + 28) * 1e-4;
+            s->hpVAcc = le32(d + 32) * 1e-4;
+        }
+    } else if (p->cls == 0x01 && p->id == 0x03 && p->len >= 16) {   /* NAV-STATUS */
+        int spoof = (d[7] >> 3) & 3;
+        s->navSpoof = spoof != 0 ? spoof : s->navSpoof;
+        s->carrSoln = (d[7] >> 6) & 3;
+        s->diffSoln = (d[5] & 0x02) != 0;
+        s->secSeq++;
+    } else if (p->cls == 0x27 && p->id == 0x09 && p->len >= 4) {    /* SEC-SIG */
+        if (d[0] == 1 && p->len >= 12) {
+            s->secJam = (d[4] & 0x01) != 0 ? (d[4] >> 1) & 3 : s->secJam;
+            s->secSpoof = (d[8] & 0x01) != 0 ? ((d[8] >> 1) & 7) : s->secSpoof;
+        } else if (d[0] >= 2) {
+            s->secJam = (d[1] & 0x01) != 0 ? (d[1] >> 1) & 3 : s->secJam;
+            s->secSpoof = (d[1] & 0x08) != 0 ? ((d[1] >> 4) & 7) : s->secSpoof;
+        }
+        s->secSpoof = s->secSpoof > 3 ? 3 : s->secSpoof;
+        s->secSeq++;
+    } else if (p->cls == 0x0A && p->id == 0x38 && p->len >= 4 + 24) { /* MON-RF */
+        s->rfJam = 0;
+        s->cw = 0;
+        for (uint32_t i = 0; i < d[1] && 4 + 24 * (i + 1) <= p->len; i++) {
+            const uint8_t *e = d + 4 + 24 * i;
+            s->rfJam = (e[1] & 3) > s->rfJam ? (e[1] & 3) : s->rfJam;
+            s->cw = e[16] > s->cw ? e[16] : s->cw;
+        }
+        s->antStatus = d[6];
+        s->antPower = d[7];
+        s->hasRf = true;
+        s->secSeq++;
+    } else if (p->cls == 0x05 && p->len >= 2) {                      /* ACK-ACK, ACK-NAK */
+        s->ackCls = d[0];
+        s->ackId = d[1];
+        s->ackOk = p->id == 0x01;
+        s->ackSeq++;
+    } else if (p->cls == 0x13 && p->id == 0x60 && p->len >= 8) {     /* MGA-ACK-DATA0 */
+        s->mgaOk = d[0] == 1;
+        s->mgaInfo = d[2];
+        s->mgaId = d[3];
+        s->mgaSeq++;
+    } else if (p->cls == 0x09 && p->id == 0x14 && p->len >= 8) {     /* UPD-SOS */
+        if (d[0] == 2) {
+            s->sosAck = d[4];
+            s->sosAckSeq++;
+        } else if (d[0] == 3) {
+            s->sosRestore = d[4] <= 3 ? d[4] : 0;
+            s->sosSeq++;
+        }
     } else if (p->cls == 0x01 && p->id == 0x35 && p->len >= 8) {    /* NAV-SAT */
         uint32_t count = d[5];
         s->nsat = 0;
@@ -529,13 +614,72 @@ static void fenceCheck(const gnss_t *s)
     gFence.state = in;
 }
 
+/* ---- Jamming, spoofing and antenna alarms (UBX-SEC-SIG, UBX-MON-RF, UBX-NAV-STATUS) ---- */
+
+static const char *const kJam[] = { "unknown", "none", "interference detected", "interference, no fix" };
+static const char *const kSpoof[] = { "unknown", "none", "spoofing indicated", "spoofing affirmed" };
+static const char *const kAnt[] = { "starting", "unknown", "OK", "short circuit", "open (no antenna)" };
+
+static struct {
+    int jam, spoof, ant;
+} gAlarm;
+
+static int maxInt(int a, int b)
+{
+    return a > b ? a : b;
+}
+
+static const char *antName(int status)
+{
+    return status >= 0 && status <= 4 ? kAnt[status] : "unknown";
+}
+
+/* JAM:, SPOOF: and ANT: lines when the state turns bad and when it clears. */
+static void secCheck(const gnss_t *s)
+{
+    int jam = maxInt(s->secJam, s->rfJam);
+    int spoof = maxInt(s->secSpoof, s->navSpoof);
+    int ant = s->hasRf ? s->antStatus : -1;
+
+    if (jam != gAlarm.jam && jam >= 2) {
+        ucxapp_print("JAM: %s (CW indicator %d/255)\n", kJam[jam], s->cw);
+    } else if (jam != gAlarm.jam && gAlarm.jam >= 2) {
+        ucxapp_print("JAM: cleared\n");
+    }
+    if (spoof != gAlarm.spoof && (spoof >= 2 || gAlarm.spoof >= 2)) {
+        ucxapp_print("SPOOF: %s\n", spoof >= 2 ? kSpoof[spoof] : "cleared");
+    }
+    if (ant != gAlarm.ant && (ant >= 3 || gAlarm.ant >= 3)) {
+        ucxapp_print("ANT: antenna %s\n", antName(ant));
+    }
+    gAlarm.jam = jam;
+    gAlarm.spoof = spoof;
+    gAlarm.ant = ant;
+}
+
+/* "RTK fixed", "RTK float", "DGNSS" or NULL without corrections (NAV-PVT carrier solution or GGA quality). */
+static const char *rtkName(const gnss_t *s)
+{
+    if (s->carrSoln == 2 || s->quality == 4) {
+        return "RTK fixed";
+    }
+    if (s->carrSoln == 1 || s->quality == 5) {
+        return "RTK float";
+    }
+    return s->diffSoln || s->quality == 2 ? "DGNSS" : NULL;
+}
+
 static void feed(parser_t *p, const uint8_t *data, size_t len)
 {
     for (size_t i = 0; i < len; i++) {
         uint32_t seq = p->st.posSeq;
+        uint32_t sec = p->st.secSeq;
         feedByte(p, data[i]);
         if (p == &gP && p->st.posSeq != seq) {
             fenceCheck(&p->st);
+        }
+        if (p == &gP && p->st.secSeq != sec) {
+            secCheck(&p->st);
         }
     }
 }
@@ -770,6 +914,18 @@ static gnss_t gSnap;
 static uint32_t gOpenMs;
 static uint32_t gFixMs;   /* first 2D/3D fix since gnss.open, 0 = none yet */
 
+/* A fresh receiver: parser, fence state, alarms and the time to first fix. */
+static void resetLive(void)
+{
+    memset(&gP, 0, sizeof(gP));
+    gFence.state = -1;
+    gAlarm.jam = 0;
+    gAlarm.spoof = 0;
+    gAlarm.ant = -1;
+    gOpenMs = ucxapp_platform_tick_ms();
+    gFixMs = 0;
+}
+
 static void onData(void *ctx, const uint8_t *data, size_t n)
 {
     (void)ctx;
@@ -950,9 +1106,56 @@ typedef struct {
     double lat, lon, alt;
     char source[40];
     uint32_t due;
+    uint8_t ans[96];   /* answers to commands, sent with the next poll; guarded by the stream lock */
+    size_t nAns;
 } virt_t;
 
 static virt_t gVirt;
+
+/* Like a real receiver, the virtual one acknowledges UBX-CFG commands (not CFG-RST), accepts UBX-MGA data with
+   UBX-MGA-ACK-DATA0 and answers UBX-UPD-SOS: a backup is acknowledged, and the last start was without one.
+   Everything else is dropped. */
+static bool virtWrite(void *ctx, const uint8_t *d, size_t n)
+{
+    virt_t *v = ctx;
+
+    for (size_t i = 0; i + 8 <= n;) {
+        size_t len = le16(d + i + 4);
+        uint8_t pl[8] = { 0 };
+        uint8_t cls = 0;
+        uint8_t id = 0;
+
+        if (d[i] != 0xB5 || d[i + 1] != 0x62 || i + 8 + len > n) {
+            i++;
+            continue;
+        }
+        if (d[i + 2] == 0x06 && d[i + 3] != 0x04) {
+            cls = 0x05;
+            id = 0x01;
+            pl[0] = d[i + 2];
+            pl[1] = d[i + 3];
+        } else if (d[i + 2] == 0x13 && d[i + 3] != 0x60) {
+            cls = 0x13;
+            id = 0x60;
+            pl[0] = 1;
+            pl[3] = d[i + 3];
+        } else if (d[i + 2] == 0x09 && d[i + 3] == 0x14 && (len == 0 || d[i + 6] == 0)) {
+            cls = 0x09;
+            id = 0x14;
+            pl[0] = len == 0 ? 3 : 2;
+            pl[4] = len == 0 ? 3 : 1;
+        }
+        if (cls != 0) {
+            ucxapp_stream_lock(gStream);
+            if (v->nAns + 16 <= sizeof(v->ans)) {
+                v->nAns += buildFrame(v->ans + v->nAns, cls, id, pl, cls == 0x05 ? 2 : 8);
+            }
+            ucxapp_stream_unlock(gStream);
+        }
+        i += 8 + len;
+    }
+    return true;
+}
 
 static void pushNmea(ucxapp_stream_t *s, const char *body)
 {
@@ -999,7 +1202,17 @@ static void virtPoll(void *ctx, ucxapp_stream_t *s)
     char dmy[8];
     time_t t = time(NULL);
     const struct tm *tm = gmtime(&t);
+    uint8_t ans[sizeof(v->ans)];
+    size_t nAns;
 
+    ucxapp_stream_lock(s);
+    nAns = v->nAns;
+    memcpy(ans, v->ans, nAns);
+    v->nAns = 0;
+    ucxapp_stream_unlock(s);
+    if (nAns > 0) {
+        ucxapp_stream_push(s, ans, nAns);
+    }
     if ((int32_t)(now - v->due) < 0 || tm == NULL) {
         return;
     }
@@ -1049,9 +1262,10 @@ size_t ucxapp_gnss_summary(char *out, size_t size)
     int fix = gP.st.fixType & 3;
     int used = gP.st.satsUsed;
     uint32_t last = gP.st.lastMs;
+    const char *rtk = rtkName(&gP.st);
     ucxapp_stream_unlock(s);
     bool stalled = last == 0 || ucxapp_platform_tick_ms() - last > 3000u;
-    int n = snprintf(out, size, "GNSS %s", stalled ? "no data" : kFix[fix]);
+    int n = snprintf(out, size, "GNSS %s", stalled ? "no data" : rtk != NULL && fix >= 2 ? rtk : kFix[fix]);
     if (!stalled && fix > 0 && n > 0 && (size_t)n < size) {
         n += snprintf(out + n, size - (size_t)n, " %dsv", used);
     }
@@ -1114,10 +1328,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
     }
-    memset(&gP, 0, sizeof(gP));
-    gFence.state = -1;
-    gOpenMs = ucxapp_platform_tick_ms();
-    gFixMs = 0;
+    resetLive();
     gStream = ucxapp_stream_open(port, baud, &cfg);
     if (gStream == NULL) {
         ucxapp_print("ERROR: cannot open %s\n", port);
@@ -1170,6 +1381,84 @@ static void fenceStatus(void)
                  kState[gFence.state + 1], gFence.exits);
 }
 
+/* Age of the last corrections as text (NAV-PVT age range or GGA age); empty when unknown. */
+static void corrAgeText(const gnss_t *s, char *out, size_t size)
+{
+    static const char *const kAge[] = { "", "< 1", "1-2", "2-5", "5-10", "10-15", "15-20", "20-30", "30-45",
+                                        "45-60", "60-90", "90-120", ">= 120", "", "", "" };
+
+    out[0] = '\0';
+    if (s->corrAge > 0 && kAge[s->corrAge & 15][0] != '\0') {
+        snprintf(out, size, "%s s", kAge[s->corrAge & 15]);
+    } else if (s->quality >= 2 && s->diffAge >= 0.0) {
+        snprintf(out, size, "%.1f s", s->diffAge);
+    }
+}
+
+static void rtkStatus(const gnss_t *s)
+{
+    const char *rtk = rtkName(s);
+    char age[24];
+
+    corrAgeText(s, age, sizeof(age));
+    ucxapp_print("RTK:       %s", rtk != NULL ? rtk : "no corrections (gnss.bridge ntrip or pointperfect)");
+    if (age[0] != '\0') {
+        ucxapp_print(", corrections %s old", age);
+    }
+    if (s->hasHp) {
+        ucxapp_print("; accuracy %.4f m horizontal, %.4f m vertical", s->hpHAcc, s->hpVAcc);
+    } else if (s->hasAcc) {
+        ucxapp_print("; accuracy %.3f m horizontal, %.3f m vertical", s->hAcc, s->vAcc);
+    }
+    ucxapp_print("\n");
+}
+
+static bool isVirtual(void)
+{
+    return gReplay.f != NULL || gVirt.on;
+}
+
+/* Polls UBX-SEC-SIG, MON-RF and NAV-STATUS from a real receiver that speaks UBX; waits briefly for the answers. */
+static void pollSecurity(void)
+{
+    static const uint8_t kPolls[][2] = { { 0x27, 0x09 }, { 0x0A, 0x38 }, { 0x01, 0x03 } };
+    uint8_t f[8];
+    uint32_t seq = gSnap.secSeq;
+
+    if (isVirtual() || gSnap.ubx == 0) {
+        return;
+    }
+    for (size_t i = 0; i < sizeof(kPolls) / sizeof(kPolls[0]); i++) {
+        size_t n = buildFrame(f, kPolls[i][0], kPolls[i][1], NULL, 0);
+        (void)ucxapp_stream_write(gStream, f, n);
+    }
+    for (int i = 0; i < 10 && gSnap.secSeq - seq < 3u; i++) {
+        ucxapp_platform_sleep_ms(50);
+        snapshot();
+    }
+}
+
+static void securityStatus(const gnss_t *s)
+{
+    int jam = maxInt(s->secJam, s->rfJam);
+    int spoof = maxInt(s->secSpoof, s->navSpoof);
+
+    if (jam == 0 && spoof == 0 && !s->hasRf) {
+        ucxapp_print("Security:  unknown (gnss.cfg msg sec-sig 1 and mon-rf 1 report it every epoch)\n");
+        return;
+    }
+    ucxapp_print("Security:  jamming %s, spoofing %s", kJam[jam], spoof >= 2 ? kSpoof[spoof] + 9 : kSpoof[spoof]);
+    if (s->hasRf) {
+        ucxapp_print(", CW indicator %d/255, antenna %s%s", s->cw, antName(s->antStatus),
+                     s->antPower == 1 ? " (powered)" : "");
+    }
+    ucxapp_print("\n");
+}
+
+/* UPD-SOS restore status of the last start. */
+static const char *const kRestore[] = { "unknown", "restore failed", "restored from the backup",
+                                        "started without a backup" };
+
 static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
 {
     static const char *const kFix[] = { "no fix", "dead reckoning", "2D", "3D" };
@@ -1183,6 +1472,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     snapshot();
+    pollSecurity();
     for (int i = 0; i < gSnap.nsat; i++) {
         used += satUsed(&gSnap, &gSnap.sats[i], now) ? 1 : 0;
     }
@@ -1206,9 +1496,14 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
         }
     }
     ucxapp_print("Fix:       %s%s\n", kFix[gSnap.fixType & 3], gSnap.hasPos ? "" : " (no position)");
-    if (gSnap.hasPos) {
+    if (gSnap.hasPos && gSnap.hasHp) {
+        ucxapp_print("Position:  %.9f, %.9f  alt %.4f m (high precision)\n", gSnap.hpLat, gSnap.hpLon, gSnap.hpAlt);
+    } else if (gSnap.hasPos) {
         ucxapp_print("Position:  %.7f, %.7f  alt %.1f m\n", gSnap.lat, gSnap.lon, gSnap.alt);
+    }
+    if (gSnap.hasPos) {
         ucxapp_print("Motion:    %.2f m/s, course %.1f deg\n", gSnap.speed, gSnap.course);
+        rtkStatus(&gSnap);
     }
     if (gSnap.hasTime) {
         ucxapp_print("Time:      %04d-%02d-%02d %02d:%02d:%02d UTC\n", gSnap.hasDate ? gSnap.year : 0,
@@ -1216,6 +1511,10 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("Satellites: %d used of %d tracked; HDOP %.1f VDOP %.1f PDOP %.1f\n",
                  gSnap.satsUsed > 0 ? gSnap.satsUsed : used, gSnap.nsat, gSnap.hdop, gSnap.vdop, gSnap.pdop);
+    securityStatus(&gSnap);
+    if (gSnap.sosSeq > 0) {
+        ucxapp_print("Backup:    %s\n", kRestore[gSnap.sosRestore & 3]);
+    }
     ucxapp_print("Log:       %s\n", gMsgLog != NULL ? gMsgLogName :
                  (ucxapp_stream_log_name(gStream)[0] ? ucxapp_stream_log_name(gStream) : "off"));
     fenceStatus();
@@ -1307,7 +1606,10 @@ bool ucxapp_gnss_dash(char *out, size_t size)
         return true;
     }
     countSats(now, &used, &seen);
-    snprintf(out, size, "%s  %d/%d sats  HDOP %.1f", kFix[gSnap.fixType & 3], used, seen, gSnap.hdop);
+    snprintf(out, size, "%s  %d/%d sats  HDOP %.1f%s%s%s%s", kFix[gSnap.fixType & 3], used, seen, gSnap.hdop,
+             rtkName(&gSnap) != NULL ? "  " : "", rtkName(&gSnap) != NULL ? rtkName(&gSnap) : "",
+             maxInt(gSnap.secJam, gSnap.rfJam) >= 2 ? "  JAMMING" : "",
+             maxInt(gSnap.secSpoof, gSnap.navSpoof) >= 2 ? "  SPOOFING" : "");
     return true;
 }
 
@@ -1356,6 +1658,22 @@ static void printCard(void)
         if (gSnap.hasTime) {
             ucxapp_print(U8_VLINE " TIME  %04d-%02d-%02d %02d:%02d:%02d UTC\n", gSnap.hasDate ? gSnap.year : 0,
                          gSnap.month, gSnap.day, gSnap.hour, gSnap.min, gSnap.sec);
+        }
+        if (rtkName(&gSnap) != NULL || gSnap.hasAcc) {
+            char age[24];
+            corrAgeText(&gSnap, age, sizeof(age));
+            ucxapp_print(U8_VLINE " RTK   %s", rtkName(&gSnap) != NULL ? rtkName(&gSnap) : "none");
+            if (gSnap.hasHp) {
+                ucxapp_print("  \xC2\xB1%.4f m", gSnap.hpHAcc);
+            } else if (gSnap.hasAcc) {
+                ucxapp_print("  \xC2\xB1%.3f m", gSnap.hAcc);
+            }
+            ucxapp_print("%s%s\n", age[0] != '\0' ? "  corrections " : "", age);
+        }
+        if (maxInt(gSnap.secJam, gSnap.rfJam) >= 2 || maxInt(gSnap.secSpoof, gSnap.navSpoof) >= 2 ||
+            (gSnap.hasRf && gSnap.antStatus >= 3)) {
+            ucxapp_print(U8_VLINE " ALERT jamming %s, %s, antenna %s\n", kJam[maxInt(gSnap.secJam, gSnap.rfJam)],
+                         kSpoof[maxInt(gSnap.secSpoof, gSnap.navSpoof)], antName(gSnap.hasRf ? gSnap.antStatus : 1));
         }
     }
     for (int i = 0; i < 39; i++) {
@@ -1488,10 +1806,7 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
     gReplay.f = f;
     gReplay.speed = speed;
     snprintf(gReplay.name, sizeof(gReplay.name), "%s", argv[1]);
-    memset(&gP, 0, sizeof(gP));
-    gFence.state = -1;
-    gOpenMs = ucxapp_platform_tick_ms();
-    gFixMs = 0;
+    resetLive();
     gStream = ucxapp_stream_open("virt:replay", 0, &cfg);
     if (gStream == NULL) {
         fclose(f);
@@ -1516,7 +1831,7 @@ static bool parseDouble(const char *s, double *out, double lo, double hi)
 
 static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
 {
-    ucxapp_stream_cfg_t cfg = { "gnss", onData, virtPoll, 50, &gVirt, replayWrite };
+    ucxapp_stream_cfg_t cfg = { "gnss", onData, virtPoll, 50, &gVirt, virtWrite };
     double lat = MALMO_LAT;
     double lon = MALMO_LON;
     double alt = MALMO_ALT;
@@ -1552,10 +1867,7 @@ static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("note: no location from the host (location service off or missing), using u-blox in Malmo\n");
         }
     }
-    memset(&gP, 0, sizeof(gP));
-    gFence.state = -1;
-    gOpenMs = ucxapp_platform_tick_ms();
-    gFixMs = 0;
+    resetLive();
     memset(&gVirt, 0, sizeof(gVirt));
     gVirt.lat = lat;
     gVirt.lon = lon;
@@ -1981,6 +2293,330 @@ static int cmdRate(ucxapp_t *app, int argc, char *argv[])
     return ucxapp_stream_write(gStream, buf, n) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+/* ---- Configuration: UBX-CFG-VALSET (PROTVER 23 and later) or the older UBX-CFG messages ---- */
+
+typedef struct {
+    uint8_t pl[64];
+    size_t len;
+} valset_t;
+
+static void valsetBegin(valset_t *v)
+{
+    memset(v, 0, sizeof(*v));
+    v->pl[1] = 0x01;   /* layer: RAM */
+    v->len = 4;
+}
+
+/* Appends a key and its value; the key's size field (bits 28-30) gives the value width. */
+static void valsetAdd(valset_t *v, uint32_t key, uint32_t val)
+{
+    uint32_t size = (key >> 28) & 7u;
+    size_t n = size == 4 ? 4 : size == 3 ? 2 : 1;
+
+    if (v->len + 4 + n > sizeof(v->pl)) {
+        return;
+    }
+    for (int i = 0; i < 4; i++) {
+        v->pl[v->len++] = (uint8_t)(key >> (8 * i));
+    }
+    for (size_t i = 0; i < n; i++) {
+        v->pl[v->len++] = (uint8_t)(val >> (8 * i));
+    }
+}
+
+/* True when the receiver takes UBX-CFG-VALSET (PROTVER 23+, or unknown: assume a current receiver). */
+static bool hasValset(void)
+{
+    return gSnap.proto[0] == '\0' || strtol(gSnap.proto, NULL, 10) >= 23;
+}
+
+/* Sends a UBX command and waits for its UBX-ACK: 1 acknowledged, 0 refused (ACK-NAK), -1 no answer. */
+static int sendAcked(uint8_t cls, uint8_t id, const uint8_t *pl, size_t len)
+{
+    uint8_t f[8 + 64];
+    size_t n = buildFrame(f, cls, id, pl, len);
+
+    snapshot();
+    uint32_t seq = gSnap.ackSeq;
+    if (n == 0 || !ucxapp_stream_write(gStream, f, n)) {
+        return -1;
+    }
+    for (int i = 0; i < 20; i++) {
+        ucxapp_platform_sleep_ms(50);
+        snapshot();
+        if (gSnap.ackSeq != seq && gSnap.ackCls == cls && gSnap.ackId == id) {
+            return gSnap.ackOk ? 1 : 0;
+        }
+    }
+    return -1;
+}
+
+static int cfgResult(int rc, const char *done)
+{
+    if (rc == 1) {
+        ucxapp_print("%s\n", done);
+        return UCXAPP_OK;
+    }
+    ucxapp_print(rc == 0 ? "ERROR: the receiver refused it (UBX-ACK-NAK)\n"
+                         : "ERROR: no answer from the receiver (no UBX-ACK; does it speak UBX?)\n");
+    return UCXAPP_ERR_FAILED;
+}
+
+/* Switches the receiver's UART to a new baud rate, reopens the port at that rate and checks that data still arrives. */
+static int cfgBaud(int32_t baud)
+{
+    ucxapp_stream_cfg_t cfg = { "gnss", onData, NULL, 0, NULL, NULL };
+    valset_t v;
+    uint8_t f[8 + 64];
+    char port[32];
+    size_t n;
+
+    if (isVirtual()) {
+        ucxapp_print("ERROR: a virtual receiver has no baud rate\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (ucxapp_stream_bridge_active(gStream) || ucxapp_stream_log_name(gStream)[0] != '\0') {
+        ucxapp_print("ERROR: stop the bridges (gnss.bridge off) and the raw log (gnss.log off) first\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (hasValset()) {
+        valsetBegin(&v);
+        valsetAdd(&v, 0x40520001, (uint32_t)baud);   /* CFG-UART1-BAUDRATE */
+        n = buildFrame(f, 0x06, 0x8A, v.pl, v.len);
+    } else {
+        uint8_t pl[20] = { 1, 0, 0, 0, 0xD0, 0x08, 0, 0, 0, 0, 0, 0, 0x07, 0, 0x03, 0, 0, 0, 0, 0 };
+        for (int i = 0; i < 4; i++) {
+            pl[8 + i] = (uint8_t)((uint32_t)baud >> (8 * i));
+        }
+        n = buildFrame(f, 0x06, 0x00, pl, sizeof(pl));   /* CFG-PRT: UART1, 8N1, UBX+NMEA+RTCM in, UBX+NMEA out */
+    }
+    snprintf(port, sizeof(port), "%s", ucxapp_stream_port(gStream));
+    (void)ucxapp_stream_write(gStream, f, n);
+    ucxapp_platform_sleep_ms(200);
+    ucxapp_stream_close(gStream);
+    gStream = ucxapp_stream_open(port, baud, &cfg);
+    if (gStream == NULL) {
+        ucxapp_print("ERROR: cannot reopen %s at %d baud\n", port, (int)baud);
+        return UCXAPP_ERR_FAILED;
+    }
+    snapshot();
+    uint32_t seen = gSnap.nmea + gSnap.ubx;
+    for (int i = 0; i < 40 && gSnap.nmea + gSnap.ubx == seen; i++) {
+        ucxapp_platform_sleep_ms(50);
+        snapshot();
+    }
+    if (gSnap.nmea + gSnap.ubx == seen) {
+        ucxapp_print("WARNING: no data at %d baud; the receiver may not have switched (gnss.close, then gnss.open finds it)\n",
+                     (int)baud);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_last_port_save("gnss", port, baud);
+    ucxapp_print("receiver and %s now at %d baud (gnss.cfg save keeps it over a power cycle)\n", port, (int)baud);
+    return UCXAPP_OK;
+}
+
+static int cmdCfg(ucxapp_t *app, int argc, char *argv[])
+{
+    static const struct { const char *name; uint32_t key; } kGnss[] = {
+        { "gps", 0x1031001f }, { "sbas", 0x10310020 }, { "gal", 0x10310021 }, { "bds", 0x10310022 },
+        { "qzss", 0x10310024 }, { "glo", 0x10310025 }, { "navic", 0x10310026 },
+    };
+    static const char *const kModel[] = { "portable", "", "stationary", "pedestrian", "automotive", "sea", "air1g",
+                                          "air2g", "air4g", "wrist", "bike", "mower", "escooter" };
+    static const struct { const char *name; uint32_t key; uint8_t cls, id; } kMsg[] = {
+        { "gga", 0x209100bb, 0xF0, 0x00 }, { "gll", 0x209100ca, 0xF0, 0x01 }, { "gsa", 0x209100c0, 0xF0, 0x02 },
+        { "gsv", 0x209100c5, 0xF0, 0x03 }, { "rmc", 0x209100ac, 0xF0, 0x04 }, { "vtg", 0x209100b1, 0xF0, 0x05 },
+        { "gst", 0x209100d4, 0xF0, 0x07 }, { "zda", 0x209100d9, 0xF0, 0x08 }, { "gns", 0x209100b6, 0xF0, 0x0D },
+        { "nav-pvt", 0x20910007, 0x01, 0x07 }, { "nav-sat", 0x20910016, 0x01, 0x35 },
+        { "nav-hpposllh", 0x20910034, 0x01, 0x14 },
+        { "nav-status", 0x2091001b, 0x01, 0x03 }, { "mon-rf", 0x2091035a, 0x0A, 0x38 },
+        { "sec-sig", 0x20910635, 0x27, 0x09 },
+    };
+    const char *sub = argc > 1 ? argv[1] : "";
+    char done[160];
+    valset_t v;
+    int32_t val;
+    (void)app;
+
+    valsetBegin(&v);
+    if (strcasecmp(sub, "gnss") == 0 && argc == 3) {
+        char list[64];
+        unsigned mask = 0;
+
+        snprintf(list, sizeof(list), "%s", argv[2]);
+        for (char *t = strtok(list, ","); t != NULL; t = strtok(NULL, ",")) {
+            size_t i = 0;
+            while (i < sizeof(kGnss) / sizeof(kGnss[0]) && strcasecmp(t, kGnss[i].name) != 0) {
+                i++;
+            }
+            if (i == sizeof(kGnss) / sizeof(kGnss[0])) {
+                return UCXAPP_ERR_USAGE;
+            }
+            mask |= 1u << i;
+        }
+        if (mask == 0) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snapshot();
+        if (!hasValset()) {
+            ucxapp_print("ERROR: choosing GNSS systems needs a receiver with PROTVER 23 or later (u-center for older ones)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        for (size_t i = 0; i < sizeof(kGnss) / sizeof(kGnss[0]); i++) {
+            valsetAdd(&v, kGnss[i].key, (mask >> i) & 1u);
+        }
+        snprintf(done, sizeof(done), "GNSS systems set to %s (the receiver restarts tracking; gnss.cfg save keeps it)",
+                 argv[2]);
+        return cfgResult(sendAcked(0x06, 0x8A, v.pl, v.len), done);
+    }
+    if (strcasecmp(sub, "model") == 0 && argc == 3) {
+        size_t m = 0;
+        while (m < sizeof(kModel) / sizeof(kModel[0]) && (kModel[m][0] == '\0' || strcasecmp(argv[2], kModel[m]) != 0)) {
+            m++;
+        }
+        if (m == sizeof(kModel) / sizeof(kModel[0])) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snapshot();
+        snprintf(done, sizeof(done), "dynamic model set to %s (not saved; gnss.cfg save keeps it)", kModel[m]);
+        if (hasValset()) {
+            valsetAdd(&v, 0x20110021, (uint32_t)m);   /* CFG-NAVSPG-DYNMODEL */
+            return cfgResult(sendAcked(0x06, 0x8A, v.pl, v.len), done);
+        }
+        uint8_t nav5[36] = { 0x01, 0x00, (uint8_t)m };   /* CFG-NAV5, mask: dynModel only */
+        return cfgResult(sendAcked(0x06, 0x24, nav5, sizeof(nav5)), done);
+    }
+    if (strcasecmp(sub, "msg") == 0 && argc == 4) {
+        size_t m = 0;
+        while (m < sizeof(kMsg) / sizeof(kMsg[0]) && strcasecmp(argv[2], kMsg[m].name) != 0) {
+            m++;
+        }
+        if (m == sizeof(kMsg) / sizeof(kMsg[0]) || !ucxapp_parse_int(argv[3], &val) || val < 0 || val > 255) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snapshot();
+        if (val == 0) {
+            snprintf(done, sizeof(done), "%s off on UART1 and USB", kMsg[m].name);
+        } else {
+            snprintf(done, sizeof(done), "%s on UART1 and USB every %d epoch(s)", kMsg[m].name, (int)val);
+        }
+        if (hasValset()) {
+            valsetAdd(&v, kMsg[m].key, (uint32_t)val);       /* CFG-MSGOUT-..._UART1 */
+            valsetAdd(&v, kMsg[m].key + 2, (uint32_t)val);   /* ..._USB */
+            return cfgResult(sendAcked(0x06, 0x8A, v.pl, v.len), done);
+        }
+        uint8_t msg[3] = { kMsg[m].cls, kMsg[m].id, (uint8_t)val };   /* CFG-MSG: rate on the current port */
+        return cfgResult(sendAcked(0x06, 0x01, msg, sizeof(msg)), done);
+    }
+    if (strcasecmp(sub, "baud") == 0 && argc == 3) {
+        size_t b = 0;
+        if (!ucxapp_parse_int(argv[2], &val)) {
+            return UCXAPP_ERR_USAGE;
+        }
+        while (b < sizeof(kBauds) / sizeof(kBauds[0]) && kBauds[b] != val) {
+            b++;
+        }
+        if (b == sizeof(kBauds) / sizeof(kBauds[0])) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snapshot();
+        return cfgBaud(val);
+    }
+    if ((strcasecmp(sub, "save") == 0 || strcasecmp(sub, "reset") == 0) && argc == 2) {
+        bool save = strcasecmp(sub, "save") == 0;
+        /* CFG-CFG: clearMask, saveMask, loadMask, deviceMask (BBR, flash, EEPROM, SPI flash) */
+        uint8_t pl[13] = { 0 };
+        pl[save ? 4 : 0] = 0xFF;
+        pl[save ? 5 : 1] = 0xFF;
+        if (!save) {
+            pl[8] = 0xFF;
+            pl[9] = 0xFF;
+        }
+        pl[12] = 0x17;
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        return cfgResult(sendAcked(0x06, 0x09, pl, sizeof(pl)),
+                         save ? "configuration saved to the receiver's battery-backed RAM and flash"
+                              : "configuration reset to the factory defaults (the UART baud rate may change: gnss.close, "
+                                "then gnss.open finds it)");
+    }
+    return UCXAPP_ERR_USAGE;
+}
+
+/* ---- Save-on-shutdown: UBX-UPD-SOS keeps the receiver state in flash for a fast start after power off ---- */
+
+static int cmdBackup(ucxapp_t *app, int argc, char *argv[])
+{
+    static const uint8_t kStop[4] = { 0, 0, 0x08, 0 };   /* CFG-RST: controlled GNSS stop */
+    uint8_t pl[4] = { 0 };
+    uint8_t f[8 + 4];
+    size_t n;
+    const char *sub = argc == 2 ? argv[1] : "";
+    (void)app;
+
+    if (strcasecmp(sub, "save") != 0 && strcasecmp(sub, "clear") != 0 && strcasecmp(sub, "status") != 0) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    snapshot();
+    if (strcasecmp(sub, "status") == 0) {
+        uint32_t seq = gSnap.sosSeq;
+        n = buildFrame(f, 0x09, 0x14, NULL, 0);
+        (void)ucxapp_stream_write(gStream, f, n);
+        for (int i = 0; i < 20 && gSnap.sosSeq == seq; i++) {
+            ucxapp_platform_sleep_ms(50);
+            snapshot();
+        }
+        if (gSnap.sosSeq == seq) {
+            ucxapp_print("ERROR: no UBX-UPD-SOS answer (needs a u-blox M8 or later receiver)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("last start: %s\n", kRestore[gSnap.sosRestore & 3]);
+        return UCXAPP_OK;
+    }
+    if (strcasecmp(sub, "clear") == 0) {
+        pl[0] = 1;
+        n = buildFrame(f, 0x09, 0x14, pl, sizeof(pl));
+        if (!ucxapp_stream_write(gStream, f, n)) {
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("backup cleared\n");
+        return UCXAPP_OK;
+    }
+    uint32_t seq = gSnap.sosAckSeq;
+    n = buildFrame(f, 0x06, 0x04, kStop, sizeof(kStop));
+    (void)ucxapp_stream_write(gStream, f, n);
+    ucxapp_platform_sleep_ms(100);
+    n = buildFrame(f, 0x09, 0x14, pl, sizeof(pl));
+    (void)ucxapp_stream_write(gStream, f, n);
+    for (int i = 0; i < 60 && gSnap.sosAckSeq == seq; i++) {
+        ucxapp_platform_sleep_ms(50);
+        snapshot();
+    }
+    if (gSnap.sosAckSeq == seq || gSnap.sosAck != 1) {
+        ucxapp_print("ERROR: %s (UBX-UPD-SOS)\n", gSnap.sosAckSeq == seq ? "no backup confirmation" : "backup failed");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("backup saved and navigation stopped: power the receiver off now; it restores on the next start "
+                 "(gnss.restart hot carries on instead)\n");
+    return UCXAPP_OK;
+}
+
 /* ---- AssistNow: UBX-MGA assistance (time, orbits, almanac) from u-blox, fetched over the module's Wi-Fi ---- */
 
 #define ASSIST_FILE  "assistnow.ubx"
@@ -1989,11 +2625,51 @@ static int cmdRate(ucxapp_t *app, int argc, char *argv[])
 #define ASSIST_ZTP   "https://api.thingstream.io/ztp/assistnow/credentials"
 #define ASSIST_LEGACY "https://online-live1.services.u-blox.com/GetOnlineData.ashx"
 
-/* Sends every UBX-MGA frame of an AssistNow answer to the receiver, unchanged and in order; other bytes are skipped. */
+/* Turns UBX-MGA-ACK-DATA0 on or off (CFG-NAVSPG-ACKAIDING); true when the receiver took it. */
+static bool assistAckAiding(bool on)
+{
+    valset_t v;
+
+    if (!hasValset()) {
+        return false;
+    }
+    valsetBegin(&v);
+    valsetAdd(&v, 0x10110025, on ? 1u : 0u);
+    return sendAcked(0x06, 0x8A, v.pl, v.len) == 1;
+}
+
+/* Waits for the UBX-MGA-ACK-DATA0 of message id after seq: 1 accepted, 0 refused, -1 none in time. */
+static int assistWaitAck(uint32_t seq, uint8_t id, uint8_t *info)
+{
+    uint32_t start = ucxapp_platform_tick_ms();
+
+    do {
+        ucxapp_stream_lock(gStream);
+        bool got = gP.st.mgaSeq != seq && gP.st.mgaId == id;
+        bool ok = gP.st.mgaOk;
+        *info = gP.st.mgaInfo;
+        ucxapp_stream_unlock(gStream);
+        if (got) {
+            return ok ? 1 : 0;
+        }
+        ucxapp_platform_sleep_ms(1);
+    } while (ucxapp_platform_tick_ms() - start < 1000u);
+    return -1;
+}
+
+/* Sends every UBX-MGA frame of an AssistNow answer to the receiver, unchanged and in order; other bytes are skipped.
+   Like ubxlib's uGnssMga, each message waits for its UBX-MGA-ACK-DATA0 when the receiver gives one, so a slow UART
+   never drops data; receivers without it get a short pause between messages instead. */
 static int assistSend(const uint8_t *d, size_t len, const char *name)
 {
     unsigned frames = 0;
+    unsigned accepted = 0;
+    unsigned refused = 0;
+    unsigned lost = 0;
+    uint8_t lastInfo = 0;
     size_t bytes = 0;
+    bool acked = assistAckAiding(true);
+    bool flow = acked;
 
     for (size_t i = 0; i + 8 <= len;) {
         size_t pl = le16(d + i + 4);
@@ -2012,14 +2688,38 @@ static int assistSend(const uint8_t *d, size_t len, const char *name)
             i++;
             continue;
         }
+        ucxapp_stream_lock(gStream);
+        uint32_t seq = gP.st.mgaSeq;
+        ucxapp_stream_unlock(gStream);
         if (!ucxapp_stream_write(gStream, d + i, pl + 8)) {
             ucxapp_print("ERROR: write to the receiver failed after %u messages\n", frames);
+            if (acked) {
+                assistAckAiding(false);
+            }
             return UCXAPP_ERR_FAILED;
+        }
+        if (flow) {
+            uint8_t info = 0;
+            int rc = assistWaitAck(seq, d[i + 3], &info);
+            if (rc == 1) {
+                accepted++;
+            } else if (rc == 0) {
+                refused++;
+                lastInfo = info;
+            } else if (accepted + refused == 0) {
+                flow = false;   /* acknowledged the setting but not the data: pace instead */
+            } else {
+                lost++;
+            }
+        } else {
+            ucxapp_platform_sleep_ms(2);   /* lets the receiver keep up at low baud rates */
         }
         frames++;
         bytes += pl + 8;
         i += pl + 8;
-        ucxapp_platform_sleep_ms(2);   /* lets the receiver keep up at low baud rates */
+    }
+    if (acked) {
+        assistAckAiding(false);
     }
     if (frames == 0) {
         size_t n = 0;
@@ -2031,7 +2731,17 @@ static int assistSend(const uint8_t *d, size_t len, const char *name)
     }
     ucxapp_print("%u UBX-MGA messages (%u bytes) sent to the receiver; gnss.watch shows the time to first fix\n",
                  frames, (unsigned)bytes);
-    return UCXAPP_OK;
+    if (flow) {
+        ucxapp_print("receiver accepted %u, refused %u, no answer %u (UBX-MGA-ACK)\n", accepted, refused, lost);
+        if (refused > 0) {
+            /* UBX-MGA-ACK-DATA0 infoCode */
+            static const char *const kWhy[] = { "accepted", "no time yet", "version not supported",
+                                                "bad size", "database store failed", "not ready", "unknown type" };
+            ucxapp_print("last refusal: %s; send the MGA-INI-TIME message first, or fetch fresh data\n",
+                         lastInfo < 7 ? kWhy[lastInfo] : "unknown reason");
+        }
+    }
+    return refused + lost > 0 && accepted == 0 && flow ? UCXAPP_ERR_FAILED : UCXAPP_OK;
 }
 
 static int assistFile(const char *name)
@@ -2335,6 +3045,36 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         return ucxapp_stream_bridge_ntrip(gStream, app, argv[2], port, argv[4], user, pass, 10, ble)
                    ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
+    if (argc >= 2 && strcasecmp(argv[1], "pointperfect") == 0) {
+        static const char *const kRegions[] = { "eu", "us", "kr", "au", "jp" };
+        const char *region = argc > 3 ? argv[3] : "eu";
+        const char *cert = argc > 4 ? argv[4] : "pointperfect";
+        char topic[32];
+        const char *topics[2] = { "/pp/ubx/0236/ip", topic };
+        size_t r = 0;
+        valset_t v;
+        uint8_t f[8 + 64];
+
+        while (r < sizeof(kRegions) / sizeof(kRegions[0]) && strcasecmp(region, kRegions[r]) != 0) {
+            r++;
+        }
+        if (argc < 3 || argc > 5 || r == sizeof(kRegions) / sizeof(kRegions[0]) || !assistSafe(argv[2], "-_:.") ||
+            !assistSafe(cert, "-_.")) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (!needOpen()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        snprintf(topic, sizeof(topic), "/pp/ip/%s", kRegions[r]);
+        /* SPARTN in on UART1 and USB, corrections from IP (not L-band); ignored by receivers without SPARTN */
+        valsetBegin(&v);
+        valsetAdd(&v, 0x10730005, 1);   /* CFG-UART1INPROT-SPARTN */
+        valsetAdd(&v, 0x10770005, 1);   /* CFG-USBINPROT-SPARTN */
+        valsetAdd(&v, 0x20a70001, 0);   /* CFG-SPARTN-USE_SOURCE: IP */
+        (void)ucxapp_stream_write(gStream, f, buildFrame(f, 0x06, 0x8A, v.pl, v.len));
+        return ucxapp_stream_bridge_mqtt(gStream, app, "pp.services.u-blox.com", 8883, argv[2], cert, topics, 2)
+                   ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    }
     if (argc < 2 || argc > 6) {
         return UCXAPP_ERR_USAGE;
     }
@@ -2348,9 +3088,9 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.detect", "[port]", "Find a GNSS receiver on the serial ports and report its baud rate", 0, cmdDetect },
     { "gnss.open", "[port] [baud]", "Open a receiver (detects port and baud when omitted)", 0, cmdOpen },
     { "gnss.close", "", "Close the receiver", 0, cmdClose },
-    { "gnss.status", "", "Fix, position, time, satellites and counters", 0, cmdStatus },
+    { "gnss.status", "", "Fix, position, RTK state and accuracy, time, satellites, jamming/spoofing/antenna and counters", 0, cmdStatus },
     { "gnss.sats", "", "Satellites in view with elevation, azimuth and signal strength", 0, cmdSats },
-    { "gnss.watch", "[seconds]", "Live card once a second (fix, satellites, HDOP, position, time to first fix); default 10 s, any key stops", 0, cmdWatch },
+    { "gnss.watch", "[seconds]", "Live card once a second (fix, RTK, satellites, HDOP, position, time to first fix, jamming/spoofing alerts); default 10 s, any key stops", 0, cmdWatch },
     { "gnss.log", "<file|off> [nmea|ubx]", "Record the raw receiver stream (NMEA/UBX) to a file; nmea or ubx keeps only valid NMEA sentences or UBX frames, for gnss.replay and u-center", 0, cmdLog },
     { "gnss.replay", "<file.nmea|file.ubx> [speed]", "Virtual receiver: play an NMEA or UBX recording (gnss.log, u-center, nmeagen.org) in real time or at speed 0.1 to 100, looping; every gnss.* command and bridge works on it", 0, cmdReplay },
     { "gnss.virtual", "[host|malmo|<lat> <lon> [alt]|off]", "Virtual receiver at the host's location (Windows Location, GeoClue on Linux; u-blox Malmo when unknown), u-blox Malmo or a given position: NMEA once a second for bridges and tests", 0, cmdVirtual },
@@ -2359,8 +3099,10 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
+    { "gnss.cfg", "gnss <gps,gal,bds,glo,qzss,sbas,navic>|model <portable|stationary|pedestrian|automotive|sea|air1g|air2g|air4g|wrist|bike|mower|escooter>|msg <name> <rate>|baud <rate>|save|reset", "Configure the receiver (UBX-CFG-VALSET, older UBX-CFG messages before PROTVER 23) and check its UBX-ACK: GNSS systems, dynamic model, message rates (gga gll gsa gsv rmc vtg gst zda gns nav-pvt nav-hpposllh nav-sat nav-status mon-rf sec-sig; 0 = off), UART baud (reopens the port), save to flash or factory reset", 0, cmdCfg },
+    { "gnss.backup", "<save|clear|status>", "Save-on-shutdown (UBX-UPD-SOS): save stops navigation and keeps the receiver state in flash for a fast start after power off; status shows how the last start went", 0, cmdBackup },
     { "gnss.assist", "<file.ubx>|online [gnss] [data]|register <ztp-token>|chipcode <code>|id [ztp-token]|legacy <token> [gnss]", "u-blox AssistNow: fetch UBX-MGA time, orbits and almanac over the module's Wi-Fi (or take a file) and send them to the receiver for a fast first fix", 0, cmdAssist },
-    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble] [cell]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off [n]|status>", "Two-way bridges of the receiver stream (TCP server/client, NTRIP corrections, UDP, BLE NUS/SPS, PC UART); up to 4 at once", 0, cmdBridge },
+    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|ntrip <host> <port> <mount> [user pass] [ble] [cell]|pointperfect <client-id> [eu|us|kr|au|jp] [cert]|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off [n]|status>", "Two-way bridges of the receiver stream (TCP server/client, NTRIP corrections, PointPerfect SPARTN over MQTT with the certificates <cert>, <cert>-key and <cert>-ca, UDP, BLE NUS/SPS, PC UART); up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux, STM32 (FreeRTOS and Zephyr) and the
 browser app, sign the Windows exe and publish one archive with the layout windows/, linux/,
-stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/ (optional: left out when the browser build failed).
+stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/ (every part is required).
 
 1. Checks the work tree is clean, on master and in sync with origin.
-2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards, offline
-   tests) and commits the refreshed memory tables in README.md and docs/STM32_MEMORY.md.
+2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards on FreeRTOS
+   and Zephyr, WebAssembly, offline tests) and commits the refreshed memory tables in README.md and
+   docs/STM32_MEMORY.md.
 3. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
 4. Tags and pushes; .github/workflows/release.yml builds Linux, STM32, Zephyr and WebAssembly into the
    `release-tree` artifact.
@@ -123,7 +124,7 @@ def package(tree, archive, root=None):
     if root is None:
         missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
         missing += [f"zephyr_{b}" for b in STM32_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
-        for f in ("windows/ucxapp.exe", "linux/ucxapp"):
+        for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm"):
             if not (tree / f).is_file():
                 missing.append(f)
         if missing:
@@ -207,12 +208,9 @@ def finish(args, tag, tree, exe):
     archive = dist / f"ucxapp-{tag}.zip"
     package(tree, archive)
     assets = [archive, exe, tree / "linux" / "ucxapp"]
-    if (tree / "wasm" / "ucxapp.wasm").is_file():
-        web = dist / f"ucxapp-wasm-{tag}.zip"
-        package(tree, web, tree / "wasm")
-        assets.append(web)
-    else:
-        print("No WebAssembly build in the tree (optional), releasing without the browser app")
+    web = dist / f"ucxapp-wasm-{tag}.zip"
+    package(tree, web, tree / "wasm")
+    assets.append(web)
 
     step("Creating the release")
     run("gh", "release", "create", tag, *assets,

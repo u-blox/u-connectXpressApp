@@ -21,12 +21,12 @@ def vucx():
     module.stop()
 
 
-def _run(exe, port, *commands, timeout=60):
+def _run(exe, port, *commands, timeout=60, cwd=None):
     args = [str(exe), port]
     for command in commands:
         args += ["--exec", command]
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, errors="replace",
-                          stdin=subprocess.DEVNULL)
+                          stdin=subprocess.DEVNULL, cwd=cwd)
 
 
 def test_empty_module_answers_only_setup(app_exe):
@@ -73,6 +73,52 @@ def test_wifi_scan_lists_networks_strongest_first(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.scan")
     assert out.returncode == 0, out.stdout + str(wifi_module.log)
     assert out.stdout.index("vucx-net") < out.stdout.index("vucx-far"), out.stdout
+
+
+def test_wifi_radio_refuses_until_regdomain_is_chosen(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    _run(app_exe, wifi_module.port, "wifi.profile.add home vucx-net secret123", cwd=tmp_path)
+    for command in ("wifi.scan", "wifi.connect vucx-net secret123", "wifi.ap.enable vucxap secret123",
+                    "wifi.profile.auto", "wifi.locate google k"):
+        out = _run(app_exe, wifi_module.port, command, cwd=tmp_path)
+        assert out.returncode != 0, command + "\n" + out.stdout
+        assert out.stdout.count("ERROR: choose the Wi-Fi regulatory domain") == 1, command + "\n" + out.stdout
+        assert "wifi.regdomain <world|etsi|" in out.stdout, out.stdout
+        assert "Scanning" not in out.stdout and "usable access point" not in out.stdout, out.stdout
+    radio = ("AT+UWRD=", "AT+UWSSC", "AT+UWSCP=", "AT+UWSC=", "AT+UWAPCP=", "AT+UWAPA")
+    assert not [c for c in wifi_module.log if c.startswith(radio)], wifi_module.log
+
+
+def test_wifi_regdomain_once_unlocks_the_radio(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, "wifi.regdomain fcc", "wifi.scan", "wifi.connect vucx-net secret123",
+               "wifi.ap.enable vucxap secret123", cwd=tmp_path)
+    assert "regulatory domain" not in out.stdout, out.stdout
+    assert (tmp_path / "storage" / "ucxapp.regdomain").read_text() == "fcc"
+    assert wifi_module.log.count("AT+UWRD=2") == 4, wifi_module.log
+    assert "vucx-net" in out.stdout, out.stdout
+
+
+def test_wifi_saved_regdomain_wins_over_environment(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.setenv("UCX_REGDOMAIN", "etsi")
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "ucxapp.regdomain").write_text("fcc")
+    _run(app_exe, wifi_module.port, "wifi.scan", cwd=tmp_path)
+    assert "AT+UWRD=2" in wifi_module.log and "AT+UWRD=1" not in wifi_module.log, wifi_module.log
+
+
+def test_wifi_regdomain_from_environment(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.setenv("UCX_REGDOMAIN", "etsi")
+    out = _run(app_exe, wifi_module.port, "wifi.scan", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    assert "AT+UWRD=1" in wifi_module.log, wifi_module.log
+
+
+def test_wifi_regdomain_show_notes_when_unset(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, "wifi.regdomain", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    assert "regdomain=world" in out.stdout and "not chosen yet" in out.stdout, out.stdout
 
 
 def test_wifi_connect_status_disconnect(app_exe, wifi_module):
@@ -269,6 +315,23 @@ def test_gnss_runs_several_bridges_at_once(app_exe, nora):
     assert text.count("bridge 1: TCP server port 2947") >= 4, text[-3000:]   # status twice, bridge.list, gnss.status
 
 
+def test_ntrip_bridge_checks_every_correction_frame(app_exe, nora):
+    """The profile's caster sends RTCM, SPARTN (CRC-8/16/24/32, encrypted, 32-bit time tag) and UBX frames, junk
+    and one RTCM frame with a broken CRC; gnss.bridge status counts good and bad frames of each kind."""
+    from harness.vucx import Feeder
+
+    gnss = Feeder(NMEA, 0.2)
+    port = gnss.start()
+    try:
+        out = _shell(app_exe, nora.port, [
+            f"gnss.open {port} 9600", "gnss.bridge ntrip caster.local 2101 MP", "gnss.watch 3",
+            "gnss.bridge status", "gnss.bridge off"], log=nora.log)
+    finally:
+        gnss.stop()
+    text = out.stdout
+    assert re.search(r"\(RTCM 2 \(1 bad\), SPARTN 4, UBX 1, \d+ bytes outside frames\)", text), text[-3000:]
+
+
 def test_hw_bridges_share_the_stream_until_the_last_one_stops(app_exe, nora):
     """hw.bridge keeps its stream while one bridge is left; only one BLE bridge per stream."""
     out = _shell(app_exe, nora.port, [
@@ -349,3 +412,74 @@ def test_cell_commands_on_a_virtual_modem(app_exe, nora):
         modem.stop()
     assert out.returncode in (0, 1), out.stdout[-3000:]
     assert any(c.startswith("AT+CSQ") for c in modem.log), modem.log
+
+
+def test_cfg_save_diff_load_round_trip(app_exe, tmp_path):
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    port = module.start()
+    try:
+        out = _run(app_exe, port, "cfg.show", "cfg.save a.cfg", "cfg.diff a.cfg", "cfg.load a.cfg nostore",
+                   cwd=tmp_path)
+    finally:
+        module.stop()
+    saved = (tmp_path / "storage" / "a.cfg").read_text()
+    assert out.returncode == 0, out.stdout
+    assert 'AT+UBTLN="vucx"' in out.stdout and 'AT+UBTLN="vucx"' in saved, (out.stdout, saved)
+    assert "NORA-W36" in saved and "no differences" in out.stdout.lower(), out.stdout
+    assert "0 applied" in out.stdout and "AT&W" not in module.log, out.stdout
+
+
+def test_cfg_load_writes_only_changed_known_settings(app_exe, tmp_path):
+    from harness.vucx import Vucx
+
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "b.cfg").write_text('AT+UBTLN="other"\nAT+UBTM=3\nAT+CPWROFF\nAT+GMM\n')
+    module = Vucx("nora-w36.yaml")
+    port = module.start()
+    try:
+        out = _run(app_exe, port, "cfg.load b.cfg", "cfg.diff b.cfg", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert 'AT+UBTLN="other"' in module.log and "AT&W" in module.log, module.log
+    assert "AT+UBTM=3" not in module.log and "AT+CPWROFF" not in module.log, module.log
+    assert "1 applied" in out.stdout and "1 unchanged" in out.stdout and "2 skipped" in out.stdout, out.stdout
+
+
+def test_at_trace_show_and_replay(app_exe, wifi_module, tmp_path):
+    out = _run(app_exe, wifi_module.port, "at.trace t.trace", "wifi.connect vucx-net secret123", "dev.info",
+               "at.trace.stop", "at.trace.show t.trace", "at.replay t.trace", cwd=tmp_path)
+    trace = (tmp_path / "storage" / "t.trace").read_text()
+    assert out.returncode == 0, out.stdout
+    assert " TX AT+GMM" in trace and " RX OK" in trace, trace
+    assert "secret123" not in trace and "****" in trace, trace
+    assert "Wi-Fi network up" in out.stdout and "slowest" in out.stdout.lower(), out.stdout
+    assert "0 different" in out.stdout or "differ" not in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("proto,host", [("udp", "192.168.1.20"), ("tcp", "example.com")])
+def test_perf_rtt_and_tput_over_the_echo(app_exe, proto, host):
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")   # the profile with the echo network behind AT+USO*
+    port = module.start()
+    try:
+        out = _run(app_exe, port, f"perf.rtt {proto} {host} 7 5 64", f"perf.tput {proto} {host} 7 2 128",
+                   "sock.list")
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout + str(module.log)
+    assert "5 sent, 5 received, 0 lost" in out.stdout and "rtt min" in out.stdout, out.stdout
+    assert "0.0% not echoed" in out.stdout and "pattern 0x00-0xFF: 0 breaks" in out.stdout, out.stdout
+    assert "0 socket(s)" in out.stdout, out.stdout
+    # The s-center data pump pattern: one 0x00-0xFF counter running on across every packet sent.
+    sent = [data for cmd, data in module.payloads if cmd.startswith(("AT+USOWB=", "AT+USOSTB="))]
+    stream = b"".join(sent[5:])   # the tput packets, after the 5 rtt ones
+    assert sent[0] == bytes(range(64)) and len(stream) >= 256, sent[:2]
+    assert stream == bytes(i & 0xFF for i in range(len(stream))), stream[:300]
+
+
+def test_perf_sps_needs_a_connection(app_exe, vucx):
+    out = _run(app_exe, vucx.port, "perf.rtt sps 2")
+    assert out.returncode != 0 and "no Bluetooth connection" in out.stdout, out.stdout

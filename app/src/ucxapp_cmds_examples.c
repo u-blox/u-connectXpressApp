@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_xplorer.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -63,6 +64,18 @@ static const example_t kExamples[] = {
       "gnss.bridge uart COM20 115200\n# open COM20's partner port in u-center" },
     { "gnss", "Send positions over cellular",
       "cell.open COM30\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell" },
+    { "gnss", "Centimetre RTK with PointPerfect over MQTT (certificates and client ID from the Thingstream thing)",
+      "cert.upload client device-cert.pem pointperfect\ncert.upload key device-key.pem pointperfect-key\n"
+      "cert.upload ca AmazonRootCA1.pem pointperfect-ca\nwifi.profile.auto\ngnss.open\n"
+      "gnss.bridge pointperfect ${PP_CLIENT_ID} eu\ngnss.watch 120\n# the RTK line goes DGNSS -> RTK float -> RTK fixed" },
+    { "gnss", "Configure the receiver and keep it",
+      "gnss.cfg gnss gps,gal,bds,glo\ngnss.cfg model automotive\ngnss.cfg msg gsv 5\ngnss.cfg msg sec-sig 1\n"
+      "gnss.cfg msg mon-rf 1\ngnss.cfg save" },
+    { "gnss", "Jamming and spoofing watch",
+      "gnss.cfg msg sec-sig 1\ngnss.cfg msg mon-rf 1\ngnss.status\ngnss.watch 600\n"
+      "# JAM:, SPOOF: and ANT: lines report each change" },
+    { "gnss", "Fast start after power off (save-on-shutdown)",
+      "gnss.backup save\n# power the receiver off and on, then:\ngnss.open\ngnss.backup status" },
 
     { "imu", "First look at the sensor",
       "imu.detect\nimu.open\nimu.status" },
@@ -73,8 +86,10 @@ static const example_t kExamples[] = {
     { "imu", "Record a session",
       "imu.log motion.bin\n# ...move...\nimu.log off" },
 
-    { "wifi", "Join a network and check it",
-      "wifi.scan\nwifi.connect 1 MyPassword\nwifi.status\nnet.ping u-blox.com" },
+    { "wifi", "Join a network and check it (choose your country's regulatory domain once first)",
+      "wifi.regdomain etsi\nwifi.scan\nwifi.connect 1 MyPassword\nwifi.status\nnet.ping u-blox.com" },
+    { "wifi", "Faster repeated scans: only the channels of the last scan, full scan every 10th; 'full' clears it",
+      "wifi.channels mixed\nwifi.scan\nwifi.scan\nwifi.channels full" },
     { "wifi", "Save networks and reconnect automatically",
       "wifi.profile.add home MyNetwork MyPassword\nwifi.profile.add office OfficeNet OfficePass\nwifi.profile.auto" },
     { "wifi", "Static IP",
@@ -94,6 +109,10 @@ static const example_t kExamples[] = {
       "wifi.connect HotelGuest\nwifi.portal check\nwifi.portal login room=101 surname=Smith\n"
       "# test on the PC: py -3 tests/harness/captive_portal.py --room\n"
       "# then: wifi.portal login http://192.168.1.10:8080/generate_204 room=101 surname=Smith" },
+    { "wifi", "Where am I? Position from the access points around (Google, Skyhook, HERE or Combain API key)",
+      "wifi.profile.auto\nwifi.locate key google ${GOOGLE_API_KEY}\nwifi.locate\n"
+      "# another service once: wifi.locate combain ${COMBAIN_API_KEY}\n"
+      "# see what is sent: wifi.locate body here" },
 
     { "net", "Is the internet reachable?",
       "net.dns u-blox.com\nnet.ping u-blox.com 4\ndev.diagnose" },
@@ -216,6 +235,32 @@ static const example_t kExamples[] = {
       "bt.defaults secure\nbt.pairing on\nnotify.on\n# the app writes 17|Messages|Anna|See you at 5\nnotify.list\nnotify.action 17 dismiss" },
     { "session", "Record a session for support, replay it elsewhere",
       "session.record issue.ucx\nwifi.connect\nnet.ping 8.8.8.8\nsession.stop\nsession.replay issue.ucx stop" },
+    { "cfg", "Back up a module's settings and compare later",
+      "cfg.show\ncfg.save golden.cfg\n# ... later, or on another module\ncfg.diff golden.cfg" },
+    { "cfg", "Clone one module's settings to another",
+      "cfg.save golden.cfg\n# connect to the second module, then\ncfg.load golden.cfg\ncfg.diff golden.cfg" },
+    { "cfg", "Compare two saved files", "cfg.diff golden.cfg field.cfg" },
+    { "at", "Record the AT traffic, then read it decoded",
+      "at.trace boot.trace\nwifi.connect\nat.trace.stop\nat.trace.show boot.trace" },
+    { "at", "Decode a URC or response", "at.decode +UEWSNU\nat.decode +UEWLD:0,3" },
+    { "at", "Replay a recorded trace and compare the replies", "at.replay boot.trace" },
+    { "perf", "Round-trip time and throughput through the u-blox echo server (TCP and UDP)",
+      "wifi.connect MyNetwork MyPassword\nperf.rtt tcp echo.u-blox.com 7 20\nperf.tput tcp echo.u-blox.com 7 10 512\n"
+      "perf.rtt udp echo.u-blox.com 7 20\nperf.tput udp echo.u-blox.com 7 10 512" },
+    { "perf", "Module to module over Wi-Fi (B echoes, A measures)",
+      "# on module B\nperf.echo udp 7000 120\n# on module A, with B's address\nperf.rtt udp 192.168.1.20 7000 50\nperf.tput udp 192.168.1.20 7000 10 1000" },
+    { "perf", "Bluetooth SPS between two modules (B echoes, A measures)",
+      "# on module B\nperf.echo sps 120\n# on module A\nbt.connect <address-of-B>\nperf.rtt sps 20\nperf.tput sps 10 244" },
+#if UCXAPP_XPLORER
+    { "perf", "The u-connectXplorer phone as the other end (Wi-Fi echo and Bluetooth SPS)",
+      "# phone: u-connectXplorer > Settings > Remote control on, note address and token\n"
+      "xplorer.connect 192.168.1.200 <token>\nwifi.profile.auto\nperf.rtt udp xplorer 7000\n"
+      "perf.tput tcp xplorer 7001 10\nperf.phone tx 10\nperf.phone rx 10\nperf.phone echo 10" },
+    { "xplorer", "Look at and drive the phone app",
+      "xplorer.connect 192.168.1.200 <token>\nxplorer.info\nxplorer.call ble.getState\n"
+      "xplorer.call ble.startScan\nxplorer.call ble.getDevices\nxplorer.call ble.stopScan\n"
+      "xplorer.echo udp 7000\nxplorer.echo state\nxplorer.echo stop" },
+#endif
     { "prod", "Production test with a report per serial number",
       "prod.test\nprod.test examples/automation/production-test.ucx reports" },
     { "app", "Keep the clock in sync and set the module",

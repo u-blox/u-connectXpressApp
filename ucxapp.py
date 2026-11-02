@@ -116,9 +116,9 @@ def parse(argv):
     g.add_argument("--debug", action="store_true", help="Debug configuration (host builds)")
     g.add_argument("--all", action="store_true", help="build Debug and Release (Windows)")
     g.add_argument("--everything", action="store_true",
-                   help="with --build/--rebuild/--clean: Windows, Linux (WSL), every STM32 board and, when emsdk is "
-                        "installed, the WebAssembly site in parallel, one table of results and warnings, then the "
-                        "offline tests")
+                   help="with --build/--rebuild/--clean: Windows, Linux (WSL), every STM32 board on FreeRTOS and, "
+                        "when a Zephyr workspace is found, on Zephyr, and, when emsdk is installed, the WebAssembly "
+                        "site in parallel, one table of results and warnings, then the offline tests")
     g.add_argument("--run", action="store_true", help="start the app after --build/--clean/--rebuild/--sign")
     g = p.add_argument_group("STM32")
     g.add_argument("--erase", action="store_true", help="erase the whole flash")
@@ -172,6 +172,11 @@ def host_exe(debug):
 
 def newest_source():
     files = [*(ROOT / "app" / "src").iterdir(), ROOT / "app" / "CMakeLists.txt"]
+    # The u-connectClient parts the host build compiles, so a library update or fix also triggers a rebuild.
+    lib = ROOT / "u-connectClient"
+    for sub in ("src", "inc", "ucx_api", "ports/os", "ports/uart"):
+        files += (lib / sub).rglob("*.[ch]")
+    files += (lib / "ports").glob("*.h")
     return max(f.stat().st_mtime for f in files if f.is_file())
 
 
@@ -935,6 +940,10 @@ def everything(args):
         print("WSL not found, skipping the Linux build")
     stm32_tools()
     jobs.update({b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+    if zephyr_available():
+        jobs.update({f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in BOARDS})
+    else:
+        print("Zephyr workspace or west not found, skipping the Zephyr builds")
     if emsdk_env(required=False):
         jobs["wasm"] = ["--wasm", *flags]
     else:
@@ -1076,12 +1085,20 @@ def stm32_flash(name, image):
            "-rst"], "flash")
 
 
+def zephyr_bases():
+    upstream = [Path("C:/zephyrproject/zephyr"), Path.home() / "zephyrproject" / "zephyr"]
+    return [str(p) for p in upstream if (p / "VERSION").is_file()] or sorted(glob.glob("C:/ncs/v*/zephyr"))[::-1]
+
+
+def zephyr_available():
+    return bool(shutil.which("west")) and bool(os.environ.get("ZEPHYR_BASE") or zephyr_bases())
+
+
 def zephyr_env():
     """ZEPHYR_BASE and extra modules; prefers an upstream west workspace (C:/zephyrproject, ~/zephyrproject),
     then the newest NCS under C:/ncs with C:/ncs/extra/hal_stm32."""
     if not os.environ.get("ZEPHYR_BASE"):
-        upstream = [Path("C:/zephyrproject/zephyr"), Path.home() / "zephyrproject" / "zephyr"]
-        bases = [str(p) for p in upstream if (p / "VERSION").is_file()] or sorted(glob.glob("C:/ncs/v*/zephyr"))[::-1]
+        bases = zephyr_bases()
         if not bases:
             fail("ZEPHYR_BASE not set and no Zephyr tree found (C:/zephyrproject/zephyr, ~/zephyrproject/zephyr)")
         os.environ["ZEPHYR_BASE"] = bases[0]
@@ -1471,6 +1488,8 @@ def web_preview(exe, port):
             q = parse_qs(u.query)
             if u.path == "/":
                 return self.reply((ROOT / "app" / "web" / "index.html").read_bytes(), "text/html")
+            if u.path == "/favicon.ico":
+                return self.reply((ROOT / "app" / "images" / "ShortRange.ico").read_bytes(), "image/x-icon")
             if not self.authorized(q):
                 return self.reply("token required", "text/plain", 403)
             group = q.get("g", [""])[0]

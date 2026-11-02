@@ -27,6 +27,7 @@ commands:
   "AT+UWSIP=*": ["+UWSIP:0,1,192.168.1.50,255.255.255.0,192.168.1.1,8.8.8.8,0.0.0.0", "OK"]
   "AT+UWSROE?": ["+UWSROE:1", "OK"]
   "AT+UWRD?": ["+UWRD:0", "OK"]
+  "AT+UWRD=*": ["OK"]
   "AT+UWAPCP?": ['+UWAPCP:"vucxap",6', "OK"]
   "AT+UWAPS?": ["+UWAPS:1,0", "OK"]
   "AT+UWAPNST?":

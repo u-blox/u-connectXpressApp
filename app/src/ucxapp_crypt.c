@@ -115,7 +115,7 @@ bool ucxapp_secret_seal(const char *plain, char *out, size_t outSize)
     if (outSize < need || (buf = (uint8_t *)malloc(IV_LEN + len + TAG_LEN)) == NULL) {
         return false;
     }
-    ok = installKey(key, true) && psa_generate_random(buf, IV_LEN) == PSA_SUCCESS &&
+    ok = psa_crypto_init() == PSA_SUCCESS && installKey(key, true) && psa_generate_random(buf, IV_LEN) == PSA_SUCCESS &&
          aead(true, key, buf, kSecretAad, sizeof(kSecretAad) - 1, (const uint8_t *)plain, len, buf + IV_LEN,
               len + TAG_LEN, &clen);
     if (ok) {

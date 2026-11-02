@@ -56,17 +56,26 @@ static void consoleWrite(const char *text, size_t len)
     }
 }
 
+/* Poll every 1 ms while someone types or pastes, every 10 ms once the console has been quiet for a
+ * while; the interrupt-fed ring holds 2 KB, so nothing is lost in between. */
+#define CONSOLE_FAST_POLL_MS  1
+#define CONSOLE_SLOW_POLL_MS  10
+#define CONSOLE_QUIET_MS      200
+
 static int consoleReadline(char *buf, size_t size)
 {
     size_t len = 0;
     uint8_t c;
     bool lastWasCr = false;
+    TickType_t lastByte = xTaskGetTickCount();
 
     for (;;) {
         if (exampleConsoleUartRead(&c, 0) == 0) {
-            vTaskDelay(pdMS_TO_TICKS(1));
+            bool quiet = (xTaskGetTickCount() - lastByte) * portTICK_PERIOD_MS >= CONSOLE_QUIET_MS;
+            vTaskDelay(pdMS_TO_TICKS(quiet ? CONSOLE_SLOW_POLL_MS : CONSOLE_FAST_POLL_MS));
             continue;
         }
+        lastByte = xTaskGetTickCount();
         if (c == '\n' && lastWasCr) {
             lastWasCr = false;
             continue;
@@ -346,6 +355,9 @@ static void appTask(void *arg)
 #ifndef UCXAPP_LITE
     ucxapp_register_mqtt_cmds();
     ucxapp_register_net_cmds();
+    ucxapp_register_wifiloc_cmds();
+    ucxapp_register_cfg_cmds();
+    ucxapp_register_perf_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_ymodem_cmds();
@@ -361,6 +373,17 @@ static void appTask(void *arg)
     }
 }
 
+/* configUSE_IDLE_HOOK is 0 in the shared FreeRTOSConfig.h, so the idle task would spin at full
+ * power. This task shares the idle priority (the idle task yields to it) and stops the core until
+ * the next interrupt; any interrupt that readies a task preempts it at once, so latency is unchanged. */
+static void sleepTask(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        __asm volatile ("dsb\n\twfi\n\tisb" ::: "memory");
+    }
+}
+
 int app_main(int argc, char *argv[])
 {
     (void)argc;
@@ -368,6 +391,9 @@ int app_main(int argc, char *argv[])
     /* The caller's task stack is too small for the command layer. */
     if (xTaskCreate(appTask, "ucxapp", UCXAPP_STACK_WORDS, NULL, 4, NULL) != pdPASS) {
         printf("ERROR: cannot create the application task\r\n");
+    }
+    if (xTaskCreate(sleepTask, "sleep", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL) != pdPASS) {
+        printf("warning: no sleep task, the CPU stays awake when idle\r\n");
     }
     vTaskDelete(NULL);
     return 0;

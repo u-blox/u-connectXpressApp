@@ -45,6 +45,7 @@ typedef struct {
 
 /* kPage: app/web/index.html, turned into a C array by CMake at configure time */
 #include "ucxapp_webpage.h"
+#include "ucxapp_favicon.h"
 
 static ucxapp_t *gApp;
 static uWebServer_t *gServer;
@@ -390,6 +391,16 @@ static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     (void)req;
     (void)user;
     uWebServerSendHTML(resp, kPage);
+}
+
+static void routeFavicon(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    (void)req;
+    (void)user;
+    resp->status_code = 200;
+    snprintf(resp->content_type, sizeof(resp->content_type), "image/x-icon");
+    resp->body = (const char *)kFavicon;
+    resp->body_length = (int32_t)sizeof(kFavicon);
 }
 
 static void routeEvents(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
@@ -911,6 +922,7 @@ static const struct {
     uRouteHandler_t fn;
 } kRoutes[] = {
     { U_HTTP_METHOD_GET,  "/",             routePage },
+    { U_HTTP_METHOD_GET,  "/favicon.ico",  routeFavicon },
     { U_HTTP_METHOD_GET,  "/events",       routeEvents },
     { U_HTTP_METHOD_POST, "/api/exec",     routeExec },
     { U_HTTP_METHOD_GET,  "/api/groups",   routeList },

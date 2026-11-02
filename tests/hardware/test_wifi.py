@@ -18,6 +18,17 @@ def test_wifi_scan_finds_networks(app_exe, port_a):
 
 
 @pytest.mark.hardware
+def test_wifi_channels_mixed_rescans_the_last_channels(app_exe, port_a):
+    out = _run(app_exe, port_a, "wifi.channels mixed", "wifi.scan", "wifi.scan", "wifi.channels",
+               "wifi.channels full", "wifi.channels", timeout=120)
+    assert out.returncode == 0, out.stdout
+    used = re.search(r"channels: mixed, (\d+) from the last scan, full scan after (\d+) more scan", out.stdout)
+    assert used and int(used.group(1)) > 0, out.stdout
+    assert "channels: full (channel list cleared)" in out.stdout, out.stdout
+    assert re.search(r"^channels: full\s*$", out.stdout, re.M), out.stdout
+
+
+@pytest.mark.hardware
 def test_wifi_enterprise_settings_are_accepted(app_exe, port_a):
     """The module takes the EAP-TLS and PEAP settings; with no such network both time out cleanly."""
     eap = _run(app_exe, port_a, "wifi.eap ucxapp-no-such-net ca0 cert0 key0 dev@example 1.2", timeout=120)
@@ -53,9 +64,9 @@ def test_wifi_regdomain_set_and_read_back(app_exe, port_a, tmp_path):
     assert out.returncode == 0, out.stdout
     assert out.stdout.count("regdomain=fcc") == 2, out.stdout
     assert (tmp_path / "storage" / "ucxapp.regdomain").read_text() == "fcc"
-    restore = subprocess.run(_args(app_exe, port_a, "wifi.regdomain etsi"), capture_output=True, text=True, timeout=60,
+    restore = subprocess.run(_args(app_exe, port_a, "wifi.regdomain world"), capture_output=True, text=True, timeout=60,
                              errors="replace", cwd=tmp_path)
-    assert "regdomain=etsi" in restore.stdout, restore.stdout
+    assert "regdomain=world" in restore.stdout, restore.stdout
 
 
 @pytest.mark.hardware

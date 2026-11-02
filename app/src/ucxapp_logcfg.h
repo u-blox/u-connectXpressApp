@@ -8,6 +8,10 @@
 bool ucxappLogAtEnabled(void);
 #define U_CX_LOG_AT ucxappLogAtEnabled()
 
+/* at.trace: every whole AT TX/RX line (ANSI colours stripped, secrets masked) also goes to sink; NULL stops it.
+ * Host builds only, where the library prints through ucxappLibPrintf. */
+void ucxappLogAtSetTrace(void (*sink)(const char *line));
+
 /* The library prints warnings straight to stdout, which garbles the text UI. */
 bool ucxappLogWarnEnabled(void);
 void ucxappLogWarnSet(bool on);

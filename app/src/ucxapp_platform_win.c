@@ -135,6 +135,99 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return found;
 }
 
+/* Non-blocking connect so an unreachable phone (app in the background) fails within the timeout. */
+intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs)
+{
+    static bool started = false;
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    char service[8];
+    SOCKET s;
+    u_long nb = 1;
+
+    if (!started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+            return -1;
+        }
+        started = true;
+    }
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    snprintf(service, sizeof(service), "%u", (unsigned)port);
+    if (getaddrinfo(host, service, &hints, &res) != 0 || res == NULL) {
+        return -1;
+    }
+    s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s == INVALID_SOCKET) {
+        freeaddrinfo(res);
+        return -1;
+    }
+    ioctlsocket(s, FIONBIO, &nb);
+    int rc = connect(s, res->ai_addr, (int)res->ai_addrlen);
+    freeaddrinfo(res);
+    if (rc != 0 && WSAGetLastError() == WSAEWOULDBLOCK) {
+        fd_set wr;
+        fd_set ex;
+        struct timeval tv = { (long)(timeoutMs / 1000u), (long)(timeoutMs % 1000u) * 1000 };
+        FD_ZERO(&wr);
+        FD_ZERO(&ex);
+        FD_SET(s, &wr);
+        FD_SET(s, &ex);
+        rc = select(0, NULL, &wr, &ex, &tv) == 1 && FD_ISSET(s, &wr) ? 0 : -1;
+    }
+    if (rc != 0) {
+        closesocket(s);
+        return -1;
+    }
+    nb = 0;
+    ioctlsocket(s, FIONBIO, &nb);
+    BOOL one = TRUE;
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
+    return (intptr_t)s;
+}
+
+bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len)
+{
+    const char *p = (const char *)data;
+
+    while (len > 0) {
+        int n = send((SOCKET)sock, p, len > 65536u ? 65536 : (int)len, 0);
+        if (n <= 0) {
+            return false;
+        }
+        p += n;
+        len -= (size_t)n;
+    }
+    return true;
+}
+
+int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs)
+{
+    fd_set rd;
+    struct timeval tv = { (long)(timeoutMs / 1000u), (long)(timeoutMs % 1000u) * 1000 };
+
+    FD_ZERO(&rd);
+    FD_SET((SOCKET)sock, &rd);
+    int ready = select(0, &rd, NULL, NULL, &tv);
+    if (ready == 0) {
+        return 0;
+    }
+    if (ready < 0) {
+        return -1;
+    }
+    int n = recv((SOCKET)sock, (char *)buf, max > 65536u ? 65536 : (int)max, 0);
+    return n > 0 ? (int32_t)n : -1;
+}
+
+void ucxapp_platform_tcp_close(intptr_t sock)
+{
+    if (sock >= 0) {
+        closesocket((SOCKET)sock);
+    }
+}
+
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)
 {
     static const char kCmd[] =

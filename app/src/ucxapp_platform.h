@@ -60,6 +60,19 @@ int ucxapp_platform_read_key(void);
 /** IPv4 address of the host's main LAN/Wi-Fi interface (virtual and link-local ones skipped); false if none. */
 bool ucxapp_platform_local_ip(char *out, size_t size);
 
+/* Host TCP client (Windows, Linux, macOS; the browser build fails every call). Used for the phone remote control. */
+
+/** Connects to host (name or IPv4) within timeoutMs; returns the socket, or -1. */
+intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs);
+
+/** Sends all of data; false on error. */
+bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len);
+
+/** Waits up to timeoutMs for data: bytes read, 0 on timeout, -1 when the peer closed or on error. */
+int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs);
+
+void ucxapp_platform_tcp_close(intptr_t sock);
+
 /** The host's location from the OS location service (Windows Location, GeoClue); false if unknown. Can take seconds. */
 bool ucxapp_platform_location(double *lat, double *lon, double *alt);
 

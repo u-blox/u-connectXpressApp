@@ -99,6 +99,9 @@
    "+UWRD:0",
    "OK"
   ],
+  "AT+UWRD=*": [
+   "OK"
+  ],
   "AT+UWAPCP?": [
    "+UWAPCP:\"vucxap\",6",
    "OK"

@@ -14,3 +14,6 @@
 [submodule "sps"]
 	path = sps
 	url = https://github.com/u-blox/sps
+[submodule "ucx-xmodem"]
+	path = ucx-xmodem
+	url = https://github.com/u-blox/ucx-xmodem

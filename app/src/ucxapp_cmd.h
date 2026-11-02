@@ -272,5 +272,7 @@ void ucxapp_bt_security_defaults(ucxapp_t *app);   /* once per run */
 /* GATT URC sinks (ucxapp_cmds_gatt.c); the host's URC handlers forward to these. */
 void ucxapp_gatt_notification(int32_t conn, int32_t handle, const uint8_t *data, size_t len);
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);
+/* Turns the "[write conn= handle=]" log of unclaimed GATT server writes off while a test owns the link. */
+void ucxapp_gatt_server_quiet(bool quiet);
 
 #endif /* UCXAPP_CMD_H */

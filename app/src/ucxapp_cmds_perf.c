@@ -642,10 +642,15 @@ static char *phoneLoop(link_t *l, phone_mode_t mode, int32_t seconds, int32_t si
                 if (mode == PHONE_RX) {
                     patternCheck(check, gRx, n);
                 } else {
-                    for (int tries = 0; tries < 50 && !linkSend(l, gRx, n); tries++) {
+                    int tries = 0;
+                    while (!linkSend(l, gRx, n) && ++tries < 50) {
                         ucxapp_platform_sleep_ms(2);
                     }
-                    *tx += (uint64_t)n;
+                    if (tries < 50) {
+                        *tx += (uint64_t)n;
+                    } else {
+                        ucxapp_print("module: echo of %d bytes not sent (SPS write refused)\n", (int)n);
+                    }
                 }
             }
         }
@@ -714,9 +719,11 @@ static int phoneRun(ucxapp_t *app, phone_mode_t mode, int32_t seconds, int32_t s
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_events_clear(URC_FLAG_SPS_CONNECTED | URC_FLAG_SPS_DISCONNECTED | URC_FLAG_SPS_DATA);
+    ucxapp_gatt_server_quiet(true);   /* the phone's CCCD writes are not news during the run */
     snprintf(params, sizeof(params), "{\"deviceId\":%s}", qid);
     char *c = ucxapp_xplorer_call("ble.connect", params, PHONE_CALL_MS);
     if (c == NULL) {
+        ucxapp_gatt_server_quiet(false);
         return UCXAPP_ERR_FAILED;
     }
     int64_t mtu = 0;
@@ -732,6 +739,8 @@ static int phoneRun(ucxapp_t *app, phone_mode_t mode, int32_t seconds, int32_t s
     l.kind = LINK_SPS;
     l.handle = -1;
     if (!spsOk) {
+        ucxapp_print("the Bluetooth link dropped right after connecting; if bonding FAILED above, remove the module "
+                     "from the phone's Bluetooth settings and try again\n");
         goto done;
     }
     if (!ucxapp_events_wait(URC_FLAG_SPS_CONNECTED, 10) || (l.handle = ucxapp_handle_current(UCXAPP_HANDLE_CONN)) < 0) {
@@ -782,6 +791,7 @@ done:
     free(ucxapp_xplorer_call("sps.disconnect", NULL, PHONE_CALL_MS));
     snprintf(params, sizeof(params), "{\"deviceId\":%s}", qid);
     free(ucxapp_xplorer_call("ble.disconnect", params, PHONE_CALL_MS));
+    ucxapp_gatt_server_quiet(false);
     return rc;
 }
 

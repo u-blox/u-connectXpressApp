@@ -1489,6 +1489,8 @@ static volatile int gWpsTail;
 static bool gWpsProvisioned;   /* a SET_CONFIG was accepted */
 
 /* Called from the URC task when a remote client writes to a local characteristic. */
+static volatile bool gServerQuiet;
+
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     ucxapp_stats_add(UCXAPP_STATS_GATT, 0, len);
@@ -1521,11 +1523,19 @@ void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data,
         ucxapp_print("[WPS] command received: %s\n", gWpsQueue[(next + WPS_QUEUE - 1) % WPS_QUEUE].text);
         return;
     }
+    if (gServerQuiet) {
+        return;
+    }
     ucxapp_print("[write conn=%d handle=%d] ", (int)conn, (int)handle);
     printHex(data, len);
     ucxapp_print("  \"");
     printText(data, len);
     ucxapp_print("\"\n");
+}
+
+void ucxapp_gatt_server_quiet(bool quiet)
+{
+    gServerQuiet = quiet;
 }
 
 /* Called from the URC task when a remote client reads a host-managed characteristic. */

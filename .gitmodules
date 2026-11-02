@@ -11,3 +11,6 @@
 [submodule "third-party/littlefs"]
 	path = third-party/littlefs
 	url = https://github.com/littlefs-project/littlefs.git
+[submodule "sps"]
+	path = sps
+	url = https://github.com/u-blox/sps

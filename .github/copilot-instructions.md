@@ -74,6 +74,7 @@ cmake --build build/windows --config Release
   - `release/` - Signed releases
   - `third-party/` - FTDI DLL, QR code generator
 - `u-connectClient/` - AT command client library (git submodule)
+- `sps/` - u-blox Serial Port Service (SPS) protocol, C/Python/C# clients and servers (reference submodule, not built)
 - `build/windows`, `build/linux`, `build/stm32_<board>`, `build/zephyr_<board>` - CMake artifacts per target (gitignored)
 
 ## Submodule Management

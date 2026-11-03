@@ -779,7 +779,7 @@ static int cmdStatsClear(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gSysCmds[] = {
-    { "at", "[command]", "Send a raw AT command (AT prefix optional); with no command, enter AT mode where every line is sent as typed", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
+    { "at", "[command]", "Send a raw AT command (AT prefix optional); without one, enter AT mode where every line is sent as typed", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
     { "app.log.at.on", "", "Show the AT TX/RX trace (remembered)", 0, cmdLogAtOn },
     { "app.log.at.off", "", "Hide the AT TX/RX trace (default, remembered)", 0, cmdLogAtOff },
     { "app.log.warn.on", "", "Show library warnings (not in the text UI, remembered)", 0, cmdLogWarnOn },
@@ -787,17 +787,17 @@ static const ucxapp_cmd_t gSysCmds[] = {
     { "app.log.events.on", "", "Also print module events in the log (remembered)", 0, cmdLogEventsOn },
     { "app.log.events.off", "", "Keep module events out of the log (default, remembered)", 0, cmdLogEventsOff },
     { "app.log.level", "<off|warn|all>", "off: nothing extra; warn: warnings; all: warnings, AT trace and events (remembered)", 0, cmdLogLevel },
-    { "app.log.save", "<file>", "Save everything the log shows to a file (written when app.log.stop runs)", 0, cmdLogSave },
-    { "app.log.stop", "", "Finish and write the log file started by app.log.save", 0, cmdLogStop },
+    { "app.log.save", "<file>", "Save everything the log shows to a file, written by app.log.stop", 0, cmdLogSave },
+    { "app.log.stop", "", "Finish and write the log file of app.log.save", 0, cmdLogStop },
     { "app.log.clear", "", "Clear the log", 0, cmdLogClear },
-    { "app.defaults", "<confirm>", "Forget all app settings (log, Wi-Fi and BLE profiles, last used, region); type 'confirm' to proceed", UCXAPP_CMD_DANGER, cmdAppDefaults },
-    { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
-    { "utils.hash.text", "<md5|sha256> <text...>", "Print the hash of a text", 0, cmdHashText },
+    { "app.defaults", "<confirm>", "Forget all app settings (log, Wi-Fi and BLE profiles, last used, region); type 'confirm'", UCXAPP_CMD_DANGER, cmdAppDefaults },
+    { "file.hash", "<md5|sha256> <file>", "Hash of a file", 0, cmdFileHash },
+    { "utils.hash.text", "<md5|sha256> <text...>", "Hash of a text", 0, cmdHashText },
     { "utils.hash.selftest", "", "Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors", 0, cmdHashSelftest },
-    { "file.view", "<file> [lines=40]", "Show the first lines of a text file (read only, default 40 lines)", 0, cmdFileView },
-    { "file.list", "", "List the files in the working folder with numbers and sizes", 0, cmdFileList },
-    { "file.remove", "<file|number>", "Delete a file, by name or by its number from file.list", UCXAPP_CMD_DANGER, cmdFileRemove },
-    { "stats.show", "[tcp|udp|sps|gatt|http|mqtt|web] [rx|tx]", "Payload bytes sent and received per channel; with rx or tx, print just that number", 0, cmdStatsShow },
+    { "file.view", "<file> [lines=40]", "First lines of a text file", 0, cmdFileView },
+    { "file.list", "", "Files in the working folder with numbers and sizes", 0, cmdFileList },
+    { "file.remove", "<file|number>", "Delete a file by name or by its file.list number", UCXAPP_CMD_DANGER, cmdFileRemove },
+    { "stats.show", "[tcp|udp|sps|gatt|http|mqtt|web] [rx|tx]", "Payload bytes sent and received per channel; rx or tx prints just that number", 0, cmdStatsShow },
     { "stats.clear", "[tcp|udp|sps|gatt|http|mqtt|web]", "Reset the counters of one channel, or all", 0, cmdStatsClear },
 };
 

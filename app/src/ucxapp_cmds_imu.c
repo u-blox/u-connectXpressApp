@@ -727,8 +727,8 @@ static const ucxapp_cmd_t kCmds[] = {
     { "imu.status", "", "Accel, gyro, angle, magnetometer, pressure, steps and counters", 0, cmdStatus },
     { "imu.log", "<file|off>", "Record the raw IMU byte stream to a file", 0, cmdLog },
     { "imu.send", "<hex...>", "Send raw bytes to the sensor (e.g. WitMotion configuration frames)", 0, cmdSend },
-    { "imu.rate", "<hz=10>", "Set the WitMotion output rate (0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200 Hz)", 0, cmdRate },
-    { "imu.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off [n]|status>", "Two-way bridges of the IMU stream (TCP server/client, UDP, BLE NUS/SPS, PC UART); up to 4 at once", 0, cmdBridge },
+    { "imu.rate", "<hz=10>", "WitMotion output rate (0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200 Hz)", 0, cmdRate },
+    { "imu.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | off [n] | status", "Two-way bridges of the IMU stream: TCP server/client, UDP, BLE NUS/SPS, PC UART, cellular; up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_imu_cmds(void)

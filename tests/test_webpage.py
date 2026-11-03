@@ -263,7 +263,6 @@ def test_page_forms_flags_keys_and_rest(server):
         page.on("pageerror", lambda exc: js_errors.append(str(exc)))
         page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
         page.wait_for_selector("#st.ok")
-        assert "Red Run" in page.inner_text(".lg")
         page.click("summary:has-text('demo')")
         page.wait_for_selector(".c select.fm")
         bridge = page.locator(".c").nth(0)
@@ -307,6 +306,13 @@ def test_web_export_writes_the_page_json(app_exe, tmp_path):
     groups = json.loads((tmp_path / "groups.json").read_text(encoding="utf-8"))
     names = {g.split(":")[0]: g for g in groups}
     assert names["wifi"].startswith("wifi:module") and names["usecase"].startswith("usecase:host")
+    order = [g.split(":")[0] for g in groups]
+    assert order[:2] == ["dev", "cfg"] and order.index("thread") == order.index("wifi") + 1
+    assert order.index("app") == order.index("perf") + 1 and order.index("hw") > order.index("app")
+    assert "at" in order and "dash" not in order                 # dash and examples sit in the app group
+    sections = [g.split(":")[3] for g in groups]
+    assert sections == sorted(sections, key=lambda s: sections.index(s)), "a section must not repeat"
+    assert "Peripherals" in sections and sections.index("Device") == 0
     for g in groups:
         name = g.split(":")[0]
         assert json.loads((tmp_path / f"commands-{name}.json").read_text(encoding="utf-8")), name
@@ -360,7 +366,10 @@ def test_web_preview_serves_the_real_commands():
         assert get("/", None).startswith("<!doctype html>")
         with pytest.raises(urllib.error.HTTPError, match="403"):
             get("/api/groups", "wrong")
-        assert "usecase:host:x" in json.loads(get("/api/groups"))
+        groups = json.loads(get("/api/groups"))
+        assert any(g.startswith("usecase:host:x:") for g in groups), groups
+        assert [g.split(":")[3] for g in groups if g.startswith(("dev:", "bt:", "wifi:", "app:"))] == [
+            "Device", "Bluetooth", "Wi-Fi, Thread", "App"]
         assert any(c["n"] == "wifi.scan" for c in json.loads(get("/api/commands?g=wifi")))
         assert [c["n"] for c in json.loads(get("/api/find?q=usecase.t&p=1"))] == ["usecase.tool"]
         assert json.loads(get("/api/complete?q=gnss.bridge%20nt")) == {"l": "gnss.bridge ntrip ", "n": 1, "c": ""}
@@ -378,3 +387,83 @@ def test_web_preview_serves_the_real_commands():
     finally:
         proc.terminate()
         proc.wait(10)
+
+
+# Every form field, as the page lays it out: its box and the box of the form (.c) it belongs to.
+LAYOUT_JS = """() => {
+  const box = e => { const r = e.getBoundingClientRect(); return {l: r.left, r: r.right, t: r.top, b: r.bottom}; };
+  const label = e => e.placeholder || e.textContent.trim().slice(0, 20) || e.tagName;
+  const out = [];
+  document.querySelectorAll('#side .c').forEach(c => {
+    const items = Array.from(c.querySelectorAll(':scope > .fs > *, :scope > button, :scope > select'))
+      .filter(e => e.offsetParent !== null)
+      .map(e => Object.assign({
+        ph: label(e),
+        inner: !e.classList.contains('combo') ? []
+          : Array.from(e.children).map(k => Object.assign({ph: label(k)}, box(k)))
+      }, box(e)));
+    out.push(Object.assign({name: c.querySelector('b').textContent, items}, box(c)));
+  });
+  return out;
+}"""
+
+
+@pytest.mark.app
+def test_every_form_lays_out_without_overlaps():
+    """Opens every group in the real page (19 rem side panel) and checks that no field runs into its neighbour
+    or out of its form; the usage parser and the flex rules in index.html must agree for every command."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "ucxapp.py"), "--web-preview", "0"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+    try:
+        for line in proc.stdout:
+            m = re.search(r"http://127\.0\.0\.1:(\d+)/#t=(\w+)", line)
+            if m:
+                break
+        assert m
+        with sync_api.sync_playwright() as p:
+            try:
+                browser = p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"no browser: {exc}")
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.goto(f"http://127.0.0.1:{m.group(1)}/#t={m.group(2)}")
+            page.wait_for_selector("#st.ok")
+            # Tab in the command line: a unique prefix completes and shows the usage hint, an ambiguous one
+            # lists the candidates, a keyword completes too
+            cmd = page.locator("#cmd")
+            cmd.fill("wifi.con")
+            cmd.press("Tab")
+            page.wait_for_function("document.getElementById('cmd').value === 'wifi.connect '")
+            page.wait_for_function("document.getElementById('hint').textContent.startsWith('wifi.connect [ssid')")
+            cmd.fill("wifi.p")
+            cmd.press("Tab")
+            page.wait_for_function("document.getElementById('hint').textContent.includes('wifi.profile.auto')")
+            cmd.fill("gnss.bridge nt")
+            cmd.press("Tab")
+            page.wait_for_function("document.getElementById('cmd').value === 'gnss.bridge ntrip '")
+            cmd.fill("")
+            page.evaluate("document.querySelectorAll('#grp > details').forEach(d => d.open = true)")
+            page.wait_for_function("document.querySelectorAll('#side .c').length > 300")
+            page.evaluate("document.querySelectorAll('#grp details').forEach(d => d.open = true)")
+            forms = page.evaluate(LAYOUT_JS)
+            browser.close()
+    finally:
+        proc.terminate()
+        proc.wait(10)
+    bad = []
+    for f in forms:
+        items = f["items"]
+        for a in items:
+            if a["r"] > f["r"] + 1 or a["l"] < f["l"] - 1:
+                bad.append(f"{f['name']}: '{a['ph']}' sticks out of the form")
+            if a["ph"] == "Run" and a["r"] < f["r"] - 2:
+                bad.append(f"{f['name']}: Run is not at the right edge")
+            for k in a["inner"]:   # a combo's select and input stay inside the combo
+                if k["r"] > a["r"] + 1 or k["l"] < a["l"] - 1:
+                    bad.append(f"{f['name']}: '{k['ph']}' sticks out of '{a['ph']}'")
+        for i, a in enumerate(items):
+            for b in items[i + 1:]:
+                if a["l"] < b["r"] - 1 and b["l"] < a["r"] - 1 and a["t"] < b["b"] - 1 and b["t"] < a["b"] - 1:
+                    bad.append(f"{f['name']}: '{a['ph']}' overlaps '{b['ph']}'")
+    assert len(forms) > 300 and not bad, "\n".join(bad)

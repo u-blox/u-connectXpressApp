@@ -45,6 +45,11 @@ void ucxapp_cmd_print_help(const char *prefix);
 
 /* Usage split into one top-level alternative per line, each prefixed by indent. */
 void ucxapp_print_usage_lines(const char *indent, const char *usage);
+/* Alternative index of a usage ("a | b", "<a|b>") as [*start, *start + *len); false past the end. */
+bool ucxapp_usage_alt(const char *usage, int index, const char **start, size_t *len);
+/* Usage for a one-line hint while line is typed: a command with several forms shows the form whose keyword the
+ * line has, else the keywords of all forms; other commands their usage. */
+void ucxapp_usage_hint(const ucxapp_cmd_t *cmd, const char *line, char *out, size_t size);
 
 /* Every command as a JSON array (name, usage, help, needsDevice, danger); "help --json". */
 void ucxapp_cmd_print_json(const char *prefix);

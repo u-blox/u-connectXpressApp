@@ -512,13 +512,12 @@ static int cmdDiff(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gCfgCmds[] = {
-    { "cfg.show", "", "Print the module's stored settings (Bluetooth, Wi-Fi, MQTT, NTP, SPS ...) as AT set commands",
+    { "cfg.show", "", "The module's stored settings (Bluetooth, Wi-Fi, MQTT, NTP, SPS ...) as AT set commands",
       UCXAPP_CMD_NEEDS_DEVICE, cmdShow },
-    { "cfg.save", "<file>", "Save the module's settings to a file of AT set commands; passwords cannot be read and "
-      "are not saved", UCXAPP_CMD_NEEDS_DEVICE, cmdSave },
-    { "cfg.load", "<file> [nostore]", "Write the settings of a cfg.save file that differ from the module and store "
-      "them (AT&W) unless 'nostore'; reports applied, unchanged, failed and skipped lines (only known setting "
-      "commands are sent)",
+    { "cfg.save", "<file>", "Save the module's settings as AT set commands; passwords cannot be read and are left out",
+      UCXAPP_CMD_NEEDS_DEVICE, cmdSave },
+    { "cfg.load", "<file> [nostore]", "Apply the settings of a cfg.save file that differ from the module and store "
+      "them (AT&W) unless 'nostore'; reports applied, unchanged, failed and skipped lines",
       UCXAPP_CMD_NEEDS_DEVICE, cmdLoad },
     { "cfg.diff", "<file> [file2]", "Compare a cfg.save file with the module (or with file2); fails when they differ",
       0, cmdDiff },

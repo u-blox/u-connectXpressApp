@@ -928,7 +928,7 @@ static int cmdImport(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gCertFileCmds[] = {
-    { "utils.cert.info",    "<file> [pw]",         "Show what a certificate file holds: PKCS#12 (.p12/.pfx), PKCS#7 (.p7b), DER (.cer/.der) or PEM", 0, cmdInfo },
+    { "utils.cert.info",    "<file> [pw]",         "What a certificate file holds: PKCS#12 (.p12/.pfx), PKCS#7 (.p7b), DER (.cer/.der) or PEM", 0, cmdInfo },
     { "utils.cert.convert", "<file> [out] [pw]",   "Convert PKCS#12, PKCS#7, DER or PEM to the PEM files the module takes: <out>.crt, <out>.key, <out>-ca.crt", 0, cmdConvert },
     { "cert.import",        "<file> [name] [pw]",  "Convert PKCS#12, PKCS#7, DER or PEM and upload it: client chain <name>, key <name>-key, CA <name>-ca", UCXAPP_CMD_NEEDS_DEVICE, cmdImport },
 };

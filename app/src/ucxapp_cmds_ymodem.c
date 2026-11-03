@@ -300,7 +300,7 @@ static int cmdFileSelftest(ucxapp_t *app, int argc, char *argv[])
 static const ucxapp_cmd_t gYmodemCmds[] = {
     { "file.recv", "[name]", "Receive a file over the console with YMODEM (Tera Term, sz, ucxapp --put)", 0, cmdFileRecv },
     { "file.send", "<file>", "Send a file over the console with YMODEM (Tera Term, rz, ucxapp --get)", 0, cmdFileSend },
-    { "file.selftest", "", "Check the YMODEM encoder and decoder against each other (offline)", 0, cmdFileSelftest },
+    { "file.selftest", "", "Offline check of the YMODEM encoder against the decoder", 0, cmdFileSelftest },
 };
 
 void ucxapp_register_ymodem_cmds(void)

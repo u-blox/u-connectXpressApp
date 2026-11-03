@@ -22,6 +22,14 @@ typedef struct {
     uCxHandle_t *ucx;   /* NULL while no module is connected */
 } ucxapp_t;
 
+/* 1 on Windows, Linux and the browser, which build every command pack (peripherals, protocols, tools);
+ * 0 on the STM32 boards, which only build the module packs. */
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__) || defined(__EMSCRIPTEN__)
+#define UCXAPP_HOST 1
+#else
+#define UCXAPP_HOST 0
+#endif
+
 /* ---- IO layer ---------------------------------------------------------- */
 
 typedef struct {

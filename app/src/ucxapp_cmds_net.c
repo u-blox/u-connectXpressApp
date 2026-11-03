@@ -30,6 +30,22 @@
 #define HTTP_MAX_URL      2048          /* u-connectXpress 3.5.0 and later */
 #endif
 
+/* Commands run one at a time, so the HTTP commands share these buffers instead of a static set each
+   (static: they would not fit the STM32 stacks). Buffers that live at the same time in one call chain
+   are different members: hostUrl is configureSession's, url the request of http.get and httpRequest,
+   headers the response headers of a download hop; page, next and loc carry http.download and
+   wifi.portal redirects, form and names the login form. */
+static struct {
+    char hostUrl[HTTP_MAX_URL + 16];
+    char url[HTTP_MAX_URL + 2];
+    char page[HTTP_MAX_URL + 2];
+    char next[HTTP_MAX_URL + 2];
+    char loc[HTTP_MAX_URL + 2];
+    char headers[4096];
+    char form[1024];
+    char names[256];
+} gBuf;
+
 static int cmdNetPing(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t count = 4;
@@ -106,24 +122,24 @@ static void printPrintable(const uint8_t *data, int32_t len)
 
 static int32_t configureSession(ucxapp_t *app, bool https, const char *host, const char *path)
 {
-    static char hostUrl[HTTP_MAX_URL + 16];   /* static: keeps the STM32 stack small */
+    char *hostUrl = gBuf.hostUrl;
     int32_t err;
     const char *colon = strrchr(host, ':');
 
     if (colon != NULL && strchr(host, ']') == NULL && atoi(colon + 1) > 0) {
-        snprintf(hostUrl, sizeof(hostUrl), "%s://%.*s", https ? "https" : "http", (int)(colon - host), host);
+        snprintf(hostUrl, sizeof(gBuf.hostUrl), "%s://%.*s", https ? "https" : "http", (int)(colon - host), host);
         err = https ? uCxHttpSetTLS2(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2) : 0;
         if (err >= 0) {
             err = uCxHttpSetConnectionParams3(app->ucx, HTTP_SESSION, hostUrl, atoi(colon + 1));
         }
     } else if (https) {
-        snprintf(hostUrl, sizeof(hostUrl), "https://%s", host);
+        snprintf(hostUrl, sizeof(gBuf.hostUrl), "https://%s", host);
         err = uCxHttpSetTLS2(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2);
         if (err >= 0) {
             err = uCxHttpSetConnectionParams3(app->ucx, HTTP_SESSION, hostUrl, 443);
         }
     } else {
-        snprintf(hostUrl, sizeof(hostUrl), "http://%s", host);
+        snprintf(hostUrl, sizeof(gBuf.hostUrl), "http://%s", host);
         err = uCxHttpSetConnectionParams2(app->ucx, HTTP_SESSION, hostUrl);
     }
     if (err >= 0) {
@@ -137,7 +153,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
     bool https;
     const char *host;
     const char *path;
-    static char url[HTTP_MAX_URL + 2];
+    char *url = gBuf.url;
     int32_t show = HTTP_DEFAULT_SHOW;
     int32_t err;
     int rc = UCXAPP_ERR_FAILED;
@@ -146,7 +162,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
         (argc > 2 && (!ucxapp_parse_int(argv[2], &show) || show < 0))) {
         return UCXAPP_ERR_USAGE;
     }
-    snprintf(url, sizeof(url), "%s", argv[1]);
+    snprintf(url, sizeof(gBuf.url), "%s", argv[1]);
     if (!splitUrl(url, &https, &host, &path)) {
         return UCXAPP_ERR_USAGE;
     }
@@ -258,7 +274,7 @@ static bool headerValue(const char *headers, const char *name, char *out, size_t
 static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char *location, size_t locationSize,
                        char *scheme, char *hostOut, size_t hostOutSize)
 {
-    static char headers[4096];
+    char *headers = gBuf.headers;
     bool https;
     const char *host;
     const char *path;
@@ -303,7 +319,7 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char 
         }
         more = header.more_to_read != 0;
         if (header.byte_array_data.pData != NULL &&
-            hlen + header.byte_array_data.length < sizeof(headers)) {
+            hlen + header.byte_array_data.length < sizeof(gBuf.headers)) {
             memcpy(headers + hlen, header.byte_array_data.pData, header.byte_array_data.length);
             hlen += header.byte_array_data.length;
         }
@@ -368,9 +384,8 @@ done:
 
 static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
 {
-    enum { URL_SIZE = 2048, MAX_REDIRECTS = 5 };
-    static char url[URL_SIZE];
-    static char location[URL_SIZE];
+    enum { URL_SIZE = sizeof(gBuf.page), MAX_REDIRECTS = 5 };
+    char *url = gBuf.page, *location = gBuf.loc;
     char scheme[8];
     char host[256];
 
@@ -382,11 +397,11 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot create %s\n", argv[2]);
         return UCXAPP_ERR_FAILED;
     }
-    snprintf(url, sizeof(url), "%s", argv[1]);
+    snprintf(url, URL_SIZE, "%s", argv[1]);
 
     int rc = UCXAPP_ERR_FAILED;
     for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        int r = downloadHop(app, url, w, location, sizeof(location), scheme, host, sizeof(host));
+        int r = downloadHop(app, url, w, location, sizeof(gBuf.loc), scheme, host, sizeof(host));
         if (r == 0) {
             rc = UCXAPP_OK;
             break;
@@ -434,7 +449,7 @@ static char gCookie[256];
    Returns the HTTP status, 0 if the module gave no status line, -1 on failure. */
 static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const char *ctype, const char *cookie)
 {
-    static char url[HTTP_MAX_URL + 2];
+    char *url = gBuf.url;
     bool https;
     const char *host;
     const char *path;
@@ -446,7 +461,7 @@ static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const
     if (strlen(urlIn) > HTTP_MAX_URL) {
         return -1;
     }
-    snprintf(url, sizeof(url), "%s", urlIn);
+    snprintf(url, sizeof(gBuf.url), "%s", urlIn);
     if (!splitUrl(url, &https, &host, &path)) {
         return -1;
     }
@@ -649,14 +664,14 @@ static void grabCookie(void)
 /* 0 online, 1 login page in the way (gPortalUrl set), -1 no internet. */
 static int portalCheck(ucxapp_t *app, const char *probe)
 {
-    static char loc[HTTP_MAX_URL + 2];
+    char *loc = gBuf.loc;
     int s = httpRequest(app, probe, NULL, NULL, NULL);
 
     if (s == 204) {
         ucxapp_print("online: %s answered 204, no login page\n", probe);
         return 0;
     }
-    if (s >= 300 && s < 400 && headerValue(gReqHdr, "Location:", loc, sizeof(loc))) {
+    if (s >= 300 && s < 400 && headerValue(gReqHdr, "Location:", loc, sizeof(gBuf.loc))) {
         resolveUrl(probe, loc, gPortalUrl, sizeof(gPortalUrl));
         ucxapp_print("login page: %s (redirected, HTTP %d)\n", gPortalUrl, s);
         return 1;
@@ -742,8 +757,8 @@ static bool buildForm(const char *html, const char *page, int nOv, char *ov[], b
 
 static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
 {
-    static char page[HTTP_MAX_URL + 2], next[HTTP_MAX_URL + 2], loc[HTTP_MAX_URL + 2];
-    static char form[1024], names[256];
+    char *page = gBuf.page, *next = gBuf.next, *loc = gBuf.loc, *form = gBuf.form, *names = gBuf.names;
+    const size_t pageSize = sizeof(gBuf.page), nextSize = sizeof(gBuf.next);
     bool post;
     int s = -1;
 
@@ -752,21 +767,21 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
         return r == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     gCookie[0] = '\0';
-    snprintf(page, sizeof(page), "%s", gPortalUrl);
+    snprintf(page, pageSize, "%s", gPortalUrl);
     for (int hop = 0; hop < 5; hop++) {
         s = httpRequest(app, page, NULL, NULL, gCookie);
         grabCookie();
-        if (s < 300 || s >= 400 || !headerValue(gReqHdr, "Location:", loc, sizeof(loc))) {
+        if (s < 300 || s >= 400 || !headerValue(gReqHdr, "Location:", loc, sizeof(gBuf.loc))) {
             break;
         }
-        resolveUrl(page, loc, next, sizeof(next));
-        snprintf(page, sizeof(page), "%s", next);
+        resolveUrl(page, loc, next, nextSize);
+        snprintf(page, pageSize, "%s", next);
     }
     if (s != 200) {
         ucxapp_print("ERROR: cannot load the login page %s (HTTP %d)\n", page, s);
         return UCXAPP_ERR_FAILED;
     }
-    if (!buildForm(gReqBody, page, nOv, ov, &post, next, sizeof(next), form, sizeof(form), names, sizeof(names))) {
+    if (!buildForm(gReqBody, page, nOv, ov, &post, next, nextSize, form, sizeof(gBuf.form), names, sizeof(gBuf.names))) {
         ucxapp_print("ERROR: no <form> on the login page; it probably needs a browser (JavaScript)\n");
         return UCXAPP_ERR_FAILED;
     }
@@ -775,7 +790,7 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
         s = httpRequest(app, next, form, "application/x-www-form-urlencoded", gCookie);
     } else {
         size_t urlLen = strlen(next) + 1 + strlen(form);
-        if (urlLen >= sizeof(page)) {
+        if (urlLen >= pageSize) {
             ucxapp_print("ERROR: the login form URL is too long (%u bytes)\n", (unsigned)urlLen);
             return UCXAPP_ERR_FAILED;
         }
@@ -823,7 +838,7 @@ static int cmdWifiPortal(ucxapp_t *app, int argc, char *argv[])
 /* Offline: shows what wifi.portal login would submit for a saved login page. */
 static int cmdWifiPortalForm(ucxapp_t *app, int argc, char *argv[])
 {
-    static char action[HTTP_MAX_URL + 2], form[1024], names[256];
+    char *action = gBuf.next, *form = gBuf.form, *names = gBuf.names;
     size_t len;
     bool post;
 
@@ -841,8 +856,8 @@ static int cmdWifiPortalForm(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot read %s\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
-    bool ok = buildForm((const char *)html, argv[2], argc - 3, argv + 3, &post, action, sizeof(action),
-                        form, sizeof(form), names, sizeof(names));
+    bool ok = buildForm((const char *)html, argv[2], argc - 3, argv + 3, &post, action, sizeof(gBuf.next),
+                        form, sizeof(gBuf.form), names, sizeof(gBuf.names));
     free(html);
     if (!ok) {
         ucxapp_print("no <form> in %s; the page probably needs a browser (JavaScript)\n", argv[1]);
@@ -979,15 +994,15 @@ static int cmdNetNtp(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gNetCmds[] = {
-    { "net.ping", "<host> [count=4]",    "ICMP ping (count 1-10, default 4)",     UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
-    { "net.ntp", "status | on [manual|auto] | off | server <0|1> <host|->", "NTP client: 'status', 'on [manual|auto]', 'off', 'server <0|1> <host|->' ('-' removes)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
-    { "net.iperf", "server [tcp|udp] [port] | client <ip> [tcp|udp] [seconds] [port] | stop", "iperf throughput: 'server [tcp|udp] [port]', 'client <ip> [tcp|udp] [seconds] [port]', 'stop'", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
+    { "net.ping", "<host> [count=4]",    "ICMP ping (count 1-10)",                UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
+    { "net.ntp", "status | on [manual|auto] | off | server <0|1> <host|->", "NTP client: state, on (manual or auto servers), off, or set server 0/1 ('-' removes it)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
+    { "net.iperf", "server [tcp|udp] [port] | client <ip> [tcp|udp] [seconds] [port] | stop", "iperf throughput: server or client against an iperf on the PC, stop", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
-    { "http.get", "<url> [show_bytes]", "HTTP/HTTPS GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
+    { "http.get", "<url> [show_bytes]", "HTTP(S) GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
     { "http.download", "<url> <file>", "Download to a file, following redirects", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownload },
-    { "http.post", "<url> <body> [content_type]", "HTTP/HTTPS POST (default form-urlencoded), prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPost },
-    { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel/guest Wi-Fi login page: 'check' detects it, 'login' fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
-    { "wifi.portal.form", "<html_file> <page_url> [field=value ...]", "Show what wifi.portal login would submit for a saved login page (no module needed)", 0, cmdWifiPortalForm },
+    { "http.post", "<url> <body> [content_type]", "HTTP(S) POST (default form-urlencoded), prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPost },
+    { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel or guest Wi-Fi login page: check detects it, login fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
+    { "wifi.portal.form", "<html_file> <page_url> [field=value ...]", "What wifi.portal login would submit for a saved login page (no module needed)", 0, cmdWifiPortalForm },
 };
 
 void ucxapp_register_net_cmds(void)

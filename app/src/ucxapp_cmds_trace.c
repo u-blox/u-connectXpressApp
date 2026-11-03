@@ -798,19 +798,18 @@ static int cmdReplay(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gTraceCmds[] = {
-    { "at.trace", "<file>", "Record every AT command, response and URC with its time (seconds since the start) "
-      "until at.trace.stop; passwords are written as \"****\". A name ending in .pcapng writes a Wireshark capture "
-      "instead of text. Windows, Linux and the browser", 0, cmdTrace },
+    { "at.trace", "<file>", "Record every AT command, response and URC with its time until at.trace.stop; "
+      "passwords are written as \"****\"; a .pcapng name writes a Wireshark capture instead of text", 0, cmdTrace },
     { "at.trace.stop", "", "Stop at.trace and write the file", 0, cmdTraceStop },
-    { "at.trace.show", "<file> [errors]", "Show a trace decoded: each command with its time to OK/ERROR and its "
-      "responses, URCs with their meaning, then counts and the slowest commands; 'errors' shows only failures",
+    { "at.trace.show", "<file> [errors]", "Decode a trace: each command with its time to OK/ERROR and its responses, "
+      "URCs with their meaning, then counts and the slowest commands; errors shows only failures",
       0, cmdTraceShow },
-    { "at.trace.pcap", "<file> [out.pcapng]", "Convert a text trace to a Wireshark capture (pcapng, default name "
-      "<file>.pcapng): wall-clock times to merge with sniffer captures, TX/RX direction, URC meanings and command "
-      "times in the Info column; scripts/wireshark/ucxapp_at.lua adds ucx.* fields", 0, cmdTracePcap },
+    { "at.trace.pcap", "<file> [out.pcapng]", "Convert a text trace to a Wireshark capture (default <file>.pcapng): "
+      "wall-clock times to merge with sniffer captures, direction, URC meanings and command times in Info; "
+      "scripts/wireshark/ucxapp_at.lua adds ucx.* fields", 0, cmdTracePcap },
     { "at.decode", "<urc...>", "Explain one URC line, e.g. at.decode +UEWLD:0,3", 0, cmdDecode },
     { "at.replay", "<file>", "Send the commands of a trace again and compare OK/ERROR with the recording; skips "
-      "lines with masked passwords, binary data, reboot, factory reset, firmware update and baud rate changes",
+      "masked passwords, binary data, reboot, factory reset, firmware update and baud rate changes",
       UCXAPP_CMD_NEEDS_DEVICE, cmdReplay },
 };
 

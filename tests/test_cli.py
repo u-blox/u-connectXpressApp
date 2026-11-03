@@ -267,7 +267,7 @@ def test_hid_key_usage_error(app_exe, tmp_path):
 def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "help wifi.eap", "help wifi.peap", "wifi.example")
     assert "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]" in out.stdout
-    assert "<ssid> <user> <password|-> <ca> [1.2|1.3|any]" in out.stdout
+    assert "<ssid> <user> <password> <ca> [1.2|1.3|any]" in out.stdout and "'-' prompts for the password" in out.stdout
     assert "wifi.eap CorpNet ca client key" in out.stdout
     assert "wifi.peap CorpNet alice - ca" in out.stdout
 

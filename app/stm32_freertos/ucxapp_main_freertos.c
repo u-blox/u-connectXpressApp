@@ -344,29 +344,38 @@ static void appTask(void *arg)
     ucxapp_print("\nu-connectXpressApp (STM32), module on %s at %d baud\n", U_EXAMPLE_UART, (int)UCXAPP_MODULE_BAUD);
     mountStore();
 
+    /* Menu order (ucxapp_ui.c), as in ucxapp_main.c; the examples pack must come last. */
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));
     ucxapp_register_device_cmds();
-    ucxapp_register_wifi_cmds();
-    ucxapp_register_sock_cmds();
+#ifndef UCXAPP_LITE
+    ucxapp_register_cfg_cmds();
+#endif
     ucxapp_register_sys_cmds();
-    ucxapp_register_app_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_gatt_cmds();
+    ucxapp_register_wifi_cmds();
 #ifndef UCXAPP_LITE
-    ucxapp_register_mqtt_cmds();
+    ucxapp_register_wifiloc_cmds();
     ucxapp_register_thread_cmds();
     ucxapp_register_net_cmds();
-    ucxapp_register_wifiloc_cmds();
-    ucxapp_register_cfg_cmds();
-    ucxapp_register_perf_cmds();
-    ucxapp_register_time_cmds();
+#endif
+    ucxapp_register_sock_cmds();
+#ifndef UCXAPP_LITE
+    ucxapp_register_mqtt_cmds();
     ucxapp_register_cert_cmds();
-    ucxapp_register_ymodem_cmds();
+    ucxapp_register_perf_cmds();
+#endif
+    ucxapp_register_app_cmds();
+#ifndef UCXAPP_LITE
+    ucxapp_register_time_cmds();
     ucxapp_register_usecase_cmds();
-    ucxapp_register_examples_cmds();
+    ucxapp_register_ymodem_cmds();
 #endif
 #ifdef UCXAPP_CAN_HW
     ucxapp_register_can_cmds();
+#endif
+#ifndef UCXAPP_LITE
+    ucxapp_register_examples_cmds();
 #endif
 
     if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {

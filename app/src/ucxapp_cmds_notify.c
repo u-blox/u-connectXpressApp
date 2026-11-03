@@ -237,7 +237,7 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gNotifyCmds[] = {
-    { "notify.on",       "",              "Phone notifications (Android or any app) over a custom GATT service: the app writes <id>|<app>|<title>|<text>", UCXAPP_CMD_NEEDS_DEVICE, cmdOn },
+    { "notify.on",       "",              "Receive phone notifications (Android or any app) over a custom GATT service; the app writes <id>|<app>|<title>|<text>", UCXAPP_CMD_NEEDS_DEVICE, cmdOn },
     { "notify.off",      "",              "Stop showing phone notifications",                       0, cmdOff },
     { "notify.list",     "",              "The last 16 notifications",                              0, cmdList },
     { "notify.action",   "<id> <action>", "Send <id>|<action> to the phone app (e.g. dismiss, open)", UCXAPP_CMD_NEEDS_DEVICE, cmdAction },

@@ -278,18 +278,18 @@ static void outTitleBorder(const char *left, const char *title, int width)
 
 /* ---- state -------------------------------------------------------------------- */
 
-enum { E_HEAD, E_GROUP, E_SUB, E_CMD, E_QUIT };
+enum { E_HEAD, E_SECT, E_GROUP, E_SUB, E_CMD, E_QUIT };
 
 #define SUB_LEN      32
 #define SUBMENU_MIN  15   /* groups with more commands than this get sub-menus */
-#define MAX_ENTRIES  (UCXAPP_UI_MAX_GROUPS + UCXAPP_UI_MAX_GROUP_CMDS + 4)
+#define MAX_ENTRIES  (2 * UCXAPP_UI_MAX_GROUPS + UCXAPP_UI_MAX_GROUP_CMDS + 4)
 
 typedef struct {
     uint8_t kind;
     int8_t gi;
     const ucxapp_cmd_t *cmd;
     char sub[SUB_LEN];        /* E_SUB, and E_CMD inside a sub-menu: "gatt.client" */
-    const char *title;        /* E_HEAD */
+    const char *title;        /* E_HEAD (ruled) and E_SECT (dim label) */
 } entry_t;
 
 static lineBuf_t gLog, gEvents;
@@ -510,8 +510,13 @@ static void rebuildEntries(void)
     gEntryCount = 0;
     addEntry(E_HEAD, -1, NULL, NULL, " Module ");
     for (int gi = 0; gi < gGroupCount; gi++) {
+        const char *sect = ucxapp_ui_group_section(gGroups[gi]);
+
         if (gi == gHostStart) {
             addEntry(E_HEAD, -1, NULL, NULL, " Host ");
+        }
+        if (sect[0] != '\0' && (gi == 0 || gi == gHostStart || strcmp(sect, ucxapp_ui_group_section(gGroups[gi - 1])) != 0)) {
+            addEntry(E_SECT, -1, NULL, NULL, sect);
         }
         addEntry(E_GROUP, gi, NULL, NULL, NULL);
         if (gi == gExpanded) {
@@ -519,7 +524,7 @@ static void rebuildEntries(void)
         }
     }
     addEntry(E_QUIT, -1, NULL, NULL, NULL);
-    gSel = 1;
+    gSel = 0;
     for (int i = 0; i < gEntryCount; i++) {
         const entry_t *e = &gEntries[i];
 
@@ -527,6 +532,9 @@ static void rebuildEntries(void)
             gSel = i;
             break;
         }
+    }
+    while (gSel < gEntryCount - 1 && (gEntries[gSel].kind == E_HEAD || gEntries[gSel].kind == E_SECT)) {
+        gSel++;   /* the first group, past the headings */
     }
 }
 
@@ -585,7 +593,7 @@ static void moveSel(int dir)
 {
     int i = gSel + dir;
 
-    while (i >= 0 && i < gEntryCount && gEntries[i].kind == E_HEAD) {
+    while (i >= 0 && i < gEntryCount && (gEntries[i].kind == E_HEAD || gEntries[i].kind == E_SECT)) {
         i += dir;
     }
     if (i >= 0 && i < gEntryCount) {
@@ -678,6 +686,10 @@ static void drawCommandCell(int row, int bodyRows, int width)
         out("\033[90m" G_H G_H "%s", e->title);
         outRepeat(G_H, width - 2 - (int)strlen(e->title));
         out("\033[0m");
+        return;
+    case E_SECT:
+        snprintf(text, sizeof(text), " %s", e->title);
+        outCell(text, width, 90, false);
         return;
     case E_QUIT:
         outCell("  exit", width, 97, sel);
@@ -824,8 +836,11 @@ static void drawFrame(int rows, bool busy)
             outCell("AT terminal: type AT commands (AT prefix optional), Up/Down history, Esc or 'back' returns to commands",
                     W_CMD + W_LOG + W_EVT + 4, 96, false);
         } else if (cmd != NULL) {
+            char usage[256];
+
+            ucxapp_usage_hint(cmd, gListFocus ? "" : gIn, usage, sizeof(usage));
             snprintf(text, sizeof(text), "[%s] %s%s%s  -  %s", ucxapp_ui_cmd_runs_on(cmd), cmd->name,
-                     cmd->usage[0] != '\0' ? " " : "", cmd->usage, cmd->help);
+                     usage[0] != '\0' ? " " : "", usage, cmd->help);
             outHint2(text, W_CMD + W_LOG + W_EVT + 4, body);
         } else if (gListFocus && gSel >= 0 && gSel < gEntryCount && gEntries[gSel].kind == E_GROUP) {
             const char *g = gGroups[gEntries[gSel].gi];
@@ -1291,7 +1306,11 @@ int ucxapp_tui_run(ucxapp_t *app)
             int body = rows - TUI_FOOTER;
 
             int r = gSel;
-            int top = (r > 0 && gEntries[r - 1].kind == E_HEAD) ? r - 1 : r;   /* keep a heading above its first group */
+            int top = r;   /* keep the headings above their first group */
+
+            while (top > 0 && (gEntries[top - 1].kind == E_HEAD || gEntries[top - 1].kind == E_SECT)) {
+                top--;
+            }
 
             if (top < gTop) {
                 gTop = top;

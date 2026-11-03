@@ -328,12 +328,12 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gMqttCmds[] = {
-    { "mqtt.connect",     "[host] [port] [id=<client>] [user=<name>] [pass=<pw>] [tls|ca=<name> [cert=<name> key=<name>]]", "Connect to a broker (default broker.emqx.io:1883); login with user/pass, TLS with ca= (port 8883 by default) and a client certificate with cert/key; certificates are loaded with cert.*", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttConnect },
+    { "mqtt.connect",     "[host] [port] [id=<client>] [user=<name>] [pass=<pw>] [tls|ca=<name> [cert=<name> key=<name>]]", "Connect to a broker (default broker.emqx.io:1883); user/pass to log in, ca= for TLS (port 8883) plus cert/key for a client certificate, all from cert.upload", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttConnect },
     { "mqtt.disconnect",  "",                 "Disconnect from the broker",                               UCXAPP_CMD_NEEDS_DEVICE, cmdMqttDisconnect },
     { "mqtt.subscribe",   "<topic> [qos=0]",    "Subscribe to a topic (wildcards allowed, qos 0-2)",        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttSubscribe },
     { "mqtt.unsubscribe", "<topic>",          "Unsubscribe from a topic",                                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttUnsubscribe },
-    { "mqtt.publish",     "<topic> [qos=0] [retain] <text...>|<topic> [qos=0] [retain] file=<name>", "Publish typed text (one line) or a stored file (max 5000 bytes); retain keeps it on the broker for new subscribers",                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
-    { "mqtt.read",        "[wait_s=10]",         "Wait (default 10 s) for messages and print them",          UCXAPP_CMD_NEEDS_DEVICE, cmdMqttRead },
+    { "mqtt.publish",     "<topic> [qos=0] [retain] <text...> | <topic> [qos=0] [retain] file=<name>", "Publish one line of text or a stored file (max 5000 bytes); retain keeps it on the broker for new subscribers", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
+    { "mqtt.read",        "[wait_s=10]",         "Wait for messages and print them",                        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttRead },
 };
 
 void ucxapp_register_mqtt_cmds(void)

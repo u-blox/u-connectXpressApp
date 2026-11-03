@@ -100,9 +100,11 @@ endif()
 string(TOLOWER "${STM32_BOARD}" _board)
 set(UCXAPP_STM32_NAME "ucxapp_${_board}")
 add_stm32_example(NAME ${UCXAPP_STM32_NAME} SOURCES ${UCXAPP_STM32_SOURCES})
-# Full boards have the flash for -O2 (the shared default is -Og); lite boards stay at -Os.
+# Full boards build for size (UCXAPP_OPT, default -Os: the F401/F446 flash is nearly full at -O2 and the app is
+# UART bound); lite boards add LTO. The shared default is -Og.
+set(UCXAPP_OPT "-Os" CACHE STRING "Optimisation level of the full STM32 builds")
 if(NOT UCXAPP_LITE)
-    target_compile_options(${UCXAPP_STM32_NAME}.elf PRIVATE -O2 -ffunction-sections -fdata-sections)
+    target_compile_options(${UCXAPP_STM32_NAME}.elf PRIVATE ${UCXAPP_OPT} -ffunction-sections -fdata-sections)
     target_link_options(${UCXAPP_STM32_NAME}.elf PRIVATE -Wl,--gc-sections)
 else()
     # 128 KB flash: LTO keeps the lite command set inside ROM.

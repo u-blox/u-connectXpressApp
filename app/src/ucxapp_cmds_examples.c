@@ -12,6 +12,7 @@ typedef struct {
 } example_t;
 
 static const example_t kExamples[] = {
+#if UCXAPP_HOST   /* peripherals and tools of the PC builds */
     { "bridge", "Sensor hub: GNSS to the PC over Wi-Fi, IMU to a phone over BLE",
       "wifi.profile.auto\ngnss.open\nimu.open\ngnss.bridge tcp\nimu.bridge ble nus\nbridge.list" },
     { "bridge", "Asset tracker: GNSS over cellular, CAN over Wi-Fi",
@@ -85,6 +86,7 @@ static const example_t kExamples[] = {
       "imu.bridge ble nus" },
     { "imu", "Record a session",
       "imu.log motion.bin\n# ...move...\nimu.log off" },
+#endif
 
     { "wifi", "Join a network and check it (choose your country's regulatory domain once first)",
       "wifi.regdomain etsi\nwifi.scan\nwifi.connect 1 MyPassword\nwifi.status\nnet.ping u-blox.com" },
@@ -165,12 +167,14 @@ static const example_t kExamples[] = {
 
     { "cert", "Install and check certificates",
       "cert.upload ca ca.pem myca\ncert.upload client client.pem mycert\ncert.upload key client.key mykey\ncert.list\ncert.info myca" },
+#if UCXAPP_HOST
     { "cert", "Install a PKCS#12 (.p12/.pfx) file from the IT department",
       "utils.cert.info device.p12 MyPassword\ncert.import device.p12 device MyPassword\ncert.list" },
     { "utils", "Convert PKCS#12, PKCS#7 or DER to PEM files",
       "utils.cert.convert device.pfx device MyPassword\nutils.cert.info chain.p7b\nutils.cert.convert root.cer" },
     { "utils", "Encrypt a file with a passphrase and get it back",
       "utils.encrypt device.key device.key.enc MyPassphrase\nutils.decrypt device.key.enc device.key MyPassphrase" },
+#endif
 
     { "bt", "Find and connect a device",
       "bt.scan\nbt.connect 1\nbt.list\nbt.disconnect" },
@@ -205,6 +209,7 @@ static const example_t kExamples[] = {
       "gatt.server.ras 60\n# on the other module (RAS needs an encrypted link, so pair first):\nbt.connect 1\n"
       "gatt.client.ras\n# features and Data Ready indications; ranging data needs a Channel Sounding radio" },
 
+#if UCXAPP_HOST
     { "hid", "BLE keyboard",
       "hid.setup\nbt.pairing on\n# pair from the PC or phone\nhid.text Hello from NORA\nhid.key enter" },
     { "hid", "BLE mouse and media keys",
@@ -223,6 +228,7 @@ static const example_t kExamples[] = {
       "fw.flash NORA-W36X-3.5.0.zip" },
     { "fw", "Rescue a module stuck in bootloader",
       "dev.disconnect\nfw.bootloader COM13 NORA-W36X-3.5.0.zip" },
+#endif
 
     { "dev", "Support report",
       "dev.info\ndev.status\ndev.diagnose" },
@@ -233,11 +239,13 @@ static const example_t kExamples[] = {
     { "dev", "Deep sleep until the wake-up pin is pulled low",
       "dev.power deep\n# the module starts as after a reset" },
 
+#if UCXAPP_HOST
     { "cell", "Cellular data link",
       "cell.detect\ncell.open COM30\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
     { "cell", "Modem AT console from a PC tool over TCP",
       "cell.open COM30\ncell.bridge tcp 7000" },
-
+#endif
+#if UCXAPP_HOST || defined(UCXAPP_CAN_HW)
     { "can", "Loopback test",
       "can.cfg 500000 loopback\ncan.send 0x123 11 22 33\ncan.recv\ncan.status" },
     { "can", "Listen on a real bus without disturbing it (STM32 board with a CAN transceiver)",
@@ -248,6 +256,8 @@ static const example_t kExamples[] = {
       "can.bridge udp 192.168.1.10 6000\ncan.bridge status" },
     { "can", "CAN frames to a phone over SPS from the STM32 board",
       "can.cfg 500000 listen\ncan.bridge ble sps\ncan.bridge status" },
+#endif
+#if UCXAPP_HOST
     { "can", "CAN frames to a server over cellular (reconnects when the link drops)",
       "cell.open COM30\ncell.attach on\ncell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
 
@@ -279,17 +289,20 @@ static const example_t kExamples[] = {
       "bt.defaults secure\nbt.pairing on\nnotify.on\n# the app writes 17|Messages|Anna|See you at 5\nnotify.list\nnotify.action 17 dismiss" },
     { "session", "Record a session for support, replay it elsewhere",
       "session.record issue.ucx\nwifi.connect\nnet.ping 8.8.8.8\nsession.stop\nsession.replay issue.ucx stop" },
+#endif
     { "cfg", "Back up a module's settings and compare later",
       "cfg.show\ncfg.save golden.cfg\n# ... later, or on another module\ncfg.diff golden.cfg" },
     { "cfg", "Clone one module's settings to another",
       "cfg.save golden.cfg\n# connect to the second module, then\ncfg.load golden.cfg\ncfg.diff golden.cfg" },
     { "cfg", "Compare two saved files", "cfg.diff golden.cfg field.cfg" },
+#if UCXAPP_HOST
     { "at", "Record the AT traffic, then read it decoded",
       "at.trace boot.trace\nwifi.connect\nat.trace.stop\nat.trace.show boot.trace" },
     { "at", "Decode a URC or response", "at.decode +UEWSNU\nat.decode +UEWLD:0,3" },
     { "at", "Replay a recorded trace and compare the replies", "at.replay boot.trace" },
     { "at", "Open a trace in Wireshark (next to a BLE or Wi-Fi sniffer capture)",
       "at.trace.pcap boot.trace\n# or record straight to pcapng:\nat.trace boot.pcapng\nwifi.connect\nat.trace.stop" },
+#endif
     { "perf", "Round-trip time and throughput through the u-blox echo server (TCP and UDP)",
       "wifi.connect MyNetwork MyPassword\nperf.latency tcp echo.u-blox.com 7 20\nperf.throughput tcp echo.u-blox.com 7 10 512\n"
       "perf.latency udp echo.u-blox.com 7 20\nperf.throughput udp echo.u-blox.com 7 10 512" },
@@ -307,12 +320,16 @@ static const example_t kExamples[] = {
       "xplorer.call ble.startScan\nxplorer.call ble.getDevices\nxplorer.call ble.stopScan\n"
       "xplorer.echo udp 7000\nxplorer.echo state\nxplorer.echo stop" },
 #endif
+#if UCXAPP_HOST
     { "prod", "Production test with a report per serial number",
       "prod.test\nprod.test examples/automation/production-test.ucx reports" },
+#endif
     { "app", "Keep the clock in sync and set the module",
       "wifi.connect MyNetwork MyPassword\napp.time sync\napp.time\napp.time push" },
+#if UCXAPP_HOST
     { "dtls", "Secure UDP echo",
       "dtls.client 192.168.1.10 4433 hello\ndtls.server 4433" },
+#endif
 
     { "app", "Capture a session for a bug report",
       "app.log.level all\napp.log.save session.txt\n# ...reproduce...\napp.log.stop" },
@@ -329,8 +346,10 @@ static const example_t kExamples[] = {
       "cert.list\nwifi.eap FactoryNet ca.pem client.pem client.key tool17\nwifi.status" },
     { "usecase", "Access point for the laptops, next to the station",
       "wifi.ap.enable Tool17 Tool17Pass\nwifi.ap.status" },
+#if UCXAPP_HOST
     { "usecase", "HTTPS monitoring page for the laptops",
       "# web.start 443 <token> https  (from the shell or --exec, not from this page)\nweb.status" },
+#endif
     { "usecase", "Throughput for the history download",
       "net.iperf server tcp\n# on a laptop: iperf -c <tool-ip> -t 10\n# iperf measures the radio; the download also crosses the UART\nnet.iperf stop" },
     { "usecase", "Socket trays: one UDP socket for all of them",
@@ -487,8 +506,10 @@ static const example_t kExamples[] = {
     { "uc-remote", "Media remote",
       "hid.media volup\nhid.media play\nhid.text hello" },
 #endif
+#if UCXAPP_HOST
     { "utils", "Handy tools",
       "utils.qr.wifi MyNetwork MyPassword\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
+#endif
 };
 
 #define EX_COUNT (sizeof(kExamples) / sizeof(kExamples[0]))

@@ -422,7 +422,7 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gAncsCmds[] = {
     { "ancs.on",       "",              "Advertise for an iPhone (ANCS solicitation); pair from the phone, then ancs.sub", UCXAPP_CMD_NEEDS_DEVICE, cmdOn },
-    { "ancs.sub",      "[conn]",        "Subscribe to the iPhone's notifications on a connection (default 0)", UCXAPP_CMD_NEEDS_DEVICE, cmdSub },
+    { "ancs.sub",      "[conn]",        "Subscribe to the iPhone's notifications on a connection", UCXAPP_CMD_NEEDS_DEVICE, cmdSub },
     { "ancs.off",      "",              "Stop receiving iPhone notifications",                      UCXAPP_CMD_NEEDS_DEVICE, cmdOff },
     { "ancs.list",     "",              "Notifications currently on the phone (uid, category, actions)", UCXAPP_CMD_NEEDS_DEVICE, cmdList },
     { "ancs.show",     "<uid>",         "App, title, message and date of one notification",        UCXAPP_CMD_NEEDS_DEVICE, cmdShow },

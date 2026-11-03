@@ -607,21 +607,21 @@ static int cmdThreadDns(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gThreadCmds[] = {
-    { "thread.status",    "",                 "Thread on or off, the network, this module's role, RLOC16 and partition", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStatus },
-    { "thread.start",     "[wait_s=30]",      "Turn Thread on and wait until it is attached to the network (0: do not wait)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStart },
+    { "thread.status",    "",                 "Thread on or off, network, role, RLOC16 and partition",            UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStatus },
+    { "thread.start",     "[wait_s=30]",      "Turn Thread on and wait until it is attached (0: do not wait)",     UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStart },
     { "thread.stop",      "",                 "Turn Thread off",                                                   UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStop },
-    { "thread.network",   "[new|<name> <channel> <pan_id> <ext_pan_id> <network_key>]", "Show the network credentials, make a new one with random values, or set them (channel 11-26, ext_pan_id 16 hex digits, network_key 32)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadNetwork },
-    { "thread.dataset",   "[<hex>|clear]",    "Show or set the active operational dataset as TLV hex (from a border router: ot-ctl dataset active -x)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadDataset },
+    { "thread.network",   "[new|<name> <channel> <pan_id> <ext_pan_id> <network_key>]", "Show the network credentials, make new random ones, or set them (channel 11-26, ext_pan_id 16 hex digits, key 32)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadNetwork },
+    { "thread.dataset",   "[<hex>|clear]",    "Show or set the active operational dataset as TLV hex (border router: ot-ctl dataset active -x)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadDataset },
     { "thread.type",      "[router|end|sleepy [poll_ms]]", "Show or set the device type: router (routes for others), end device, or sleepy end device polling its parent", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadType },
     { "thread.scan",      "",                 "Scan for Thread networks nearby",                                   UCXAPP_CMD_NEEDS_DEVICE, cmdThreadScan },
-    { "thread.join",      "<pskd> [wait_s=120]|stop", "Join a network through a commissioner with this PSKd (joiner), or stop joining", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadJoin },
+    { "thread.join",      "<pskd> [wait_s=120]|stop", "Join through a commissioner with this PSKd (joiner), or stop joining", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadJoin },
     { "thread.addr",      "",                 "This module's IPv6 addresses on the Thread network",               UCXAPP_CMD_NEEDS_DEVICE, cmdThreadAddr },
     { "thread.neighbors", "",                 "Neighbours: extended address, RLOC16, role, RSSI and link quality", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadNeighbors },
-    { "thread.routers",   "",                 "The router table: ids, next hops, path costs and link quality",     UCXAPP_CMD_NEEDS_DEVICE, cmdThreadRouters },
+    { "thread.routers",   "",                 "Router table: ids, next hops, path costs and link quality",         UCXAPP_CMD_NEEDS_DEVICE, cmdThreadRouters },
     { "thread.leader",    "",                 "The partition's leader data",                                       UCXAPP_CMD_NEEDS_DEVICE, cmdThreadLeader },
     { "thread.counters",  "[all|reset]",      "MAC and MLE counters (attach attempts, retries, errors); all lists every counter", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadCounters },
     { "thread.srp",       "[on|off|host <name>|add <_type._udp> <port> <instance>|remove <id>|txt <id> <key> <value>]", "SRP client: register services with the border router so others find them over DNS-SD", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadSrp },
-    { "thread.dns",       "browse <_type._udp>|resolve <instance> <_type._udp>|host <name>", "DNS over the Thread network: browse services, resolve an instance or a host name to IPv6", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadDns },
+    { "thread.dns",       "browse <_type._udp>|resolve <instance> <_type._udp>|host <name>", "DNS-SD over Thread: browse services, resolve an instance, or a host name to IPv6", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadDns },
 };
 
 void ucxapp_register_thread_cmds(void)

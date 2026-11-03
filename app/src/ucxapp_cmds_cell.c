@@ -824,17 +824,17 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "cell.detect", "[port]", "Find a cellular module answering AT on the PC serial ports", 0, cmdDetect },
-    { "cell.open", "[port] [baud=115200]", "Open a cellular module on a PC serial port (default 115200; finds it when omitted)", 0, cmdOpen },
-    { "cell.close", "", "Close the cellular module", 0, cmdClose },
-    { "cell.status", "", "Show SIM, signal, registration, operator and IP", 0, cmdStatus },
-    { "cell.at", "<command>", "Send a raw AT command to the cellular module", 0, cmdAt },
+    { "cell.detect", "[port]", "Find a cellular modem answering AT on the PC serial ports", 0, cmdDetect },
+    { "cell.open", "[port] [baud=115200]", "Open a cellular modem on a PC serial port (finds it when omitted)", 0, cmdOpen },
+    { "cell.close", "", "Close the cellular modem", 0, cmdClose },
+    { "cell.status", "", "SIM, signal, registration, operator and IP", 0, cmdStatus },
+    { "cell.at", "<command>", "Send a raw AT command to the cellular modem", 0, cmdAt },
     { "cell.apn", "[<apn> [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },
     { "cell.attach", "[on|off]", "Attach and activate data (on), detach (off) or show the state", 0, cmdAttach },
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
-    { "cell.connect", "<host> <port> [tcp|udp]", "Open a transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91); then use gnss.bridge cell or imu.bridge cell", 0, cmdConnect },
+    { "cell.connect", "<host> <port> [tcp|udp]", "Transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91) for gnss.bridge cell, imu.bridge cell, can.bridge cell", 0, cmdConnect },
     { "cell.disconnect", "", "Leave transparent mode and close the socket", 0, cmdDisconnect },
-    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 bridges at once", 0, cmdBridge },
+    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_cell_cmds(void)

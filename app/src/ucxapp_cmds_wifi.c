@@ -1473,32 +1473,32 @@ static int cmdWifiSurvey(ucxapp_t *app, int argc, char *argv[])
 #endif
 
 static const ucxapp_cmd_t gWifiCmds[] = {
-    { "wifi.scan",       "",                    "Scan for networks: strongest first with band, signal and security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
+    { "wifi.scan",       "",                    "Scan for networks, strongest first: band, signal, security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
 #ifndef UCXAPP_LITE
-    { "wifi.channels",   "[mixed|full]",        "Show or set the scan channels: mixed scans the channels of the last scan (full scan every 10th); full clears that and the module's channel list", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiChannels },
+    { "wifi.channels",   "[mixed|full]",        "Scan channels: mixed rescans the channels of the last scan (a full scan every 10th), full clears that and the module's channel list", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiChannels },
 #endif
-    { "wifi.connect",    "[ssid|n] [password|-]", "Connect by SSID or number from wifi.scan; '-' prompts for the password; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
+    { "wifi.connect",    "[ssid|number] [password]", "Connect with WPA2/WPA3 by SSID or scan number; no password: open network, or the saved profile's; '-' prompts for it; no argument: the best known network", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
 #ifndef UCXAPP_LITE
-    { "wifi.eap",        "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]", "Connect with WPA2/WPA3-Enterprise EAP-TLS using certificates on the module (cert.list)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiEap },
-    { "wifi.peap",       "<ssid> <user> <password|-> <ca> [1.2|1.3|any]", "Connect with WPA2/WPA3-Enterprise PEAP (MSCHAPv2); the CA verifies the server", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPeap },
+    { "wifi.eap",        "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]", "WPA2/WPA3-Enterprise EAP-TLS with certificates on the module (cert.list)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiEap },
+    { "wifi.peap",       "<ssid> <user> <password> <ca> [1.2|1.3|any]", "WPA2/WPA3-Enterprise PEAP (MSCHAPv2); the CA verifies the server; '-' prompts for the password", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPeap },
 #endif
     { "wifi.disconnect", "",                    "Disconnect from Wi-Fi",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiDisconnect },
-    { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
-    { "wifi.rssi",       "[count=1] [interval_s=1]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
+    { "wifi.status",     "",                    "Connection, SSID, RSSI and IP",    UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
+    { "wifi.rssi",       "[count=1] [interval_s=1]", "Read the signal strength, repeatedly", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
 #ifndef UCXAPP_LITE
-    { "wifi.survey",     "[seconds=10] [host]",    "Is the Wi-Fi here good enough? Signal and stability over time (default 10 s), internet reachability, and a verdict with advice", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiSurvey },
+    { "wifi.survey",     "[seconds=10] [host]",    "Is the Wi-Fi here good enough? Signal and stability over time, internet reachability, a verdict with advice", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiSurvey },
 #endif
-    { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP / static IP (applies on next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
+    { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP or a static IP (applies on the next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
     { "wifi.profile.add", "<name> <ssid> [password]", "Save or update a Wi-Fi profile", 0, cmdProfileAdd },
     { "wifi.profile.list", "",                   "List saved Wi-Fi profiles",        0, cmdProfileList },
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
-    { "wifi.profile.auto", "",                   "Connect: the last used profile, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
-    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set (and save) where you are, the Wi-Fi regulatory domain; at the prompt without an argument it shows a numbered list to pick from. Wi-Fi scan, connect and AP need it and ask for it the first time (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
-    { "wifi.roaming",    "[on|off]",            "Show or set Wi-Fi roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
-    { "wifi.ap.enable",  "[ssid] [password] [channel]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
+    { "wifi.profile.auto", "",                   "Connect to the last used profile, else to the strongest known network in a scan", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
+    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); scan, connect and AP need it and ask the first time; at the prompt a numbered list helps (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
+    { "wifi.roaming",    "[on|off]",            "Show or set roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
+    { "wifi.ap.enable",  "[ssid] [password=12345678] [channel=6]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },
-    { "wifi.ap.status",  "",                    "Show AP parameters, addresses and stations", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApStatus },
+    { "wifi.ap.status",  "",                    "AP parameters, addresses and stations", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApStatus },
 };
 
 void ucxapp_register_wifi_cmds(void)

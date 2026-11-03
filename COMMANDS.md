@@ -749,7 +749,10 @@ ucxapp COM13 --shell        # then: wifi.profile.auto, web.start
 #### Web UI
 
 `web.start` serves a page with two views. **Toolbox** has four parts: a **Commands** panel generated from the command table
-(one section per group, one form per command built from its usage string, so a new command shows up
+(a `MODULE` part for the groups the NORA module executes and a `HOST` part for the work this PC does, each in
+sections: Device, Bluetooth, Wi-Fi and Thread, IP services; App, Protocols, Peripherals; one fold per group with its
+description as tooltip, big groups fold `gatt.client.*`, `gatt.server.*` and the like into sub-menus, and one form
+per command built from its usage string, so a new command shows up
 without touching the page), a **Log** pane that mirrors everything the app prints (the
 same text as the console), an **Events** pane that shows module events as they arrive (Wi-Fi link and
 network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a command line with history
@@ -781,7 +784,7 @@ Pages, with `coi-serviceworker.js` adding the cross-origin isolation headers thr
 `--tui` opens the same three panes in a terminal window (Windows console, Linux terminal) and is the
 default when there is no `--exec` or `--shell`. The layout widens with the window up to 180 columns by 45
 rows; the first Log line shows the app version and build date (`--version` prints the same). Log lines wrap at word boundaries.
-**Commands** (groups in AT manual order; Right/Enter expands a group or puts a command on the input line),
+**Commands** (the same groups and sections as the web page, module groups first; Right/Enter expands a group or puts a command on the input line),
 **Log** and **Events** (colored by source), with a hint line that shows the usage of the selected or
 typed command.
 

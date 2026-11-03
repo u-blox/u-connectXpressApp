@@ -551,15 +551,16 @@ int ucxapp_cmd_complete_line(const char *line, char *out, size_t size, char *lis
     return c.total;
 }
 
-/* Print usage one top-level alternative per line ("a|b" or "<a|b>"), each line prefixed by indent. */
-void ucxapp_print_usage_lines(const char *indent, const char *usage)
+/* Alternative index of a usage ("a | b" or "<a|b>" at the top level) as [start, start+len), trimmed; false past
+ * the end. Index 0 of a usage without alternatives is the whole usage. */
+bool ucxapp_usage_alt(const char *usage, int index, const char **start, size_t *len)
 {
-    size_t len = strlen(usage);
+    size_t total = strlen(usage);
     const char *p = usage;
-    const char *end = usage + len;
+    const char *end = usage + total;
     int depth = 0;
 
-    if (len > 2 && usage[0] == '<' && usage[len - 1] == '>') {
+    if (total > 2 && usage[0] == '<' && usage[total - 1] == '>') {
         const char *q = usage;
 
         do {
@@ -574,21 +575,69 @@ void ucxapp_print_usage_lines(const char *indent, const char *usage)
     }
     for (const char *q = p; q <= end; q++) {
         if (q == end || (*q == '|' && depth == 0)) {
-            const char *a = p, *b = q;
+            if (index-- == 0) {
+                const char *a = p, *b = q;
 
-            while (a < b && *a == ' ') {
-                a++;
+                while (a < b && *a == ' ') {
+                    a++;
+                }
+                while (b > a && b[-1] == ' ') {
+                    b--;
+                }
+                *start = a;
+                *len = (size_t)(b - a);
+                return true;
             }
-            while (b > a && b[-1] == ' ') {
-                b--;
-            }
-            ucxapp_print("%s%.*s\n", indent, (int)(b - a), a);
             p = q + 1;
         } else if (*q == '<' || *q == '[') {
             depth++;
         } else if (*q == '>' || *q == ']') {
             depth--;
         }
+    }
+    return false;
+}
+
+/* Print usage one top-level alternative per line, each line prefixed by indent. */
+void ucxapp_print_usage_lines(const char *indent, const char *usage)
+{
+    const char *a;
+    size_t n;
+
+    for (int i = 0; ucxapp_usage_alt(usage, i, &a, &n); i++) {
+        ucxapp_print("%s%.*s\n", indent, (int)n, a);
+    }
+}
+
+void ucxapp_usage_hint(const ucxapp_cmd_t *cmd, const char *line, char *out, size_t size)
+{
+    const char *a, *word = line != NULL ? line + strcspn(line, " ") : "";
+    size_t n, wlen;
+
+    while (*word == ' ') {
+        word++;
+    }
+    wlen = strcspn(word, " ");
+    for (int i = 0; wlen > 0 && ucxapp_usage_alt(cmd->usage, i, &a, &n); i++) {
+        if (strcspn(a, " ") == wlen && strncmp(a, word, wlen) == 0 && a[0] != '<' && a[0] != '[') {
+            snprintf(out, size, "%.*s", (int)n, a);   /* the form whose keyword is typed */
+            return;
+        }
+    }
+    if (strlen(cmd->usage) <= 72 || !ucxapp_usage_alt(cmd->usage, 1, &a, &n)) {
+        snprintf(out, size, "%s", cmd->usage);
+        return;
+    }
+    out[0] = '\0';
+    for (int i = 0; ucxapp_usage_alt(cmd->usage, i, &a, &n); i++) {
+        size_t used = strlen(out), key = strcspn(a, " ");
+
+        snprintf(out + used, size - used, "%s%.*s", used > 0 ? " | " : "", (int)(key < n ? key : n), a);
+    }
+    {
+        size_t used = strlen(out);
+
+        snprintf(out + used, size - used, "   (type one for its arguments)");
     }
 }
 

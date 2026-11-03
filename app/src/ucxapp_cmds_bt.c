@@ -1559,35 +1559,35 @@ static int cmdBtCsPct(ucxapp_t *app, int argc, char *argv[])
 #endif
 
 static const ucxapp_cmd_t gBtCmds[] = {
-    { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s): named first, strongest first, with what they advertise; full decodes the data, filter shows only devices matching bt.filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
-    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, by number from bt.scan, or by profile or device name (a name not in the last scan is looked for with a filtered scan; the case must match); with no argument: the last used profile (same as bt.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
-    { "bt.name",       "[name]",              "Show the module's Bluetooth device name, or set it (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
-    { "bt.addr",       "[addr]",              "Show the module's Bluetooth address, or set it (XX:XX:XX:XX:XX:XX; takes effect after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
+    { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s), named and strongest first; full decodes the advertising data, filter keeps only bt.filter matches", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
+    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, scan number, profile or device name (case-sensitive; an unscanned name is looked for first); no argument: the last used profile", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
+    { "bt.name",       "[name]",              "Show or set the module's Bluetooth name (stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
+    { "bt.addr",       "[addr]",              "Show or set the module's Bluetooth address (XX:XX:XX:XX:XX:XX, applies after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
 #ifndef UCXAPP_LITE
-    { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "List the scan data filters, or set one: AD type (9 = complete name, 0xFF = manufacturer data) and up to 10 bytes to match, as text (NORA) or hex (4E4F5241); used by bt.scan filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
-    { "bt.cs",         "[on|off|initiator]",  "Bluetooth Channel Sounding (NORA-B26/B27): on makes the module a reflector so a connected initiator can measure the distance; initiator (cs_initiator evaluation firmware) measures it (stored in the module)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
-    { "bt.cs.range",   "<conn> [seconds=10|on|off]", "Channel Sounding initiator: range a reflector (bonding first if needed) and print the module's distance (filtered in the module) for some seconds, or start/stop ranging in the background (distances in the events)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRange },
-    { "bt.cs.rate",    "[intervals=20]",      "Channel Sounding initiator: connection intervals between measurements (1-65535; stored with dev.save)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRate },
-    { "bt.cs.filter",  "[on|off|default|<q> <r>]", "Channel Sounding initiator: the module's Kalman filter; off gives raw distances, Q 0-1000 and R 10-10000 in 0.001 (default 1 and 120)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsFilter },
-    { "bt.cs.phase",     "[on|off|ref off|500|1000|10000]", "Channel Sounding initiator: phase correction term reports for your own algorithms, or a stored reference instead of real data (debug)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsPct },
+    { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "Scan data filters for bt.scan filter: AD type (9 name, 0xFF manufacturer data) and up to 10 bytes as text (NORA) or hex (4E4F5241)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
+    { "bt.cs",         "[on|off|initiator]",  "Channel Sounding (NORA-B26/B27, stored): on makes the module a reflector an initiator can range; initiator (cs_initiator evaluation firmware) measures", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
+    { "bt.cs.range",   "<conn> [seconds=10|on|off]", "Initiator: range a reflector (bonds first if needed) and print the filtered distance for some seconds, or start/stop ranging in the background (events)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRange },
+    { "bt.cs.rate",    "[intervals=20]",      "Initiator: connection intervals between measurements (1-65535, stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRate },
+    { "bt.cs.filter",  "[on|off|default|<q> <r>]", "Initiator: the module's Kalman filter; off gives raw distances, Q 0-1000 and R 10-10000 in 0.001 (default 1 and 120)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsFilter },
+    { "bt.cs.phase",     "[on|off|ref off|500|1000|10000]", "Initiator: phase correction term reports for your own algorithms, or a stored reference instead of real data (debug)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsPct },
 #endif
     { "bt.disconnect", "[conn]",            "Close a BLE connection",                         UCXAPP_CMD_NEEDS_DEVICE, cmdBtDisconnect },
     { "bt.list",       "",                    "List BLE connections",                           UCXAPP_CMD_NEEDS_DEVICE, cmdBtList },
     { "bt.pairing",    "<on|off>",            "Enable or disable pairing mode",                 UCXAPP_CMD_NEEDS_DEVICE, cmdBtPairing },
     { "bt.iocap",      "<none|display|yesno|keyboard|keydisplay>", "Set the I/O capabilities (none = Just Works)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtIoCap },
     { "bt.security",   "<none|unauth|auth|sc|sconly>", "Set the required security level",    UCXAPP_CMD_NEEDS_DEVICE, cmdBtSecurity },
-    { "bt.defaults",   "[secure]",            "Just Works (default), or secure: LE Secure Connections with legacy fallback + numeric comparison", UCXAPP_CMD_NEEDS_DEVICE, cmdBtDefaults },
+    { "bt.defaults",   "[secure]",            "Just Works (default), or secure: LE Secure Connections with legacy fallback and numeric comparison", UCXAPP_CMD_NEEDS_DEVICE, cmdBtDefaults },
     { "bt.autoconfirm", "<on|off>",           "Accept numeric-comparison pairing automatically (default on)", 0, cmdBtAutoConfirm },
     { "bt.confirm",    "<yes|no>",            "Answer a waiting pairing request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtConfirm },
     { "bt.passkey",    "<digits|deny>",       "Answer a waiting passkey request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtPasskey },
     { "bt.bonds",      "",                    "List bonded devices",                            UCXAPP_CMD_NEEDS_DEVICE, cmdBtBonds },
-    { "bt.bond",       "<conn|addr> [seconds=15]", "Bond (pair and store keys) with a connected device and wait for the result; a code from the peer goes in with bt.passkey", UCXAPP_CMD_NEEDS_DEVICE, cmdBtBond },
+    { "bt.bond",       "<conn|addr> [seconds=15]", "Bond (pair and store keys) with a connected device and wait for the result; answer a code with bt.passkey", UCXAPP_CMD_NEEDS_DEVICE, cmdBtBond },
     { "bt.unbond",     "<addr|all>",          "Remove one or all bonds",                        UCXAPP_CMD_NEEDS_DEVICE, cmdBtUnbond },
     { "bt.profile.add", "<name> <addr[,random]>", "Save a BLE device as a named profile",          0, cmdBtProfileAdd },
     { "bt.profile.list", "",                  "List saved BLE profiles",                        0, cmdBtProfileList },
     { "bt.profile.remove", "<name>",          "Delete a BLE profile",                           UCXAPP_CMD_DANGER, cmdBtProfileRemove },
     { "bt.profile.connect", "<name>",         "Connect to a saved BLE profile",                 UCXAPP_CMD_NEEDS_DEVICE, cmdBtProfileConnect },
-    { "bt.profile.auto", "",                  "Connect to the last used profile, else scan and take the strongest known device", UCXAPP_CMD_NEEDS_DEVICE, cmdBtProfileAuto },
+    { "bt.profile.auto", "",                  "Connect to the last used profile, else to the strongest known device in a scan", UCXAPP_CMD_NEEDS_DEVICE, cmdBtProfileAuto },
 };
 
 void ucxapp_register_bt_cmds(void)

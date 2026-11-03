@@ -459,19 +459,19 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
 #endif
 
 static const ucxapp_cmd_t gDeviceCmds[] = {
-    { "dev.caps", "", "Module capabilities: model, firmware, Wi-Fi, Bluetooth LE and the features this build has", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
-    { "dev.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
-    { "dev.reboot", "", "Reboot the module (clears GATT services and connections); use as the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
-    { "dev.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
+    { "dev.caps", "", "Model, firmware, Wi-Fi, Bluetooth LE and the features of this build", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
+    { "dev.diagnose", "[host]", "Support report with PASS/FAIL: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
+    { "dev.reboot", "", "Reboot the module (drops GATT services and connections); make it the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
+    { "dev.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm'", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
     { "at.reset", "", "Reboot the module (AT+CPWROFF), same as dev.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
-    { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as dev.factory; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
-    { "dev.info", "", "Show manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
-    { "dev.status", "", "Overview: module info, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
-    { "dev.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
+    { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as dev.factory; type 'confirm'", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
+    { "dev.info", "", "Manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
+    { "dev.status", "", "Overview: module, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
+    { "dev.uptime", "", "Time since the module's last +STARTUP", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
-    { "dev.crash", "", "Developer: last crash info stored in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
+    { "dev.crash", "", "Developer: last crash info in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
 #ifndef UCXAPP_LITE
-    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|deep [pin|reset|uart]]", "Power: show or set the power save level (NORA-W36, stored), light sleep that keeps Bluetooth links (NORA-B26), wake it, or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
+    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|deep [pin|reset|uart]]", "Power save level (NORA-W36, stored), light sleep keeping Bluetooth links (NORA-B26) and wake, or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
 #endif
 };
 

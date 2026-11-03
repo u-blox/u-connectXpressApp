@@ -440,11 +440,11 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gSessionCmds[] = {
-    { "session.record",   "<file.ucx>",            "Record the commands typed from now on, with their output as comments, to a script for support; passwords are written as ${UCX_WIFI_PASS} / ${UCX_SECRET}", 0, cmdRecord },
+    { "session.record",   "<file.ucx>",            "Record the commands typed from now on, with their output as comments, to a script for support; passwords become ${UCX_WIFI_PASS} / ${UCX_SECRET}", 0, cmdRecord },
     { "session.stop",     "",                      "Stop recording",                                                   0, cmdStop },
-    { "session.replay",   "<file.ucx> [all] [stop]", "Run the commands of a recorded session or script; firmware, factory reset and removals only with 'all'; 'stop' ends at the first failure", 0, cmdReplay },
+    { "session.replay",   "<file.ucx> [all] [stop]", "Run a recorded session or script; firmware, factory reset and removals only with all; stop ends at the first failure", 0, cmdReplay },
     { "session.selftest", "",                      "Offline check of secret masking (scripts, AT trace) and report file names",           0, cmdSelftest },
-    { "prod.test",        "[script.ucx|-] [dir]",  "Production test: run a script (or '-' for dev.info, dev.caps and dev.diagnose) and write <dir>/<serial>_<date>.txt plus a line in <dir>/report.csv (default dir: reports)", UCXAPP_CMD_NEEDS_DEVICE, cmdProdTest },
+    { "prod.test",        "[script.ucx|-] [dir]",  "Production test: run a script ('-': dev.info, dev.caps, dev.diagnose) and write <dir>/<serial>_<date>.txt plus a line in <dir>/report.csv (default dir reports)", UCXAPP_CMD_NEEDS_DEVICE, cmdProdTest },
 };
 
 void ucxapp_register_session_cmds(void)

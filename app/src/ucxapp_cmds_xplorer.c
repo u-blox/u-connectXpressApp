@@ -260,16 +260,16 @@ static int cmdEcho(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gXplorerCmds[] = {
     { "xplorer.connect", "<phone-ip[:port]> <token>",
-      "Connect to the u-connectXplorer phone app (Settings > Remote control shows the address and token; port "
-      "8765), show app, OS and Bluetooth state and save the phone for the other xplorer and perf commands", 0,
+      "Connect to the u-connectXplorer phone app (Settings > Remote control shows address and token, port 8765), "
+      "show its app, OS and Bluetooth state and save it for the other xplorer and perf commands", 0,
       cmdConnect },
     { "xplorer.info", "", "Version, OS and Bluetooth state of the saved phone, and what its app version supports", 0,
       cmdInfo },
     { "xplorer.call", "<method> [key=value]...",
       "Call any remote-control method (e.g. ble.getState, app.getNetworkInfo) and print the JSON result; numbers, "
-      "true/false and {..}/[..] values are sent as they are, others as strings", 0, cmdCall },
+      "true/false and {..}/[..] values go as they are, others as strings", 0, cmdCall },
     { "xplorer.echo", "<tcp|udp> <port> | state | stop",
-      "Make the phone an echo server for perf.latency/perf.throughput (perf ... xplorer does this by itself); state shows "
+      "Make the phone an echo server for perf.latency and perf.throughput (perf ... xplorer does this itself); state shows "
       "the bytes and 0x00-0xFF pattern breaks it received", 0, cmdEcho },
 };
 

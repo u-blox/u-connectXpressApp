@@ -594,8 +594,10 @@ static size_t buildGroups(void)
 
         for (int i = 0; i < count; i++) {
             if (strcmp(gGroups[i], "web") != 0 && strcmp(ucxapp_ui_runs_on(gGroups[i]), where) == 0) {
-                n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s\"%s:%s%s\"", first ? "" : ",", gGroups[i], where,
-                                      hasExamples(gGroups[i]) ? ":x" : "");
+                n += (size_t)snprintf(gBuf + n, API_BUF - n, "%s\"%s:%s:%s:%s:", first ? "" : ",", gGroups[i], where,
+                                      hasExamples(gGroups[i]) ? "x" : "", ucxapp_ui_group_section(gGroups[i]));
+                jsonStr(gBuf, &n, ucxapp_ui_group_help(gGroups[i]));
+                gBuf[n++] = '"';
                 first = false;
             }
         }
@@ -1183,9 +1185,9 @@ static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWebCmds[] = {
     { "web.export", "<dir>",          "Write the page's command lists and examples as JSON files (preview, static demo)", 0, cmdWebExport },
-    { "web.start",  "[port] [token] [https [cert]]", "Serve a web UI from the module (needs Wi-Fi); port 80, or 443 with https", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
+    { "web.start",  "[port] [token] [https [cert]]", "Serve the web UI from the module (needs Wi-Fi); port 80, or 443 with https", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
-    { "web.status", "",               "Show web server state",                                        0, cmdWebStatus },
+    { "web.status", "",               "Web server state",                                             0, cmdWebStatus },
 };
 
 void ucxapp_register_web_cmds(void)

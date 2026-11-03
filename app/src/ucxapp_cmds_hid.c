@@ -1097,14 +1097,14 @@ static int cmdHidClient(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gHidCmds[] = {
-    { "hid.setup",  "[auth]",                         "HID device (HOGP): keyboard, mouse and media keys, plus battery and PnP ID; 'auth' needs MITM pairing", UCXAPP_CMD_NEEDS_DEVICE, cmdHidSetup },
-    { "hid.status", "",                               "Show HID handles, notification state and protocol mode",               UCXAPP_CMD_NEEDS_DEVICE, cmdHidStatus },
-    { "hid.key",    "<key> [ctrl|shift|alt|gui ...]", "Send one key press to the connected host",                              UCXAPP_CMD_NEEDS_DEVICE, cmdHidKey },
-    { "hid.text",   "<text...>",                      "Type text on the connected host",                                       UCXAPP_CMD_NEEDS_DEVICE, cmdHidText },
-    { "hid.mouse",  "<dx> <dy> [wheel]",              "Move the mouse pointer (and scroll) on the connected host",             UCXAPP_CMD_NEEDS_DEVICE, cmdHidMouse },
-    { "hid.click",  "[left|right|middle] [double]",   "Click a mouse button on the connected host",                            UCXAPP_CMD_NEEDS_DEVICE, cmdHidClick },
-    { "hid.media",  "<play|next|prev|stop|mute|volup|voldown|brightup|brightdown|home|back|search>", "Send a media key to the connected host", UCXAPP_CMD_NEEDS_DEVICE, cmdHidMedia },
-    { "hid.client", "<conn> [boot] | off",            "HID host: read a BLE keyboard, mouse or remote and print its input",     UCXAPP_CMD_NEEDS_DEVICE, cmdHidClient },
+    { "hid.setup",  "[auth]",                         "Be a HID device (HOGP): keyboard, mouse, media keys, battery and PnP ID; auth needs MITM pairing", UCXAPP_CMD_NEEDS_DEVICE, cmdHidSetup },
+    { "hid.status", "",                               "HID handles, notification state and protocol mode",                    UCXAPP_CMD_NEEDS_DEVICE, cmdHidStatus },
+    { "hid.key",    "<key> [ctrl|shift|alt|gui ...]", "Send one key press to the host",                                        UCXAPP_CMD_NEEDS_DEVICE, cmdHidKey },
+    { "hid.text",   "<text...>",                      "Type text on the host",                                                 UCXAPP_CMD_NEEDS_DEVICE, cmdHidText },
+    { "hid.mouse",  "<dx> <dy> [wheel]",              "Move the mouse pointer and scroll",                                     UCXAPP_CMD_NEEDS_DEVICE, cmdHidMouse },
+    { "hid.click",  "[left|right|middle] [double]",   "Click a mouse button",                                                  UCXAPP_CMD_NEEDS_DEVICE, cmdHidClick },
+    { "hid.media",  "<play|next|prev|stop|mute|volup|voldown|brightup|brightdown|home|back|search>", "Send a media key", UCXAPP_CMD_NEEDS_DEVICE, cmdHidMedia },
+    { "hid.client", "<conn> [boot] | off",            "Be the HID host: read a BLE keyboard, mouse or remote and print its input", UCXAPP_CMD_NEEDS_DEVICE, cmdHidClient },
 };
 
 void ucxapp_register_hid_cmds(void)

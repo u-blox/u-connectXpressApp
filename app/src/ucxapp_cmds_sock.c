@@ -516,17 +516,17 @@ static int cmdSockEcho(ucxapp_t *app, int argc, char *argv[])
 static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.open",    "<tcp|udp>",                "Create a socket, prints its handle",   UCXAPP_CMD_NEEDS_DEVICE, cmdSockOpen },
     { "sock.connect", "[handle] <host> <port>",   "Connect a socket",                     UCXAPP_CMD_NEEDS_DEVICE, cmdSockConnect },
-    { "sock.tls",     "[handle] <ca> [client key]", "Use TLS on a TCP socket before connect (certificates from cert.upload)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockTls },
+    { "sock.tls",     "[handle] <ca> [client key]", "TLS on a TCP socket before connect, with certificates from cert.upload", UCXAPP_CMD_NEEDS_DEVICE, cmdSockTls },
     { "sock.send",    "[handle] <text>",          "Send text on a connected socket",      UCXAPP_CMD_NEEDS_DEVICE, cmdSockSend },
-    { "sock.read",    "[handle] [max] [wait_s=5]",  "Wait for data (default 5 s) and read", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRead },
+    { "sock.read",    "[handle] [max] [wait_s=5]",  "Wait for data and read it",          UCXAPP_CMD_NEEDS_DEVICE, cmdSockRead },
     { "sock.bind",    "[handle] <port>",          "Bind a socket to a local port (UDP receive)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockBind },
     { "sock.listen",  "[handle] [port]",          "Listen for TCP connections",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockListen },
-    { "sock.accept",  "[wait_s=30]",                 "Wait for an incoming TCP connection (default 30 s)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockAccept },
+    { "sock.accept",  "[wait_s=30]",                 "Wait for an incoming TCP connection", UCXAPP_CMD_NEEDS_DEVICE, cmdSockAccept },
     { "sock.sendto",  "[handle] <host> <port> <text>", "Send a UDP datagram",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockSendTo },
     { "sock.recvfrom", "[handle] [max] [wait_s=5]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
     { "sock.close",   "[handle] | all",           "Close a socket, or every socket on the module", UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
     { "sock.list",    "",                         "List open sockets",                    UCXAPP_CMD_NEEDS_DEVICE, cmdSockList },
-    { "sock.echo",    "<tcp|udp> <port> [seconds=60]", "Echo server for latency/throughput tests (default 60 s, one TCP client)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockEcho },
+    { "sock.echo",    "<tcp|udp> <port> [seconds=60]", "Echo server for latency and throughput tests (one TCP client)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockEcho },
 };
 
 void ucxapp_register_sock_cmds(void)

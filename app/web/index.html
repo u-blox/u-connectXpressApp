@@ -39,12 +39,14 @@ label{color:var(--mut);font-size:.85rem;display:flex;align-items:center;gap:.2re
 #keys{padding:.3rem .7rem;font:12px Consolas,monospace;color:var(--mut);border-top:1px solid var(--bd)}
 summary{cursor:pointer;padding:.3rem .2rem;font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.06em;color:var(--mut)}summary:hover{color:var(--tx)}
 .wh{font-weight:700;font-size:.7rem;letter-spacing:.1em;margin:.6rem 0 .1rem;color:var(--ac)}
+.ws{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;margin:.45rem 0 0;padding-left:.2rem;color:var(--mut);border-bottom:1px solid var(--bd)}
+details.sub{margin-left:.6rem;border-left:2px solid var(--bd);padding-left:.4rem}details.sub summary{text-transform:none;letter-spacing:0;font-size:.8rem}
 #rc{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.35rem}#rc button{font:12px Consolas,monospace;padding:.15rem .5rem;border-radius:1rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--bd)}
 .c b{width:100%;font:12px Consolas,monospace;color:var(--ac);cursor:help}.c.dgr b{color:#ff8fa8}
 .c small{width:100%;color:var(--mut);font-size:11px;max-height:2.6em;overflow:hidden}
-.fs{display:contents}.combo{display:flex;flex:1;gap:.3rem;min-width:0}.combo select{flex:0 1 auto;max-width:9rem}.fl,.fx{font-size:12px;white-space:nowrap}.c .rest{flex:3}.c select.fm{flex-basis:100%}.lg{font-size:11px;color:#ff8fa8}
-.c input,.c select{flex:1;min-width:4rem;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c button{padding:.25rem .7rem}.c select.h{border-color:#2d4a6a}.c input:autofill{-webkit-text-fill-color:var(--tx);box-shadow:0 0 0 9em var(--bg2) inset}
+.fs{display:contents}.combo{display:flex;flex:1 1 9rem;gap:.3rem;min-width:0}.combo select,.combo input{flex:1 1 4rem;min-width:0}.combo select{max-width:9rem}.fl,.fx{font-size:12px;white-space:nowrap}.c .rest{flex:3 1 9rem}.c select.fm{flex-basis:100%}.c .row{flex-basis:100%}
+.c input,.c select{flex:1 1 6rem;min-width:0;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c input[type=checkbox]{flex:0 0 auto;margin:0}.c>button{padding:.25rem .7rem;margin-left:auto}.c select.h{border-color:#2d4a6a}.c input:autofill{-webkit-text-fill-color:var(--tx);box-shadow:0 0 0 9em var(--bg2) inset}
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
 .uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}#ucs{float:right;margin-left:.5rem}
@@ -156,9 +158,14 @@ function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
 /* ---- command line: history, Tab completion, usage hint ---- */
 let ht=0;
 function find(q,prefix){return api('/api/find?q='+enc(q)+(prefix?'&p=1':'')).then(r=>r.json()).then(cs=>{cs.forEach(c=>CM[c.n]=c);return cs})}
+/* usage for the hint line: a long multi-form command shows the form whose keyword is typed, else its keywords */
+function usageOf(c,words){const vs=c.v||[];if(c.u.length<=72||vs.length<2)return c.u;
+ const f=vs.find(v=>v.p&&v.p===words[1]);
+ if(f)return (f.p+' '+f.f.map(x=>x[4]==='f'?'['+x[0]+']':(x[5]||'')+(x[1]?'['+x[0]+(x[3]?'='+x[3]:'')+']':'<'+x[0]+'>')).join(' ')).trim();
+ return vs.map(v=>v.p||v.l).join(' | ')+'   (type one for its arguments)'}
 function showHint(){clearTimeout(ht);if($('at').checked){hint.textContent='AT mode: every line goes to the module as an AT command';return}
- const n=cmd.value.trim().split(/\s+/)[0],c=CM[n];
- if(c){hint.textContent=c.n+' '+c.u+'   '+c.h;return}hint.textContent='';
+ const words=cmd.value.trim().split(/\s+/),n=words[0],c=CM[n];
+ if(c){hint.textContent=c.n+' '+usageOf(c,words)+'   '+c.h;hint.title=c.n+' '+c.u+'\n'+c.h;return}hint.textContent='';hint.title='';
  if(n.length>2)ht=setTimeout(()=>find(n,1).then(()=>{if(CM[n]&&cmd.value.trim().split(/\s+/)[0]===n)showHint()}).catch(()=>{}),300)}
 async function complete(){const v=cmd.value;if(!v.trim())return;
  const r=await api('/api/complete?q='+enc(v)).then(x=>x.json());
@@ -206,7 +213,7 @@ function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t
  else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
   e.value=FV[key]!==undefined?FV[key]:x[3]||(x[1]?'':e.options[0].value);if(e.selectedIndex<0)e.selectedIndex=0}
  else{e=el('input');const ph=nm.split('|').join(' or ');e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
-  if(/^(pass|pw)/.test(nm))e.type='password';
+  if(/^(pass|pw)/.test(nm)){e.type='password';if(x[1]&&!x[3])e.placeholder=ph+' (empty: open network)'}
   if(k==='r')e.className='rest';e.value=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm)}
  e._k=SECRET.test(nm)?'':key;
  e.val=()=>{const v=e.value.trim();if(e.dataset.k&&!v)return null;if(x[5])return v?x[5]+v:null;return v};return e}
@@ -214,7 +221,11 @@ function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),
  b.title=c.u+'\n'+c.h;d.append(b,el('small','',c.h||''))
  const vs=c.v||[{l:'',p:'',f:c.f||(c.u?[['args',1,'','','r','']]:[])}];
  const show=i=>{form=vs[i];fs.textContent='';ins=form.f.map(x=>Object.assign(field(c,x,c.n+'|'+form.p+'|'),{x}));ins.forEach(e=>{fs.appendChild(e);
-  e.onkeydown=k=>{if(k.key==='Enter')g.click()}})};
+  e.onkeydown=k=>{if(k.key==='Enter')g.click()}});
+  /* a password gets a row of its own: the field before it (the ssid) fills the row above */
+  ins.forEach((e,i)=>{if(e.type==='password'&&i>0)ins[i-1].classList.add('row')});
+  /* narrow fields clip their placeholder: the full text as tooltip */
+  fs.querySelectorAll('input,select').forEach(e=>{if(!e.title)e.title=e.placeholder||(e.options&&e.options.length?'one of: '+Array.from(e.options).map(o=>o.text).join(', '):'')})};
  if(vs.length>1){const s=el('select','fm');vs.forEach((v,i)=>s.add(new Option(v.l,i)));
   s.value=Math.min(+FV[c.n+'|#']||0,vs.length-1);s.onchange=()=>{FV[c.n+'|#']=s.value;show(+s.value)};d.appendChild(s)}
  d.appendChild(fs);
@@ -345,14 +356,21 @@ function events(){const es=new EventSource('/events');
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
- let mh=0,hh=0;const side=$('grp');side.appendChild(el('div','lg','* required. Red Run: changes firmware or erases data (asks first)'));
+ let mh=0,hh=0,sec='';const side=$('grp');
  gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
-  if(w==='module'&&!mh){mh=1;side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}
-  if(w==='host'&&!hh){hh=1;side.appendChild(el('div','wh','HOST: runs on this PC'))}
-  const d=el('details'),s=el('summary','',g);let l=0;d.appendChild(s);
+  if(w==='module'&&!mh){mh=1;sec='';side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}
+  if(w==='host'&&!hh){hh=1;sec='';side.appendChild(el('div','wh','HOST: runs on this PC'))}
+  if(p[3]&&p[3]!==sec){sec=p[3];side.appendChild(el('div','ws',sec))}
+  const d=el('details'),s=el('summary','',g);let l=0;s.title=p.slice(4).join(':');d.appendChild(s);
   d.ontoggle=()=>{if(d.open&&!l){l=1;api('/api/commands?g='+enc(g)).then(r=>r.json()).then(cs=>{
    if(ex){const b=el('button','exb','Examples');b.onclick=()=>examples(g,d,b);d.appendChild(b)}
-   cs.forEach(c=>d.appendChild(mk(c)))})}};
+   /* big groups fold gatt.client.*, gatt.server.*, ... (3 or more) into sub-menus after the loose commands */
+   const sub=c=>{const q=c.n.split('.');return cs.length>15&&q.length>2?q[0]+'.'+q[1]:''},subs={};
+   cs.forEach(c=>{const k=sub(c);if(k)subs[k]=(subs[k]||0)+1});
+   const open={};cs.forEach(c=>{if(!(subs[sub(c)]>=3))d.appendChild(mk(c))});
+   Object.keys(subs).filter(k=>subs[k]>=3).forEach(k=>{const sd=el('details','sub'),ss=el('summary','',k.split('.')[1]+' ('+subs[k]+')');
+    sd.appendChild(ss);d.appendChild(sd);open[k]=sd});
+   cs.forEach(c=>{const k=sub(c);if(open[k])open[k].appendChild(mk(c))})})}};
   side.appendChild(d)});if(localStorage.getItem('ucxv')==='1')view(1)}).catch(()=>{});
 
 /* ---- keyboard ---- */

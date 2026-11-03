@@ -69,7 +69,8 @@ bool ucxapp_ui_submit(const char *line);
 bool ucxapp_ui_busy(void);
 uint32_t ucxapp_ui_done_seq(int *rc);    /* increments when a command finishes; rc is its result */
 
-/* Catalog. Groups follow the AT manual order; commands keep their registration order. */
+/* Catalog. Groups come in menu order (module groups first, each side in sections); commands keep their
+ * registration order unless listed in the most-used-first table. */
 int ucxapp_ui_groups(char names[][UCXAPP_UI_GROUP_LEN], int max);
 int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max);
 /* "host" when this PC does the work, "module" when the NORA module executes it. */
@@ -78,6 +79,8 @@ const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd);
 
 /* One-line description of a command group; "" if none. */
 const char *ucxapp_ui_group_help(const char *group);
+/* Menu section of a group ("Device", "Bluetooth", ... "Peripherals"); "" for an unlisted group. */
+const char *ucxapp_ui_group_section(const char *group);
 
 /* Splits a usage string into fields; -1 when it has more than one form or is too complex. */
 int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max);

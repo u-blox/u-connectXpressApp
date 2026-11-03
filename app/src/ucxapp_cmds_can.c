@@ -1748,29 +1748,29 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gCanCmds[] = {
-    { "can.cfg",      "<bitrate=500000> [normal|loopback|listen]", "Set the CAN bit rate and mode and (re)start the controller; "
-      "loopback receives its own frames without a bus, listen only receives (no acknowledge, nothing sent)", 0, cmdCfg },
+    { "can.cfg",      "<bitrate=500000> [normal|loopback|listen]", "Bit rate and mode, then (re)start the controller; "
+      "loopback receives its own frames without a bus, listen only receives (no acknowledge)", 0, cmdCfg },
 #ifndef UCXAPP_CAN_HW
     { "can.open",     "[emulated|<interface>]", "CAN on the emulated loopback (default) or a SocketCAN interface "
       "(Linux: can0 for a CANable, vcan0); no argument shows which", 0, cmdOpen },
 #endif
     { "can.send",     "<id> [hex...]", "Send a CAN frame (id above 0x7FF is extended)", 0, cmdSend },
     { "can.recv",     "",              "Take the next received CAN frame", 0, cmdRecv },
-    { "can.watch",    "[seconds=10]",     "Print received CAN frames with their time (default 10 s, any key stops)", 0, cmdWatch },
+    { "can.watch",    "[seconds=10]",     "Print received CAN frames with their time (any key stops)", 0, cmdWatch },
     { "can.status",   "",              "Controller, counters and bridge state", 0, cmdStatus },
 #ifndef UCXAPP_CAN_HW
     { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
       "ble gatt | ble slcan | uart <port> [baud] | cell | off [n] | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]); "
-      "ble gatt is the u-blox CAN GATT service (records plus bit rate, mode and counters), ble slcan is SLCAN text over "
-      "the Nordic UART Service; cell sends records over the cellular data link (cell.connect) and reconnects it when it "
-      "drops; up to 4 bridges at once (ble gatt and ble slcan run alone)", 0,
+      "ble gatt is the u-blox CAN GATT service (records, bit rate, mode, counters), ble slcan is SLCAN text over "
+      "the Nordic UART Service, cell uses the cellular data link (cell.connect) and reconnects it; up to 4 bridges "
+      "at once (ble gatt and ble slcan run alone)", 0,
       cmdBridge },
 #else
     { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble sps | ble gatt | "
       "ble slcan | off | status",
-      "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]) through the module, from a task of "
-      "its own; ble gatt is the u-blox CAN GATT service, ble slcan is SLCAN text over the Nordic UART Service; one "
-      "bridge at a time", 0, cmdBridge },
+      "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]) through the module, in a task of its own; "
+      "ble gatt is the u-blox CAN GATT service, ble slcan is SLCAN text over the Nordic UART Service; one bridge at a time",
+      0, cmdBridge },
 #endif
     { "can.selftest", "",              "Offline check of the CAN record format", 0, cmdSelftest },
 };

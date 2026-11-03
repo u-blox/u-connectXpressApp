@@ -388,7 +388,7 @@ static int cmdTime(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gTimeCmds[] = {
     { "app.time", "[sync [ntp|http|module] [host] | set <unix|YYYY-MM-DDTHH:MM:SS> | push | selftest]",
-      "App wall clock in UTC: sync from SNTP (default pool.ntp.org, falls back to an HTTP Date header), HTTP or the module clock, set by hand, or push it to the module (AT+USYTU)",
+      "App wall clock (UTC): sync from SNTP (default pool.ntp.org, HTTP Date as fallback), HTTP or the module, set by hand, or push it to the module (AT+USYTU)",
       0, cmdTime },
 };
 

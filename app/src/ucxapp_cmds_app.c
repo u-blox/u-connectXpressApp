@@ -334,9 +334,9 @@ static int cmdComplete(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gAppCmds[] = {
-    { "app.complete", "<text...>", "Show what Tab completes a typed line to: the command, then its keywords (quote a trailing space)", 0, cmdComplete },
+    { "app.complete", "<text...>", "What Tab completes a typed line to: the command, then its keywords (quote a trailing space)", 0, cmdComplete },
     { "app.info", "", "About this app: maker, platform and links", 0, cmdInfo },
-    { "app.memory", "", "App RAM, heap and flash (disk on PC) use; task stacks on STM32. Same look as dev.stack", 0, cmdMemory },
+    { "app.memory", "", "App RAM, heap and flash (disk on a PC); task stacks on STM32, in the dev.stack layout", 0, cmdMemory },
     { "app.version", "", "App version, build time, platform and compiler", 0, cmdVersion },
     { "app.uptime", "", "Time since the app started (days hh:mm:ss)", 0, cmdUptime },
     { "app.sbom", "", "Software bill of materials: components, versions and licences", 0, cmdSbom },

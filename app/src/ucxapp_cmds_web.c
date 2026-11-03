@@ -60,8 +60,6 @@ static ucxapp_thread_t *gPumpThread;
 static webEvent_t gEvents[MAX_EVENTS];
 static int gEvHead, gEvCount;
 
-static uint32_t gLogCur, gEvCur, gDoneSeen;   /* this front end's positions in the shared streams */
-
 static ucxapp_store_writer_t *gUpload;      /* one upload at a time, in slices */
 static char gUploadName[FILE_NAME_MAX];
 static uint32_t gUploadOff;
@@ -70,25 +68,6 @@ static uint32_t gUploadOff;
 static bool gLocal;
 static char gLocalEvents[4096];
 static size_t gLocalLen;
-
-static int32_t clientCount(void)
-{
-    return gLocal ? 1 : uWebServerGetSSEClientCount(gServer);
-}
-
-/* > 0 when the event was taken, as uWebServerBroadcastSSEEvent. */
-static int32_t broadcast(const char *name, const char *data)
-{
-    if (!gLocal) {
-        return uWebServerBroadcastSSEEvent(gServer, name, data);
-    }
-    size_t need = strlen(name) + strlen(data) + 2;
-    if (gLocalLen + need >= sizeof(gLocalEvents)) {
-        return 0;
-    }
-    gLocalLen += (size_t)snprintf(gLocalEvents + gLocalLen, sizeof(gLocalEvents) - gLocalLen, "%s\t%s\n", name, data);
-    return 1;
-}
 
 /* ---- queues shared with the URC and print contexts ------------------------ */
 
@@ -177,77 +156,123 @@ static int escapeOutput(const char *raw, int rawLen, char *out, size_t outSize)
     return used;
 }
 
-/* Sends as much pending output as the engine takes; returns true if output is still waiting. */
+/* Every page has its own place in the shared log and event streams: a chunk one tab cannot take yet
+   (its last event still draining) is not lost for it when another tab takes it. Slot i is SSE client i of the
+   server, telling a new connection in a reused slot by its generation; the browser build has one viewer. */
+typedef struct {
+    uint32_t gen;        /* 0: no page here */
+    uint32_t logCur, evCur, doneSeen;
+    uint32_t stateSeen;
+    int32_t stateMs;
+} viewer_t;
+
+static viewer_t gViewers[U_WEBSERVER_MAX_CLIENTS];
+
+/* > 0 when the event was taken by viewer i. */
+static int32_t sendTo(int i, const char *name, const char *data)
+{
+    if (!gLocal) {
+        return uWebServerSendSSEEvent(gServer, i, name, data) == 0 ? 1 : 0;
+    }
+    size_t need = strlen(name) + strlen(data) + 2;
+    if (gLocalLen + need >= sizeof(gLocalEvents)) {
+        return 0;
+    }
+    gLocalLen += (size_t)snprintf(gLocalEvents + gLocalLen, sizeof(gLocalEvents) - gLocalLen, "%s\t%s\n", name, data);
+    return 1;
+}
+
+/* The viewer of slot i, started at the current end of the streams when its page is new; NULL when the slot is empty. */
+static viewer_t *viewer(int i)
+{
+    viewer_t *v = &gViewers[i];
+    uint32_t gen = 1;
+
+    if (!gLocal ? !uWebServerGetSSEClient(gServer, i, &gen) : i != 0) {
+        v->gen = 0;
+        return NULL;
+    }
+    if (v->gen != gen) {
+        v->gen = gen;
+        v->logCur = ucxapp_ui_log_start();
+        v->evCur = ucxapp_ui_event_start();
+        v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 });
+        v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
+        v->stateMs = U_CX_PORT_GET_TIME_MS();
+    }
+    return v;
+}
+
+/* Sends as much pending output as the engine takes; returns true if output is still waiting for someone. */
 static bool flushOutput(void)
 {
     char raw[256], json[600];
+    bool pending = false;
 
-    if (clientCount() <= 0) {
-        return false;
-    }
-    for (int round = 0; round < 32; round++) {
-        int avail = (int)ucxapp_ui_log_peek(&gLogCur, raw, sizeof(raw));
-        if (avail == 0) {
-            return false;
+    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+        viewer_t *v = viewer(i);
+
+        for (int round = 0; v != NULL && round < 32; round++) {
+            int avail = (int)ucxapp_ui_log_peek(&v->logCur, raw, sizeof(raw));
+            if (avail == 0) {
+                break;
+            }
+            int used = escapeOutput(raw, avail, json, sizeof(json));
+            if (sendTo(i, "out", json) <= 0) {
+                pending = true;   /* its previous event still draining; retry next pass */
+                break;
+            }
+            v->logCur += (uint32_t)used;
+            pending = pending || round == 31;
         }
-        int used = escapeOutput(raw, avail, json, sizeof(json));
-        if (broadcast("out", json) <= 0) {
-            return true;   /* previous event still draining; retry next pass */
-        }
-        gLogCur += (uint32_t)used;
     }
-    return true;
+    return pending;
 }
 
 static void flushEvents(void)
 {
     char line[96], json[2 * sizeof(line) + 4];
 
-    if (clientCount() <= 0) {
-        return;
-    }
-    for (int round = 0; round < 4 && ucxapp_ui_event_peek(&gEvCur, line, sizeof(line)); round++) {
-        size_t n = 0;
+    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+        viewer_t *v = viewer(i);
 
-        json[n++] = '"';
-        for (const char *p = line; *p != '\0'; p++) {
-            if (*p == '"' || *p == '\\') {
-                json[n++] = '\\';
-                json[n++] = *p;
-            } else if ((unsigned char)*p >= 0x20) {
-                json[n++] = *p;
+        for (int round = 0; v != NULL && round < 4 && ucxapp_ui_event_peek(&v->evCur, line, sizeof(line)); round++) {
+            size_t n = 0;
+
+            json[n++] = '"';
+            for (const char *p = line; *p != '\0'; p++) {
+                if (*p == '"' || *p == '\\') {
+                    json[n++] = '\\';
+                    json[n++] = *p;
+                } else if ((unsigned char)*p >= 0x20) {
+                    json[n++] = *p;
+                }
             }
+            json[n++] = '"';
+            json[n] = '\0';
+            if (sendTo(i, "evt", json) <= 0) {
+                break;   /* retry next pass */
+            }
+            v->evCur++;
         }
-        json[n++] = '"';
-        json[n] = '\0';
-        if (broadcast("evt", json) <= 0) {
-            return;   /* previous event still draining; retry next pass */
-        }
-        gEvCur++;
     }
 }
 
-/* Sent on change, when a page connects and every 5 s. */
+/* Sent to a page on change, when it connects and every 5 s. */
 static void flushState(void)
 {
-    static uint32_t seen = UINT32_MAX;
-    static int32_t lastMs, lastClients;
     char text[200], json[210];
     int32_t now = U_CX_PORT_GET_TIME_MS();
     uint32_t version = ucxapp_ui_state(text, sizeof(text));
-    int32_t clients = clientCount();
-    bool joined = clients > lastClients;
 
-    lastClients = clients;
-    if ((version == seen && now - lastMs < 5000 && !joined) || clients <= 0) {
-        return;
-    }
     snprintf(json, sizeof(json), "\"%s\"", text);
-    if (broadcast("state", json) > 0) {
-        seen = version;
-        lastMs = now;
-    } else if (joined) {
-        lastClients--;   /* try again next pass */
+    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+        viewer_t *v = viewer(i);
+
+        if (v != NULL && (version != v->stateSeen || now - v->stateMs >= 5000) && sendTo(i, "state", json) > 0) {
+            v->stateSeen = version;
+            v->stateMs = now;
+        }
     }
 }
 
@@ -255,17 +280,18 @@ static void flushDone(void)
 {
     int rc;
     uint32_t seq = ucxapp_ui_done_seq(&rc);
-    uint32_t cur = gLogCur;
-    char probe[8];
+    char text[16], probe[8];
 
-    /* send "done" only after the command's output has been delivered */
-    if (seq == gDoneSeen || ucxapp_ui_log_peek(&cur, probe, sizeof(probe)) > 0 || clientCount() <= 0) {
-        return;
-    }
-    char text[16];
     snprintf(text, sizeof(text), "%d", rc);
-    if (broadcast("done", text) > 0) {
-        gDoneSeen = seq;
+    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+        viewer_t *v = viewer(i);
+        uint32_t cur = v != NULL ? v->logCur : 0;
+
+        /* "done" only after the command's output has reached this page */
+        if (v != NULL && seq != v->doneSeen && ucxapp_ui_log_peek(&cur, probe, sizeof(probe)) == 0 &&
+            sendTo(i, "done", text) > 0) {
+            v->doneSeen = seq;
+        }
     }
 }
 
@@ -1048,9 +1074,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         U_CX_MUTEX_DELETE(gLock);
         return UCXAPP_ERR_FAILED;
     }
-    gLogCur = ucxapp_ui_log_start();
-    gEvCur = ucxapp_ui_event_start();
-    gDoneSeen = ucxapp_ui_done_seq(&(int){ 0 });
+    memset(gViewers, 0, sizeof(gViewers));   /* each page starts at the streams' end when it connects */
 
     (void)uCxSocketSetReadMode(app->ucx, U_READ_MODE_BUFFERED);
     gServer = uWebServerInit(app->ucx, gPort);
@@ -1206,9 +1230,8 @@ bool ucxapp_web_local_begin(ucxapp_t *app)
     }
     gApp = app;
     gLocal = true;
-    gLogCur = ucxapp_ui_log_start();
-    gEvCur = ucxapp_ui_event_start();
-    gDoneSeen = ucxapp_ui_done_seq(&(int){ 0 });
+    memset(gViewers, 0, sizeof(gViewers));
+    (void)viewer(0);   /* the page's place in the streams starts here, not at its first poll */
     return true;
 }
 

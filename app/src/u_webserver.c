@@ -62,6 +62,7 @@ typedef struct {
     int32_t  tx_offset;          /**< Bytes already sent */
     bool     tx_close_when_done; /**< Mark pending_close once tx_buffer drains (non-SSE) */
     ucxapp_tls_conn_t *tls;      /**< HTTPS session, NULL for plain HTTP */
+    uint32_t generation;         /**< Bumped on every accept into this slot; tells a new client from the last */
 } uWebServerClient_t;
 
 /* Per-call chunk size for deferred sends.
@@ -547,6 +548,7 @@ static void on_incoming_connection(struct uCxHandle *puCxHandle, int32_t client_
     // Initialize client
     client->socket = client_socket;
     client->active = true;
+    client->generation++;
 
     // Disable Nagle's algorithm for faster HTTP responses (small packets sent immediately)
     (void)uCxSocketSetOption(puCxHandle, client_socket, U_SOCKET_OPTION_NO_DELAY, 1);
@@ -1114,6 +1116,19 @@ int32_t uWebServerGetSSEClientCount(uWebServer_t *server)
     return count;
 }
 
+bool uWebServerGetSSEClient(uWebServer_t *server, uSseClient_t client, uint32_t *generation)
+{
+    if (!server || client < 0 || client >= U_WEBSERVER_MAX_CLIENTS) {
+        return false;
+    }
+    const uWebServerClient_t *c = &server->clients[client];
+    if (!c->active || !c->is_sse || c->closing) {
+        return false;
+    }
+    *generation = c->generation;
+    return true;
+}
+
 /* ========================================
  * External Event Handler API
  * 
@@ -1187,6 +1202,7 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     }
     client->socket = clientSocket;
     client->active = true;
+    client->generation++;
     client->is_sse = false;
     client->closing = false;
     client->pending_close = false;

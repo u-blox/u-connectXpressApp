@@ -59,9 +59,10 @@ extern "C" {
  *   - speculative preconnect / parallel HEAD requests
  *
  * Sizing for 4 gives headroom (1 SSE + 1 API + 2 transient) and avoids mid-
- * response eviction during normal browsing. RAM cost is ~2 KB per slot.
+ * response eviction during normal browsing; two tabs fit (2 SSE + 2 short API calls). More would not help:
+ * the NORA-W36 has 6 sockets and the listening socket takes 2, so 4 accepted connections is the module's limit.
  */
-#define U_WEBSERVER_MAX_CLIENTS         4      /**< 4: 1 SSE + 1 API + 2 transient (favicon/preconnect) */
+#define U_WEBSERVER_MAX_CLIENTS         4      /**< the module's 6 sockets minus the 2 of the listener */
 #define U_WEBSERVER_MAX_REQUEST_SIZE    2048   /**< Maximum HTTP request size */
 #ifndef U_WEBSERVER_MAX_RESPONSE_SIZE
 #define U_WEBSERVER_MAX_RESPONSE_SIZE   40960  /**< Maximum HTTP response size (40KB for dashboard HTML+CSS+JS) */
@@ -302,6 +303,13 @@ int32_t uWebServerCloseSSE(uWebServer_t *server, uSseClient_t client);
  * @return        Number of active SSE connections
  */
 int32_t uWebServerGetSSEClientCount(uWebServer_t *server);
+
+/**
+ * Whether slot client (0 .. U_WEBSERVER_MAX_CLIENTS-1) holds an active SSE client, and its generation: a counter
+ * bumped on every accept into the slot, so a sender keeping per-client state can tell a new connection from
+ * the last one in the same slot.
+ */
+bool uWebServerGetSSEClient(uWebServer_t *server, uSseClient_t client, uint32_t *generation);
 
 /* ========================================
  * External Event Handler API

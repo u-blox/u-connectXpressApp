@@ -212,6 +212,79 @@ def test_web_mode_serves_the_page_until_interrupted(app_exe, port_a, tmp_path):
 
 
 @pytest.mark.hardware
+def test_two_pages_both_get_the_whole_output(app_exe, port_a, tmp_path):
+    """Two browser tabs on the module-hosted page: each event stream has its own place in the log, so a tab whose
+    last event is still draining over the UART does not lose the chunk the other tab took (one shared cursor did)."""
+    import json
+    import os
+    import signal
+    import urllib.request
+
+    wifi = _wifi_connect_command(tmp_path)
+    ip_a, _ = _join_wifi(app_exe, port_a, wifi)
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    proc = subprocess.Popen(_args(app_exe, port_a, "web.start 8080 web-token") + ["--web"], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                            cwd=tmp_path, creationflags=flags)
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
+    seen = []
+    base = f"http://{ip_a}:8080"
+
+    def stream(out):
+        """Reads one event stream until its 'done' event: out gets the joined 'out' data and the 'done' value."""
+        try:
+            with urllib.request.urlopen(f"{base}/events?t=web-token", timeout=60) as r:
+                name, text = "", ""
+                for raw in r:
+                    line = raw.decode(errors="replace").rstrip("\n")
+                    if line.startswith("event: "):
+                        name = line[7:]
+                    elif line.startswith("data: "):
+                        if name == "out":
+                            text += json.loads(line[6:])
+                        elif name == "done":
+                            out.update(text=text, done=line[6:])
+                            return
+        except OSError as e:
+            out["error"] = str(e)
+
+    a, b = {}, {}
+    try:
+        deadline = time.time() + 90
+        while time.time() < deadline and not any("web UI only" in s for s in seen):
+            try:
+                seen.append(lines.get(timeout=1))
+            except queue.Empty:
+                pass
+        assert any("web UI only" in s for s in seen), "".join(seen)
+        try:
+            urllib.request.urlopen(f"{base}/api/groups?t=web-token", timeout=20).read()
+        except OSError as e:
+            pytest.skip(f"this PC cannot reach the module at {ip_a}: {e}")
+        readers = [threading.Thread(target=stream, args=(d,), daemon=True) for d in (a, b)]
+        for t in readers:
+            t.start()
+        time.sleep(3)   # both streams open before the output starts
+        req = urllib.request.Request(f"{base}/api/exec?cmd=help%20wifi", method="POST",
+                                     headers={"X-Token": "web-token"})
+        assert urllib.request.urlopen(req, timeout=20).read() == b"accepted"
+        for t in readers:
+            t.join(timeout=120)
+    finally:
+        proc.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    while not lines.empty():
+        seen.append(lines.get())
+    assert a.get("done") == "0" and b.get("done") == "0", (a.get("error"), b.get("error"), "".join(seen)[-2000:])
+    assert "wifi.scan" in a["text"] and a["text"].count("\n") > 20, a["text"]
+    assert a["text"] == b["text"], "the two tabs saw different output"
+
+
+@pytest.mark.hardware
 def test_coap_get_public_server(app_exe, port_a):
     out = _run(app_exe, port_a, _wifi_connect_command(), "coap.get coap.me 5683 test", timeout=180)
     assert out.returncode == 0, out.stdout

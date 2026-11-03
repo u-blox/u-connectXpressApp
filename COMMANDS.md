@@ -761,7 +761,9 @@ sockets and links (empty means the current one), fields remember the last value 
 the last commands sit as one-click chips above the groups. **Use cases** has a page per use case (picked at the
 top right): a live diagram (lit by the Wi-Fi station, AP, BLE links and sockets), the `usecase.tool` or
 `usecase.check <name>` fit check and the steps (`usecase.example` or `examples uc-<name>`) as
-cards that run with one click. Commands run one at a time; the `web.*` commands are not allowed
+cards that run with one click. Commands run one at a time (a second tab gets "busy"); every open tab receives the
+output, events and state, each from its own place in the streams, and the module's 6 sockets (2 for the
+listener) allow two tabs at once. The `web.*` commands are not allowed
 from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
 API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `?t=`, as EventSource cannot set headers.

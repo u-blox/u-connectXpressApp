@@ -1610,8 +1610,8 @@ def web_preview(exe, port):
             q = parse_qs(u.query)
             if u.path == "/":
                 return self.reply((ROOT / "app" / "web" / "index.html").read_bytes(), "text/html")
-            if u.path == "/favicon.ico":
-                return self.reply((ROOT / "app" / "images" / "ShortRange.ico").read_bytes(), "image/x-icon")
+            if u.path == "/icon.svg":
+                return self.reply((ROOT / "app" / "web" / "icon.svg").read_bytes(), "image/svg+xml")
             if not self.authorized(q):
                 return self.reply("token required", "text/plain", 403)
             group = q.get("g", [""])[0]

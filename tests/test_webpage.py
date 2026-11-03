@@ -149,6 +149,8 @@ class Mock(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.split("?")[0] == "/":
             self.reply(PAGE, "text/html")
+        elif self.path == "/icon.svg":
+            self.reply((PAGE_FILE.parent / "icon.svg").read_text(encoding="utf-8"), "image/svg+xml")
         elif self.path.startswith("/api/groups"):
             self.reply(json.dumps(["wifi", "demo"]))
         elif self.path.startswith("/api/commands?g=demo"):

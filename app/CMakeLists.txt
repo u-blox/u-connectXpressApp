@@ -50,14 +50,14 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html)
 
-# The page's /favicon.ico: app/images/ShortRange.ico as a byte array
-file(READ ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico _ucx_ico HEX)
+# The page's /icon.svg (tab icon and header logo): app/web/icon.svg as a byte array
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg _ucx_ico HEX)
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _ucx_ico "${_ucx_ico}")
 string(REGEX REPLACE "(0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,)" "\\1\n" _ucx_ico "${_ucx_ico}")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp
-  "/* Generated from app/images/ShortRange.ico by CMake; do not edit. */\nstatic const unsigned char kFavicon[] = {\n${_ucx_ico}\n};\n")
+  "/* Generated from app/web/icon.svg by CMake; do not edit. */\nstatic const unsigned char kFavicon[] = {\n${_ucx_ico}\n};\n")
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h COPYONLY)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
 
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -227,7 +227,7 @@ if(NOT WIN32)
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
               ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json
               ${_ucx_site}
-      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/images/ShortRange.ico ${_ucx_site}/favicon.ico
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${_ucx_site}/icon.svg
       VERBATIM)
   endif()
 

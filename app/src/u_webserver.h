@@ -55,7 +55,7 @@ extern "C" {
  *
  * Steady-state usage by the dashboard is 2 (1 SSE + 1 sequential API call),
  * but browsers transiently open extra connections we cannot serialize from JS:
- *   - /favicon.ico (fired by the browser, bypasses our apiCall queue)
+ *   - /icon.svg (fired by the browser, bypasses our apiCall queue)
  *   - speculative preconnect / parallel HEAD requests
  *
  * Sizing for 4 gives headroom (1 SSE + 1 API + 2 transient) and avoids mid-

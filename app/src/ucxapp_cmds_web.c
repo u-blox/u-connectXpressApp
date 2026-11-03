@@ -398,7 +398,7 @@ static void routeFavicon(const uHttpRequest_t *req, uHttpResponse_t *resp, void 
     (void)req;
     (void)user;
     resp->status_code = 200;
-    snprintf(resp->content_type, sizeof(resp->content_type), "image/x-icon");
+    snprintf(resp->content_type, sizeof(resp->content_type), "image/svg+xml");
     resp->body = (const char *)kFavicon;
     resp->body_length = (int32_t)sizeof(kFavicon);
 }
@@ -947,7 +947,7 @@ static const struct {
     uRouteHandler_t fn;
 } kRoutes[] = {
     { U_HTTP_METHOD_GET,  "/",             routePage },
-    { U_HTTP_METHOD_GET,  "/favicon.ico",  routeFavicon },
+    { U_HTTP_METHOD_GET,  "/icon.svg",     routeFavicon },
     { U_HTTP_METHOD_GET,  "/events",       routeEvents },
     { U_HTTP_METHOD_POST, "/api/exec",     routeExec },
     { U_HTTP_METHOD_GET,  "/api/groups",   routeList },

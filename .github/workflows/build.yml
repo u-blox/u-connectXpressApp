@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [h753, f767, f439, f407, f401, f446, f103, g071]
+        board: [h753, f767, f439, f407, f401, f446, f103]
     env:
       ZEPHYR_REF: v4.5.0
     steps:

@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_THUMBPRINT = "EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E"
-STM32_BOARDS = ("h753", "f767", "f439", "f407", "f401", "f446", "f103", "g071")
+STM32_BOARDS = ("h753", "f767", "f439", "f407", "f401", "f446", "f103")
 IS_WINDOWS = platform.system() == "Windows"
 
 

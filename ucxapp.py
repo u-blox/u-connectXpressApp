@@ -56,6 +56,9 @@ BOARDS = {
     "f103": ("nucleo_f103rb", "NUCLEO-F103RB", "F1", "STM32CubeF1", "stm32f1"),
     "g071": ("nucleo_g071rb", "NUCLEO-G071RB", "G0", "STM32CubeG0", "stm32g0"),
 }
+# Kept and buildable with --board, but left out of --board all, --everything, CI and releases.
+PAUSED_BOARDS = ("g071",)
+ACTIVE_BOARDS = [b for b in BOARDS if b not in PAUSED_BOARDS]
 MEMORY_DOC = ROOT / "docs" / "STM32_MEMORY.md"
 
 UBLOX_VID = 0x1546
@@ -1048,7 +1051,7 @@ def stm32_all(args):
                              ("--flash", args.flash)) if on]
     if not flags:
         fail("--board all needs --build, --clean, --rebuild or --flash")
-    return build_many(args, {b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+    return build_many(args, {b: ["--stm32", "--board", b, *flags] for b in ACTIVE_BOARDS})
 
 
 def everything(args):
@@ -1061,9 +1064,9 @@ def everything(args):
         del jobs["linux"]
         print("WSL not found and no --linux-host, skipping the Linux build")
     stm32_tools()
-    jobs.update({b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+    jobs.update({b: ["--stm32", "--board", b, *flags] for b in ACTIVE_BOARDS})
     if zephyr_available():
-        jobs.update({f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in BOARDS})
+        jobs.update({f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ACTIVE_BOARDS})
     else:
         print("Zephyr workspace or west not found, skipping the Zephyr builds")
     if emsdk_env(required=False):
@@ -1249,7 +1252,7 @@ def zephyr(args, extra):
             fail("--board all supports only --clean, --build, --rebuild and --flash")
         flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild),
                                  ("--flash", args.flash)) if on]
-        return build_many(args, {f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in BOARDS})
+        return build_many(args, {f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ACTIVE_BOARDS})
     boards = sorted(p.stem for p in (ROOT / "app" / "zephyr" / "boards").glob("*.overlay"))
     board, name = zephyr_board(args.board), BOARDS[args.board][1]
     if board not in boards:

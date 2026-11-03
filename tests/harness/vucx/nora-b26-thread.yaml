@@ -4,6 +4,7 @@ identity:
   model: NORA-B26
   version: 3.5.0-0
   serial: "0123456789"
+default: ["OK"]
 commands:
   "AT+CPWROFF": ["OK"]
   "AT+UTHE?": ["+UTHE:0", "OK"]
@@ -21,6 +22,18 @@ commands:
   "AT+UTHCNT?": ["+UTHCNT:4,3", "+UTHCNT:8,120", "+UTHCNT:30,7", "OK"]
   "AT+UTHSC": ['+UTHSC:"vucx-mesh",dead00beef00cafe,4660,15,-55,200,1122334455667788,4,1', "OK"]
   "AT+UTHJS=*": ["OK"]
+  "AT+UTHRT?":
+    - "+UTHRT:1,1024,1122334455667788,63,0,3,3,5,1"
+    - "+UTHRT:2,2048,8877665544332211,2,1,3,3,7,1"
+    - "OK"
+  "AT+UTHLD?": ["+UTHLD:0a0b0c0d,64,12,10,1", "OK"]
+  "AT+UTHSE?": ["+UTHSE:1", "OK"]
+  "AT+UTHSHN?": ['+UTHSHN:"sensor-1"', "OK"]
+  "AT+UTHSSA=*": ["+UTHSSA:1", "OK"]
+  "AT+UTHSSL?": ['+UTHSSL:1,"_sensor._udp",5683,"sensor-1",2', "OK"]
+  "AT+UTHDB=*": ['+UTHDB:"sensor-1"', '+UTHDB:"sensor-2"', "OK"]
+  "AT+UTHDR=*": ['+UTHDR:"sensor-1.default.service.arpa",5683,[fd00:0:0:0:0:ff:fe00:400],', "OK"]
+  "AT+UTHDH=*": ["+UTHDH:[fd00:0:0:0:0:ff:fe00:400]", "OK"]
 urcs:
   "AT+CPWROFF": ["+STARTUP"]
   "AT+UTHE=1": ["+UETHU:4"]

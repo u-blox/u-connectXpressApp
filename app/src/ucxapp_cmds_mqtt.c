@@ -1,7 +1,10 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_stats.h"
 
+#include "ucxapp_store.h"
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -19,6 +22,8 @@
 #define MQTT_DEFAULT_PORT  1883
 #define MQTT_DEFAULT_TLS_PORT 8883
 #define MQTT_MAX_PAYLOAD   512
+/* AT+UMQPB takes up to 5000 bytes (u-connectXpress MQTT packet limit). */
+#define MQTT_MODULE_MAX_PUBLISH 5000
 #define MQTT_MAX_MESSAGES  10
 
 static bool parseQos(const char *s, uMqttQos_t *qos)
@@ -207,6 +212,9 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
     size_t len = 0;
     uMqttQos_t qos = U_MQTT_QOS_AT_MOST_ONCE;
     uMqttRetain_t retain = U_MQTT_RETAIN_NO;
+    const char *file = NULL;
+    uint8_t *fileData = NULL;
+    const uint8_t *payload = (const uint8_t *)text;
     int first = 2;
 
     /* Options go before the text, so a message may still start with any word after them. */
@@ -217,14 +225,29 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
             }
         } else if (strcmp(argv[first], "retain") == 0) {
             retain = U_MQTT_RETAIN_YES;
+        } else if (strncmp(argv[first], "file=", 5) == 0 && argv[first][5] != '\0') {
+            file = argv[first] + 5;
         } else {
             break;
         }
     }
-    if (argc < 3 || first >= argc) {
+    if (argc < 2 || (file == NULL) == (first >= argc)) {
         return UCXAPP_ERR_USAGE;
     }
-    for (int i = first; i < argc; i++) {
+    if (file != NULL) {
+        fileData = ucxapp_store_load(file, &len);
+        if (fileData == NULL) {
+            ucxapp_print("ERROR: cannot read %s\n", file);
+            return UCXAPP_ERR_FAILED;
+        }
+        if (len > MQTT_MODULE_MAX_PUBLISH) {
+            ucxapp_print("ERROR: %s is %d bytes (the module takes max %d)\n", file, (int)len, MQTT_MODULE_MAX_PUBLISH);
+            free(fileData);
+            return UCXAPP_ERR_FAILED;
+        }
+        payload = fileData;
+    }
+    for (int i = first; file == NULL && i < argc; i++) {
         size_t n = strlen(argv[i]);
         if (len + n + 1 >= sizeof(text)) {
             ucxapp_print("ERROR: message too long (max %d bytes)\n", (int)sizeof(text) - 1);
@@ -243,8 +266,9 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
             U_CX_PORT_SLEEP_MS(MQTT_BUSY_DELAY_MS);
         }
         result = uCxMqttPublish(app->ucx, MQTT_ID, qos, retain,
-                                argv[1], (const uint8_t *)text, (int32_t)len);
+                                argv[1], payload, (int32_t)len);
     }
+    free(fileData);
     if (result < 0) {
         ucxapp_print("ERROR: publish failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
@@ -258,16 +282,21 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
 static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t waitS = 10;
-    uint8_t buf[MQTT_MAX_PAYLOAD + 1];
+    uint8_t *buf;
     int received = 0;
 
     if (argc > 2 || (argc > 1 && (!ucxapp_parse_int(argv[1], &waitS) || waitS < 0))) {
         return UCXAPP_ERR_USAGE;
     }
+    buf = malloc(MQTT_MODULE_MAX_PUBLISH + 1);
+    if (buf == NULL) {
+        ucxapp_print("ERROR: out of memory\n");
+        return UCXAPP_ERR_FAILED;
+    }
     ucxapp_events_wait(URC_FLAG_MQTT_DATA, (uint32_t)waitS);   /* the read below tells if data arrived */
     while (received < MQTT_MAX_MESSAGES) {
         const char *topic = NULL;
-        int32_t n = uCxMqttReadBegin(app->ucx, MQTT_ID, buf, MQTT_MAX_PAYLOAD, &topic);
+        int32_t n = uCxMqttReadBegin(app->ucx, MQTT_ID, buf, MQTT_MODULE_MAX_PUBLISH, &topic);
         if (n < 0 && received > 0) {
             uCxEnd(app->ucx);
             break;   /* queue drained: the module answers ERROR:11 */
@@ -275,6 +304,7 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
         if (n < 0) {
             uCxEnd(app->ucx);
             ucxapp_print("ERROR: read failed (%d%s)\n", (int)n, ucxapp_errname(n));
+            free(buf);
             return UCXAPP_ERR_FAILED;
         }
         if (n == 0) {
@@ -292,6 +322,7 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
         uCxEnd(app->ucx);
         received++;
     }
+    free(buf);
     ucxapp_print("%d message(s)\n", received);
     return received > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
@@ -301,7 +332,7 @@ static const ucxapp_cmd_t gMqttCmds[] = {
     { "mqtt.disconnect",  "",                 "Disconnect from the broker",                               UCXAPP_CMD_NEEDS_DEVICE, cmdMqttDisconnect },
     { "mqtt.subscribe",   "<topic> [qos=0]",    "Subscribe to a topic (wildcards allowed, qos 0-2)",        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttSubscribe },
     { "mqtt.unsubscribe", "<topic>",          "Unsubscribe from a topic",                                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttUnsubscribe },
-    { "mqtt.publish",     "<topic> [qos=0] [retain] <text...>", "Publish a message (max 511 bytes); retain keeps it on the broker for new subscribers",                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
+    { "mqtt.publish",     "<topic> [qos=0] [retain] <text...>|<topic> [qos=0] [retain] file=<name>", "Publish typed text (one line) or a stored file (max 5000 bytes); retain keeps it on the broker for new subscribers",                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
     { "mqtt.read",        "[wait_s=10]",         "Wait (default 10 s) for messages and print them",          UCXAPP_CMD_NEEDS_DEVICE, cmdMqttRead },
 };
 

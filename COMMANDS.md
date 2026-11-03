@@ -403,7 +403,7 @@ ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.ph
 | `mqtt.disconnect` | | Disconnect from the broker |
 | `mqtt.subscribe` | `<topic> [qos=0]` | Subscribe (wildcards allowed, qos 0-2) |
 | `mqtt.unsubscribe` | `<topic>` | Unsubscribe |
-| `mqtt.publish` | `<topic> [qos=0] [retain] <text...>` | Publish a message (max 511 bytes of text; the module itself takes up to 5000). `qos=` 0-2; `retain` keeps it on the broker for new subscribers (sensor state for Home Assistant) |
+| `mqtt.publish` | `<topic> [qos=0] [retain] <text...>\|<topic> [qos=0] [retain] file=<name>` | Publish typed text (up to one shell line, 511 bytes) or a stored file of up to 5000 bytes, the module's limit for `AT+UMQPB` (MQTT 3.1.1). `qos=` 0-2; `retain` keeps it on the broker for new subscribers (sensor state for Home Assistant) |
 | `mqtt.read` | `[wait_s=10]` | Wait (default 10 s) for messages and print them |
 
 ```powershell

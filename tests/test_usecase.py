@@ -62,9 +62,10 @@ def test_use_case_list_and_examples(app_exe):
         assert word in ex.stdout
 
 
-USE_CASES = ("iiot", "medical", "site", "implement", "edge",
+USE_CASES = ("iiot", "medical", "site", "implement", "edge", "mesh", "border", "building", "gateway",
              "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")
 SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement"), "Edge AI": ("edge",),
+            "Thread": ("mesh", "border", "building", "gateway"),
             "Everyday": ("boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")}
 
 

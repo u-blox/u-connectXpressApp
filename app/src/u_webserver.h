@@ -70,6 +70,7 @@ extern "C" {
 #define U_WEBSERVER_MAX_ROUTES          32     /**< Maximum route handlers (u-connect-matter registers ~30 in dev builds) */
 #endif
 #define U_WEBSERVER_SSE_EVENT_SIZE      512    /**< Maximum SSE event size */
+#define U_WEBSERVER_HEADER_SIZE         512    /**< Header buffer for a static body sent in place */
 
 /* ========================================
  * HTTP Types
@@ -108,6 +109,7 @@ typedef struct {
     const char *body;                              /**< Response body */
     int32_t body_length;                           /**< Body length (-1 = use strlen) */
     char custom_headers[256];                      /**< Additional headers (newline-separated) */
+    bool body_static;                              /**< Body outlives the response (flash): sent in place, not copied */
 } uHttpResponse_t;
 
 /**

@@ -1,0 +1,7 @@
+# ALMA-W1 with Thread firmware: the NORA-W36 Wi-Fi, BLE and MQTT answers plus the Thread network of nora-b26-thread.
+include: [nora-w36.yaml, nora-b26-thread.yaml]
+identity:
+  manufacturer: u-blox
+  model: ALMA-W1
+  version: 3.5.0-0
+  serial: "0123456789"

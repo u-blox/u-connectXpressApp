@@ -91,9 +91,10 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Use cases by section (industry, edge AI, everyday). Row kinds: 'w' needs Wi-Fi on the module, 'g' a GNSS receiver,
+/* Use cases by section (industry, edge AI, Thread, everyday). Row kinds: 'w' needs Wi-Fi on the module, 't' Thread
+   firmware on the module, 'g' a GNSS receiver,
    anything else is fixed. A row with a command is a gap when that command is not in this build. Names stay under
-   15 characters. The industry and edge AI cases are not in lite builds. */
+   15 characters. The industry, edge AI and Thread cases are not in lite builds. */
 typedef struct {
     char kind;
     const char *verdict;
@@ -165,6 +166,42 @@ static const ucRow_t kEdge[] = {
     { 0, "[check]", "SPI host link", "SPI for more throughput is coming in u-connectClient", NULL },
 };
 
+static const ucRow_t kMesh[] = {
+    { 't', "[ok]", "Form", "the first node makes the network: thread.network new, thread.start", "thread.network" },
+    { 't', "[ok]", "Join", "the others take its dataset: thread.dataset <hex>, thread.start", "thread.dataset" },
+    { 't', "[ok]", "Mesh view", "leader, router table and neighbours: thread.leader, thread.routers", "thread.routers" },
+    { 't', "[ok]", "Battery nodes", "sleepy end devices poll their parent: thread.type sleepy 5000", "thread.type" },
+    { 0, "[check]", "Self-healing", "power off the leader; another router takes over within about 2 minutes", NULL },
+    { 0, "[limit]", "Size", "32 active routers per partition; end devices attach to a router", NULL },
+    { 0, "[limit]", "Local only", "without a border router the IPv6 traffic stays inside the mesh", NULL },
+};
+
+static const ucRow_t kBorder[] = {
+    { 't', "[ok]", "Commission", "the border router adds the PSKd as a joiner: thread.join <pskd>", "thread.join" },
+    { 't', "[ok]", "Or dataset", "from the border router (ot-ctl dataset active -x): thread.dataset <hex>", "thread.dataset" },
+    { 't', "[ok]", "Be found", "register with the border router: thread.srp add _sensor._udp 5683 sensor-1", "thread.srp" },
+    { 't', "[ok]", "Find others", "DNS-SD over the mesh: thread.dns browse _sensor._udp", "thread.dns" },
+    { 0, "[check]", "Border router", "Apple TV, HomePod, Nest Hub or OpenThread Border Router in Home Assistant", NULL },
+    { 0, "[check]", "Matter", "plain Thread only; Matter commissioning is not covered", NULL },
+};
+
+static const ucRow_t kBuilding[] = {
+    { 't', "[ok]", "One network", "every unit gets the same dataset on the line: thread.dataset <hex>", "thread.dataset" },
+    { 0, "[ok]", "Baseline", "cfg.diff each unit against a reference unit", "cfg.diff" },
+    { 't', "[ok]", "Roles", "mains-powered lights route (thread.type router), sensors sleep", "thread.type" },
+    { 't', "[ok]", "Placement", "RSSI and link quality to each neighbour: thread.neighbors", "thread.neighbors" },
+    { 't', "[ok]", "Health", "attach attempts, retries and errors per unit: thread.counters", "thread.counters" },
+    { 0, "[limit]", "Routers", "32 active routers per partition; the rest stay end devices", NULL },
+};
+
+static const ucRow_t kGateway[] = {
+    { 't', "[ok]", "Thread side", "sensors join the gateway's network: thread.network new, thread.start", "thread.start" },
+    { 'w', "[ok]", "Wi-Fi side", "station on the site network: wifi.connect", NULL },
+    { 't', "[ok]", "Find sensors", "sensors register over SRP, the gateway browses: thread.dns browse _sensor._udp", "thread.dns" },
+    { 0, "[ok]", "To the cloud", "the host relays the readings: mqtt.publish site/sensor-1 21.5", "mqtt.publish" },
+    { 0, "[check]", "Routing", "the module does not route IPv6 between Thread and Wi-Fi; the host relays", NULL },
+    { 0, "[check]", "Module", "Wi-Fi and Thread on one module: ALMA-W1 with Thread firmware", NULL },
+};
 #endif
 
 static const ucRow_t kBoat[] = {
@@ -219,7 +256,7 @@ static const ucRow_t kHome[] = {
     { 0, "[ok]", "MQTT", "publish and subscribe to a local broker (Mosquitto in Home Assistant)", "mqtt.connect" },
     { 0, "[ok]", "Broker login", "user and password: mqtt.connect <host> user=<name> pass=${MQTT_PASS}", "mqtt.connect" },
     { 0, "[ok]", "Sensor state", "retained, so Home Assistant sees it at once: mqtt.publish home/door retain open", "mqtt.publish" },
-    { 0, "[limit]", "Message size", "mqtt.publish sends up to 511 bytes of text; the module takes 5000 (MQTT 3.1.1)", NULL },
+    { 0, "[ok]", "Message size", "publish and subscribe up to 5000 bytes, binary (AT+UMQPB/AT+UMQRB); file= for big ones", NULL },
     { 0, "[ok]", "Sensor", "an IMU on the washing machine or door (imu.open, imu.status)", "imu.open" },
 };
 
@@ -262,6 +299,10 @@ static const ucCase_t kCases[] = {
     CASE("site", "Construction tools: technician's phone, tool tracking, site Wi-Fi, depot updates", kSite),
     CASE("implement", "Farm implement (ISOBUS/CAN): machine data to the cab tablet and the cloud", kImplement),
     CASE("edge", "Edge AI sensor (ALMA-W1): training data, sensors, results to the cloud", kEdge),
+    CASE("mesh", "Thread sensor mesh: form a network, join nodes, battery nodes, self-healing", kMesh),
+    CASE("border", "Home Thread network: join through a border router, SRP and DNS-SD", kBorder),
+    CASE("building", "Building lights and sensors: one dataset per line, roles, health", kBuilding),
+    CASE("gateway", "Thread to cloud gateway (ALMA-W1): sensors over Thread, MQTT over Wi-Fi", kGateway),
 #endif
     CASE("boat", "Boat or camper: GPS to the chart app on a tablet", kBoat),
     CASE("rtk", "Survey pole or rover: centimetre position with RTK", kRtk),
@@ -279,7 +320,7 @@ static const ucCase_t kCases[] = {
 static int cmdCheck(ucxapp_t *app, int argc, char *argv[])
 {
     const ucCase_t *uc = NULL;
-    bool wifi = true;
+    bool wifi = true, thread = true;
     char ssid[40] = "", ip[48] = "", gnss[64] = "";
 
     if (argc == 2 && strcmp(argv[1], "tool") == 0) {
@@ -298,6 +339,7 @@ static int cmdCheck(ucxapp_t *app, int argc, char *argv[])
     }
     if (app->ucx != NULL) {
         wifi = ucxapp_module_has_wifi(app);
+        thread = ucxapp_module_has_thread(app);
     }
     (void)ucxapp_gnss_summary(gnss, sizeof(gnss));
     ucxapp_print("%s\n", uc->title);
@@ -310,7 +352,9 @@ static int cmdCheck(ucxapp_t *app, int argc, char *argv[])
             snprintf(how, sizeof(how), "%s is not in this build; use Windows or Linux", r->cmd);
             row("[gap]", r->what, how);
         } else if (r->kind == 'w' && !wifi) {
-            row("[gap]", r->what, "this module has no Wi-Fi (NORA-B26); use a NORA-W36");
+            row("[gap]", r->what, "this module has no Wi-Fi (NORA-B2x); use a NORA-W36 or ALMA-W1");
+        } else if (r->kind == 't' && !thread) {
+            row("[gap]", r->what, "this module has no Thread firmware (see dev.caps)");
         } else if (r->kind == 'g' && gnss[0] != '\0') {
             char how[96];
 
@@ -345,7 +389,7 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     static const struct {
         const char *name;
         size_t count;
-    } kSections[] = { { "Industry", 4 }, { "Edge AI", 1 }, { "Everyday", 0 } };
+    } kSections[] = { { "Industry", 4 }, { "Edge AI", 1 }, { "Thread", 4 }, { "Everyday", 0 } };
 
     for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); s++) {
         size_t end = kSections[s].count != 0 ? first + kSections[s].count : CASE_COUNT;

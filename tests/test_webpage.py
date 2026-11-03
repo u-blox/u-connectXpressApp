@@ -33,7 +33,7 @@ def test_page_is_a_complete_document():
 def test_page_is_ascii_and_fits_one_response():
     data = PAGE.encode("utf-8")
     assert data.isascii()
-    assert len(data) < 40000   # U_WEBSERVER_MAX_RESPONSE_SIZE is 40960 including headers (at most ~450 bytes)
+    assert len(data) < 48000   # sent in place from flash (body_static); this caps the flash it takes
 
 
 def test_page_is_built_into_the_app():

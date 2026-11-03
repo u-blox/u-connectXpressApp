@@ -391,6 +391,7 @@ static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     (void)req;
     (void)user;
     uWebServerSendHTML(resp, kPage);
+    resp->body_static = true;
 }
 
 static void routeFavicon(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
@@ -401,6 +402,7 @@ static void routeFavicon(const uHttpRequest_t *req, uHttpResponse_t *resp, void 
     snprintf(resp->content_type, sizeof(resp->content_type), "image/svg+xml");
     resp->body = (const char *)kFavicon;
     resp->body_length = (int32_t)sizeof(kFavicon);
+    resp->body_static = true;
 }
 
 static void routeEvents(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)

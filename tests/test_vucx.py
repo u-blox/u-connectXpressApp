@@ -524,6 +524,47 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
         assert "NTRIP: streaming corrections from /NEAR-SPARTN" in out.stdout, out.stdout[-3000:]
 
 
+THREAD_CASES = {"mesh": "nora-b26-thread.yaml", "border": "nora-b26-thread.yaml",
+                "building": "nora-b26-thread.yaml", "gateway": "alma-w1-thread.yaml"}
+
+
+@pytest.mark.parametrize("case", THREAD_CASES)
+def test_thread_use_case_fits_and_runs_on_a_virtual_module(app_exe, case, tmp_path):
+    """The Thread use cases fit a virtual Thread module (gateway: ALMA-W1 with Wi-Fi) and every step runs."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    listing = subprocess.run([str(app_exe), "COM255", "--exec", f"examples uc-{case}"], capture_output=True,
+                             text=True, timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
+    count = len(re.findall(r"^ \d+\. ", listing, re.MULTILINE))
+    assert count > 0, listing
+    module = Vucx(THREAD_CASES[case])
+    try:
+        out = _run(app_exe, module.start(), f"usecase.check {case}",
+                   *[f"examples uc-{case} {n}" for n in range(1, count + 1)], timeout=150, cwd=tmp_path)
+    finally:
+        module.stop()
+    assert "[gap]" not in out.stdout, out.stdout
+    ran = out.stdout.count(f"Running uc-{case} example")
+    bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
+    assert ran == count and not bad, f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
+    assert any(c.startswith("AT+UTH") for c in module.log), module.log[-15:]
+
+
+@pytest.mark.parametrize("profile, gaps", [("nora-b26.yaml", "no Thread firmware"),
+                                          ("nora-b26-thread.yaml", "has no Wi-Fi")])
+def test_thread_gateway_shows_what_the_module_lacks(app_exe, profile, gaps):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx(profile)
+    try:
+        out = _run(app_exe, module.start(), "usecase.check gateway")
+    finally:
+        module.stop()
+    assert re.search(rf"^\s*\[gap\].*{gaps}", out.stdout, re.M), out.stdout
+
+
 def test_cell_commands_on_a_virtual_modem(app_exe, nora):
     from harness.vucx import Vucx
 

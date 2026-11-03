@@ -57,6 +57,8 @@ typedef struct {
      */
     char    *tx_buffer;          /**< Heap-allocated response buffer (NULL when idle) */
     int32_t  tx_total;           /**< Total bytes to send */
+    int32_t  tx_head;            /**< Bytes of tx_total in tx_buffer; the rest comes from tx_body */
+    const char *tx_body;         /**< Static body sent in place (flash), NULL when all is in tx_buffer */
     int32_t  tx_offset;          /**< Bytes already sent */
     bool     tx_close_when_done; /**< Mark pending_close once tx_buffer drains (non-SSE) */
     ucxapp_tls_conn_t *tls;      /**< HTTPS session, NULL for plain HTTP */
@@ -262,8 +264,8 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
         return -1;
     }
     
-    // Append body
-    if (response->body && body_len > 0) {
+    // Append body (a static body is sent in place by client_drain_tx)
+    if (response->body && body_len > 0 && !response->body_static) {
         if ((size_t)(written + body_len) >= buffer_size) {
             U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Body overflow: hdr=%d, body=%d, buf=%llu",
                           (int)written, (int)body_len, (unsigned long long)buffer_size);
@@ -299,6 +301,8 @@ static void client_release_tx_buffer(uWebServerClient_t *client)
         client->tx_buffer = NULL;
     }
     client->tx_total           = 0;
+    client->tx_head            = 0;
+    client->tx_body            = NULL;
     client->tx_offset          = 0;
     client->tx_close_when_done = false;
 }
@@ -338,14 +342,19 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
         return 0;
     }
 
+    const char *src = client->tx_buffer + client->tx_offset;
+    if (client->tx_offset >= client->tx_head) {
+        src = client->tx_body + (client->tx_offset - client->tx_head);
+    } else {
+        remaining = client->tx_head - client->tx_offset;
+    }
     int32_t chunk_len = (remaining > U_WEBSERVER_TX_CHUNK_SIZE) ? U_WEBSERVER_TX_CHUNK_SIZE : remaining;
 
     /* The older u-connectClient used here has no URC queue to drain; the app pump
      * feeds socket-closed events to uWebServerHandleSocketClosed() between chunks. */
     int32_t result = client->tls != NULL
-        ? ucxapp_tls_write(client->tls, (const uint8_t *)(client->tx_buffer + client->tx_offset), (size_t)chunk_len)
-        : uCxSocketWrite(server->ucx_handle, client->socket,
-                         (const uint8_t *)(client->tx_buffer + client->tx_offset), chunk_len);
+        ? ucxapp_tls_write(client->tls, (const uint8_t *)src, (size_t)chunk_len)
+        : uCxSocketWrite(server->ucx_handle, client->socket, (const uint8_t *)src, chunk_len);
     if (result > 0) {
         ucxapp_stats_add(UCXAPP_STATS_WEB, (size_t)result, 0);
     }
@@ -414,14 +423,21 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     // Build and send response
     // IMPORTANT: tx_buffer is heap-allocated because this function may run on
     // FreeRTOS UrcTask (4KB stack) — 32KB on stack would overflow instantly.
-    char *tx_buffer = (char *)malloc(U_WEBSERVER_MAX_RESPONSE_SIZE);
+    // A static body (the page, the icon) stays in flash: only the headers are buffered.
+    bool in_place = response.body_static && response.body != NULL && !is_sse;
+    size_t cap = in_place ? U_WEBSERVER_HEADER_SIZE : U_WEBSERVER_MAX_RESPONSE_SIZE;
+    char *tx_buffer = (char *)malloc(cap);
     if (!tx_buffer) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate %d bytes for response", (int)U_WEBSERVER_MAX_RESPONSE_SIZE);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate %d bytes for response", (int)cap);
         client->closing = true;
         client->pending_close = true;
         return;
     }
-    int32_t response_len = build_response(&response, tx_buffer, U_WEBSERVER_MAX_RESPONSE_SIZE, is_sse);
+    int32_t response_len = build_response(&response, tx_buffer, cap, is_sse);
+    int32_t head_len = response_len;
+    if (in_place && response_len > 0) {
+        response_len += response.body_length >= 0 ? response.body_length : (int32_t)strlen(response.body);
+    }
 
     U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Response: %d %s (%d bytes) socket=%d",
                   response.status_code, response.content_type, (int)response_len, (int)client->socket);
@@ -452,6 +468,8 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     }
     client->tx_buffer          = tx_buffer;
     client->tx_total           = response_len;
+    client->tx_head            = head_len;
+    client->tx_body            = in_place ? response.body : NULL;
     client->tx_offset          = 0;
     client->tx_close_when_done = !is_sse;
 
@@ -540,6 +558,8 @@ static void on_incoming_connection(struct uCxHandle *puCxHandle, int32_t client_
     client->request_complete = false;
     client->tx_buffer = NULL;
     client->tx_total = 0;
+    client->tx_head = 0;
+    client->tx_body = NULL;
     client->tx_offset = 0;
     client->tx_close_when_done = false;
     memset(client->rx_buffer, 0, sizeof(client->rx_buffer));
@@ -1036,6 +1056,8 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
 
     c->tx_buffer          = buf;
     c->tx_total           = len;
+    c->tx_head            = len;
+    c->tx_body            = NULL;
     c->tx_offset          = 0;
     c->tx_close_when_done = false;  // SSE: keep the connection open
     return 0;

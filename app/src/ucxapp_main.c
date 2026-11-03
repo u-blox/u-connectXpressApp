@@ -503,6 +503,7 @@ int main(int argc, char *argv[])
     ucxapp_register_sys_cmds();
     ucxapp_register_app_cmds();
     ucxapp_register_mqtt_cmds();
+    ucxapp_register_thread_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_certfile_cmds();

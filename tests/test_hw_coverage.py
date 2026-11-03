@@ -12,6 +12,21 @@ ENTRY = re.compile(r'\{\s*"([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)",\s*"[^\n]*?(UCXAPP_
 
 # Destructive, interactive or needing extra hardware; covered by hand.
 UNTESTED = {
+    "thread.status": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.start": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.stop": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.network": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.dataset": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.type": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.scan": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.join": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.addr": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.neighbors": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.routers": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.leader": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.counters": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.srp": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
+    "thread.dns": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
     "bt.bond": "needs a second module that accepts bonding; offline in tests/test_cs_initiator.py",
     "bt.cs.range": "needs a second NORA-B26 as reflector; offline in tests/test_cs_initiator.py",
     "dev.factory": "erases the module",

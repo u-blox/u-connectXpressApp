@@ -218,7 +218,8 @@ static const ucRow_t kHome[] = {
     { 'w', "[ok]", "Home Wi-Fi", "station on the home network: wifi.connect, wifi.profile.add for next time", NULL },
     { 0, "[ok]", "MQTT", "publish and subscribe to a local broker (Mosquitto in Home Assistant)", "mqtt.connect" },
     { 0, "[ok]", "Broker login", "user and password: mqtt.connect <host> user=<name> pass=${MQTT_PASS}", "mqtt.connect" },
-    { 0, "[limit]", "Message size", "max 511 bytes per message, QoS 0, not retained", NULL },
+    { 0, "[ok]", "Sensor state", "retained, so Home Assistant sees it at once: mqtt.publish home/door retain open", "mqtt.publish" },
+    { 0, "[limit]", "Message size", "mqtt.publish sends up to 511 bytes of text; the module takes 5000 (MQTT 3.1.1)", NULL },
     { 0, "[ok]", "Sensor", "an IMU on the washing machine or door (imu.open, imu.status)", "imu.open" },
 };
 

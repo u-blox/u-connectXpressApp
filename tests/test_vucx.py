@@ -195,6 +195,58 @@ def test_dev_caps_ble_only_module_hides_wifi(app_exe):
     assert "wifi.scan needs Wi-Fi; this module has Bluetooth LE only" in out.stdout, out.stdout
 
 
+def test_thread_module_caps_and_network(app_exe):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-b26-thread.yaml")
+    try:
+        out = _run(app_exe, module.start(), "dev.caps", "thread.network new", "thread.start 5",
+                   "thread.status", "thread.network", "thread.type", "thread.addr", "thread.neighbors",
+                   "thread.counters", "thread.scan", "thread.join j01nme 5", "thread.dataset")
+    finally:
+        module.stop()
+    assert re.search(r"^Thread:\s+yes$", out.stdout, re.M), out.stdout
+    assert "AT+UTHDSN" in module.log and "AT+UTHE=1" in module.log, module.log
+    assert "Thread up" in out.stdout and re.search(r"^Role:\s+leader$", out.stdout, re.M), out.stdout
+    assert "vucx-mesh" in out.stdout and "dead00beef00cafe" in out.stdout, out.stdout
+    assert "sleepy (polls its parent every 2000 ms)" in out.stdout, out.stdout
+    assert "fd00" in out.stdout and "1 neighbour(s)" in out.stdout, out.stdout
+    assert re.search(r"attach attempts\s+3", out.stdout) and re.search(r"tx frames\s+120", out.stdout), out.stdout
+    assert "counter 30" not in out.stdout and "1 network(s)" in out.stdout, out.stdout
+    assert 'AT+UTHJS="J01NME"' in module.log and "Joined" in out.stdout, out.stdout + str(module.log)
+    assert "0e080000000000010000000300000f" in out.stdout, out.stdout
+
+
+def test_thread_refused_without_thread_firmware(app_exe):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-b26.yaml")
+    try:
+        out = _run(app_exe, module.start(), "dev.caps", "thread.status")
+    finally:
+        module.stop()
+    assert re.search(r"^Thread:\s+no$", out.stdout, re.M), out.stdout
+    assert "thread.status needs Thread; this module has no Thread firmware" in out.stdout, out.stdout
+
+
+def test_thread_usage_errors(app_exe):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-b26-thread.yaml")
+    port = module.start()
+    try:
+        for bad in ("thread.network x 99 1 00 00", "thread.dataset 0g", "thread.join ABC", "thread.type fast",
+                    "thread.srp add _x._udp 0 i"):
+            out = _run(app_exe, port, bad)
+            assert "AT+UTHNC=" not in module.log and "AT+UTHJS=" not in module.log, (bad, module.log)
+            assert out.returncode != 0 or "ERROR" in out.stdout or "Usage" in out.stdout, (bad, out.stdout)
+    finally:
+        module.stop()
+
+
 def test_wifi_connect_status_disconnect(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123", "wifi.status", "wifi.disconnect")
     assert any(c.startswith("AT+UWSC=") for c in wifi_module.log), wifi_module.log
@@ -655,6 +707,16 @@ def test_mqtt_connect_with_login_and_tls(app_exe, nora):
     assert "AT+UMQTLS=0,0" in sent, sent
     assert "user me, TLS with client certificate" in out.stdout, out.stdout
     assert "TLS (server not verified)" in out.stdout, out.stdout
+
+
+def test_mqtt_publish_qos_and_retain(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["mqtt.publish home/door qos=1 retain open", "mqtt.publish a/b qos is fine",
+                                      "mqtt.publish a/b qos=3 x"], log=nora.log)
+    pubs = [cmd for cmd in nora.log if cmd.startswith("AT+UMQPB=")]
+    assert pubs[0].startswith('AT+UMQPB=0,1,1,"home/door"'), pubs
+    assert pubs[1].startswith('AT+UMQPB=0,0,0,"a/b"') and len(pubs) == 2, pubs
+    assert "published 4 bytes to home/door (qos 1, retained)" in out.stdout, out.stdout
+    assert "published 11 bytes to a/b (qos 0)" in out.stdout, out.stdout
 
 
 @pytest.mark.parametrize("args", ["mqtt.connect h cert=c key=k", "mqtt.connect h ca=a cert=c",

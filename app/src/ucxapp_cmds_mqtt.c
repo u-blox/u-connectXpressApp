@@ -205,17 +205,32 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
 {
     char text[MQTT_MAX_PAYLOAD];
     size_t len = 0;
+    uMqttQos_t qos = U_MQTT_QOS_AT_MOST_ONCE;
+    uMqttRetain_t retain = U_MQTT_RETAIN_NO;
+    int first = 2;
 
-    if (argc < 3) {
+    /* Options go before the text, so a message may still start with any word after them. */
+    for (; first < argc; first++) {
+        if (strncmp(argv[first], "qos=", 4) == 0) {
+            if (!parseQos(argv[first] + 4, &qos)) {
+                return UCXAPP_ERR_USAGE;
+            }
+        } else if (strcmp(argv[first], "retain") == 0) {
+            retain = U_MQTT_RETAIN_YES;
+        } else {
+            break;
+        }
+    }
+    if (argc < 3 || first >= argc) {
         return UCXAPP_ERR_USAGE;
     }
-    for (int i = 2; i < argc; i++) {
+    for (int i = first; i < argc; i++) {
         size_t n = strlen(argv[i]);
         if (len + n + 1 >= sizeof(text)) {
             ucxapp_print("ERROR: message too long (max %d bytes)\n", (int)sizeof(text) - 1);
             return UCXAPP_ERR_FAILED;
         }
-        if (i > 2) {
+        if (i > first) {
             text[len++] = ' ';
         }
         memcpy(&text[len], argv[i], n);
@@ -227,7 +242,7 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
         if (i > 0) {
             U_CX_PORT_SLEEP_MS(MQTT_BUSY_DELAY_MS);
         }
-        result = uCxMqttPublish(app->ucx, MQTT_ID, U_MQTT_QOS_AT_MOST_ONCE, U_MQTT_RETAIN_NO,
+        result = uCxMqttPublish(app->ucx, MQTT_ID, qos, retain,
                                 argv[1], (const uint8_t *)text, (int32_t)len);
     }
     if (result < 0) {
@@ -235,7 +250,7 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_stats_add(UCXAPP_STATS_MQTT, len, 0);
-    ucxapp_print("published %d bytes to %s\n", (int)len, argv[1]);
+    ucxapp_print("published %d bytes to %s (qos %d%s)\n", (int)len, argv[1], (int)qos, retain == U_MQTT_RETAIN_YES ? ", retained" : "");
     return UCXAPP_OK;
 }
 
@@ -286,7 +301,7 @@ static const ucxapp_cmd_t gMqttCmds[] = {
     { "mqtt.disconnect",  "",                 "Disconnect from the broker",                               UCXAPP_CMD_NEEDS_DEVICE, cmdMqttDisconnect },
     { "mqtt.subscribe",   "<topic> [qos=0]",    "Subscribe to a topic (wildcards allowed, qos 0-2)",        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttSubscribe },
     { "mqtt.unsubscribe", "<topic>",          "Unsubscribe from a topic",                                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttUnsubscribe },
-    { "mqtt.publish",     "<topic> <text...>", "Publish a message (QoS 0, not retained)",                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
+    { "mqtt.publish",     "<topic> [qos=0] [retain] <text...>", "Publish a message (max 511 bytes); retain keeps it on the broker for new subscribers",                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttPublish },
     { "mqtt.read",        "[wait_s=10]",         "Wait (default 10 s) for messages and print them",          UCXAPP_CMD_NEEDS_DEVICE, cmdMqttRead },
 };
 

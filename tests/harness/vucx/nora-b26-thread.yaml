@@ -1,0 +1,27 @@
+# NORA-B26 with Thread firmware: Bluetooth LE and a Thread network it leads.
+identity:
+  manufacturer: u-blox
+  model: NORA-B26
+  version: 3.5.0-0
+  serial: "0123456789"
+commands:
+  "AT+CPWROFF": ["OK"]
+  "AT+UTHE?": ["+UTHE:0", "OK"]
+  "AT+UTHE=*": ["OK"]
+  "AT+UTHDSN": ["OK"]
+  "AT+UTHDS?": ["+UTHDS:0e080000000000010000000300000f", "OK"]
+  "AT+UTHDS=*": ["OK"]
+  "AT+UTHNC?": ['+UTHNC:"vucx-mesh",15,4660,dead00beef00cafe,00112233445566778899aabbccddeeff', "OK"]
+  "AT+UTHNC=*": ["OK"]
+  "AT+UTHDT?": ["+UTHDT:2,2000", "OK"]
+  "AT+UTHDT=*": ["OK"]
+  "AT+UTHS?": ["+UTHS:4,1024,0a0b0c0d,1122334455667788", "OK"]
+  "AT+UTHA?": ["+UTHA:[fd00:0:0:0:0:ff:fe00:400],0", "OK"]
+  "AT+UTHNL?": ["+UTHNL:8877665544332211,2048,0,-60,3", "OK"]
+  "AT+UTHCNT?": ["+UTHCNT:4,3", "+UTHCNT:8,120", "+UTHCNT:30,7", "OK"]
+  "AT+UTHSC": ['+UTHSC:"vucx-mesh",dead00beef00cafe,4660,15,-55,200,1122334455667788,4,1', "OK"]
+  "AT+UTHJS=*": ["OK"]
+urcs:
+  "AT+CPWROFF": ["+STARTUP"]
+  "AT+UTHE=1": ["+UETHU:4"]
+  "AT+UTHJS=*": ["+UETHJ:0"]

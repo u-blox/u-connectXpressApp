@@ -476,6 +476,10 @@ static void visitGroup(const ucxapp_cmd_t *cmd, void *user)
         gApp->ucx != NULL && !ucxapp_module_has_wifi(gApp)) {
         return;
     }
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_cmd_needs_thread(cmd->name) && gApp != NULL &&
+        gApp->ucx != NULL && !ucxapp_module_has_thread(gApp)) {
+        return;
+    }
     groupOf(cmd->name, group);
     for (int i = 0; i < c->count; i++) {
         if (strcmp(c->names[i], group) == 0) {

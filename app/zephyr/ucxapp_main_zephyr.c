@@ -351,6 +351,7 @@ int main(void)
     ucxapp_register_gatt_cmds();
 #ifndef UCXAPP_LITE
     ucxapp_register_mqtt_cmds();
+    ucxapp_register_thread_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_wifiloc_cmds();
     ucxapp_register_cfg_cmds();

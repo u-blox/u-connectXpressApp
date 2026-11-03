@@ -78,6 +78,7 @@ if(STM32_BOARD STREQUAL "nucleo_f103rb" OR STM32_BOARD STREQUAL "nucleo_g071rb")
 else()
     list(APPEND UCXAPP_STM32_SOURCES
         ${APP_SRC}/ucxapp_cmds_mqtt.c
+        ${APP_SRC}/ucxapp_cmds_thread.c
         ${APP_SRC}/ucxapp_cmds_net.c
         ${APP_SRC}/ucxapp_cmds_wifiloc.c
         ${APP_SRC}/ucxapp_cmds_cfg.c

@@ -86,6 +86,9 @@ const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
 /** False for Bluetooth LE only modules (NORA-B26); the Wi-Fi command groups are blocked on them. */
 bool ucxapp_module_has_wifi(ucxapp_t *app);
 bool ucxapp_cmd_needs_wifi(const char *name);   /* wifi., sock., mqtt., net. ... commands */
+/** True when the module runs Thread firmware (answers AT+UTHE?); thread.* is blocked otherwise. */
+bool ucxapp_module_has_thread(ucxapp_t *app);
+bool ucxapp_cmd_needs_thread(const char *name);
 
 /* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
@@ -154,6 +157,9 @@ void ucxapp_register_sys_cmds(void);
 void ucxapp_register_app_cmds(void);     /* app.* (ucxapp_cmds_app.c) */
 bool ucxappLogEventsEnabled(void);   /* app.log.events.on: URC events are also printed to the log */
 void ucxapp_register_mqtt_cmds(void);
+void ucxapp_register_thread_cmds(void);
+const char *ucxapp_thread_role_name(int32_t role);
+int32_t ucxapp_thread_joiner_result(void);
 void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);
 /* Uploads PEM data (0 ca, 1 client, 2 key; pw for an encrypted key or NULL) and checks the fingerprint. */

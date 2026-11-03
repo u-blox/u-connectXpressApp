@@ -17,6 +17,16 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_general.h"
+#ifndef UCXAPP_LITE
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
+#include "u_cx_thread.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+#endif
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -91,9 +101,37 @@ int32_t ucxapp_last_module_error(void)
     return gModErr;
 }
 
+static const void *gThreadFor;
+#ifndef UCXAPP_LITE
+static bool gCapsThread;
+#endif
+
 void ucxapp_caps_reset(void)
 {
     gCapsFor = NULL;
+    gThreadFor = NULL;
+}
+
+bool ucxapp_cmd_needs_thread(const char *name)
+{
+    return strncmp(name, "thread.", 7) == 0;
+}
+
+/* Thread firmware answers AT+UTHE?; asked once per connection. */
+bool ucxapp_module_has_thread(ucxapp_t *app)
+{
+#ifdef UCXAPP_LITE
+    (void)app;
+    return false;
+#else
+    if (gThreadFor != (const void *)app->ucx) {
+        uEnabled_t on;
+
+        gCapsThread = uCxThreadGetEnabled(app->ucx, &on) == 0;
+        gThreadFor = app->ucx;
+    }
+    return gCapsThread;
+#endif
 }
 
 bool ucxapp_cmd_needs_wifi(const char *name)
@@ -117,7 +155,7 @@ bool ucxapp_module_has_wifi(ucxapp_t *app)
 
         gCapsWifi = true;
         if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
-            gCapsWifi = strstr(text, "B26") == NULL;
+            gCapsWifi = strstr(text, "-B2") == NULL;   /* NORA-B20/B26/B27: Bluetooth LE (and Thread) only */
         }
         uCxEnd(app->ucx);
         gCapsFor = app->ucx;
@@ -935,6 +973,10 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     }
     if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_cmd_needs_wifi(cmd->name) && !ucxapp_module_has_wifi(app)) {
         ucxapp_print("ERROR: %s needs Wi-Fi; this module has Bluetooth LE only (see dev.caps)\n", cmd->name);
+        return UCXAPP_ERR_UNSUPPORTED;
+    }
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_cmd_needs_thread(cmd->name) && !ucxapp_module_has_thread(app)) {
+        ucxapp_print("ERROR: %s needs Thread; this module has no Thread firmware (see dev.caps)\n", cmd->name);
         return UCXAPP_ERR_UNSUPPORTED;
     }
 

@@ -49,6 +49,7 @@ if(BOARD MATCHES "^(nucleo_f103rb|nucleo_g071rb)$")
 else()
     target_sources(app PRIVATE
         ${APP_SRC}/ucxapp_cmds_mqtt.c
+        ${APP_SRC}/ucxapp_cmds_thread.c
         ${APP_SRC}/ucxapp_cmds_net.c
         ${APP_SRC}/ucxapp_cmds_wifiloc.c
         ${APP_SRC}/ucxapp_cmds_cfg.c

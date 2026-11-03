@@ -15,6 +15,9 @@
 #include "u_cx_mqtt.h"
 #include "u_cx_socket.h"
 #include "u_cx_sps.h"
+#ifndef UCXAPP_LITE
+#include "u_cx_thread.h"
+#endif
 #include "u_cx_wifi.h"
 
 /* Handlers raise event flags for the command packs and mirror key URCs to the web Events pane. */
@@ -156,6 +159,21 @@ void ucxapp_adopt_connections(uCxHandle_t *ucx)
     uCxEnd(ucx);
 }
 
+#ifndef UCXAPP_LITE
+static int32_t gJoinerResult = -1;
+
+int32_t ucxapp_thread_joiner_result(void)
+{
+    return gJoinerResult;
+}
+
+static void threadUpUrc(struct uCxHandle *h, uThreadDeviceRole_t r)          { (void)h; evt("thread: up, %s", ucxapp_thread_role_name(r)); ucxapp_events_signal(URC_FLAG_THREAD_UP); }
+static void threadDownUrc(struct uCxHandle *h)                              { (void)h; evt("thread: down"); }
+static void threadRoleUrc(struct uCxHandle *h, uThreadDeviceRole_t r)        { (void)h; evt("thread: role %s", ucxapp_thread_role_name(r)); }
+static void threadSrpUrc(struct uCxHandle *h, int32_t id, uThreadSrpState_t s) { (void)h; evt("thread: srp service %d state %d", (int)id, (int)s); }
+static void threadJoinerUrc(struct uCxHandle *h, uThreadJoinerResult_t r)   { (void)h; gJoinerResult = (int32_t)r; evt("thread: joiner result %d", (int)r); ucxapp_events_signal(URC_FLAG_THREAD_JOINER); }
+#endif
+
 void ucxapp_urc_register(uCxHandle_t *ucx)
 {
     gBootMs = ucxapp_platform_tick_ms();
@@ -198,6 +216,12 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
     uCxChannelSoundingRegisterCsStatus(ucx, btCsUrc);
     uCxChannelSoundingRegisterDistance(ucx, btCsDistanceUrc);
     uCxChannelSoundingRegisterPct(ucx, btCsPctUrc);
+
+    uCxThreadRegisterNetworkUp(ucx, threadUpUrc);
+    uCxThreadRegisterNetworkDown(ucx, threadDownUrc);
+    uCxThreadRegisterRoleChanged(ucx, threadRoleUrc);
+    uCxThreadRegisterSrpServiceState(ucx, threadSrpUrc);
+    uCxThreadRegisterJoinerResult(ucx, threadJoinerUrc);
 #endif
 
     uCxGattClientRegisterNotification(ucx, gattNotifyUrc);

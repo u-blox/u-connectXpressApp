@@ -149,6 +149,20 @@ static const example_t kExamples[] = {
       "cert.upload ca root-ca.pem root-ca\ncert.upload client device.pem device\ncert.upload key device.key device-key\n"
       "mqtt.connect xxxxxx-ats.iot.eu-west-1.amazonaws.com ca=root-ca cert=device key=device-key id=device1" },
 
+    { "thread", "Start a new Thread network on this module (it becomes the leader)",
+      "thread.network new\nthread.start\nthread.status\nthread.network" },
+    { "thread", "Join a border router's network with its dataset",
+      "# on the border router: ot-ctl dataset active -x\nthread.dataset 0e080000000000010000000300000f35060004001fffe0...\n"
+      "thread.start\nthread.addr" },
+    { "thread", "Join through a commissioner with a PSKd",
+      "# on the commissioner: ot-ctl commissioner start; ot-ctl commissioner joiner add * J01NME\n"
+      "thread.join J01NME\nthread.start" },
+    { "thread", "Sleepy end device and link health",
+      "thread.type sleepy 2000\nthread.start\nthread.neighbors\nthread.counters" },
+    { "thread", "Publish a service over SRP and find it with DNS-SD",
+      "thread.srp host sensor1\nthread.srp add _coap._udp 5683 sensor1\nthread.srp on\nthread.srp\n"
+      "thread.dns browse _coap._udp" },
+
     { "cert", "Install and check certificates",
       "cert.upload ca ca.pem myca\ncert.upload client client.pem mycert\ncert.upload key client.key mykey\ncert.list\ncert.info myca" },
     { "cert", "Install a PKCS#12 (.p12/.pfx) file from the IT department",

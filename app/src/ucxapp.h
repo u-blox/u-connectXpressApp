@@ -68,6 +68,8 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 #define URC_FLAG_MQTT_DISCONNECTED  (1 << 19)
 #define URC_FLAG_SOCK_INCOMING      (1 << 20)
 #define URC_FLAG_MQTT_SUBSCRIBED    (1 << 21)  /* +UEMQSC: subscribe or unsubscribe completed */
+#define URC_FLAG_THREAD_UP          (1 << 22)  /* +UETHU: Thread attached */
+#define URC_FLAG_THREAD_JOINER      (1 << 23)  /* +UETHJ: joiner finished */
 
 /* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
 void ucxapp_urc_register(uCxHandle_t *ucx);

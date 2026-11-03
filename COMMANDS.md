@@ -108,7 +108,7 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | Command | Arguments | Description |
 |---|---|---|
 | `dev.info` | | Manufacturer, model, firmware version |
-| `dev.caps` | | Capabilities grouped by radio, Wi-Fi features and Bluetooth LE features: model, firmware, Wi-Fi, Bluetooth LE, the saved region, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support, then what to try next. A Bluetooth LE only module (NORA-B26) shows `Wi-Fi: no` and no Wi-Fi features; the TUI and web UI then hide the Wi-Fi, socket and network groups |
+| `dev.caps` | | Capabilities grouped by radio, Wi-Fi features and Bluetooth LE features: model, firmware, Wi-Fi, Bluetooth LE, Thread, the saved region, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support, then what to try next. A Bluetooth LE only module (NORA-B26) shows `Wi-Fi: no` and no Wi-Fi features; the TUI and web UI then hide the Wi-Fi, socket and network groups. `Thread: yes` when the module answers `AT+UTHE?` (Thread firmware); otherwise `thread.*` is hidden |
 | `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
 | `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |
 | `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it |
@@ -241,7 +241,7 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.survey` | `[seconds=10] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
 | `wifi.locate` | `[google\|skyhook\|here\|combain] [api-key] \| key [<service> <api-key>] \| body [service]` | Position from a Wi-Fi scan, like ubxlib's `uWifiLoc`. NORA modules have no location command, so the host does the work: the module scans, the strongest access points (up to 20, at least 2; SSIDs ending in `_nomap` are left out) go to the location service as JSON over the module's HTTPS (`http.post`), and the answer is shown as `Position: <lat>, <lon> +/- <m> m`, an OpenStreetMap link and a `gnss.virtual <lat> <lon>` line to use it as a virtual receiver. Needs a Wi-Fi connection and an API key: Google Geolocation API, Skyhook, HERE Network Positioning v2 or Combain (Google, Skyhook and Combain take Google's request format, HERE its own). `key <service> <api-key>` saves the key in `ucxapp.wifiloc` (private) and makes that service the default; `key` alone lists the saved services (keys shortened). `<service> <api-key>` uses a key once without saving it. `body [service]` scans and prints the request without sending it. Not in lite builds |
 | `wifi.roaming` | `[on\|off]` | Show or set roaming between access points |
-| `wifi.regdomain` | `[0-10\|world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br\|<place>]` | Show, or set and save, where you are (the Wi-Fi regulatory domain). Takes the menu number (0 world … 10 Brazil, the `AT+UWRD` value), the domain name or a place (`europe`, `usa`, `canada`, `japan`, `new-zealand` …). Without an argument at the `ucxapp>` prompt it shows the numbered list and asks; elsewhere it prints the list. It is required: `wifi.scan`, `wifi.connect`, `wifi.eap`, `wifi.peap`, `wifi.profile.*` connects, `wifi.ap.enable`, `wifi.locate` and BLE Wi-Fi provisioning ask for it the first time at the prompt, and refuse with the list in scripts, `--exec` and the web page (where the list lines are clickable). `world` is allowed everywhere, with fewer channels. Scripts and CI can set `UCX_REGDOMAIN` instead; a saved domain wins |
+| `wifi.regdomain` | `[0-10\|world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br\|<place>]` | Show, or set and save, where you are (the Wi-Fi regulatory domain). Takes the menu number (0 world ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ 10 Brazil, the `AT+UWRD` value), the domain name or a place (`europe`, `usa`, `canada`, `japan`, `new-zealand` ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦). Without an argument at the `ucxapp>` prompt it shows the numbered list and asks; elsewhere it prints the list. It is required: `wifi.scan`, `wifi.connect`, `wifi.eap`, `wifi.peap`, `wifi.profile.*` connects, `wifi.ap.enable`, `wifi.locate` and BLE Wi-Fi provisioning ask for it the first time at the prompt, and refuse with the list in scripts, `--exec` and the web page (where the list lines are clickable). `world` is allowed everywhere, with fewer channels. Scripts and CI can set `UCX_REGDOMAIN` instead; a saved domain wins |
 | `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (passwords encrypted with AES-256-GCM, key in `ucxapp.key`; XOR-obfuscated on STM32; max 16) |
 | `wifi.profile.list` |  | List saved profiles (no passwords shown) and the network (IP prefix) each was last used on |
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
@@ -403,7 +403,7 @@ ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.ph
 | `mqtt.disconnect` | | Disconnect from the broker |
 | `mqtt.subscribe` | `<topic> [qos=0]` | Subscribe (wildcards allowed, qos 0-2) |
 | `mqtt.unsubscribe` | `<topic>` | Unsubscribe |
-| `mqtt.publish` | `<topic> <text...>` | Publish a QoS 0, non-retained message (max 511 bytes) |
+| `mqtt.publish` | `<topic> [qos=0] [retain] <text...>` | Publish a message (max 511 bytes of text; the module itself takes up to 5000). `qos=` 0-2; `retain` keeps it on the broker for new subscribers (sensor state for Home Assistant) |
 | `mqtt.read` | `[wait_s=10]` | Wait (default 10 s) for messages and print them |
 
 ```powershell
@@ -415,6 +415,38 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec 'mqtt.connect broker.emqx.io ca=e
 ```
 
 Known firmware behaviour: on NORA-W36 an MQTT publish made while a subscription is active returned ERROR:15 in testing, and back-to-back MQTT operations get ERROR:15 while the previous one is in flight; the commands retry the latter automatically.
+
+### Thread
+
+For NORA-B26 and ALMA-W1 with Thread firmware (not released yet; the commands follow the u-connectXpress 3.5 Thread API). On a module without Thread firmware they are hidden in the UI and refused with `needs Thread`; `dev.caps` shows `Thread: yes/no`. Full builds only (not F103/G071 lite).
+
+| Command | Arguments | Description |
+|---|---|---|
+| `thread.status` | | Thread on or off, the network, the role (disabled, detached, child, router, leader), RLOC16, partition and extended address |
+| `thread.start` | `[wait_s=30]` | Turn Thread on and wait for `+UETHU` (attached); `0` does not wait |
+| `thread.stop` | | Turn Thread off |
+| `thread.network` | `[new\|<name> <channel> <pan_id> <ext_pan_id> <network_key>]` | Channel 11-26, ext_pan_id 16 hex digits, network_key 32. Show the credentials, make a new network with random ones (this module becomes the leader), or set them |
+| `thread.dataset` | `[<hex>\|clear]` | Show or set the active operational dataset as TLV hex (max 254 bytes; on an OpenThread border router: `ot-ctl dataset active -x`) |
+| `thread.type` | `[router\|end\|sleepy [poll_ms]]` | Device type: router-capable, end device, or sleepy end device polling its parent |
+| `thread.scan` | | Thread networks nearby: name, channel, PAN ID, extended PAN ID, RSSI, LQI, joinable |
+| `thread.join` | `<pskd> [wait_s=120]\|stop` | Joiner: a commissioner admits the module with its PSKd (6-32 of A-Z and 0-9 without I, O, Q, Z; lower case is converted); waits for `+UETHJ` |
+| `thread.addr` | | IPv6 addresses and their origin (thread, slaac, dhcpv6, manual) |
+| `thread.neighbors` | | Neighbours: extended address, RLOC16, role, RSSI, link quality |
+| `thread.routers` | | Router table: id, RLOC16, next hop, path cost, link quality in/out, age |
+| `thread.leader` | | Leader data: partition, leader router id, weighting, data versions |
+| `thread.counters` | `[all\|reset]` | Link counters (attach attempts, parent changes, tx/rx frames, retries, CCA, security and FCS errors); `all` lists every id |
+| `thread.srp` | `[on\|off\|host <name>\|add <_type._udp> <port> <instance>\|remove <id>\|txt <id> <key> <value>]` | SRP client: register services with the border router for DNS-SD; no argument lists the services and their state |
+| `thread.dns` | `browse <_type._udp>\|resolve <instance> <_type._udp>\|host <name>` | DNS over the Thread network |
+
+Events (`app.log.events.on`, web Events pane): `thread: up, <role>`, `thread: down`, `thread: role <role>`, `thread: srp service <id> state <n>`, `thread: joiner result <n>`.
+
+```powershell
+# New network led by this module
+ucxapp COM13 --exec "thread.network new" --exec "thread.start" --exec "thread.status"
+
+# Join a border router's network with its dataset
+ucxapp COM13 --exec "thread.dataset 0e08...<hex from ot-ctl dataset active -x>" --exec "thread.start" --exec "thread.addr"
+```
 
 ### HTTP
 
@@ -610,7 +642,7 @@ or `ERR <text>`. While bridged, GPIO input changes arrive as `EVT gpio <pin> <le
 CAN has its own commands. On Windows and Linux they run an emulated loopback controller, and the bridge carries
 frames to a network peer. On the STM32 boards with a CAN controller (FreeRTOS and Zephyr builds for H753, F767, F439,
 F407 and F446) they drive the real controller (FDCAN1 on the H753, bxCAN CAN1 on the others). Wire a 3.3 V CAN
-transceiver (for example a TJA1051T/3 or SN65HVD230 board) to RX/TX, and terminate the bus with 120 Ω at both ends:
+transceiver (for example a TJA1051T/3 or SN65HVD230 board) to RX/TX, and terminate the bus with 120 ÃƒÅ½Ã‚Â© at both ends:
 
 | Board | CAN RX | CAN TX |
 |---|---|---|

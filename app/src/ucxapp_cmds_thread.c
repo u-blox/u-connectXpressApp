@@ -611,7 +611,7 @@ static int cmdThreadDns(ucxapp_t *app, int argc, char *argv[])
 static int cmdThreadPing(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t count = 4;
-    char target[48];
+    char target[64]; /* <prefix up to 47> + ":0:ff:fe00:fc00" */
 
     if (argc < 2 || argc > 3 ||
         (argc > 2 && (!ucxapp_parse_int(argv[2], &count) || count < 1 || count > 10))) {

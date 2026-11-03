@@ -436,6 +436,7 @@ For NORA-B26 and ALMA-W1 with Thread firmware (not released yet; the commands fo
 | `thread.leader` | | Leader data: partition, leader router id, weighting, data versions |
 | `thread.counters` | `[all\|reset]` | Link counters (attach attempts, parent changes, tx/rx frames, retries, CCA, security and FCS errors); `all` lists every id |
 | `thread.srp` | `[on\|off\|host <name>\|add <_type._udp> <port> <instance>\|remove <id>\|txt <id> <key> <value>]` | SRP client: register services with the border router for DNS-SD; no argument lists the services and their state |
+| `thread.ping` | `<ipv6>\|leader [count=4]` | ICMPv6 ping over Thread; `leader` pings the partition leader, off-mesh hosts and IPv4 go through the border router (NAT64) |
 | `thread.dns` | `browse <_type._udp>\|resolve <instance> <_type._udp>\|host <name>` | DNS over the Thread network |
 
 Events (`app.log.events.on`, web Events pane): `thread: up, <role>`, `thread: down`, `thread: role <role>`, `thread: srp service <id> state <n>`, `thread: joiner result <n>`.

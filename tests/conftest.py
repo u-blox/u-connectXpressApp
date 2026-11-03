@@ -142,6 +142,7 @@ def pytest_configure(config):
         "hardware: needs a NORA module on UCX_PORT_A",
         "two_devices: needs NORA modules on both UCX_PORT_A and UCX_PORT_B",
         "wifi: every module the test uses needs Wi-Fi (dev.caps); skipped on Bluetooth LE only modules",
+        "thread: every module the test uses needs Thread firmware (dev.caps)",
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
         "stress: long repeated runs; only with -m stress",
@@ -178,6 +179,14 @@ def _skip_reason(item, exe, hw):
         for port in filter(None, used):
             if not _has_wifi(exe, port):
                 return f"no Wi-Fi on {port} (dev.caps)"
+    if item.get_closest_marker("thread"):
+        sys.path.insert(0, str(ROOT / "tests" / "hardware"))
+        from hwutil import _has_thread
+
+        used = [hw["a"]] + ([hw["b"]] if "port_b" in getattr(item, "fixturenames", ()) else [])
+        for port in filter(None, used):
+            if not _has_thread(exe, port):
+                return f"no Thread on {port} (dev.caps)"
     return None
 
 

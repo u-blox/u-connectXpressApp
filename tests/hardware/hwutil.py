@@ -53,6 +53,11 @@ def _has_wifi(exe, port):
     return _caps(str(exe), port).get("wi-fi", "yes") == "yes"
 
 
+def _has_thread(exe, port):
+    """From dev.caps: the module runs Thread firmware (NORA-B20, ALMA-W1)."""
+    return _caps(str(exe), port).get("thread", "no") == "yes"
+
+
 def _reboot(exe, *ports):
     """Reboots the modules in parallel; dev.reboot already waits for the startup event."""
     procs = [subprocess.Popen(_args(exe, port, "dev.reboot"), stdout=subprocess.DEVNULL,

@@ -12,6 +12,7 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_at_params.h"
+#include "u_cx_diagnostics.h"
 #include "u_cx_thread.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -606,6 +607,54 @@ static int cmdThreadDns(ucxapp_t *app, int argc, char *argv[])
     return n > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+/* ICMPv6 echo over Thread. "leader" pings the partition leader's anycast locator (mesh-local prefix + 0:ff:fe00:fc00). */
+static int cmdThreadPing(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t count = 4;
+    char target[48];
+
+    if (argc < 2 || argc > 3 ||
+        (argc > 2 && (!ucxapp_parse_int(argv[2], &count) || count < 1 || count > 10))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(argv[1], "leader") == 0) {
+        uCxThreadListAddresses_t a;
+        char prefix[48] = "";
+
+        uCxThreadListAddressesBegin(app->ucx);
+        while (uCxThreadListAddressesGetNext(app->ucx, &a)) {
+            char ip[48] = "";
+            uCxIpAddressToString(&a.ipv6_addr, ip, sizeof(ip));
+            const char *start = ip + (ip[0] == '[');
+            const char *rloc = strstr(start, ":0000:00ff:fe00:");
+            /* the RLOC is <mesh-local /64>:0000:00ff:fe00:<rloc16> */
+            if (prefix[0] == '\0' && rloc != NULL && rloc - start < (int)sizeof(prefix) - 1) {
+                snprintf(prefix, sizeof(prefix), "%.*s", (int)(rloc - start), start);
+            }
+        }
+        uCxEnd(app->ucx);
+        if (prefix[0] == '\0') {
+            ucxapp_print("ERROR: no mesh-local address; thread.start first\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        snprintf(target, sizeof(target), "%s:0:ff:fe00:fc00", prefix);
+    } else {
+        snprintf(target, sizeof(target), "%s", argv[1]);
+    }
+    ucxapp_events_clear(URC_FLAG_PING_COMPLETE);
+    int32_t r = uCxDiagnosticsPing2(app->ucx, target, count);
+    if (r != 0) {
+        return failed("starting the ping", r);
+    }
+    if (!ucxapp_events_wait(URC_FLAG_PING_COMPLETE, (uint32_t)count * 2 + 5)) {
+        ucxapp_print("ERROR: ping timeout\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%s: sent %d, received %d, average %d ms\n", target,
+                 (int)gUcxappPingSent, (int)gUcxappPingReceived, (int)gUcxappPingAvgMs);
+    return gUcxappPingReceived > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
 static const ucxapp_cmd_t gThreadCmds[] = {
     { "thread.status",    "",                 "Thread on or off, network, role, RLOC16 and partition",            UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStatus },
     { "thread.start",     "[wait_s=30]",      "Turn Thread on and wait until it is attached (0: do not wait)",     UCXAPP_CMD_NEEDS_DEVICE, cmdThreadStart },
@@ -621,6 +670,7 @@ static const ucxapp_cmd_t gThreadCmds[] = {
     { "thread.leader",    "",                 "The partition's leader data",                                       UCXAPP_CMD_NEEDS_DEVICE, cmdThreadLeader },
     { "thread.counters",  "[all|reset]",      "MAC and MLE counters (attach attempts, retries, errors); all lists every counter", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadCounters },
     { "thread.srp",       "[on|off|host <name>|add <_type._udp> <port> <instance>|remove <id>|txt <id> <key> <value>]", "SRP client: register services with the border router so others find them over DNS-SD", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadSrp },
+    { "thread.ping",      "<ipv6>|leader [count=4]", "ICMPv6 ping over Thread (count 1-10); leader pings the partition leader, an off-mesh host goes through the border router (IPv4 via its NAT64 prefix)", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadPing },
     { "thread.dns",       "browse <_type._udp>|resolve <instance> <_type._udp>|host <name>", "DNS-SD over Thread: browse services, resolve an instance, or a host name to IPv6", UCXAPP_CMD_NEEDS_DEVICE, cmdThreadDns },
 };
 

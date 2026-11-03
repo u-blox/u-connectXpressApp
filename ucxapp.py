@@ -10,6 +10,7 @@ and STM32.
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
+  ucxapp --detect --detect-force          also ask every other port for a NORA model (boards with plain FTDI names)
   ucxapp --ports COM13,COM24 --test tests/hardware   tests on these modules (A, B, ...), no probing
   ucxapp --coverage                         line coverage of app/src from the offline tests (WSL on Windows)
   ucxapp --doctor                           first-run checks: tools, serial access, modules
@@ -146,6 +147,9 @@ def parse(argv):
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
     g = p.add_argument_group("tools")
     g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers and IMUs")
+    g.add_argument("--detect-force", action="store_true",
+                   help="--detect that also asks every other serial port for its model (AT+GMM), for modules on "
+                        "boards whose USB name does not say NORA (about 25 s)")
     g.add_argument("--test", action="store_true", help="run pytest (with --detect: on the detected hardware)")
     g.add_argument("--coverage", action="store_true",
                    help="gcov build (Linux; on Windows inside WSL), run pytest on it and report line coverage of "
@@ -164,6 +168,7 @@ def parse(argv):
                    help="serve app/web/index.html on 127.0.0.1 (default port 8099) with this build's commands; "
                         "commands run in the host app without a module")
     args, extra = p.parse_known_args(argv)
+    args.detect = args.detect or args.detect_force
     if args.ports is not None:
         args.ports = [x.strip() for x in args.ports.split(",") if x.strip()]
         if not args.ports:
@@ -495,17 +500,27 @@ def find_imu(exe):
     return (m.group(1), m.group(3), m.group(2)) if m else None
 
 
-def detect(exe, ports=None):
-    """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search."""
+def detect(exe, ports=None, force=False):
+    """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search.
+
+    force also probes every other port with dev.info and keeps those that answer with a NORA model."""
     env = {}
     print("Serial ports:")
-    for name, desc, role in list_ports(exe):
+    serial_ports = list_ports(exe)
+    for name, desc, role in serial_ports:
         print(f"  {name:<14} {role:<22} {desc}")
 
     modules = ports or module_ports(app_output(exe, "--list-modules", timeout=30))
-    print("NORA modules" + (" (--ports):" if ports else ":"))
+    print("NORA modules" + (" (--ports):" if ports else " (probing every port):" if force else ":"))
     with concurrent.futures.ThreadPoolExecutor() as pool:
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=30), modules))
+        if force and not ports:
+            others = [n for n, _, role in serial_ports if role != "skip" and n not in modules]
+            for port, info in zip(others, pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=40),
+                                                   others), strict=True):
+                if re.search(r"\bNORA-[A-Z0-9]", info):
+                    modules.append(port)
+                    infos.append(info)
     if not ports:
         # Wi-Fi modules (NORA-W*) first, so UCX_PORT_A/B can run the Wi-Fi tests whatever order the OS lists them in
         pairs = sorted(zip(modules, infos, strict=True), key=lambda pi: "NORA-W" not in pi[1])
@@ -1759,7 +1774,7 @@ def main(argv):
         if stale(exe):
             host_build(["Debug" if args.debug else "Release"])
         if args.detect:
-            found = detect(exe, args.ports)
+            found = detect(exe, args.ports, args.detect_force)
             if not args.test:
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.

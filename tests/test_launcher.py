@@ -107,3 +107,23 @@ def test_linux_host_run_forwards_the_test_variables(monkeypatch):
     remote = calls[0][-1]
     assert "UCX_WIFI_SSID='my net'" in remote and "UCX_LINUX_HOST" not in remote
     assert remote.endswith("python3 ucxapp.py --test tests/hardware")
+
+
+def test_detect_force_probes_unnamed_ports(monkeypatch):
+    """--detect-force finds a module behind a plain 'USB Serial Port' and skips ports marked skip."""
+    asked = []
+
+    def fake_output(_exe, *args, timeout=30):
+        asked.append(args)
+        if args == ("COM116", "--exec", "dev.info"):
+            return "Model: NORA-B26\nFirmware Version: 3.6.0d\n"
+        return ""
+
+    monkeypatch.setattr(ucxapp, "list_ports", lambda _exe: [("COM3", "SOL", "skip"), ("COM4", "USB Serial Port", ""),
+                                                            ("COM116", "USB Serial Port", "EVK (FTDI)")])
+    monkeypatch.setattr(ucxapp, "app_output", fake_output)
+    monkeypatch.setattr(ucxapp, "wifi_summary", lambda: [])
+    env = ucxapp.detect("ucxapp.exe", force=True)
+    assert env["UCX_PORT_A"] == "COM116"
+    assert ("COM3", "--exec", "dev.info") not in asked
+    assert ucxapp.detect("ucxapp.exe").get("UCX_PORT_A") is None

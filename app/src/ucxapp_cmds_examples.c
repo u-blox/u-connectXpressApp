@@ -164,6 +164,8 @@ static const example_t kExamples[] = {
     { "thread", "Publish a service over SRP and find it with DNS-SD",
       "thread.srp host sensor1\nthread.srp add _coap._udp 5683 sensor1\nthread.srp on\nthread.srp\n"
       "thread.dns browse _coap._udp" },
+    { "thread", "Ping the leader, then the internet through the border router (NAT64)",
+      "thread.ping leader\nthread.ping www.google.com\nthread.ping 8.8.8.8" },
 
     { "cert", "Install and check certificates",
       "cert.upload ca ca.pem myca\ncert.upload client client.pem mycert\ncert.upload key client.key mykey\ncert.list\ncert.info myca" },

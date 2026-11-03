@@ -26,6 +26,16 @@ $sp.DtrEnable = $true
 $sp.Encoding = [System.Text.Encoding]::GetEncoding(28591)
 $sp.Open()
 Write-Host "[$Port @ $Baud] Ctrl-C quits. In bridge mode Ctrl-] returns to the app shell."
+if ([Console]::IsInputRedirected) {
+    # No keyboard (scripted run): only show the board output.
+    try {
+        while ($true) {
+            if ($sp.BytesToRead -gt 0) { [Console]::Write($sp.ReadExisting()) } else { Start-Sleep -Milliseconds 5 }
+        }
+    } finally {
+        $sp.Close()
+    }
+}
 [Console]::TreatControlCAsInput = $true
 try {
     while ($true) {

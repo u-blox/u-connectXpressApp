@@ -781,6 +781,9 @@ static bool bleDefine(ucxapp_t *app)
     if (gBleDefined) {
         return true;
     }
+    if (!ucxapp_gatt_server_fresh(app)) {
+        return false;
+    }
     r = uCxGattServerServiceDefine(app->ucx, kSvc, 16, &svc);
     for (int i = 0; r == 0 && i < H_COUNT; i++) {
         uint8_t props = kProps[i];

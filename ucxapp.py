@@ -377,7 +377,8 @@ def linux_host_run(spec, forward):
     tty = ["-t"] if sys.stdin.isatty() and sys.stdout.isatty() else []
     env = " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(os.environ.items())
                    if k.startswith("UCX_") and k != "UCX_LINUX_HOST")
-    cmd = f"cd {remote_path(path)} && {env + ' ' if env else ''}python3 ucxapp.py {' '.join(shlex.quote(a) for a in forward)}"
+    args = " ".join(shlex.quote(a) for a in forward)
+    cmd = f"cd {remote_path(path)} && {env + ' ' if env else ''}python3 ucxapp.py {args}"
     return subprocess.call(["ssh", *tty, host, cmd])
 
 
@@ -500,9 +501,13 @@ def detect(exe, ports=None):
 
     modules = ports or module_ports(app_output(exe, "--list-modules", timeout=30))
     print("NORA modules" + (" (--ports):" if ports else ":"))
-    env.update(port_env(modules))
     with concurrent.futures.ThreadPoolExecutor() as pool:
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=30), modules))
+    if not ports:
+        # Wi-Fi modules (NORA-W*) first, so UCX_PORT_A/B can run the Wi-Fi tests whatever order the OS lists them in
+        pairs = sorted(zip(modules, infos, strict=True), key=lambda pi: "NORA-W" not in pi[1])
+        modules, infos = [p for p, _ in pairs], [i for _, i in pairs]
+    env.update(port_env(modules))
     for port, info in zip(modules, infos, strict=True):
         m = re.search(r"\b(NORA-[A-Z0-9]+[\w-]*)", info)
         v = re.search(r"Firmware Version:\s*(\S+)", info)
@@ -808,7 +813,9 @@ def host_row(key, usage):
     return f"| `{key}` | {name} | {usage[0] / (1 << 20):.1f} MB | - | - | {usage[1] / (1 << 20):.1f} MB | - | - |"
 
 
-def stm32_log(port):
+def stm32_log(port, name=None):
+    if not port and name:
+        port = stm32_console_port(None, name)
     if IS_WINDOWS:
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                str(ROOT / "app" / "stm32_freertos" / "stm32tool.ps1"), "-Action", "log",
@@ -955,23 +962,29 @@ def _ym_progress(done, total):
     print(f"\r  {done} / {total if total >= 0 else '?'} bytes", end="", flush=True)
 
 
-def stm32_console_port(port):
+def stm32_console_port(port, name=None):
+    """The given port, else the VCP of the ST-Link on board `name` (matched by serial number), else the first one."""
+    if port:
+        return port
     try:
         from serial.tools import list_ports as lp
     except ImportError:
-        fail("--put/--get need pyserial: python -m pip install pyserial")
-    if port:
-        return port
-    found = [p.device for p in lp.comports() if classify(p.vid, p.pid, p.description or "") == "STM32 console"]
+        fail("finding the ST-Link console needs pyserial: python -m pip install pyserial")
+    found = [p for p in lp.comports() if classify(p.vid, p.pid, p.description or "") == "STM32 console"]
     if not found:
         fail("no ST-Link console found, pass it: --port COM5")
-    return found[0]
+    sn = find_stlink(programmer(), name) if name and len(found) > 1 else None
+    match = [p.device for p in found if sn and (p.serial_number or "").upper() == sn.upper()]
+    if sn and not match:
+        fail(f"no ST-Link console found for {name}, pass it: --log COM5")
+    return match[0] if match else found[0].device
 
 
 def stm32_transfer(args):
     import serial
 
-    port = stm32_console_port(args.ports[0] if args.ports else None)
+    name = BOARDS[args.board][1] if args.board in BOARDS else None
+    port = stm32_console_port(args.ports[0] if args.ports else None, name)
     path = Path(args.put or args.get)
     if args.put and not path.is_file():
         fail(f"{path} not found")
@@ -1178,7 +1191,7 @@ def stm32(args, extra):
         if rc or args.log is None:
             return rc
     if args.log is not None:
-        return stm32_log(args.log)
+        return stm32_log(args.log, name)
     return 0
 
 
@@ -1255,7 +1268,7 @@ def zephyr(args, extra):
     if args.flash:
         stm32_flash(name, image)
     if args.log is not None:
-        return stm32_log(args.log)
+        return stm32_log(args.log, name)
     return 0
 
 

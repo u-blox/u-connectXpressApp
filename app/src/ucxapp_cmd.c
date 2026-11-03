@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <io.h>
+#elif defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
 
 #include "u_cx_error_codes.h"
 
@@ -91,7 +96,7 @@ void ucxapp_caps_reset(void)
     gCapsFor = NULL;
 }
 
-static bool needsWifi(const char *name)
+bool ucxapp_cmd_needs_wifi(const char *name)
 {
     static const char *const kGroups[] = { "wifi.", "sock.", "mqtt.", "http.", "net.", "cert.", "tftp.", "web.",
                                            "coap.", "dtls." };
@@ -782,8 +787,9 @@ int32_t ucxapp_handle_current(ucxapp_handle_kind_t kind)
     return id;
 }
 
-/* A usage starting with "[handle]" (socket) or "[conn]" (BLE) takes the current one when it is left out. */
-static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[])
+/* A usage starting with "[handle]" (socket) or "[conn]" (BLE) takes the current one when it is left out.
+ * Returns the kind it needed but found none open (-1 when nothing was missing). */
+static int insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[])
 {
     static char text[16];
     ucxapp_handle_kind_t kind;
@@ -800,7 +806,7 @@ static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[]
         kind = UCXAPP_HANDLE_CONN;
         u += 6;
     } else {
-        return;
+        return -1;
     }
     for (; *u != '\0'; u++) {
         if (*u == '<' || *u == '[') {
@@ -812,7 +818,7 @@ static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[]
         }
     }
     if (*argc >= UCXAPP_MAX_ARGS) {
-        return;
+        return -1;
     }
     /* A leading number is the connection/socket only if it is an open one or the rest would not fit. */
     if (*argc - 1 > required && ucxapp_parse_int(argv[1], &id)) {
@@ -823,17 +829,18 @@ static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[]
             known = known || open[i] == id;
         }
         if (known || *argc - 1 > total) {
-            return;
+            return -1;
         }
     }
     id = ucxapp_handle_current(kind);
     if (id < 0) {
-        return;
+        return (int)kind;
     }
     snprintf(text, sizeof(text), "%d", (int)id);
     memmove(&argv[2], &argv[1], (size_t)(*argc - 1) * sizeof(argv[0]));
     argv[1] = text;
     (*argc)++;
+    return -1;
 }
 
 static bool gAtMode;
@@ -926,7 +933,7 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         ucxapp_print("ERROR: not connected to a module\n");
         return UCXAPP_ERR_NOT_CONNECTED;
     }
-    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && needsWifi(cmd->name) && !ucxapp_module_has_wifi(app)) {
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_cmd_needs_wifi(cmd->name) && !ucxapp_module_has_wifi(app)) {
         ucxapp_print("ERROR: %s needs Wi-Fi; this module has Bluetooth LE only (see dev.caps)\n", cmd->name);
         return UCXAPP_ERR_UNSUPPORTED;
     }
@@ -941,7 +948,7 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         rec(cmd, typedCount, typed, false, 0);
     }
     gModErr = 0;
-    insertCurrentHandle(cmd, &argc, argv);
+    int missing = insertCurrentHandle(cmd, &argc, argv);
     result = cmd->run(app, argc, argv);
     /* A background thread (web server, bridges) may be mid-command; only a Begin that never ends is a leak. */
     for (int i = 0; i < 200 && app->ucx != NULL && app->ucx->pAtClient->executingCmd; i++) {
@@ -952,6 +959,11 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
          * mutex locked and the next command would block forever. */
         ucxapp_print("warning: %s left an AT command open; closed it\n", cmd->name);
         uCxAtClientCmdEnd(app->ucx->pAtClient);
+    }
+    if (result == UCXAPP_ERR_USAGE && missing >= 0) {
+        ucxapp_print("ERROR: no %s open (%s)\n", missing == UCXAPP_HANDLE_CONN ? "BLE connection" : "socket",
+                     missing == UCXAPP_HANDLE_CONN ? "connect with bt.connect, or a peer has to connect first"
+                                                   : "open one with sock.open, or give its handle");
     }
     if (result == UCXAPP_ERR_USAGE) {
         if (strlen(cmd->usage) > 24) {
@@ -970,10 +982,32 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     return result;
 }
 
+static bool gShellTyped;
+
+bool ucxapp_shell_interactive(void)
+{
+    return gShellTyped;
+}
+
+/* Piped or redirected input is a script: never stop it with a question. */
+static bool consoleIsTerminal(void)
+{
+#if defined(__EMSCRIPTEN__)
+    return false;
+#elif defined(_WIN32)
+    return _isatty(_fileno(stdin)) != 0;
+#elif defined(__unix__) || defined(__APPLE__)
+    return isatty(STDIN_FILENO) != 0;
+#else
+    return true;   /* MCU console (FreeRTOS, Zephyr) */
+#endif
+}
+
 int ucxapp_shell_run(ucxapp_t *app)
 {
     char line[256];
     int status = 0;
+    bool terminal = consoleIsTerminal();
 
     ucxapp_print("Command shell. Type 'help' for commands, 'exit' to return.\n");
     for (;;) {
@@ -988,6 +1022,7 @@ int ucxapp_shell_run(ucxapp_t *app)
             continue;   /* blank lines and comments keep the last status */
         }
         char expanded[sizeof(line)];
+        gShellTyped = terminal;
         if (ucxapp_at_mode_active()) {
             status = ucxapp_cmd_exec(app, line) == UCXAPP_OK ? 0 : 1;
         } else if (ucxapp_expand_env(line, expanded, sizeof(expanded))) {
@@ -995,6 +1030,7 @@ int ucxapp_shell_run(ucxapp_t *app)
         } else {
             status = 1;
         }
+        gShellTyped = false;
     }
     return status;
 }

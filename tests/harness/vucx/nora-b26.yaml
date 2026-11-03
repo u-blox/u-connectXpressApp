@@ -1,0 +1,10 @@
+# Bluetooth LE only module: dev.caps and the UI hide everything that needs Wi-Fi.
+identity:
+  manufacturer: u-blox
+  model: NORA-B26
+  version: 3.1.0-0
+  serial: "0123456789"
+commands:
+  "AT+CPWROFF": ["OK"]
+urcs:
+  "AT+CPWROFF": ["+STARTUP"]

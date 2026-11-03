@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Real scenarios per command group, shown by "<group>.ex" or "examples <group>". Lines starting with '#' are notes. */
+/* Real scenarios per command group, shown by "<group>.example" or "examples <group>". Lines starting with '#' are notes. */
 typedef struct {
     const char *group;
     const char *title;
@@ -238,7 +238,7 @@ static const example_t kExamples[] = {
       "cell.open COM30\ncell.attach on\ncell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
 
     { "hw", "Blink an LED and read a pin",
-      "hw.load app/boards/h753.json\nhw.led 0 on\nhw.gpio.read 3" },
+      "hw.profile.load app/boards/h753.json\nhw.led 0 on\nhw.gpio.read 3" },
     { "hw", "I2C sensor",
       "hw.i2c.scan\nhw.i2c.reg 0x76 0xD0" },
     { "hw", "Remote control over TCP",
@@ -254,9 +254,9 @@ static const example_t kExamples[] = {
     { "ft", "BLE file server (on one module)",
       "bt.defaults secure\nbt.pairing on\nft.on rw\nft.status\nft.off" },
     { "ft", "BLE file client (on the other module)",
-      "bt.scan\nbt.connect 1\nbt.confirm yes\nft.ls 0\nft.get 0 notes.txt\nft.put 0 log.txt\nft.rm 0 log.txt" },
+      "bt.scan\nbt.connect 1\nbt.confirm yes\nft.list 0\nft.get 0 notes.txt\nft.put 0 log.txt\nft.remove 0 log.txt" },
     { "ft", "File server over Wi-Fi (TCP, faster; an alternative to TFTP with CRC-32 checks)",
-      "wifi.connect\nft.on rw tcp\n# on the other module: ft.ls 192.168.1.10\n# ft.get 192.168.1.10 notes.txt\n# ft.put 192.168.1.10:6970 log.txt\nft.off" },
+      "wifi.connect\nft.on rw tcp\n# on the other module: ft.list 192.168.1.10\n# ft.get 192.168.1.10 notes.txt\n# ft.put 192.168.1.10:6970 log.txt\nft.off" },
     { "ft", "Continue an interrupted transfer",
       "ft.get 192.168.1.10 big.bin big.bin 1455 resume\nft.put 192.168.1.10 big.bin big.bin 1455 resume" },
     { "ancs", "iPhone notifications (pair 'ucx ANCS' from the phone's Bluetooth settings)",
@@ -277,17 +277,17 @@ static const example_t kExamples[] = {
     { "at", "Open a trace in Wireshark (next to a BLE or Wi-Fi sniffer capture)",
       "at.trace.pcap boot.trace\n# or record straight to pcapng:\nat.trace boot.pcapng\nwifi.connect\nat.trace.stop" },
     { "perf", "Round-trip time and throughput through the u-blox echo server (TCP and UDP)",
-      "wifi.connect MyNetwork MyPassword\nperf.rtt tcp echo.u-blox.com 7 20\nperf.tput tcp echo.u-blox.com 7 10 512\n"
-      "perf.rtt udp echo.u-blox.com 7 20\nperf.tput udp echo.u-blox.com 7 10 512" },
+      "wifi.connect MyNetwork MyPassword\nperf.latency tcp echo.u-blox.com 7 20\nperf.throughput tcp echo.u-blox.com 7 10 512\n"
+      "perf.latency udp echo.u-blox.com 7 20\nperf.throughput udp echo.u-blox.com 7 10 512" },
     { "perf", "Module to module over Wi-Fi (B echoes, A measures)",
-      "# on module B\nperf.echo udp 7000 120\n# on module A, with B's address\nperf.rtt udp 192.168.1.20 7000 50\nperf.tput udp 192.168.1.20 7000 10 1000" },
+      "# on module B\nperf.echo udp 7000 120\n# on module A, with B's address\nperf.latency udp 192.168.1.20 7000 50\nperf.throughput udp 192.168.1.20 7000 10 1000" },
     { "perf", "Bluetooth SPS between two modules (B echoes, A measures)",
-      "# on module B\nperf.echo sps 120\n# on module A\nbt.connect <address-of-B>\nperf.rtt sps 20\nperf.tput sps 10 244" },
+      "# on module B\nperf.echo sps 120\n# on module A\nbt.connect <address-of-B>\nperf.latency sps 20\nperf.throughput sps 10 244" },
 #if UCXAPP_XPLORER
     { "perf", "The u-connectXplorer phone as the other end (Wi-Fi echo and Bluetooth SPS)",
       "# phone: u-connectXplorer > Settings > Remote control on, note address and token\n"
-      "xplorer.connect 192.168.1.200 <token>\nwifi.profile.auto\nperf.rtt udp xplorer 7000\n"
-      "perf.tput tcp xplorer 7001 10\nperf.phone tx 10\nperf.phone rx 10\nperf.phone echo 10" },
+      "xplorer.connect 192.168.1.200 <token>\nwifi.profile.auto\nperf.latency udp xplorer 7000\n"
+      "perf.throughput tcp xplorer 7001 10\nperf.phone tx 10\nperf.phone rx 10\nperf.phone echo 10" },
     { "xplorer", "Look at and drive the phone app",
       "xplorer.connect 192.168.1.200 <token>\nxplorer.info\nxplorer.call ble.getState\n"
       "xplorer.call ble.startScan\nxplorer.call ble.getDevices\nxplorer.call ble.stopScan\n"
@@ -328,7 +328,7 @@ static const example_t kExamples[] = {
     { "usecase", "BLE: accessory such as a battery pack or scanner",
       "bt.scan\nbt.connect 1\ngatt.client.bas" },
 #ifndef UCXAPP_LITE
-    /* Industry use cases (usecase.check <name>); run with examples uc-<name> <number>. */
+    /* Industry and edge AI use cases (usecase.check <name>); run with examples uc-<name> <number>. */
     { "uc-iiot", "Join the plant network with certificates (EAP-TLS)",
       "cert.list\nwifi.eap PlantNet ca.pem client.pem client.key machine17\nwifi.status" },
     { "uc-iiot", "TLS connection to the MES",
@@ -367,6 +367,14 @@ static const example_t kExamples[] = {
     { "uc-implement", "Back at the yard: the work record to the cloud",
       "can.bridge off\nwifi.ap.disable\nwifi.connect FarmYard MyPassword\n"
       "mqtt.connect broker.example.com 1883\nmqtt.publish farm/implement/7 hectares=12.4" },
+    { "uc-edge", "Record training data from the IMU",
+      "imu.detect\nimu.open\nimu.rate 100\nimu.log motion.bin\n# ...move the sensor...\nimu.log off" },
+    { "uc-edge", "Live stream to a notebook",
+      "imu.bridge tcp 9000\n# in Python: socket.create_connection((\"<module-ip>\", 9000))\nimu.bridge status" },
+    { "uc-edge", "I2C sensors on the host",
+      "hw.i2c.scan\nhw.i2c.reg 0x76 0xD0" },
+    { "uc-edge", "The model's result to the cloud",
+      "mqtt.connect broker.example.com 1883\nmqtt.publish edge/sensor1/state walking" },
     /* Everyday use cases (usecase.check <name>); run with examples uc-<name> <number>. */
     { "uc-boat", "Receiver check and fix",
       "gnss.open\ngnss.watch 10" },
@@ -464,10 +472,10 @@ static char gNames[GROUP_MAX][24];
 
 static bool hasGroup(const char *group);
 
-/* "gnss.ex 2" for a command group, "examples uc-boat 2" for a use case. */
+/* "gnss.example 2" for a command group, "examples uc-boat 2" for a use case. */
 static void runHint(const char *group, char *out, size_t size)
 {
-    snprintf(out, size, hasGroup(group) ? "%s.ex" : "examples %s", group);
+    snprintf(out, size, hasGroup(group) ? "%s.example" : "examples %s", group);
 }
 
 static void printGroup(const char *group)
@@ -561,7 +569,7 @@ static int cmdExamples(ucxapp_t *app, int argc, char *argv[])
             printGroup(group);
             return UCXAPP_OK;
         }
-        ucxapp_print("Groups with examples (type <group>.ex):\n ");
+        ucxapp_print("Groups with examples (type <group>.example):\n ");
         for (size_t i = 0; gCmds[i].name != NULL; i++) {
             if (strchr(gCmds[i].name, '.') != NULL) {
                 ucxapp_print(" %.*s", (int)(strchr(gCmds[i].name, '.') - gCmds[i].name), gCmds[i].name);
@@ -605,7 +613,7 @@ void ucxapp_register_examples_cmds(void)
         if (seen || !hasGroup(g)) {
             continue;
         }
-        snprintf(gNames[n], sizeof(gNames[n]), "%s.ex", g);
+        snprintf(gNames[n], sizeof(gNames[n]), "%s.example", g);
         gCmds[n] = (ucxapp_cmd_t){ gNames[n], "[number]", "Real-world scenarios with ready-to-type commands; with a number, run that example", 0, cmdExamples };
         n++;
     }

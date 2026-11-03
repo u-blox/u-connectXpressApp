@@ -118,7 +118,7 @@ CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on ev
 
 Visual feedback matters, but keep it short: `pyproject.toml` makes pytest print one line per test with its `[ NN%]` progress, short tracebacks and a failures-only summary. Do not add `-q` (it turns this back into bare dots), and do not add `-vv`, `-s` or `-rs` (they flood the output with detail and skip reasons) unless you are debugging one test. Long-running commands and scripts should likewise show what they are doing and how far along they are, in a line or two per step rather than a wall of text.
 
-New code goes into `app/src/` as separate command modules. Add worked examples for new commands to `kExamples` in `app/src/ucxapp_cmds_examples.c` (shown by `<group>.ex`). Long usage strings with top-level `|` alternatives are printed one alternative per line by `help`.
+New code goes into `app/src/` as separate command modules. Add worked examples for new commands to `kExamples` in `app/src/ucxapp_cmds_examples.c` (shown by `<group>.example`). Long usage strings with top-level `|` alternatives are printed one alternative per line by `help`.
 
 ```powershell
 # Workspace and executable checks

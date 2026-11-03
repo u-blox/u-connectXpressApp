@@ -119,6 +119,9 @@ static bool defineService(ucxapp_t *app)
     int32_t svc;
     int32_t r;
 
+    if (!ucxapp_gatt_server_fresh(app)) {
+        return false;
+    }
     r = uCxGattServerServiceDefine(app->ucx, kSvc, 16, &svc);
     if (r == 0) {
         r = uCxGattServerCharDefine6(app->ucx, kNote, 16, &noteProps, 1, U_GATT_SERVER_READ_SECURITY_NONE,

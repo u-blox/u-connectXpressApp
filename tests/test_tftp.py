@@ -34,5 +34,5 @@ def test_tftp_get_leaves_no_partial_file(app_exe, tmp_path):
 
 
 def test_tftp_has_examples(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "tftp.ex")
+    out = _run_in(app_exe, tmp_path, "tftp.example")
     assert "tftp.on rw" in out.stdout, out.stdout

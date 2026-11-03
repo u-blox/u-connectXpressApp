@@ -80,12 +80,15 @@ def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, so
 @pytest.mark.two_devices
 @pytest.mark.parametrize("source", SOURCES)
 def test_bridge_over_ble_between_two_modules(app_exe, port_a, port_b, source, request):
-    """A bridges the source over Nordic UART; B scans, connects by name and listens for notifications."""
+    """A bridges the source over Nordic UART; B connects to A's address and listens for notifications."""
     name = "ucxbridge"
+    addr = re.search(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}", _run(app_exe, port_a, "bt.addr").stdout, re.M | re.I)
+    assert addr, "no Bluetooth address on module A"
     proc, _ = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source), [f'at +UBTLN="{name}"'],
                             f"{source}.bridge ble nus")
     try:
-        out = _run(app_exe, port_b, "bt.scan", f"bt.connect {name}", "gatt.client.nus", "gatt.listen 15",
+        # by address: another module may still advertise the same name from an earlier run
+        out = _run(app_exe, port_b, f"bt.connect {addr.group(0)}", "gatt.client.nus", "gatt.listen 15",
                    "bt.disconnect", timeout=240)
     finally:
         _stop(proc)

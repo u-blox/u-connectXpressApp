@@ -8,6 +8,7 @@
 #endif
 #include "u_port.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,21 +133,101 @@ static void printLinkDetails(uCxHandle_t *ucx)
 #define REGDOMAIN_FILE  "ucxapp.regdomain"
 #define REGDOMAIN_HINT  "world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br"
 
-static const struct { const char *name; uWifiRegDomain_t value; } gRegDomains[] = {
-    { "world", U_WIFI_REG_DOMAIN_WORLD }, { "etsi", U_WIFI_REG_DOMAIN_ETSI }, { "fcc", U_WIFI_REG_DOMAIN_FCC },
-    { "ic", U_WIFI_REG_DOMAIN_IC }, { "nz", U_WIFI_REG_DOMAIN_NZ }, { "mkk", U_WIFI_REG_DOMAIN_MKK },
-    { "ncc", U_WIFI_REG_DOMAIN_NCC }, { "acma", U_WIFI_REG_DOMAIN_ACMA }, { "kcc", U_WIFI_REG_DOMAIN_KCC },
-    { "sa", U_WIFI_REG_DOMAIN_SA }, { "br", U_WIFI_REG_DOMAIN_BR },
+/* Menu number = index = the AT+UWRD value; aliases are the place names a user is likely to type. */
+static const struct {
+    const char *name;
+    uWifiRegDomain_t value;
+    const char *where;
+    const char *aliases;
+} gRegDomains[] = {
+    { "world", U_WIFI_REG_DOMAIN_WORLD, "Anywhere (fewer channels, allowed in every country)", ",anywhere,global," },
+    { "etsi", U_WIFI_REG_DOMAIN_ETSI, "Europe, UK, Middle East, India and most of Asia and Africa",
+      ",europe,eu,uk,ce,india," },
+    { "fcc", U_WIFI_REG_DOMAIN_FCC, "USA, Mexico and Latin America", ",usa,us,america,mexico," },
+    { "ic", U_WIFI_REG_DOMAIN_IC, "Canada", ",canada,ca,ised," },
+    { "nz", U_WIFI_REG_DOMAIN_NZ, "New Zealand", ",newzealand," },
+    { "mkk", U_WIFI_REG_DOMAIN_MKK, "Japan", ",japan,jp," },
+    { "ncc", U_WIFI_REG_DOMAIN_NCC, "Taiwan", ",taiwan,tw," },
+    { "acma", U_WIFI_REG_DOMAIN_ACMA, "Australia", ",australia,au," },
+    { "kcc", U_WIFI_REG_DOMAIN_KCC, "South Korea", ",korea,kr," },
+    { "sa", U_WIFI_REG_DOMAIN_SA, "South Africa", ",southafrica,za," },
+    { "br", U_WIFI_REG_DOMAIN_BR, "Brazil", ",brazil," },
 };
+#define REGDOMAIN_COUNT ((int)(sizeof(gRegDomains) / sizeof(gRegDomains[0])))
 
+/* Name, menu number or place ("2", "FCC", "europe", "New Zealand"); -1 when nothing matches. */
 static int findRegDomain(const char *name)
 {
-    for (size_t i = 0; i < sizeof(gRegDomains) / sizeof(gRegDomains[0]); i++) {
-        if (strcmp(gRegDomains[i].name, name) == 0) {
-            return (int)i;
+    char key[24] = ",";
+    size_t n = 1;
+
+    if (isdigit((unsigned char)name[0]) || name[0] == '-' || name[0] == '+') {
+        char *end;
+        long num = strtol(name, &end, 10);
+        return *end == '\0' && num >= 0 && num < REGDOMAIN_COUNT ? (int)num : -1;
+    }
+    for (const char *p = name; *p != '\0' && n + 2 < sizeof(key); p++) {
+        if (*p != ' ' && *p != '-' && *p != '_') {
+            key[n++] = (char)tolower((unsigned char)*p);
+        }
+    }
+    key[n++] = ',';
+    key[n] = '\0';
+    if (n == 2) {
+        return -1;
+    }
+    for (int i = 0; i < REGDOMAIN_COUNT; i++) {
+        if ((strncmp(gRegDomains[i].name, key + 1, n - 2) == 0 && gRegDomains[i].name[n - 2] == '\0') ||
+            strstr(gRegDomains[i].aliases, key) != NULL) {
+            return i;
         }
     }
     return -1;
+}
+
+static void printRegDomainMenu(int current)
+{
+    ucxapp_print("Where are you located? Wi-Fi uses the channels and power allowed there.\n");
+    for (int i = 0; i < REGDOMAIN_COUNT; i++) {
+        ucxapp_print(" %2d  %-6s %s%s\n", i, gRegDomains[i].name, gRegDomains[i].where,
+                     i == current ? "  <- current" : "");
+    }
+}
+
+/* Only a person at the shell prompt is asked; scripts, --exec and the web get the menu and an error. */
+static int askRegDomain(void)
+{
+    char line[32];
+
+    if (!ucxapp_shell_interactive()) {
+        return -1;
+    }
+    for (;;) {
+        int dom;
+
+        ucxapp_print("Choose 0-%d or a name (Enter cancels): ", REGDOMAIN_COUNT - 1);
+        if (ucxapp_readline(NULL, line, sizeof(line)) < 0 || line[strspn(line, " \t")] == '\0') {
+            return -1;
+        }
+        dom = findRegDomain(line + strspn(line, " \t"));
+        if (dom >= 0) {
+            return dom;
+        }
+        ucxapp_print("'%s' is not in the list\n", line);
+    }
+}
+
+static bool saveRegDomain(uCxHandle_t *ucx, int dom)
+{
+    if (!ucxapp_store_save(REGDOMAIN_FILE, gRegDomains[dom].name, strlen(gRegDomains[dom].name))) {
+        ucxapp_print("ERROR: cannot write %s\n", REGDOMAIN_FILE);
+        return false;
+    }
+    if (uCxWifiSetRegulatoryDomain(ucx, gRegDomains[dom].value) != 0) {
+        ucxapp_print("ERROR: module rejected the regulatory domain\n");
+        return false;
+    }
+    return true;
 }
 
 /* The saved choice, else UCX_REGDOMAIN (scripts, CI); -1 when the user has not chosen one. */
@@ -166,8 +247,9 @@ static int loadRegDomain(void)
 
 static void printRegDomainRequired(void)
 {
+    printRegDomainMenu(-1);
     ucxapp_print("ERROR: choose the Wi-Fi regulatory domain for the country you operate in first:\n"
-                 "       wifi.regdomain <" REGDOMAIN_HINT ">  ('world' is allowed everywhere, with fewer channels)\n");
+                 "       wifi.regdomain <" REGDOMAIN_HINT "|0-10>  ('world' is allowed everywhere, with fewer channels)\n");
 }
 
 static void resetChannelList(uCxHandle_t *ucx);
@@ -176,6 +258,19 @@ static bool applyRegDomain(uCxHandle_t *ucx)
 {
     int dom = loadRegDomain();
 
+    if (dom < 0 && ucxapp_shell_interactive()) {
+        /* first Wi-Fi use: ask once, save, and carry on with the command */
+        ucxapp_print("Wi-Fi is not set up for your region yet (saved, asked only once).\n");
+        printRegDomainMenu(-1);
+        dom = askRegDomain();
+        if (dom >= 0 && saveRegDomain(ucx, dom)) {
+            ucxapp_print("Region set to %s (%s); change it with wifi.regdomain\n", gRegDomains[dom].name,
+                         gRegDomains[dom].where);
+            return true;
+        }
+        ucxapp_print("ERROR: no region chosen; Wi-Fi scan, connect and AP need one (wifi.regdomain)\n");
+        return false;
+    }
     if (dom < 0) {
         printRegDomainRequired();
         return false;
@@ -1005,7 +1100,8 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
 static int cmdWifiRegDomain(ucxapp_t *app, int argc, char *argv[])
 {
     uWifiRegDomain_t current;
-    int dom;
+    int dom = -1;
+    int saved = loadRegDomain();
 
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
@@ -1013,33 +1109,47 @@ static int cmdWifiRegDomain(ucxapp_t *app, int argc, char *argv[])
     if (argc == 2) {
         dom = findRegDomain(argv[1]);
         if (dom < 0) {
+            ucxapp_print("'%s' is not a region\n", argv[1]);
+            printRegDomainMenu(saved);
             return UCXAPP_ERR_USAGE;
         }
-        if (!ucxapp_store_save(REGDOMAIN_FILE, gRegDomains[dom].name, strlen(gRegDomains[dom].name))) {
-            ucxapp_print("ERROR: cannot write %s\n", REGDOMAIN_FILE);
+    } else if (ucxapp_shell_interactive()) {
+        printRegDomainMenu(saved);
+        dom = askRegDomain();
+    }
+    if (dom >= 0) {
+        if (!saveRegDomain(app->ucx, dom)) {
             return UCXAPP_ERR_FAILED;
         }
-        if (uCxWifiSetRegulatoryDomain(app->ucx, gRegDomains[dom].value) != 0) {
-            ucxapp_print("ERROR: module rejected the regulatory domain\n");
-            return UCXAPP_ERR_FAILED;
-        }
+        saved = dom;
     }
     if (uCxWifiGetRegulatoryDomain(app->ucx, &current) != 0) {
         ucxapp_print("ERROR: cannot read the regulatory domain\n");
         return UCXAPP_ERR_FAILED;
     }
-    for (size_t i = 0; i < sizeof(gRegDomains) / sizeof(gRegDomains[0]); i++) {
+    for (int i = 0; i < REGDOMAIN_COUNT; i++) {
         if (gRegDomains[i].value == current) {
-            ucxapp_print("regdomain=%s\n", gRegDomains[i].name);
-            if (argc == 1 && loadRegDomain() < 0) {
+            ucxapp_print("regdomain=%s (%s)\n", gRegDomains[i].name, gRegDomains[i].where);
+            if (saved < 0) {
+                if (argc == 1 && !ucxapp_shell_interactive()) {
+                    printRegDomainMenu(-1);
+                }
                 ucxapp_print("NOTE: not chosen yet; Wi-Fi scan, connect and AP stay off until you run\n"
-                             "      wifi.regdomain <" REGDOMAIN_HINT "> for the country you operate in\n");
+                             "      wifi.regdomain <" REGDOMAIN_HINT "|0-10> for the country you operate in\n");
             }
             return UCXAPP_OK;
         }
     }
     ucxapp_print("regdomain=%d\n", (int)current);
     return UCXAPP_OK;
+}
+
+/* The saved region name, or NULL when the user has not chosen one yet. */
+const char *ucxapp_wifi_regdomain_name(void)
+{
+    int dom = loadRegDomain();
+
+    return dom >= 0 ? gRegDomains[dom].name : NULL;
 }
 
 static int cmdWifiStatus(ucxapp_t *app, int argc, char *argv[])
@@ -1073,6 +1183,10 @@ static int cmdWifiDisconnect(ucxapp_t *app, int argc, char *argv[])
 
     ucxapp_events_clear(URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
     if (uCxWifiStationDisconnect(app->ucx) != 0) {
+        if (!isConnected(app->ucx)) {
+            ucxapp_print("Not connected\n");
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: failed to disconnect\n");
         return UCXAPP_ERR_FAILED;
     }
@@ -1380,7 +1494,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
     { "wifi.profile.auto", "",                   "Connect: the last used profile, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
-    { "wifi.regdomain",  "[world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br]", "Show or set (and save) the regulatory domain for your country; Wi-Fi scan, connect and AP need it (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
+    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set (and save) where you are, the Wi-Fi regulatory domain; at the prompt without an argument it shows a numbered list to pick from. Wi-Fi scan, connect and AP need it and ask for it the first time (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set Wi-Fi roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
     { "wifi.ap.enable",  "[ssid] [password] [channel]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },

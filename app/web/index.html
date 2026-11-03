@@ -127,6 +127,10 @@ function scanLinks(b){const lines=b.body.textContent.split('\n');b.body.textCont
  lines.forEach((l,i)=>{const m=l.match(/^\s*(\d+)\s{2}(.+?)\s+[0-9A-F]{2}(:[0-9A-F]{2}){5}/);
   if(m){const d=el('div','scan',l);d.title='Click to connect to '+m[2].trim();d.onclick=()=>{cmd.value='wifi.connect '+m[1]+' ';cmd.focus();showHint()};b.body.appendChild(d)}
   else b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))})}
+function regLinks(b){const lines=b.body.textContent.split('\n');let on=0;b.body.textContent='';
+ lines.forEach((l,i)=>{if(/^Where are you located\?/.test(l))on=1;const m=on&&l.match(/^\s*(\d+)\s{2}([a-z]+)\s+(.+?)(\s+<- current)?$/);
+  if(m){const d=el('div','scan',l);d.title='Click to set the region to '+m[3];d.onclick=()=>run('wifi.regdomain',[m[2]]);b.body.appendChild(d)}
+  else{if(on&&!/^\s*\d/.test(l)&&!/^Where/.test(l))on=0;b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))}})}
 function setBusy(c){busy=!!c;$('busy').textContent=c?'running '+c:'';document.querySelectorAll('.c button,#run').forEach(b=>b.disabled=busy)}
 
 /* ---- running commands ---- */
@@ -145,6 +149,7 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
 function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  b.badge.className='badge '+(rc?'bad':'ok');b.badge.textContent=(rc?'exit '+rc:'ok')+', '+((Date.now()-b.t0)/1000).toFixed(1)+' s';
  if(/^wifi\.scan/.test(b.cmd))scanLinks(b);
+ if(/^Where are you located\?/m.test(b.body.textContent))regLinks(b);
  if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
  if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b)}
 
@@ -183,7 +188,7 @@ const q=v=>v&&!/[\s"]/.test(v)?v:'"'+v.replace(/["\\]/g,'\\$&')+'"';
 function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t'),nm=x[5]?x[5].slice(0,-1):x[0].replace(/[<>]/g,''),
   hk=x[0]==='conn'?'conn':x[0]==='handle'&&/^sock\./.test(c.n)?'sock':'';
  if(hk&&x[1]){e=el('select','h');e.dataset.k=hk;e.title='open '+(hk==='conn'?'BLE links':'sockets');fillSel(e);HSEL.push(e)}
- else if(nm==='number'&&(/\.ex$/.test(c.n)||c.n==='examples')){e=el('select');
+ else if(nm==='number'&&(/\.example$/.test(c.n)||c.n==='examples')){e=el('select');
   const fill=g=>{e.textContent='';e.add(new Option(g?'list them':'pick a group first',''));if(!g)return;
    api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>xs.forEach((v,i)=>e.add(new Option((i+1)+'. '+v.t,String(i+1))))).catch(()=>{})};
   if(c.n==='examples')setTimeout(()=>{const gi=e.parentNode&&e.parentNode.querySelector('input');if(gi){gi.onchange=()=>fill(gi.value.trim());fill(gi.value.trim())}});
@@ -225,7 +230,7 @@ function recent(){const r=$('rc'),seen=[];r.textContent='';
 recent();
 function examples(g,d,btn){api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{btn.remove();const wrap=el('div');
  xs.forEach((x,i)=>{const w=el('div','ex'),rb=el('button','exb','Run all');w.appendChild(el('i','',x.t));
-  rb.title='Runs the lines in order and stops at the first error ('+g+'.ex '+(i+1)+')';rb.onclick=()=>run(g+'.ex',[String(i+1)],1);
+  rb.title='Runs the lines in order and stops at the first error ('+g+'.example '+(i+1)+')';rb.onclick=()=>run(g+'.example',[String(i+1)],1);
   x.l.split('\n').forEach(l=>{const c=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){c.title='Put in the command line';c.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}w.appendChild(c)});
   w.appendChild(rb);wrap.appendChild(w)});d.insertBefore(wrap,d.children[1]||null)})}
 let ft=0;
@@ -266,6 +271,8 @@ const UC={
   h:['Tool','NORA-W36'],n:[['ble','Technician','BLE SPS'],['scan','Gateway','scan by name'],['wifi','Site Wi-Fi','office, depot'],['fw','Depot','updates','pu']]},
  implement:{t:'Farm implement (ISOBUS)',s:'Industry',d:'ISOBUS CAN data to the cab tablet over the module\'s AP or BLE, the work record to the cloud.',
   h:['Implement','NORA-W36'],n:[['can','ISOBUS','CAN 250k'],['ap','Cab tablet','AP, TCP'],['ble','Phone','BLE NUS'],['sock','Cloud','MQTT']]},
+ edge:{t:'Edge AI sensor (ALMA-W1)',s:'Edge AI',d:'IMU training data, I2C sensors, results to the cloud; ALMA-W161/W166 run these u-connectXpress steps, ALMA-W111/W116 run the model on their NPU.',
+  h:['Sensor','host + module'],n:[['imu','IMU','training data'],['sock','Notebook','stream'],['i2c','Sensors','I2C','pu'],['wifi','Cloud','MQTT']]},
  boat:{t:'Boat or camper: GPS on the chart app',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
   h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial'],['ap','Tablets (5)','module AP, TCP 10110'],['log','Trip log','gnss.log','warm'],['ble','Phone','BLE NUS']]},
  rtk:{t:'Survey pole or rover: RTK',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
@@ -307,7 +314,7 @@ function steps(){const g=UC[uc].g||'uc-'+uc,s=$('steps');if(ucl===g)return;ucl=g
  api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{if(ucl!==g)return;let n=0;
  xs.forEach(x=>{n++;if(/^usecase\.tool/.test(x.l))return;const i=n,c=el('div','card'),r=el('div','r'),rb=el('button','','Run steps');c.appendChild(el('h3','',x.t));
   x.l.split('\n').forEach(l=>{const k=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){k.title='Put in the command line to edit';k.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}c.appendChild(k)});
-  const ex=g==='usecase'?['usecase.ex',[String(i)]]:['examples',[g,String(i)]];
+  const ex=g==='usecase'?['usecase.example',[String(i)]]:['examples',[g,String(i)]];
   rb.title='Runs the lines in order, stops at the first error ('+ex[0]+' '+ex[1].join(' ')+')';rb.onclick=()=>run(ex[0],ex[1],1);r.appendChild(rb);c.appendChild(r);s.appendChild(c)})}).catch(()=>{ucl=''})}
 function pick(k){uc=k;localStorage.setItem('ucxc',k);const u=UC[k];$('ucs').value=k;$('uh').textContent=u.t;$('ud').textContent=u.d;$('mb').hidden=k!=='tool';
  const f=$('fit');f.textContent='';const n=el('span','note','Run it to rate each requirement: ok, limit, check or gap.');n.style.gridColumn='1/-1';f.appendChild(n);

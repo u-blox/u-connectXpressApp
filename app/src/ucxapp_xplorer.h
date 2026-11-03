@@ -63,7 +63,7 @@ char *ucxapp_json_item(const char *array, int index);
 /** s as a JSON string literal with quotes; false if out is too small. */
 bool ucxapp_json_quote(const char *s, char *out, size_t size);
 
-/* Phone echo peer (socket.startServer with echo) for perf.rtt / perf.tput; the connection must be open. */
+/* Phone echo peer (socket.startServer with echo) for perf.latency / perf.throughput; the connection must be open. */
 
 /** Starts the phone's TCP or UDP echo server on port; false (printed) if the app cannot echo. */
 bool ucxapp_xplorer_echo_start(bool udp, int32_t port);

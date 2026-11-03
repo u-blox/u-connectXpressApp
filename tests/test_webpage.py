@@ -227,14 +227,14 @@ def test_page_in_a_browser(server):
         # the password is not remembered, the ssid is
         assert "secret" not in page.evaluate("localStorage.getItem('ucxf')")
         assert "stenmo" in page.evaluate("localStorage.getItem('ucxf')")
-        # use case view: diagram lit from the live state, steps from usecase.ex
+        # use case view: diagram lit from the live state, steps from usecase.example
         page.click("#vw button[data-v='1']")
         assert page.is_visible("#pu") and not page.is_visible("#pc")
         assert "on" in page.get_attribute("#n-wifi", "class") and "on" in page.get_attribute("#n-hub", "class")
         page.wait_for_selector("#steps .card")
         assert page.locator("#steps .card").count() == 1
         assert page.inner_text("#steps h3") == "Join with PEAP"
-        assert "usecase.ex 2" in page.get_attribute("#steps .card button", "title")
+        assert "usecase.example 2" in page.get_attribute("#steps .card button", "title")
         # another use case: its own page, diagram and steps run through 'examples uc-<name>'
         page.select_option("#ucs", "boat")
         assert page.inner_text("#uh").startswith("Boat") and page.locator("#n-gnss").count() == 1

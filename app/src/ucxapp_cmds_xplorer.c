@@ -1,5 +1,5 @@
 /* xplorer.* - drive the u-connectXplorer phone app over its remote control (JSON-RPC over WebSocket), so the phone
- * can be the other end of a test: an echo peer for perf.rtt / perf.tput, or the BLE central for perf.phone. */
+ * can be the other end of a test: an echo peer for perf.latency / perf.throughput, or the BLE central for perf.phone. */
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_xplorer.h"
@@ -123,7 +123,7 @@ static void showPhone(void)
     ucxapp_print("u-connectXplorer %s on %s %s at %s\n", version, os, osVersion, ucxapp_xplorer_host());
     ucxapp_print("phone Bluetooth: %s\n", bt);
     if (!ucxapp_xplorer_has("socketEcho")) {
-        ucxapp_print("note: update u-connectXplorer to use the phone as echo peer (perf.rtt/perf.tput ... xplorer)\n");
+        ucxapp_print("note: update u-connectXplorer to use the phone as echo peer (perf.latency/perf.throughput ... xplorer)\n");
     }
     if (!ucxapp_xplorer_has("perfSps")) {
         ucxapp_print("note: update u-connectXplorer for SPS throughput against the phone (perf.phone)\n");
@@ -269,7 +269,7 @@ static const ucxapp_cmd_t gXplorerCmds[] = {
       "Call any remote-control method (e.g. ble.getState, app.getNetworkInfo) and print the JSON result; numbers, "
       "true/false and {..}/[..] values are sent as they are, others as strings", 0, cmdCall },
     { "xplorer.echo", "<tcp|udp> <port> | state | stop",
-      "Make the phone an echo server for perf.rtt/perf.tput (perf ... xplorer does this by itself); state shows "
+      "Make the phone an echo server for perf.latency/perf.throughput (perf ... xplorer does this by itself); state shows "
       "the bytes and 0x00-0xFF pattern breaks it received", 0, cmdEcho },
 };
 

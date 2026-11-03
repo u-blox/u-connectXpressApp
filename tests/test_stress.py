@@ -11,7 +11,7 @@ pytestmark = pytest.mark.app
 
 # Commands that wait for a peer, probe serial ports or never return on their own.
 BLOCKING = re.compile(r"detect|bridge|listen|echo|start|connect|\.use$|scan|monitor|dash|tui|sleep|wait|run|shell|"
-                      r"exit|quit|flash|download|ntrip|repeat|watch|serve|portal|iperf|ping|\.ex$")
+                      r"exit|quit|flash|download|ntrip|repeat|watch|serve|portal|iperf|ping|\.example$")
 BAD_ARGS = ["", "x", "-1", "99999999999999999999", "0 0 0 0 0 0 0 0 0", '"unterminated', "A" * 600,
             "\u00e6\u00f8\u00e5 \u2603"]
 

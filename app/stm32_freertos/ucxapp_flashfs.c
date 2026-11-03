@@ -1,4 +1,4 @@
-/* littlefs in the top two erase sectors of the internal flash, used as the file store
+/* littlefs in the internal flash above the firmware, used as the file store
  * (profiles, certificates, downloads) so files survive a reset. */
 
 #include "ucxapp_flashfs.h"
@@ -10,37 +10,45 @@
 #include "semphr.h"
 #include "lfs.h"
 
+/* littlefs needs two blocks for its metadata pair; every file bigger than the
+ * inline limit takes at least one more erase sector, so the area must be well
+ * over two sectors. */
 #if defined(STM32H753xx)
 #include "stm32h7xx_hal.h"
-/* Bank 2 sectors 6-7: no CPU stall, the code runs from bank 1. */
-#define FS_BASE      0x081C0000UL
+/* All of bank 2 (sectors 0-7): no CPU stall, the code runs from bank 1. */
+#define FS_BASE      0x08100000UL
 #define FS_BLOCK     (128U * 1024U)
-#define FS_SECTOR0   6U
+#define FS_SECTOR0   0U
+#define FS_BLOCKS    8U
 #define FS_PROG      32U
 #elif defined(STM32F767xx)
 #include "stm32f7xx_hal.h"
-#define FS_BASE      0x08180000UL
+/* Sectors 7-11 (256 KB each), leaving the image room to grow to 768 KB. */
+#define FS_BASE      0x080C0000UL
 #define FS_BLOCK     (256U * 1024U)
-#define FS_SECTOR0   10U
+#define FS_SECTOR0   7U
+#define FS_BLOCKS    5U
 #define FS_PROG      4U
 #elif defined(STM32F439xx)
 #include "stm32f4xx_hal.h"
-/* Bank 2 sectors 22-23. */
-#define FS_BASE      0x081C0000UL
+/* Bank 2 sectors 17-23 (128 KB each). */
+#define FS_BASE      0x08120000UL
 #define FS_BLOCK     (128U * 1024U)
-#define FS_SECTOR0   22U
+#define FS_SECTOR0   17U
+#define FS_BLOCKS    7U
 #define FS_PROG      4U
 #elif defined(STM32F407xx)
 #include "stm32f4xx_hal.h"
-#define FS_BASE      0x080C0000UL
+/* Sectors 9-11 (128 KB each); 1 MB of flash leaves room for one data block. */
+#define FS_BASE      0x080A0000UL
 #define FS_BLOCK     (128U * 1024U)
-#define FS_SECTOR0   10U
+#define FS_SECTOR0   9U
+#define FS_BLOCKS    3U
 #define FS_PROG      4U
 #endif
 
 #ifdef FS_BASE
 
-#define FS_BLOCKS    2U
 #define FS_CACHE     256U
 #define FS_LOOKAHEAD 16U
 
@@ -62,7 +70,11 @@ typedef struct {
 static void invalidate(uint32_t addr, uint32_t size)
 {
 #if defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
-    SCB_InvalidateDCache_by_Addr((void *)addr, (int32_t)size);
+    /* Only with the D-cache on: by-address maintenance looks up the tag RAM,
+     * which is uninitialised (bad ECC) while the cache is off and bus faults. */
+    if ((SCB->CCR & SCB_CCR_DC_Msk) != 0U) {
+        SCB_InvalidateDCache_by_Addr((void *)addr, (int32_t)size);
+    }
 #elif defined(FLASH_ACR_DCEN)
     __HAL_FLASH_DATA_CACHE_DISABLE();
     __HAL_FLASH_DATA_CACHE_RESET();

@@ -21,7 +21,7 @@
 #include <strings.h>
 #endif
 
-/* Defaults for the emulation; hw.load replaces them with a board profile. */
+/* Defaults for the emulation; hw.profile.load replaces them with a board profile. */
 #define DEF_GPIO  16
 #define DEF_ADC   8
 #define DEF_PWM   4
@@ -47,7 +47,7 @@ typedef struct {
 static int gNGpio = DEF_GPIO;
 static int gNAdc = DEF_ADC;
 static int gNPwm = DEF_PWM;
-static hwcfg_t *gCfg;   /* NULL until hw.load succeeds */
+static hwcfg_t *gCfg;   /* NULL until hw.profile.load succeeds */
 static int gEmuMode[HWCFG_MAX_GPIO];
 static int gEmuLevel[HWCFG_MAX_GPIO];
 static uint8_t gEmuRegs[HWCFG_MAX_EMU][256];
@@ -526,7 +526,7 @@ static int opBoard(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_USAGE;
     }
     if (gCfg == NULL) {
-        outf(o, "no board profile loaded (hw.load <file.json>)");
+        outf(o, "no board profile loaded (hw.profile.load <file.json>)");
         return UCXAPP_OK;
     }
     outf(o, "%s\ni2c scl %s sda %s\nspi sck %s miso %s mosi %s cs %s\ncan rx %s tx %s\n", gCfg->board, gCfg->i2cScl,
@@ -574,7 +574,7 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     X(opI2cRead, "i2c.read", "<addr> <len>", "Read bytes from an I2C device") \
     X(opI2cReg, "i2c.reg", "<addr> <reg> [len]", "Read a register (write pointer, then read)") \
     X(opSpiCfg, "spi.cfg", "<mode=0> <hz=1000000>", "Set the SPI mode (0-3) and clock in Hz") \
-    X(opSpiXfer, "spi.xfer", "<hex...>", "Full duplex SPI transfer, prints the bytes read") \
+    X(opSpiXfer, "spi.transfer", "<hex...>", "Full duplex SPI transfer, prints the bytes read") \
     X(opAdcRead, "adc.read", "<ch>", "Read an ADC channel") \
     X(opPwmSet, "pwm.set", "<ch> <hz> <duty%>", "Start PWM on a channel") \
     X(opPwmOff, "pwm.off", "<ch>", "Stop PWM on a channel") \
@@ -817,7 +817,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 #define X_ENTRY(opf, name, usage, help) { "hw." name, usage, help, 0, sh_##opf },
 static const ucxapp_cmd_t kCmds[] = {
     HW_OPS(X_ENTRY)
-    { "hw.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
+    { "hw.profile.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
     { "hw.exec", "<command...>", "Run a bridge line such as 'gpio.read 3' and print the OK/ERR reply", 0, cmdExec },
     { "hw.bridge", "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
       "uart <port> [baud] | off [n] | status", "Expose these commands as a line protocol, with EVT lines for events; up to 4 bridges at once", 0,

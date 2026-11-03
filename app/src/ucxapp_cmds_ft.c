@@ -859,6 +859,9 @@ static bool defineService(ucxapp_t *app)
     int32_t svc;
     int32_t r;
 
+    if (!ucxapp_gatt_server_fresh(app)) {
+        return false;
+    }
     r = uCxGattServerServiceDefine(app->ucx, kSvc, 16, &svc);
     if (r == 0) {
         r = uCxGattServerCharDefine6(app->ucx, kCtrl, 16, &ctrlProps, 1, U_GATT_SERVER_READ_SECURITY_NONE,
@@ -1429,8 +1432,8 @@ static const ucxapp_cmd_t gFtCmds[] = {
     { "ft.status",   "",                                  "File transfer server link, state, transfer count and last transfer", UCXAPP_CMD_NEEDS_DEVICE, cmdStatus },
     { "ft.get",      "<conn|host[:port]> <remote> [local] [blk=240] [resume]", "Download a file from a peer's ft server over BLE (conn, blk 16-242, default 240) or TCP (host, blk up to 1455); checked with CRC-32; 'resume' continues an interrupted download from <local>.part", UCXAPP_CMD_NEEDS_DEVICE, cmdGet },
     { "ft.put",      "<conn|host[:port]> <local> [remote] [blk] [resume]", "Upload a file to a peer's ft server (needs 'rw' there); checked with CRC-32; 'resume' continues from what the server already has", UCXAPP_CMD_NEEDS_DEVICE, cmdPut },
-    { "ft.ls",       "<conn|host[:port]>",                "List the files on a peer's ft server",                     UCXAPP_CMD_NEEDS_DEVICE, cmdLs },
-    { "ft.rm",       "<conn|host[:port]> <name>",         "Delete a file on a peer's ft server (needs 'rw' there)",   UCXAPP_CMD_NEEDS_DEVICE, cmdRm },
+    { "ft.list",       "<conn|host[:port]>",                "List the files on a peer's ft server",                     UCXAPP_CMD_NEEDS_DEVICE, cmdLs },
+    { "ft.remove",       "<conn|host[:port]> <name>",         "Delete a file on a peer's ft server (needs 'rw' there)",   UCXAPP_CMD_NEEDS_DEVICE, cmdRm },
     { "ft.selftest", "",                                  "Offline check of the CRC-32, name rules and request encoding", 0, cmdSelftest },
 };
 

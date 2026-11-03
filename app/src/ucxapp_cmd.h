@@ -85,6 +85,7 @@ const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
 
 /** False for Bluetooth LE only modules (NORA-B26); the Wi-Fi command groups are blocked on them. */
 bool ucxapp_module_has_wifi(ucxapp_t *app);
+bool ucxapp_cmd_needs_wifi(const char *name);   /* wifi., sock., mqtt., net. ... commands */
 
 /* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
@@ -186,7 +187,7 @@ int ucxapp_web_local_length(void);
 const char *ucxapp_web_local_type(void);
 const char *ucxapp_web_local_poll(void);
 void ucxapp_register_usecase_cmds(void);    /* usecase.* fit checks (ucxapp_cmds_usecase.c) */
-void ucxapp_register_examples_cmds(void);   /* <group>.ex and examples [group]; register last */
+void ucxapp_register_examples_cmds(void);   /* <group>.example and examples [group]; register last */
 
 /* Reboots the module and restores the session settings (dev.reboot). */
 bool ucxapp_module_reboot(ucxapp_t *app);
@@ -220,10 +221,13 @@ void ucxapp_sock_clear_incoming(void);
 bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char *ip, size_t ipSize);
 /* Sets the user's regulatory domain before any scan, connect or AP; false (printed) when none is chosen yet. */
 bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx);
+const char *ucxapp_wifi_regdomain_name(void);   /* saved region, NULL until chosen */
+bool ucxapp_shell_interactive(void);   /* a person typed the running command at the ucxapp> prompt */
 /* "ssid  rssi dBm  ch N\nip" (AT calls; command thread only); false when not connected. */
 bool ucxapp_wifi_dash(uCxHandle_t *ucx, char *out, size_t size);
 
 /* GATT server helpers shared with the HID pack (ucxapp_cmds_gatt.c). */
+bool ucxapp_gatt_server_fresh(ucxapp_t *app);   /* reboots the module once per run before the first service definition */
 int ucxapp_gatt_server_ensure(ucxapp_t *app, const char *key);   /* defines a predefined profile once, e.g. "bas" */
 void ucxapp_gatt_ensure_advertising(ucxapp_t *app);
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len);   /* true if consumed */

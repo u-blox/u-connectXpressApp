@@ -158,7 +158,8 @@ def _skip_reason(item, exe, hw):
     needs_app = any(item.get_closest_marker(m) for m in ("app", *HARDWARE_MARKERS))
     if not needs_app:
         return None
-    if sys.platform != "win32" and not (item.get_closest_marker("app") and exe.is_file()):
+    hardware = any(item.get_closest_marker(m) for m in HARDWARE_MARKERS)
+    if sys.platform != "win32" and not hardware and not (item.get_closest_marker("app") and exe.is_file()):
         return "needs Windows"
     if not exe.is_file():
         return f"app not built: {exe}"
@@ -185,7 +186,7 @@ def pytest_collection_modifyitems(config, items):
     exe = _exe()
     wanted = {m for item in items for m in HARDWARE_MARKERS if item.get_closest_marker(m)}
     hw = {"a": None, "b": None, "gnss": None, "imu": None}
-    if wanted and exe.is_file() and sys.platform == "win32":
+    if wanted and exe.is_file():
         hw["a"], hw["b"] = _ports()
         for name in ("gnss", "imu"):
             if name in wanted:

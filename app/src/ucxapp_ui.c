@@ -183,14 +183,14 @@ static size_t appendHandles(char *out, size_t size, size_t n, const char *label,
 uint32_t ucxapp_ui_state(char *out, size_t size)
 {
     uint32_t version = ucxapp_handle_version() + gWifiVersion;
-    size_t n = (size_t)snprintf(out, size, "Wi-Fi %s | ",
-                                gWifiUp == -2 ? "n/a" : gWifiUp < 0 ? "-" : gWifiUp ? "up" : "down");
+    bool bleOnly = gWifiUp == -2;   /* Bluetooth LE only module: no Wi-Fi or socket chips */
+    size_t n = bleOnly ? 0 : (size_t)snprintf(out, size, "Wi-Fi %s | ", gWifiUp < 0 ? "-" : gWifiUp ? "up" : "down");
 
     if (n >= size) {
         return version;
     }
     n = appendHandles(out, size, n, "BLE", UCXAPP_HANDLE_CONN);
-    if (n + 14 < size) {
+    if (!bleOnly && n + 14 < size) {
         n += (size_t)snprintf(out + n, size - n, " | ");
         n = appendHandles(out, size, n, "Sockets", UCXAPP_HANDLE_SOCK);
     }
@@ -471,6 +471,11 @@ static void visitGroup(const ucxapp_cmd_t *cmd, void *user)
     groupCtx_t *c = (groupCtx_t *)user;
     char group[UCXAPP_UI_GROUP_LEN];
 
+    /* a Bluetooth LE only module (NORA-B26) gets no Wi-Fi, socket or network groups */
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_cmd_needs_wifi(cmd->name) && gApp != NULL &&
+        gApp->ucx != NULL && !ucxapp_module_has_wifi(gApp)) {
+        return;
+    }
     groupOf(cmd->name, group);
     for (int i = 0; i < c->count; i++) {
         if (strcmp(c->names[i], group) == 0) {
@@ -547,9 +552,9 @@ static const char *const kCmdOrder[] = {
     "bt.profile.add", "bt.profile.list", "bt.profile.remove", "bt.pairing", "bt.security", "bt.iocap",
     "bt.confirm", "bt.passkey", "bt.autoconfirm", "bt.unbond", "bt.defaults",
     "gatt.services", "gatt.chars", "gatt.read", "gatt.write", "gatt.subscribe", "gatt.listen", "gatt.send",
-    "gatt.credits", "gatt.writelong",
+    "gatt.sps.credits", "gatt.writelong",
     "gatt.client.hrs", "gatt.client.bas", "gatt.client.dis", "gatt.client.nus", "gatt.client.sps",
-    "gatt.client.ess", "gatt.client.cts", "gatt.client.lns", "gatt.client.aio", "gatt.client.wit",
+    "gatt.client.ess", "gatt.client.cts", "gatt.client.lns", "gatt.client.aio", "gatt.client.witmotion",
     "gatt.client.wps", "gatt.client.ras", "gatt.wps",
     "gatt.server.list", "gatt.server.set", "gatt.server.notify", "gatt.server.indicate", "gatt.server.demo",
     "gatt.server.hrs", "gatt.server.bas", "gatt.server.nus", "gatt.server.sps", "gatt.server.ess",

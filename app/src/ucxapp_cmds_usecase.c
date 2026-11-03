@@ -91,9 +91,9 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Use cases by section (industry, everyday). Row kinds: 'w' needs Wi-Fi on the module, 'g' a GNSS receiver,
+/* Use cases by section (industry, edge AI, everyday). Row kinds: 'w' needs Wi-Fi on the module, 'g' a GNSS receiver,
    anything else is fixed. A row with a command is a gap when that command is not in this build. Names stay under
-   15 characters. The industry cases are not in lite builds. */
+   15 characters. The industry and edge AI cases are not in lite builds. */
 typedef struct {
     char kind;
     const char *verdict;
@@ -153,6 +153,16 @@ static const ucRow_t kImplement[] = {
     { 0, "[ok]", "Yard upload", "back at the yard: wifi.connect, then mqtt.publish the work record", "mqtt.publish" },
     { 0, "[ok]", "Field link", "frames over cellular in the field: can.bridge cell (reconnects after dead zones)", "can.bridge" },
     { 0, "[limit]", "Decoding", "frames are raw (id, dlc, data); ISOBUS and J1939 decoding is in the tablet app", NULL },
+};
+
+static const ucRow_t kEdge[] = {
+    { 0, "[ok]", "Training data", "record the motion for the model: imu.open, imu.log motion.bin", "imu.log" },
+    { 0, "[ok]", "Live stream", "the IMU stream to a PC or notebook: imu.bridge tcp 9000", "imu.bridge" },
+    { 0, "[ok]", "I2C sensors", "find and read sensors on the host: hw.i2c.scan, hw.i2c.reg", "hw.i2c.scan" },
+    { 0, "[ok]", "Results", "the model's result to the cloud: mqtt.publish", "mqtt.publish" },
+    { 0, "[check]", "ALMA-W16x", "ALMA-W161/W166 run u-connectXpress on Wi-Fi 6: these steps carry over", NULL },
+    { 0, "[check]", "ML on module", "the model on an NPU: ALMA-W111/W116 (open CPU, your own firmware)", NULL },
+    { 0, "[check]", "SPI host link", "SPI for more throughput is coming in u-connectClient", NULL },
 };
 
 #endif
@@ -250,6 +260,7 @@ static const ucCase_t kCases[] = {
     CASE("medical", "Medical device (IEC 62304): secure BLE, test evidence, fixed configuration", kMedical),
     CASE("site", "Construction tools: technician's phone, tool tracking, site Wi-Fi, depot updates", kSite),
     CASE("implement", "Farm implement (ISOBUS/CAN): machine data to the cab tablet and the cloud", kImplement),
+    CASE("edge", "Edge AI sensor (ALMA-W1): training data, sensors, results to the cloud", kEdge),
 #endif
     CASE("boat", "Boat or camper: GPS to the chart app on a tablet", kBoat),
     CASE("rtk", "Survey pole or rover: centimetre position with RTK", kRtk),
@@ -333,7 +344,7 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     static const struct {
         const char *name;
         size_t count;
-    } kSections[] = { { "Industry", 4 }, { "Everyday", 0 } };
+    } kSections[] = { { "Industry", 4 }, { "Edge AI", 1 }, { "Everyday", 0 } };
 
     for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); s++) {
         size_t end = kSections[s].count != 0 ? first + kSections[s].count : CASE_COUNT;
@@ -353,7 +364,7 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     for (; first < CASE_COUNT; first++) {
         ucxapp_print("%-10s%s\n", kCases[first].id, kCases[first].title);
     }
-    ucxapp_print("Fit check: usecase.check <name>; steps: usecase.ex (tool) or examples uc-<name>\n");
+    ucxapp_print("Fit check: usecase.check <name>; steps: usecase.example (tool) or examples uc-<name>\n");
     return UCXAPP_OK;
 }
 

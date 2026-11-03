@@ -247,17 +247,32 @@ static int cmdDeviceCaps(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no answer to the model query\n");
         return UCXAPP_ERR_FAILED;
     }
-    /* NORA-B26 is Bluetooth LE only; NORA-W36 has Wi-Fi and Bluetooth LE. */
+    /* NORA-B26 is Bluetooth LE only; NORA-W36 has Wi-Fi and Bluetooth LE. Key: value lines stay one word
+       (tests, --json and --doctor parse them); a Bluetooth LE only module gets no Wi-Fi feature lines. */
     wifi = strstr(model, "B26") == NULL;
+    const char *region = wifi ? ucxapp_wifi_regdomain_name() : NULL;
     ucxapp_print("Model:            %s\n", model);
     ucxapp_print("Firmware:         %s\n", fw);
+    ucxapp_print("-- radio\n");
     ucxapp_print("Wi-Fi:            %s\n", wifi ? "yes" : "no");
     ucxapp_print("Bluetooth LE:     yes\n");
-    ucxapp_print("Sockets:          %s\n", wifi ? "yes" : "no");
-    ucxapp_print("MQTT:             %s\n", wifi && ucxapp_cmd_find("mqtt.connect") != NULL ? "yes" : "no");
-    ucxapp_print("TLS:              %s\n", wifi && ucxapp_cmd_find("cert.list") != NULL ? "yes" : "no");
-    ucxapp_print("HTTP:             %s\n", wifi && ucxapp_cmd_find("http.get") != NULL ? "yes" : "no");
+    if (wifi) {
+        ucxapp_print("Region:           %s\n", region != NULL ? region : "unset");
+        ucxapp_print("-- Wi-Fi features\n");
+        ucxapp_print("Sockets:          yes\n");
+        ucxapp_print("MQTT:             %s\n", ucxapp_cmd_find("mqtt.connect") != NULL ? "yes" : "no");
+        ucxapp_print("TLS:              %s\n", ucxapp_cmd_find("cert.list") != NULL ? "yes" : "no");
+        ucxapp_print("HTTP:             %s\n", ucxapp_cmd_find("http.get") != NULL ? "yes" : "no");
+    }
+    ucxapp_print("-- Bluetooth LE features\n");
     ucxapp_print("GATT:             %s\n", ucxapp_cmd_find("gatt.read") != NULL ? "yes" : "no");
+    if (!wifi) {
+        ucxapp_print("-- next  bt.scan, then bt.connect <number>\n");
+    } else if (region == NULL) {
+        ucxapp_print("-- next  wifi.regdomain (pick where you are), then wifi.scan and bt.scan\n");
+    } else {
+        ucxapp_print("-- next  wifi.scan, wifi.connect <number>, bt.scan\n");
+    }
     return UCXAPP_OK;
 }
 

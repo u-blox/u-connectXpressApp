@@ -42,8 +42,8 @@ def test_initiator_mode_and_settings(app_exe, nora):
     _override(nora.commands, {"AT+UBTCSM?": ["+UBTCSM:2", "OK"], "AT+UBTCSRT?": ["+UBTCSRT:20", "OK"],
                               "AT+UBTCSKF?": ["+UBTCSKF:1,120,1", "OK"], "AT+UBTCSIQ?": ["+UBTCSIQ:0", "OK"]})
     out = _shell(app_exe, nora.port, ["bt.cs initiator", "bt.cs", "bt.cs.rate", "bt.cs.rate 40", "bt.cs.filter",
-                                      "bt.cs.filter off", "bt.cs.filter 5 200", "bt.cs.filter default", "bt.cs.pct",
-                                      "bt.cs.pct on", "bt.cs.pct ref 1000"])
+                                      "bt.cs.filter off", "bt.cs.filter 5 200", "bt.cs.filter default", "bt.cs.phase",
+                                      "bt.cs.phase on", "bt.cs.phase ref 1000"])
     assert out.returncode == 0, out.stdout
     assert "Channel Sounding initiator" in out.stdout and "every 20 connection" in out.stdout, out.stdout
     assert "Kalman filter on: Q 0.001, R 0.120" in out.stdout and "Kalman filter off" in out.stdout, out.stdout
@@ -53,7 +53,7 @@ def test_initiator_mode_and_settings(app_exe, nora):
 
 
 @pytest.mark.parametrize("args", ["bt.cs.rate 0", "bt.cs.rate 70000", "bt.cs.filter 2000 120", "bt.cs.filter 1 5",
-                                  "bt.cs.filter 1", "bt.cs.pct ref 7", "bt.cs.range", "bt.cs.range x",
+                                  "bt.cs.filter 1", "bt.cs.phase ref 7", "bt.cs.range", "bt.cs.range x",
                                   "bt.cs.range 0 0", "bt.cs.range 0 maybe", "bt.cs both"])
 def test_usage(app_exe, nora, args):
     out = _shell(app_exe, nora.port, [args])
@@ -69,7 +69,7 @@ def test_range_prints_the_module_distance(app_exe, nora):
         ("+UEBTCSIQ:0,1,9", pct[:13]),      # claims 9 channels, holds 1.4
         "+UEBTCSIQ:0,x", "+UEBTCSM:garbage", "+UEBTCSM:0,1600"]}
     _override(nora.commands, {"AT+UBTCSIQ?": ["+UBTCSIQ:1", "OK"]})
-    out = _shell(app_exe, nora.port, ["bt.cs.range 0 2", "bt.cs.pct"])
+    out = _shell(app_exe, nora.port, ["bt.cs.range 0 2", "bt.cs.phase"])
     assert out.returncode == 0, out.stdout
     assert "1.23 m" in out.stdout and "1.50 m" in out.stdout and "1.60 m" in out.stdout, out.stdout
     assert "9.99" not in out.stdout, out.stdout   # another connection

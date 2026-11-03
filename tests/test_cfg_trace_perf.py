@@ -55,8 +55,9 @@ def _write(tmp_path, name, text):
 
 
 @pytest.mark.parametrize("command", ["cfg.show", "cfg.save a.cfg", "cfg.load a.cfg",
-                                     "at.replay a.trace", "perf.rtt udp 127.0.0.1 7", "perf.tput tcp 127.0.0.1 7",
-                                     "perf.rtt sps", "perf.echo udp 7", "perf.echo sps 5", "perf.rtt",
+                                     "at.replay a.trace", "perf.latency udp 127.0.0.1 7",
+                                     "perf.throughput tcp 127.0.0.1 7",
+                                     "perf.latency sps", "perf.echo udp 7", "perf.echo sps 5", "perf.latency",
                                      "perf.echo"])
 def test_needs_a_device(app_exe, tmp_path, command):
     out = _run_in(app_exe, tmp_path, command)
@@ -189,5 +190,5 @@ def test_trace_pcap_in_wireshark(app_exe, tmp_path):
 
 @pytest.mark.parametrize("group", ["cfg", "at", "perf"])
 def test_examples(app_exe, tmp_path, group):
-    out = _run_in(app_exe, tmp_path, f"{group}.ex")
+    out = _run_in(app_exe, tmp_path, f"{group}.example")
     assert out.returncode == 0 and f"{group}." in out.stdout and " 1. " in out.stdout, out.stdout

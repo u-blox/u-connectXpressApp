@@ -9,7 +9,7 @@ ucxapp wifi.connect MySsid MyPassword
 ucxapp mqtt.publish test/ucx hello
 ```
 
-Wi-Fi stays off until you choose the regulatory domain for the country you operate in (`wifi.regdomain <world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br>`, saved once; `world` is allowed everywhere). Scripts and CI can set `UCX_REGDOMAIN` instead.
+Wi-Fi stays off until you say where you are: the first Wi-Fi command at the prompt asks once ("Where are you located?", pick 0-10 or type a place such as `europe`, `usa` or `japan`) and saves the answer. `wifi.regdomain` changes it later (`wifi.regdomain <0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|place>`; `world` is allowed everywhere). Scripts and CI can set `UCX_REGDOMAIN` instead.
 
 **Platforms:** Windows | Linux | STM32 | [Browser](https://u-blox.github.io/u-connectXpressApp/)
 
@@ -75,7 +75,7 @@ No Wi-Fi or Bluetooth background needed: pick a goal, run the recipe, read the v
 | Replace a serial cable with Bluetooth LE | `ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
 | Something does not work | `ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
 
-The Wi-Fi recipes take the network name and password from `UCX_WIFI_SSID` and `UCX_WIFI_PASS`; passwords are masked in the AT trace and in recorded sessions. Every group of commands also has worked examples: type `wifi.ex`, `mqtt.ex` or `gatt.ex` in the shell.
+The Wi-Fi recipes take the network name and password from `UCX_WIFI_SSID` and `UCX_WIFI_PASS`; passwords are masked in the AT trace and in recorded sessions. Every group of commands also has worked examples: type `wifi.example`, `mqtt.example` or `gatt.example` in the shell.
 
 ## Powerful one-liners
 
@@ -159,7 +159,7 @@ ucxapp --script examples/automation/production-test.ucx --junit production.xml
 
 ## Commands at a glance
 
-Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists ready-to-copy command sequences; `gnss.ex` (or `examples gnss`) shows them for one group. Full list with arguments: [command reference](COMMANDS.md).
+Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists ready-to-copy command sequences; `gnss.example` (or `examples gnss`) shows them for one group. Full list with arguments: [command reference](COMMANDS.md).
 
 | Area | Commands |
 |---|---|
@@ -169,7 +169,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists r
 | Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*`, `wifi.locate` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
-| Performance | `perf.rtt`, `perf.tput`, `perf.echo`, `perf.phone` (round-trip time and throughput over TCP, UDP or SPS, e.g. against `echo.u-blox.com` port 7 or the u-connectXplorer phone app) |
+| Performance | `perf.latency`, `perf.throughput`, `perf.echo`, `perf.phone` (round-trip time and throughput over TCP, UDP or SPS, e.g. against `echo.u-blox.com` port 7 or the u-connectXplorer phone app) |
 | Phone app | `xplorer.connect`, `xplorer.info`, `xplorer.call`, `xplorer.echo` (remote control of u-connectXplorer, so the phone is the other end of a test) |
 | MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
 | App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
@@ -206,10 +206,10 @@ after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
 | `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 520 KB | 2048 KB | 25% | 320 KB | 512 KB | 63% |
-| `f767` | NUCLEO-F767ZI | 502 KB | 2048 KB | 25% | 331 KB | 368 KB | 90% |
-| `f439` | NUCLEO-F439ZI | 506 KB | 2048 KB | 25% | 137 KB | 192 KB | 72% |
-| `f407` | STM32F4DISCOVERY | 503 KB | 1024 KB | 49% | 110 KB | 128 KB | 86% |
+| `h753` | NUCLEO-H753ZI | 523 KB | 2048 KB | 26% | 320 KB | 512 KB | 63% |
+| `f767` | NUCLEO-F767ZI | 508 KB | 2048 KB | 25% | 331 KB | 368 KB | 90% |
+| `f439` | NUCLEO-F439ZI | 511 KB | 2048 KB | 25% | 137 KB | 192 KB | 72% |
+| `f407` | STM32F4DISCOVERY | 508 KB | 1024 KB | 50% | 110 KB | 128 KB | 86% |
 | `f401` | NUCLEO-F401RE | 470 KB | 512 KB | 92% | 89 KB | 96 KB | 93% |
 | `f446` | NUCLEO-F446RE | 483 KB | 512 KB | 95% | 109 KB | 128 KB | 85% |
 | `f103` | NUCLEO-F103RB | 119 KB | 128 KB | 93% | 15 KB | 20 KB | 79% |

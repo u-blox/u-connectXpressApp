@@ -466,7 +466,7 @@ static int spsEcho(ucxapp_t *app, int32_t seconds)
     memset(&l, 0, sizeof(l));
     l.app = app;
     l.kind = LINK_SPS;
-    ucxapp_print("SPS echo for %d s: connect with perf.rtt sps or perf.tput sps from the other module\n",
+    ucxapp_print("SPS echo for %d s: connect with perf.latency sps or perf.throughput sps from the other module\n",
                  (int)seconds);
     uint32_t end = ucxapp_platform_tick_ms() + (uint32_t)seconds * 1000u;
     while ((int32_t)(end - ucxapp_platform_tick_ms()) > 0) {
@@ -507,7 +507,7 @@ static int cmdEcho(ucxapp_t *app, int argc, char *argv[])
 
 static char gPhoneHost[64];
 
-/* perf.rtt / perf.tput <tcp|udp> xplorer <port>: the u-connectXplorer phone saved by xplorer.connect echoes. The
+/* perf.latency / perf.throughput <tcp|udp> xplorer <port>: the u-connectXplorer phone saved by xplorer.connect echoes. The
  * remote-control link is closed while the test runs (the phone keeps its echo server), so a long run cannot miss the
  * app's keep-alive pings; afterwards the phone reports what it got, including its own 0x00-0xFF check. */
 static int withPhone(ucxapp_t *app, int argc, char *argv[], ucxapp_cmd_fn_t run)
@@ -862,16 +862,16 @@ static int cmdTput(ucxapp_t *app, int argc, char *argv[])
 #endif /* UCXAPP_XPLORER */
 
 static const ucxapp_cmd_t gPerfCmds[] = {
-    { "perf.rtt", "<tcp|udp> <host|xplorer> <port> [count=20] [size=64] | sps [count=20] [size=64]",
+    { "perf.latency", "<tcp|udp> <host|xplorer> <port> [count=20] [size=64] | sps [count=20] [size=64]",
       "Round-trip time through the module to an echo peer: min/avg/max, jitter, lost and corrupt packets "
       "(default 20 packets of 64 bytes, max 1000 bytes); fails on any loss. Host xplorer makes the phone saved by "
       "xplorer.connect the echo peer", UCXAPP_CMD_NEEDS_DEVICE, cmdRtt },
-    { "perf.tput", "<tcp|udp> <host|xplorer> <port> [seconds=10] [size=512] | sps [seconds=10] [size=512]",
+    { "perf.throughput", "<tcp|udp> <host|xplorer> <port> [seconds=10] [size=512] | sps [seconds=10] [size=512]",
       "Throughput to an echo peer: sends for the given time (default 10 s, 512-byte packets) with 8 packets in "
       "flight and reports kbit/s sent and echoed, once a second and at the end. Host xplorer makes the phone the "
       "echo peer, and it reports its own 0x00-0xFF check", UCXAPP_CMD_NEEDS_DEVICE, cmdTput },
     { "perf.echo", "<tcp|udp> <port> [seconds=60] | sps [seconds=60]",
-      "Echo peer for perf.rtt and perf.tput on a second module (tcp/udp is sock.echo; sps advertises and echoes "
+      "Echo peer for perf.latency and perf.throughput on a second module (tcp/udp is sock.echo; sps advertises and echoes "
       "SPS data; default 60 s)", UCXAPP_CMD_NEEDS_DEVICE, cmdEcho },
 #if UCXAPP_XPLORER
     { "perf.phone", "<tx|rx|echo> [seconds=10] [size=244]",

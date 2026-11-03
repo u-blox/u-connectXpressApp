@@ -183,6 +183,9 @@ static int cmdHidSetup(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("HID service is already defined; restart the module to define it again\n");
         return UCXAPP_ERR_FAILED;
     }
+    if (!ucxapp_gatt_server_fresh(app)) {
+        return UCXAPP_ERR_FAILED;
+    }
     /* HOGP: every HIDS characteristic needs LE security mode 1, level 2 (or 3 with auth). */
     gRsec = auth ? U_GATT_SERVER_READ_SECURITY_AUTHENTICATED : U_GATT_SERVER_READ_SECURITY_UNAUTHENTICATED;
     gWsec = auth ? U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED : U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED;

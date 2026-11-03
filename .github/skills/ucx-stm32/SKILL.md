@@ -30,7 +30,7 @@ On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--cle
 - Files are kept in RAM only for now.
 
 ## Files (FreeRTOS builds)
-Files (Wi-Fi profiles, certificates) live in a littlefs file system in the top two flash sectors on H753, F767, F439 and F407, so they survive reset and reflash (`--erase` wipes them; `file.format yes` erases them from the shell). The other boards keep files in RAM only. Fetch littlefs once with `git submodule update --init third-party/littlefs`.
+Files (Wi-Fi profiles, certificates) live in a littlefs file system in the flash above the firmware on H753 (1 MB, bank 2), F767 (1.25 MB), F439 (896 KB) and F407 (384 KB), so they survive reset and reflash (`--erase` wipes them; `file.format yes` erases them from the shell). Each file larger than about 256 bytes takes a whole erase sector (128 or 256 KB), so the F407 holds only one such file. The other boards keep files in RAM only. Fetch littlefs once with `git submodule update --init third-party/littlefs`.
 
 ## Wiring
 NORA-W36 on the Arduino header CN10, 115200 baud:
@@ -63,7 +63,7 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 | NORA-W36 RTS / CTS (only with flow control) | PA11 (CTS) / PA12 (RTS) |
 | GND, 3V3 | GND, 3V3 |
 - The shell runs on the ST-Link virtual COM port (USART2, 115200). The F401 runs at 84 MHz, the F446 at 168 MHz, the F103 at 64 MHz.
-- The F103 and G071 (64 MHz Cortex-M0+) get a lite build: device, wifi, sock, sys, app, bt and gatt commands (no net, mqtt, cert, TLS or `examples`/`<group>.ex`). Scan and GATT discovery tables are small (8 devices, 8 services, 24 characteristics) and Bluetooth company, appearance and characteristic names are shown as numbers only.
+- The F103 and G071 (64 MHz Cortex-M0+) get a lite build: device, wifi, sock, sys, app, bt and gatt commands (no net, mqtt, cert, TLS or `examples`/`<group>.example`). Scan and GATT discovery tables are small (8 devices, 8 services, 24 characteristics) and Bluetooth company, appearance and characteristic names are shown as numbers only.
 
 ## Use
 - The shell connects to the module at startup; `dev.connect [uart] [baud]` reconnects.

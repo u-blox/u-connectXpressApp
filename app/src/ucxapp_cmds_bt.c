@@ -16,6 +16,7 @@
 #include "u_cx_bluetooth.h"
 #include "u_cx_channel_sounding.h"
 #include "u_cx_channel_sounding_initiator.h"
+#include "u_cx_error_codes.h"
 #include "u_cx_system.h"
 #include "u_port.h"
 #ifdef _MSC_VER
@@ -328,6 +329,24 @@ static int cmdBtScan(ucxapp_t *app, int argc, char *argv[])
 /* Starts a connect and waits until the link is listed; *up tells whether it came up. */
 static void centralSecurity(ucxapp_t *app);
 
+static bool linkListed(ucxapp_t *app, int32_t handle)
+{
+    uCxBtListConnections_t conn;
+    bool found = false;
+
+    uCxBluetoothListConnectionsBegin(app->ucx);
+    while (uCxBluetoothListConnectionsGetNext(app->ucx, &conn)) {
+        found = found || conn.conn_handle == handle;
+    }
+    uCxEnd(app->ucx);
+    return found;
+}
+
+/* A connect request the peer never received still reports a link, which the controller drops after six
+ * connection intervals (about 250 ms); wait past that and connect again, so no command starts on a dead link. */
+#define CONNECT_SETTLE_MS 500
+#define CONNECT_ATTEMPTS  3
+
 static int32_t connectAddr(ucxapp_t *app, uBtLeAddress_t *addr, int waitTenthsS, bool *up)
 {
     uCxBtListConnections_t existing;
@@ -350,25 +369,34 @@ static int32_t connectAddr(ucxapp_t *app, uBtLeAddress_t *addr, int waitTenthsS,
         return known;
     }
     centralSecurity(app);
-    int32_t handle = uCxBluetoothConnect(app->ucx, addr);
+    for (int attempt = 1;; attempt++) {
+        int32_t handle = uCxBluetoothConnect(app->ucx, addr);
 
-    *up = false;
-    for (int tries = 0; handle >= 0 && !*up && tries < waitTenthsS; tries++) {
-        uCxBtListConnections_t conn;
-
-        uCxBluetoothListConnectionsBegin(app->ucx);
-        while (uCxBluetoothListConnectionsGetNext(app->ucx, &conn)) {
-            *up = *up || conn.conn_handle == handle;
+        *up = false;
+        for (int tries = 0; handle >= 0 && !*up && tries < waitTenthsS; tries++) {
+            *up = linkListed(app, handle);
+            if (!*up) {
+                U_CX_PORT_SLEEP_MS(100);
+            }
         }
-        uCxEnd(app->ucx);
         if (!*up) {
-            U_CX_PORT_SLEEP_MS(100);
+            return handle;
         }
+        U_CX_PORT_SLEEP_MS(CONNECT_SETTLE_MS);
+        if (linkListed(app, handle)) {
+            ucxapp_handle_add(UCXAPP_HANDLE_CONN, handle);
+            return handle;
+        }
+        ucxapp_handle_remove(UCXAPP_HANDLE_CONN, handle);
+        *up = false;
+        if (attempt == CONNECT_ATTEMPTS) {
+            ucxapp_print("link to %s dropped right after connecting %d times (weak signal or the peer stopped "
+                         "advertising)\n", want, CONNECT_ATTEMPTS);
+            return U_ERROR_COMMON_NOT_CONNECTED;
+        }
+        ucxapp_print("link dropped right after connecting (peer did not answer); retrying (%d/%d)\n", attempt + 1,
+                     CONNECT_ATTEMPTS);
     }
-    if (*up) {
-        ucxapp_handle_add(UCXAPP_HANDLE_CONN, handle);
-    }
-    return handle;
 }
 
 static void rememberLast(const char *addrText)
@@ -1541,7 +1569,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.cs.range",   "<conn> [seconds=10|on|off]", "Channel Sounding initiator: range a reflector (bonding first if needed) and print the module's distance (filtered in the module) for some seconds, or start/stop ranging in the background (distances in the events)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRange },
     { "bt.cs.rate",    "[intervals=20]",      "Channel Sounding initiator: connection intervals between measurements (1-65535; stored with dev.save)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRate },
     { "bt.cs.filter",  "[on|off|default|<q> <r>]", "Channel Sounding initiator: the module's Kalman filter; off gives raw distances, Q 0-1000 and R 10-10000 in 0.001 (default 1 and 120)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsFilter },
-    { "bt.cs.pct",     "[on|off|ref off|500|1000|10000]", "Channel Sounding initiator: phase correction term reports for your own algorithms, or a stored reference instead of real data (debug)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsPct },
+    { "bt.cs.phase",     "[on|off|ref off|500|1000|10000]", "Channel Sounding initiator: phase correction term reports for your own algorithms, or a stored reference instead of real data (debug)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsPct },
 #endif
     { "bt.disconnect", "[conn]",            "Close a BLE connection",                         UCXAPP_CMD_NEEDS_DEVICE, cmdBtDisconnect },
     { "bt.list",       "",                    "List BLE connections",                           UCXAPP_CMD_NEEDS_DEVICE, cmdBtList },

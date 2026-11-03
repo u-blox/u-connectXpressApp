@@ -29,7 +29,7 @@ NEW_COMMANDS = (
     "wifi.profile.auto", "wifi.regdomain",
     "gatt.writelong", "gatt.wps", "file.hash",
     "bt.defaults", "bt.bonds", "bt.unbond",
-    "ft.on", "ft.off", "ft.status", "ft.get", "ft.put", "ft.ls", "ft.rm", "ft.selftest", "app.time",
+    "ft.on", "ft.off", "ft.status", "ft.get", "ft.put", "ft.list", "ft.remove", "ft.selftest", "app.time",
 )
 
 
@@ -42,7 +42,8 @@ def registered_commands():
 
 def _doc_name(name):
     # The reference documents the per-service examples as gatt.client.<svc>.
-    return re.sub(r"^(gatt\.(?:client|server)\.)(?:hrs|cts|ess|lns|aio|bas|dis|nus|sps|wit|wps|ras)$", r"\1<svc>", name)
+    svc = r"(?:hrs|cts|ess|lns|aio|bas|dis|nus|sps|witmotion|wps|ras)"
+    return re.sub(r"^(gatt\.(?:client|server)\.)" + svc + "$", r"\1<svc>", name)
 
 
 def test_command_scan_finds_the_new_packs():

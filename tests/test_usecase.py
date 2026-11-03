@@ -56,15 +56,15 @@ def test_use_case_list_and_examples(app_exe):
     assert out.returncode == 0 and "\ntool      Connected tool" in out.stdout
     for uc in USE_CASES:
         assert re.search(rf"^{uc} +\S", out.stdout, re.M), uc
-    ex = _exec(app_exe, "usecase.ex")
+    ex = _exec(app_exe, "usecase.example")
     assert ex.returncode == 0
     for word in ("usecase.tool", "wifi.peap", "wifi.ap.enable", "net.iperf", "gatt.server.wps"):
         assert word in ex.stdout
 
 
-USE_CASES = ("iiot", "medical", "site", "implement",
+USE_CASES = ("iiot", "medical", "site", "implement", "edge",
              "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")
-SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement"),
+SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement"), "Edge AI": ("edge",),
             "Everyday": ("boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote")}
 
 

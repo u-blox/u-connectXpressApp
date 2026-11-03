@@ -46,7 +46,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
 | `examples` | `[group]` | List the groups that have examples, or show one group's examples |
-| `<group>.ex [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, perf, mqtt, cert, bt, gatt, hid, web, fw, dev, cfg, at, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.ex`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.ex 1`); the web page's "Run all" uses this |
+| `<group>.example [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, perf, mqtt, cert, bt, gatt, hid, web, fw, dev, cfg, at, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.example`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.example 1`); the web page's "Run all" uses this |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
 | `at.reset` | | Reboot the module (`AT+CPWROFF`); same as `dev.reboot` |
 | `at.factory` | `<confirm>` | Factory reset (`AT+USYFR`) and reboot; same as `dev.factory`, the word `confirm` is required |
@@ -108,7 +108,7 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | Command | Arguments | Description |
 |---|---|---|
 | `dev.info` | | Manufacturer, model, firmware version |
-| `dev.caps` | | Capabilities: model, firmware, Wi-Fi, Bluetooth LE, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support |
+| `dev.caps` | | Capabilities grouped by radio, Wi-Fi features and Bluetooth LE features: model, firmware, Wi-Fi, Bluetooth LE, the saved region, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support, then what to try next. A Bluetooth LE only module (NORA-B26) shows `Wi-Fi: no` and no Wi-Fi features; the TUI and web UI then hide the Wi-Fi, socket and network groups |
 | `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
 | `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |
 | `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it |
@@ -144,7 +144,7 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.cs.range` | `<conn> [seconds=10\|on\|off]` | Initiator: range a reflector and print the distance the module computes (median filter plus Kalman filter, see `bt.cs.filter`), then the count and range of readings; any key stops. Ranging needs a bonded link; when the module refuses, the command bonds and retries for 15 s. `on`/`off` starts or stops ranging in the background, with distances in the events. Not in lite builds |
 | `bt.cs.rate` | `[intervals=20]` | Initiator: connection intervals between measurements (1-65535); use a connection interval of 10 ms or more. Not in lite builds |
 | `bt.cs.filter` | `[on\|off\|default\|<q> <r>]` | Initiator: the module's Kalman filter. `off` gives raw distances; Q 0-1000 and R 10-10000 in units of 0.001 (default 1 and 120; a larger R is smoother but slower). Not in lite builds |
-| `bt.cs.pct` | `[on\|off\|ref off\|500\|1000\|10000]` | Initiator: phase correction term reports (binary, per antenna path) for your own algorithms, and a count of those received; `ref` replaces the measured data with a stored 500 mm, 1 m or 10 m reference (debug). Not in lite builds |
+| `bt.cs.phase` | `[on\|off\|ref off\|500\|1000\|10000]` | Initiator: phase correction term reports (binary, per antenna path) for your own algorithms, and a count of those received; `ref` replaces the measured data with a stored 500 mm, 1 m or 10 m reference (debug). Not in lite builds |
 | `bt.disconnect` | `<handle>` | Close a BLE connection |
 | `bt.list` |  | List BLE connections |
 | `bt.pairing` | `<on\|off>` | Enable or disable pairing mode |
@@ -184,9 +184,9 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 | `gatt.writelong` | `[conn] <handle> <hex\|text:abc> [offset] [reliable] [more]` | Long write (prepare/execute) |
 | `gatt.subscribe` | `[conn] <handle> [notify\|indicate\|off]` | Set the CCCD (assumed at value handle + 1) |
 | `gatt.listen` | `[seconds\|off]` | Client examples keep listening after they subscribe: notifications are printed parsed and mirrored to the Events pane until `gatt.listen off` unsubscribes. Without arguments it shows the state; with seconds it waits (needed for `gatt.wps` and server examples) |
-| `gatt.client.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `ras` (Ranging Service, Channel Sounding), `nus`, `sps` or `wit` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
+| `gatt.client.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `ras` (Ranging Service, Channel Sounding), `nus`, `sps` or `witmotion` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
 | `gatt.send` | `[conn] <nus\|sps> <text>` | Send text to the remote NUS or SPS service |
-| `gatt.credits` | `[conn] <1-127>` | Send SPS credits |
+| `gatt.sps.credits` | `[conn] <1-127>` | Send SPS credits |
 | `gatt.wps` | `[conn] <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
 | `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `ras`, `nus` or `sps` |
 | `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed; `.wps` ends early once a phone has sent the Wi-Fi settings) |
@@ -241,7 +241,7 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.survey` | `[seconds=10] [host]` | Is the Wi-Fi here good enough? Signal average and spread over time (default 10 s), lost readings, internet reachability (ping, default u-blox.com) and `Verdict: EXCELLENT`, `GOOD`, `FAIR` or `POOR` with advice; fails when not connected or the internet is unreachable |
 | `wifi.locate` | `[google\|skyhook\|here\|combain] [api-key] \| key [<service> <api-key>] \| body [service]` | Position from a Wi-Fi scan, like ubxlib's `uWifiLoc`. NORA modules have no location command, so the host does the work: the module scans, the strongest access points (up to 20, at least 2; SSIDs ending in `_nomap` are left out) go to the location service as JSON over the module's HTTPS (`http.post`), and the answer is shown as `Position: <lat>, <lon> +/- <m> m`, an OpenStreetMap link and a `gnss.virtual <lat> <lon>` line to use it as a virtual receiver. Needs a Wi-Fi connection and an API key: Google Geolocation API, Skyhook, HERE Network Positioning v2 or Combain (Google, Skyhook and Combain take Google's request format, HERE its own). `key <service> <api-key>` saves the key in `ucxapp.wifiloc` (private) and makes that service the default; `key` alone lists the saved services (keys shortened). `<service> <api-key>` uses a key once without saving it. `body [service]` scans and prints the request without sending it. Not in lite builds |
 | `wifi.roaming` | `[on\|off]` | Show or set roaming between access points |
-| `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain for the country you operate in. It is required: `wifi.scan`, `wifi.connect`, `wifi.eap`, `wifi.peap`, `wifi.profile.*` connects, `wifi.ap.enable`, `wifi.locate` and BLE Wi-Fi provisioning refuse to use the radio until a domain is chosen (`world` is allowed everywhere, with fewer channels). Scripts and CI can set `UCX_REGDOMAIN` instead; a saved domain wins |
+| `wifi.regdomain` | `[0-10\|world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br\|<place>]` | Show, or set and save, where you are (the Wi-Fi regulatory domain). Takes the menu number (0 world … 10 Brazil, the `AT+UWRD` value), the domain name or a place (`europe`, `usa`, `canada`, `japan`, `new-zealand` …). Without an argument at the `ucxapp>` prompt it shows the numbered list and asks; elsewhere it prints the list. It is required: `wifi.scan`, `wifi.connect`, `wifi.eap`, `wifi.peap`, `wifi.profile.*` connects, `wifi.ap.enable`, `wifi.locate` and BLE Wi-Fi provisioning ask for it the first time at the prompt, and refuse with the list in scripts, `--exec` and the web page (where the list lines are clickable). `world` is allowed everywhere, with fewer channels. Scripts and CI can set `UCX_REGDOMAIN` instead; a saved domain wins |
 | `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `ucxapp.wifi` (passwords encrypted with AES-256-GCM, key in `ucxapp.key`; XOR-obfuscated on STM32; max 16) |
 | `wifi.profile.list` |  | List saved profiles (no passwords shown) and the network (IP prefix) each was last used on |
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
@@ -290,8 +290,8 @@ Passwords given on the command line are visible in the process list and shell hi
 | `ft.status` | | Server link, mode, transfer count and the last transfer |
 | `ft.get` | `<conn\|host[:port]> <remote> [local] [blk=240] [resume]` | Download a file from a peer's `ft` server: a BLE connection number, or a host for TCP (blk 16-242 over BLE, default 240; up to 1455 over TCP, the default). An interrupted download keeps `<local>.part`; `resume` continues from it |
 | `ft.put` | `<conn\|host[:port]> <local> [remote] [blk] [resume]` | Upload a file to a peer's `ft` server (needs `rw` there); `resume` continues from the `.part` the server kept |
-| `ft.ls` | `<conn\|host[:port]>` | List the files on a peer's `ft` server |
-| `ft.rm` | `<conn\|host[:port]> <name>` | Delete a file on a peer's `ft` server (needs `rw` there) |
+| `ft.list` | `<conn\|host[:port]>` | List the files on a peer's `ft` server |
+| `ft.remove` | `<conn\|host[:port]> <name>` | Delete a file on a peer's `ft` server (needs `rw` there) |
 | `ft.selftest` | | Offline check of the CRC-32, name rules and request encoding |
 | `ancs.on` | | Advertise as `ucx ANCS` with an ANCS service solicitation so an iPhone can pair from Settings > Bluetooth |
 | `ancs.sub` | `[conn]` | Subscribe to the iPhone's Apple Notification Center Service on a connection (default 0); needs a bonded, encrypted link. New notifications print as `[ANCS] added #uid category` |
@@ -355,8 +355,8 @@ at 115200 baud the UART limits throughput to a few tens of kbit/s.
 
 | Command | Arguments | Description |
 |---|---|---|
-| `perf.rtt` | `<tcp\|udp> <host\|xplorer> <port> [count=20] [size=64] \| sps [count=20] [size=64]` | Send `count` packets (default 20) of `size` bytes (default 64, 10-1000) one at a time and wait for each echo: min/avg/max round-trip time, jitter, lost and corrupt packets; fails on any loss |
-| `perf.tput` | `<tcp\|udp> <host\|xplorer> <port> [seconds=10] [size=512] \| sps [seconds=10] [size=512]` | Send for `seconds` (default 10) with 8 packets of `size` bytes (default 512) in flight; prints kbit/s sent and echoed every second and at the end, and the breaks in the echoed 0x00-0xFF pattern (any break fails TCP and SPS) |
+| `perf.latency` | `<tcp\|udp> <host\|xplorer> <port> [count=20] [size=64] \| sps [count=20] [size=64]` | Send `count` packets (default 20) of `size` bytes (default 64, 10-1000) one at a time and wait for each echo: min/avg/max round-trip time, jitter, lost and corrupt packets; fails on any loss |
+| `perf.throughput` | `<tcp\|udp> <host\|xplorer> <port> [seconds=10] [size=512] \| sps [seconds=10] [size=512]` | Send for `seconds` (default 10) with 8 packets of `size` bytes (default 512) in flight; prints kbit/s sent and echoed every second and at the end, and the breaks in the echoed 0x00-0xFF pattern (any break fails TCP and SPS) |
 | `perf.echo` | `<tcp\|udp> <port> [seconds=60] \| sps [seconds=60]` | Echo peer on a second module (default 60 s): `tcp`/`udp` is `sock.echo`; `sps` advertises, accepts the connection and echoes SPS data |
 | `perf.phone` | `<tx\|rx\|echo> [seconds=10] [size=244]` | Bluetooth SPS between the module and the u-connectXplorer phone: the phone finds the module by its name, connects and runs its own perf; the module sends (`tx`), receives (`rx`) or echoes the phone's packets (`echo`, the phone measures RTT) for `seconds` (default 10) with `size`-byte packets (default 244). Prints both ends; fails on a pattern break at the receiving end |
 
@@ -366,8 +366,8 @@ SPS uses the current Bluetooth connection (`bt.connect` first). The data is the 
 `perf.echo` returns an s-center pump stream unchanged.
 
 ```powershell
-ucxapp COM13 --exec "wifi.profile.auto" --exec "perf.rtt udp echo.u-blox.com 7 20" `
-  --exec "perf.tput udp echo.u-blox.com 7 10 1000"
+ucxapp COM13 --exec "wifi.profile.auto" --exec "perf.latency udp echo.u-blox.com 7 20" `
+  --exec "perf.throughput udp echo.u-blox.com 7 10 1000"
 ```
 
 ### u-connectXplorer phone (xplorer)
@@ -385,13 +385,13 @@ one with `perfSps`; `xplorer.info` says when the app needs an update. These comm
 | `xplorer.call` | `<method> [key=value]...` | Call any remote-control method and print its JSON result; numbers, `true`/`false`/`null` and `{..}`/`[..]` values are sent as they are, others as strings |
 | `xplorer.echo` | `<tcp\|udp> <port> \| state \| stop` | Make the phone an echo server; `state` shows the bytes it got and the breaks in its 0x00-0xFF check |
 
-With host `xplorer`, `perf.rtt` and `perf.tput` start the echo server on the phone, run against it and print what the
+With host `xplorer`, `perf.latency` and `perf.throughput` start the echo server on the phone, run against it and print what the
 phone received, including its own pattern check (a break fails TCP). `perf.phone` tests Bluetooth SPS between the
 module and the phone.
 
 ```powershell
 ucxapp --exec "xplorer.connect 192.168.1.200 <token>"
-ucxapp COM13 --exec "wifi.profile.auto" --exec "perf.rtt udp xplorer 7000" --exec "perf.tput tcp xplorer 7001 10"
+ucxapp COM13 --exec "wifi.profile.auto" --exec "perf.latency udp xplorer 7000" --exec "perf.throughput tcp xplorer 7001 10"
 ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.phone echo 10"
 ```
 
@@ -584,7 +584,7 @@ not wired in yet.
 | Command | Arguments | Description |
 |---|---|---|
 | `hw.status` |  | Backend and peripheral summary |
-| `hw.load` | `<file.json>` | Load a board profile: pin names, channel counts and emulated I2C devices (shell only) |
+| `hw.profile.load` | `<file.json>` | Load a board profile: pin names, channel counts and emulated I2C devices (shell only) |
 | `hw.board` |  | Pin map of the loaded profile |
 | `hw.gpio.mode` | `<pin> <in\|out\|pullup\|pulldown>` | Set a GPIO pin mode |
 | `hw.gpio.write` | `<pin> <0\|1>` | Drive an output (or simulate an input level) |
@@ -597,7 +597,7 @@ not wired in yet.
 | `hw.i2c.read` | `<addr> <len>` | Read bytes from a device |
 | `hw.i2c.reg` | `<addr> <reg> [len]` | Read a register |
 | `hw.spi.cfg` | `<mode=0> <hz=1000000>` | Set the SPI mode (0-3) and clock in Hz |
-| `hw.spi.xfer` | `<hex...>` | Full duplex transfer, prints the bytes read |
+| `hw.spi.transfer` | `<hex...>` | Full duplex transfer, prints the bytes read |
 | `hw.adc.read` | `<ch>` | Read an ADC channel (12 bit, 3.3 V reference) |
 | `hw.pwm.set` | `<ch> <hz> <duty%>` | Start PWM on a channel |
 | `hw.pwm.off` | `<ch>` | Stop PWM on a channel |
@@ -642,7 +642,7 @@ can.watch 1
 
 Board profiles live in `app/boards/` (`h753.json`, `f767.json`, `f439.json`); `scripts/hw_config.py <profile>
 --out hw_config.h` validates one (unknown keys, bad or duplicate pins, reserved pins) and generates X-macro pin tables
-for a firmware build. `hw.load` reads the same file on the host. Pins can then be given by name (`hw.gpio.write PB0 1`).
+for a firmware build. `hw.profile.load` reads the same file on the host. Pins can then be given by name (`hw.gpio.write PB0 1`).
 Format: `board`, `gpio[]`, `adc[]`, `pwm[{pin,timer}]`, `i2c{scl,sda}`, `spi{sck,miso,mosi,cs}`, `can{rx,tx}`,
 `reserved[]` and, for the emulation only, `emu.i2c[{addr,regs{reg:value}}]`.
 
@@ -705,7 +705,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 | `web.export` | `<dir>` | Write the page's JSON (`groups.json`, `commands-<group>.json`, `examples-<group>.json`) for a preview or a static demo; `.\ucxapp --web-preview` uses it to serve the page on the PC |
-| `usecase.list` | | Use cases with a fit check and ready-made steps, in sections. Industry: `tool` (connected tool, steps in `usecase.ex`), `iiot` (factory machine: Enterprise Wi-Fi, TLS to the MES, CAN data, one configuration per line, firmware lifecycle), `medical` (IEC 62304: module as a SOUP item, secure bonded BLE, traces and JUnit reports as evidence), `site` (construction tools: technician's phone over BLE, fleet found by name, site and depot Wi-Fi), `implement` (farm implement: ISOBUS CAN to the cab tablet over the module's AP or BLE, work record over MQTT). Industry is not in lite builds. Everyday: `boat` (GPS to a chart app over the module's AP or BLE), `rtk` (NTRIP corrections over Wi-Fi, position over BLE), `mower` (robotic lawn mower: phone setup and status over BLE, HP GNSS with PointPerfect over the garden Wi-Fi or cellular, theft alert over cellular), `farm` (tractor auto-steer: PointPerfect over cellular, corrected NMEA to the cab tablet over BLE, log upload over the farmyard Wi-Fi), `tracker` (position to a server over Wi-Fi or cellular), `home` (MQTT to Home Assistant), `provision` (Wi-Fi set up from a phone over BLE), `hotel` (guest Wi-Fi login page), `notify` (iPhone/Android notifications), `remote` (BLE keyboard clicker and media remote); their steps are in `examples uc-<name>` |
+| `usecase.list` | | Use cases with a fit check and ready-made steps, in sections. Industry: `tool` (connected tool, steps in `usecase.example`), `iiot` (factory machine: Enterprise Wi-Fi, TLS to the MES, CAN data, one configuration per line, firmware lifecycle), `medical` (IEC 62304: module as a SOUP item, secure bonded BLE, traces and JUnit reports as evidence), `site` (construction tools: technician's phone over BLE, fleet found by name, site and depot Wi-Fi), `implement` (farm implement: ISOBUS CAN to the cab tablet over the module's AP or BLE, work record over MQTT). Edge AI: `edge` (IMU training data, I2C sensors, results to the cloud; ALMA-W161/W166 run the same u-connectXpress steps, ALMA-W111/W116 run the model on their NPU). Industry and Edge AI are not in lite builds. Everyday: `boat` (GPS to a chart app over the module's AP or BLE), `rtk` (NTRIP corrections over Wi-Fi, position over BLE), `mower` (robotic lawn mower: phone setup and status over BLE, HP GNSS with PointPerfect over the garden Wi-Fi or cellular, theft alert over cellular), `farm` (tractor auto-steer: PointPerfect over cellular, corrected NMEA to the cab tablet over BLE, log upload over the farmyard Wi-Fi), `tracker` (position to a server over Wi-Fi or cellular), `home` (MQTT to Home Assistant), `provision` (Wi-Fi set up from a phone over BLE), `hotel` (guest Wi-Fi login page), `notify` (iPhone/Android notifications), `remote` (BLE keyboard clicker and media remote); their steps are in `examples uc-<name>` |
 | `usecase.check` | `<name>` | Fit check of a use case: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, a `[gap]` when the module has no Wi-Fi or a command is not in this build (STM32), the open GNSS receiver and the station state. `usecase.check tool` is `usecase.tool` |
 | `usecase.tool` | `[mbit/s]` | Fit check of the connected tool use case (factory Wi-Fi with Enterprise security, AP for laptops, HTTPS page on the host, 900 MB history in 30 min, 8 socket trays, BLE) against the NORA-W36 limits: `[ok]`, `[limit]`, `[check]` or `[gap]` per requirement, plus the station state when a module is connected. With a measured rate (e.g. from `net.iperf`) it prints the download time |
 
@@ -725,7 +725,7 @@ network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a comma
 sockets and links (empty means the current one), fields remember the last value typed (never passwords), and
 the last commands sit as one-click chips above the groups. **Use cases** has a page per use case (picked at the
 top right): a live diagram (lit by the Wi-Fi station, AP, BLE links and sockets), the `usecase.tool` or
-`usecase.check <name>` fit check and the steps (`usecase.ex` or `examples uc-<name>`) as
+`usecase.check <name>` fit check and the steps (`usecase.example` or `examples uc-<name>`) as
 cards that run with one click. Commands run one at a time; the `web.*` commands are not allowed
 from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.

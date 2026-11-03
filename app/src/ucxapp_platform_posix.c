@@ -403,10 +403,8 @@ void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
     }
 }
 
-static void readSysfsText(const char *tty, const char *file, char *out, size_t outSize)
+static void readSysfsFile(const char *path, char *out, size_t outSize)
 {
-    char path[PATH_MAX];
-    snprintf(path, sizeof(path), "/sys/class/tty/%s/device/../%s", tty, file);
     FILE *f = fopen(path, "r");
     out[0] = '\0';
     if (f) {
@@ -414,6 +412,28 @@ static void readSysfsText(const char *tty, const char *file, char *out, size_t o
             out[strcspn(out, "\r\n")] = '\0';
         }
         fclose(f);
+    }
+}
+
+/* device is the USB interface's tty node; the USB device holding product and idVendor is two levels up */
+static void readSysfsText(const char *tty, const char *file, char *out, size_t outSize)
+{
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "/sys/class/tty/%s/device/../../%s", tty, file);
+    readSysfsFile(path, out, outSize);
+}
+
+/* FTDI channel of an EVK port: interface 0 is the AT port and 2 the log port, as on Windows (channels A and C) */
+static void labelEvkChannel(const char *tty, char *label, size_t labelSize)
+{
+    char path[PATH_MAX];
+    char ifnum[8];
+    snprintf(path, sizeof(path), "/sys/class/tty/%s/device/../bInterfaceNumber", tty);
+    readSysfsFile(path, ifnum, sizeof(ifnum));
+    static const char *const kChannel[] = { "AT", "B", "LOG", "D" };
+    unsigned long n = strtoul(ifnum, NULL, 16);
+    if (n < sizeof(kChannel) / sizeof(kChannel[0])) {
+        snprintf(label, labelSize, "%s", kChannel[n]);
     }
 }
 
@@ -437,6 +457,9 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
         }
         count++;
         readSysfsText(entry->d_name, "product", port->desc, sizeof(port->desc));
+        if (strstr(port->desc, "EVK-NORA") != NULL) {
+            labelEvkChannel(entry->d_name, port->label, sizeof(port->label));
+        }
         char id[8];
         readSysfsText(entry->d_name, "idVendor", id, sizeof(id));
         port->vid = (uint16_t)strtoul(id, NULL, 16);

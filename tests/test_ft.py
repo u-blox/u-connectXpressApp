@@ -23,8 +23,8 @@ def test_ft_selftest(app_exe, tmp_path):
 
 
 @pytest.mark.parametrize("command", ["ft.on rw", "ft.on rw tcp", "ft.on tcp:7000 30", "ft.status", "ft.off",
-                                     "ft.get 0 a.bin", "ft.put 0 a.bin", "ft.ls 0", "ft.rm 0 a.bin",
-                                     "ft.get 192.168.1.10 a.bin", "ft.ls 192.168.1.10:6970",
+                                     "ft.get 0 a.bin", "ft.put 0 a.bin", "ft.list 0", "ft.remove 0 a.bin",
+                                     "ft.get 192.168.1.10 a.bin", "ft.list 192.168.1.10:6970",
                                      "ft.get 192.168.1.10 a.bin a.bin 1455 resume", "ft.put 0 a.bin a.bin 240 resume"])
 def test_ft_needs_a_device(app_exe, tmp_path, command):
     out = _run_in(app_exe, tmp_path, command)
@@ -32,7 +32,7 @@ def test_ft_needs_a_device(app_exe, tmp_path, command):
 
 
 def test_ft_has_examples(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "ft.ex")
+    out = _run_in(app_exe, tmp_path, "ft.example")
     assert "ft.on rw" in out.stdout, out.stdout
 
 

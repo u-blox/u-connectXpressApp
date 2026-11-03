@@ -23,6 +23,8 @@ set(EXAMPLE_COMMON_SRC
 )
 
 include(../../u-connectClient/cmake/stm32.cmake)
+# The library's examples log debug lines; in the app shell they interleave with command output.
+list(REMOVE_ITEM STM32_COMPILE_DEFINITIONS U_CX_LOG_DEBUG=1)
 
 set(APP_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 set(UCXAPP_STM32_SOURCES
@@ -54,7 +56,7 @@ if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc|nu
     list(APPEND UCXAPP_STM32_SOURCES ${FATFS_DIR}/ff.c ${FATFS_DIR}/option/unicode.c)
     set_source_files_properties(${FATFS_DIR}/ff.c ${FATFS_DIR}/option/unicode.c PROPERTIES COMPILE_OPTIONS "-w")
 endif()
-# Boards with two spare erase sectors at the top of flash keep their files in littlefs there.
+# Boards with spare erase sectors above the firmware keep their files in littlefs there.
 set(LITTLEFS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/littlefs)
 if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc)$")
     string(TOLOWER "${STM32_FAMILY_SHORT}" _fam)

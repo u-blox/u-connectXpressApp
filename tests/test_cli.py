@@ -61,7 +61,7 @@ def test_long_usage_without_alternatives_is_one_line(app_exe, tmp_path):
     assert "[conn] <handle> <hex|text:abc> [offset] [reliable] [more]" in lines
 
 
-@pytest.mark.parametrize("command", ["gnss.ex", "wifi.ex", "sock.ex", "examples gatt"])
+@pytest.mark.parametrize("command", ["gnss.example", "wifi.example", "sock.example", "examples gatt"])
 def test_examples(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
     assert out.returncode == 0
@@ -73,7 +73,7 @@ def test_examples_lists_groups_and_rejects_extra_args(app_exe, tmp_path):
     assert out.returncode == 0
     for group in ("gnss", "wifi", "bt", "gatt", "sock", "mqtt", "hw"):
         assert f" {group}" in out.stdout
-    assert _run(app_exe, tmp_path, "COM255", "gnss.ex a b").returncode == 1
+    assert _run(app_exe, tmp_path, "COM255", "gnss.example a b").returncode == 1
 
 @pytest.mark.parametrize("command", ["web.start", "hid.status", "hid.key a", "wifi.ap.status", "gatt.writelong 0 1 00"])
 def test_new_device_commands_need_a_device(app_exe, tmp_path, command):
@@ -265,7 +265,7 @@ def test_hid_key_usage_error(app_exe, tmp_path):
 
 
 def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "help wifi.eap", "help wifi.peap", "wifi.ex")
+    out = _run(app_exe, tmp_path, "COM255", "help wifi.eap", "help wifi.peap", "wifi.example")
     assert "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]" in out.stdout
     assert "<ssid> <user> <password|-> <ca> [1.2|1.3|any]" in out.stdout
     assert "wifi.eap CorpNet ca client key" in out.stdout
@@ -307,7 +307,7 @@ def test_gnss_and_imu_detect_without_hardware_do_not_crash(app_exe, tmp_path):
 
 
 @pytest.mark.parametrize("command", [
-    "gatt.listen", "gatt.listen off", "gatt.listen 1", "gatt.client.wit", "gatt.client.hrs",
+    "gatt.listen", "gatt.listen off", "gatt.listen 1", "gatt.client.witmotion", "gatt.client.hrs",
 ])
 def test_gatt_listen_and_examples_need_a_device(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -316,7 +316,7 @@ def test_gatt_listen_and_examples_need_a_device(app_exe, tmp_path, command):
 
 
 def test_gatt_listen_help_mentions_off(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "help gatt.listen", "help gatt.client.wit")
+    out = _run(app_exe, tmp_path, "COM255", "help gatt.listen", "help gatt.client.witmotion")
     assert "[seconds|off]" in out.stdout
     assert "WitMotion" in out.stdout
 
@@ -380,7 +380,7 @@ def test_hw_i2c_nack_fails(app_exe, tmp_path):
 
 
 def test_hw_spi_loopback_adc_and_pwm(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "hw.spi.xfer 9F 00 12", "hw.adc.read 2", "hw.pwm.set 1 2000 12.5",
+    out = _run(app_exe, tmp_path, "COM255", "hw.spi.transfer 9F 00 12", "hw.adc.read 2", "hw.pwm.set 1 2000 12.5",
                "hw.status")
     assert out.returncode == 0
     assert "9F 00 12" in out.stdout
@@ -395,7 +395,7 @@ def test_hw_spi_loopback_adc_and_pwm(app_exe, tmp_path):
     ("hw.led 3", "usage: hw.led"),
     ("hw.led 3 blink", "usage: hw.led"),
     ("hw.i2c.write 0x48", "usage: hw.i2c.write"),
-    ("hw.spi.xfer zz", "usage: hw.spi.xfer"),
+    ("hw.spi.transfer zz", "usage: hw.spi.transfer"),
     ("hw.adc.read 8", "usage: hw.adc.read"),
     ("hw.pwm.set 0 1000 101", "usage: hw.pwm.set"),
 ])
@@ -418,7 +418,8 @@ BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
 
 @pytest.mark.parametrize("board", ["h753", "f767", "f439", "f407", "f401", "f446", "f103", "g071"])
 def test_hw_load_board_profiles(app_exe, tmp_path, board):
-    out = _run(app_exe, tmp_path, "COM255", f"hw.load {BOARDS / (board + '.json')}", "hw.board", "hw.gpio.mode PB0 out",
+    out = _run(app_exe, tmp_path, "COM255", f"hw.profile.load {BOARDS / (board + '.json')}", "hw.board",
+               "hw.gpio.mode PB0 out",
                "hw.gpio.write PB0 1", "hw.gpio.read pb0", "hw.i2c.scan", "hw.adc.read 3", "hw.adc.read 4")
     assert "loaded " + json.loads((BOARDS / (board + ".json")).read_text(encoding="utf-8"))["board"] in out.stdout
     assert "i2c scl PB8 sda PB9" in out.stdout
@@ -438,13 +439,13 @@ def test_hw_load_board_profiles(app_exe, tmp_path, board):
 def test_hw_load_rejects_bad_profiles(app_exe, tmp_path, text, message):
     path = tmp_path / "bad.json"
     path.write_text(text, encoding="utf-8")
-    out = _run(app_exe, tmp_path, "COM255", f"hw.load {path}")
+    out = _run(app_exe, tmp_path, "COM255", f"hw.profile.load {path}")
     assert out.returncode == 1
     assert message in out.stdout
 
 
 def test_hw_load_missing_file(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "hw.load nothere.json")
+    out = _run(app_exe, tmp_path, "COM255", "hw.profile.load nothere.json")
     assert out.returncode == 1
     assert "cannot open nothere.json" in out.stdout
 

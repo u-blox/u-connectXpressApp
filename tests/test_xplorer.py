@@ -262,7 +262,8 @@ def test_usage(app_exe, tmp_path, command):
     assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
 
 
-@pytest.mark.parametrize("command", ["perf.rtt udp xplorer 7000", "perf.tput tcp xplorer 7001", "perf.phone rx",
+@pytest.mark.parametrize("command", ["perf.latency udp xplorer 7000", "perf.throughput tcp xplorer 7001",
+                                     "perf.phone rx",
                                      "perf.phone", "perf.phone up", "perf.phone tx 0"])
 def test_perf_with_the_phone_needs_a_device(app_exe, tmp_path, phone, command):
     _connect(app_exe, tmp_path, phone)

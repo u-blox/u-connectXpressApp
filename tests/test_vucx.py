@@ -10,6 +10,18 @@ import pytest
 pytestmark = [pytest.mark.app,
               pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
 
+# The app keeps profiles and settings in storage/ under its working directory; run it in a scratch directory so the
+# virtual networks never land in the repo's storage, where the hardware tests would try them.
+_CWD = None
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _scratch_cwd(tmp_path_factory):
+    global _CWD
+    _CWD = tmp_path_factory.mktemp("vucx-cwd")
+    yield
+    _CWD = None
+
 
 @pytest.fixture
 def vucx():
@@ -27,7 +39,7 @@ def _run(exe, port, *commands, timeout=60, cwd=None):
     for command in commands:
         args += ["--exec", command]
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, errors="replace",
-                          stdin=subprocess.DEVNULL, cwd=cwd)
+                          stdin=subprocess.DEVNULL, cwd=cwd or _CWD)
 
 
 def test_empty_module_answers_only_setup(app_exe):
@@ -127,6 +139,60 @@ def test_wifi_regdomain_show_notes_when_unset(app_exe, wifi_module, tmp_path, mo
     out = _run(app_exe, wifi_module.port, "wifi.regdomain", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     assert "regdomain=world" in out.stdout and "not chosen yet" in out.stdout, out.stdout
+    assert "Where are you located?" in out.stdout and " 2  fcc    USA" in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("choice, name, value", [("2", "fcc", 2), ("Europe", "etsi", 1), ("JAPAN", "mkk", 5),
+                                                 ("new-zealand", "nz", 4), ("10", "br", 10), ("world", "world", 0)])
+def test_wifi_regdomain_by_number_or_place(app_exe, wifi_module, tmp_path, monkeypatch, choice, name, value):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, f"wifi.regdomain {choice}", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    assert (tmp_path / "storage" / "ucxapp.regdomain").read_text() == name
+    assert f"AT+UWRD={value}" in wifi_module.log, wifi_module.log
+
+
+@pytest.mark.parametrize("choice", ["mars", "11", "-1", "2x"])
+def test_wifi_regdomain_unknown_place_shows_the_list(app_exe, wifi_module, tmp_path, monkeypatch, choice):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, f"wifi.regdomain {choice}", cwd=tmp_path)
+    assert out.returncode != 0, out.stdout
+    assert f"'{choice}' is not a region" in out.stdout and "Where are you located?" in out.stdout, out.stdout
+    assert not (tmp_path / "storage" / "ucxapp.regdomain").exists()
+
+
+def test_wifi_radio_without_region_lists_the_choices(app_exe, wifi_module, tmp_path, monkeypatch):
+    """--exec never waits for an answer: it prints the list and the error and stops."""
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, "wifi.scan", "dev.info", cwd=tmp_path)
+    assert "Where are you located?" in out.stdout and "Choose 0-10" not in out.stdout, out.stdout
+    assert out.returncode != 0 and "ERROR: choose the Wi-Fi regulatory domain" in out.stdout, out.stdout
+    assert "NORA-W36" not in out.stdout.split("ERROR: choose the Wi-Fi regulatory domain")[1], out.stdout
+
+
+def test_dev_caps_shows_region_and_wifi_features(app_exe, wifi_module, tmp_path, monkeypatch):
+    monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
+    out = _run(app_exe, wifi_module.port, "dev.caps", "wifi.regdomain etsi", "dev.caps", cwd=tmp_path)
+    assert out.returncode == 0 and out.stdout.count("regdomain=") == 1, out.stdout
+    first, second = out.stdout.split("regdomain=")
+    assert re.search(r"^Region:\s+unset$", first, re.M) and "wifi.regdomain (pick where you are)" in first, first
+    assert re.search(r"^Region:\s+etsi$", second, re.M) and re.search(r"^Sockets:\s+yes$", second, re.M), second
+    assert re.search(r"^Wi-Fi:\s+yes$", second, re.M), second
+
+
+def test_dev_caps_ble_only_module_hides_wifi(app_exe):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-b26.yaml")
+    try:
+        out = _run(app_exe, module.start(), "dev.caps", "wifi.scan")
+    finally:
+        module.stop()
+    assert re.search(r"^Wi-Fi:\s+no$", out.stdout, re.M) and re.search(r"^GATT:\s+yes$", out.stdout, re.M), out.stdout
+    for hidden in ("Sockets:", "MQTT:", "Region:", "Wi-Fi features"):
+        assert hidden not in out.stdout, out.stdout
+    assert "wifi.scan needs Wi-Fi; this module has Bluetooth LE only" in out.stdout, out.stdout
 
 
 def test_wifi_connect_status_disconnect(app_exe, wifi_module):
@@ -189,8 +255,8 @@ SCENARIOS = {
                     "gatt.subscribe 0 18 notify", "gatt.listen", "gatt.listen 1", "gatt.listen off",
                     "gatt.client.hrs 0", "gatt.client.cts 0", "gatt.client.ess 0", "gatt.client.lns 0",
                     "gatt.client.aio 0", "gatt.client.bas 0", "gatt.client.dis 0", "gatt.client.ras 0",
-                    "gatt.client.nus 0", "gatt.client.sps 0", "gatt.client.wit 0", "gatt.client.wps 0",
-                    "gatt.wps 0 status", "gatt.send 0 nus hello", "gatt.credits 0 10"],
+                    "gatt.client.nus 0", "gatt.client.sps 0", "gatt.client.witmotion 0", "gatt.client.wps 0",
+                    "gatt.wps 0 status", "gatt.send 0 nus hello", "gatt.sps.credits 0 10"],
     "gatt-server": ["gatt.server.hrs", "gatt.server.cts", "gatt.server.ess", "gatt.server.lns",
                     "gatt.server.aio", "gatt.server.bas", "gatt.server.ras", "gatt.server.nus",
                     "gatt.server.sps", "gatt.server.wps", "gatt.server.list", "gatt.server.set hrs.measurement 0048",
@@ -271,7 +337,7 @@ def _wit(kind, *values):
 def _shell(exe, port, commands, timeout=30, log=None):
     try:
         return subprocess.run([str(exe), port, "--shell"], input="\n".join(commands) + "\n",
-                              capture_output=True, text=True, timeout=timeout, errors="replace")
+                              capture_output=True, text=True, timeout=timeout, errors="replace", cwd=_CWD)
     except subprocess.TimeoutExpired as e:
         text = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
         pytest.fail(f"hung after {timeout} s:\n{text[-3000:]}\nlast AT: {(log or [])[-15:]}")
@@ -518,7 +584,7 @@ def test_perf_rtt_and_tput_over_the_echo(app_exe, proto, host):
     module = Vucx("nora-w36.yaml")   # the profile with the echo network behind AT+USO*
     port = module.start()
     try:
-        out = _run(app_exe, port, f"perf.rtt {proto} {host} 7 5 64", f"perf.tput {proto} {host} 7 2 128",
+        out = _run(app_exe, port, f"perf.latency {proto} {host} 7 5 64", f"perf.throughput {proto} {host} 7 2 128",
                    "sock.list")
     finally:
         module.stop()
@@ -534,7 +600,7 @@ def test_perf_rtt_and_tput_over_the_echo(app_exe, proto, host):
 
 
 def test_perf_sps_needs_a_connection(app_exe, vucx):
-    out = _run(app_exe, vucx.port, "perf.rtt sps 2")
+    out = _run(app_exe, vucx.port, "perf.latency sps 2")
     assert out.returncode != 0 and "no Bluetooth connection" in out.stdout, out.stdout
 
 def test_bt_addr_name_and_filter(app_exe, nora):
@@ -636,3 +702,37 @@ def test_bt_connect_by_name_scans_with_a_filter(app_exe, nora):
     sent = nora.log[first:]
     assert out.returncode == 0 and "connecting to vucx-hrs (C0:FF:EE:00:11:22)" in out.stdout, out.stdout
     assert sent.index("AT+UBTDFD=9,9,767563782D687273") < sent.index("AT+UBTDFD=9,0,"), sent
+
+
+LINK = ["+UBTCL:0,C0FFEE001122p", "OK"]
+
+
+@pytest.mark.parametrize("after_connect, retried, ok", [
+    ([LINK, ["OK"], LINK, LINK], True, True),                         # dropped once, then holds
+    ([LINK, ["OK"]], True, False),                                    # every attempt drops
+])
+def test_bt_connect_retries_a_link_that_drops_right_away(app_exe, nora, after_connect, retried, ok):
+    """A connect request the peer never heard is reported up and then dropped; bt.connect tries again."""
+    nora.setters["AT+UBTC=*"] = {"link": "asked"}
+    entries = {"AT+UBTCL [link=asked]": after_connect, "AT+UBTCL": ["OK"]}
+    rest = {k: v for k, v in nora.commands.items() if k not in entries}
+    nora.commands.clear()
+    nora.commands.update({**entries, **rest})
+    out = _shell(app_exe, nora.port, ["bt.connect C0:FF:EE:00:11:22", "gatt.services"], log=nora.log)
+    attempts = sum(cmd.startswith("AT+UBTC=") for cmd in nora.log)
+    assert ("retrying (2/3)" in out.stdout) == retried, out.stdout
+    if ok:
+        assert attempts == 2 and "connection 0 (current)" in out.stdout and "service(s)" in out.stdout, out.stdout
+    else:
+        assert attempts == 3 and "dropped right after connecting 3 times" in out.stdout, out.stdout
+        assert "connection 0 (current)" not in out.stdout and "no BLE connection open" in out.stdout, out.stdout
+
+
+def test_gatt_server_reboots_the_module_once_before_its_first_service(app_exe, nora):
+    """The module keeps old services until a restart; a second run must not stack duplicates."""
+    out = _shell(app_exe, nora.port, ["gatt.server.bas", "gatt.server.nus"], log=nora.log)
+    assert "AT+CPWROFF" in nora.log, (nora.log, out.stdout)
+    reboot = nora.log.index("AT+CPWROFF")
+    first = next(i for i, cmd in enumerate(nora.log) if cmd.startswith("AT+UBTGS="))
+    assert nora.log.count("AT+CPWROFF") == 1 and reboot < first, nora.log
+    assert out.stdout.count("GATT server starts clean") == 1, out.stdout

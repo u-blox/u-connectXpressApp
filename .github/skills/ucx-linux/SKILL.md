@@ -18,7 +18,7 @@ description: Build and run u-connectXpressApp on Linux to test and configure a u
 ## Use
 - Serial access: add your user to the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again).
 - Connect to a module: `dev.connect /dev/ttyUSB0` in the shell, or pass the port on the command line.
-- Script commands non-interactively with `--exec "<command>"`; type `help` for the full list (see `COMMANDS.md`) and `<group>.ex` (e.g. `gnss.ex`) for worked examples.
+- Script commands non-interactively with `--exec "<command>"`; type `help` for the full list (see `COMMANDS.md`) and `<group>.example` (e.g. `gnss.example`) for worked examples.
 - `./ucxapp.py --coverage` builds an instrumented binary in `~/ucxapp-coverage`, runs the offline app tests and writes per-file line coverage to `build/coverage.txt`.
 
 ## Module documentation

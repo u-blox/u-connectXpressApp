@@ -167,9 +167,9 @@ int32_t ucxapp_thread_joiner_result(void)
     return gJoinerResult;
 }
 
-static void threadUpUrc(struct uCxHandle *h, uThreadDeviceRole_t r)          { (void)h; evt("thread: up, %s", ucxapp_thread_role_name(r)); ucxapp_events_signal(URC_FLAG_THREAD_UP); }
-static void threadDownUrc(struct uCxHandle *h)                              { (void)h; evt("thread: down"); }
-static void threadRoleUrc(struct uCxHandle *h, uThreadDeviceRole_t r)        { (void)h; evt("thread: role %s", ucxapp_thread_role_name(r)); }
+static void threadUpUrc(struct uCxHandle *h, uThreadDeviceRole_t r)          { (void)h; evt("thread: up, %s", ucxapp_thread_role_name(r)); ucxapp_ui_thread_changed(); ucxapp_events_signal(URC_FLAG_THREAD_UP); }
+static void threadDownUrc(struct uCxHandle *h)                              { (void)h; evt("thread: down"); ucxapp_ui_thread_changed(); }
+static void threadRoleUrc(struct uCxHandle *h, uThreadDeviceRole_t r)        { (void)h; evt("thread: role %s", ucxapp_thread_role_name(r)); ucxapp_ui_thread_changed(); }
 static void threadSrpUrc(struct uCxHandle *h, int32_t id, uThreadSrpState_t s) { (void)h; evt("thread: srp service %d state %d", (int)id, (int)s); }
 static void threadJoinerUrc(struct uCxHandle *h, uThreadJoinerResult_t r)   { (void)h; gJoinerResult = (int32_t)r; evt("thread: joiner result %d", (int)r); ucxapp_events_signal(URC_FLAG_THREAD_JOINER); }
 #endif

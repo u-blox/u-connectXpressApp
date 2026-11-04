@@ -1,5 +1,6 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
+#include "ucxapp_store.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +41,144 @@ static int cmdDeviceInfo(ucxapp_t *app, int argc, char *argv[])
     }
     uCxEnd(app->ucx);
 
+    return UCXAPP_OK;
+}
+
+/* "3.5.0-156" -> {3,5,0}; false if no x.y.z. */
+static bool versionOf(const char *s, int v[3])
+{
+    for (; *s != '\0'; s++) {
+        if (*s >= '0' && *s <= '9' && sscanf(s, "%d.%d.%d", &v[0], &v[1], &v[2]) == 3) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int versionCmp(const int a[3], const int b[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if (a[i] != b[i]) {
+            return a[i] < b[i] ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
+/* Newest firmware known for the model: the built-in release, or a newer one fw.update last saw on GitHub. */
+static bool knownLatest(const char *model, int v[3])
+{
+    static const struct {
+        const char *family;
+        int v[3];
+    } kReleases[] = { { "NORA-W36", { 3, 5, 0 } } };
+    bool have = false;
+    size_t len = 0;
+    char *saved;
+
+    for (size_t i = 0; i < sizeof(kReleases) / sizeof(kReleases[0]); i++) {
+        if (strncmp(model, kReleases[i].family, strlen(kReleases[i].family)) == 0) {
+            memcpy(v, kReleases[i].v, sizeof(kReleases[i].v));
+            have = true;
+        }
+    }
+    saved = (char *)ucxapp_store_load(UCXAPP_FW_LATEST_FILE, &len);
+    if (saved != NULL) {
+        int c[3];
+
+        saved[strcspn(saved, "\r\n")] = '\0';
+        if (strlen(model) >= 8 && strncmp(saved, model, 8) == 0 && versionOf(saved + 8, c) &&
+            (!have || versionCmp(c, v) > 0)) {
+            memcpy(v, c, sizeof(c));
+            have = true;
+        }
+        free(saved);
+    }
+    return have;
+}
+
+static bool firstLine(const char *file, char *out, size_t size)
+{
+    size_t len = 0;
+    char *data = (char *)ucxapp_store_load(file, &len);
+
+    if (data == NULL) {
+        return false;
+    }
+    data[strcspn(data, "\r\n")] = '\0';
+    snprintf(out, size, "%s", data);
+    free(data);
+    return out[0] != '\0';
+}
+
+/* dev.summary: what is worth knowing on connect, a handful of AT queries. */
+static int cmdDeviceSummary(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *text = NULL;
+    char maker[32] = "", model[48] = "", fw[48] = "", ssid[64], ip[48], last[64];
+    int32_t handles[16];
+    bool wifi, wifiUp = false, thread = false, lastWifi, lastBle;
+    int ble, socks, cur[3], latest[3];
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (uCxGeneralGetManufacturerIdentificationBegin(app->ucx, &text) && text != NULL) {
+        snprintf(maker, sizeof(maker), "%s", text);
+    }
+    uCxEnd(app->ucx);
+    text = NULL;
+    if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
+        snprintf(model, sizeof(model), "%s", text);
+    }
+    uCxEnd(app->ucx);
+    text = NULL;
+    if (uCxGeneralGetSoftwareVersionBegin(app->ucx, &text) && text != NULL) {
+        snprintf(fw, sizeof(fw), "%s", text);
+    }
+    uCxEnd(app->ucx);
+    if (model[0] == '\0') {
+        ucxapp_print("ERROR: no answer to the model query\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    wifi = ucxapp_module_has_wifi(app);
+#ifndef UCXAPP_LITE
+    char role[16];
+    thread = ucxapp_thread_dash(app, role, sizeof(role));
+#endif
+    ucxapp_print("Module:           %s%s%s, firmware %s\n", maker, maker[0] != '\0' ? " " : "", model, fw);
+    ucxapp_print("Radios:           %sBluetooth LE%s\n", wifi ? "Wi-Fi, " : "", thread ? ", Thread" : "");
+    if (versionOf(fw, cur) && knownLatest(model, latest) && versionCmp(cur, latest) < 0) {
+        ucxapp_print("Update:           firmware %d.%d.%d is out, update with fw.update\n", latest[0], latest[1],
+                     latest[2]);
+    }
+    if (wifi && ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        wifiUp = true;
+        ucxapp_print("Wi-Fi:            '%s', IP %s\n", ssid, ip);
+    }
+#ifndef UCXAPP_LITE
+    if (thread && strcmp(role, "off") != 0) {
+        ucxapp_print("Thread:           %s\n", role);
+    }
+#endif
+    ble = ucxapp_handle_list(UCXAPP_HANDLE_CONN, handles, 16);
+    socks = wifi ? ucxapp_handle_list(UCXAPP_HANDLE_SOCK, handles, 16) : 0;
+    if (ble > 0 || socks > 0) {
+        ucxapp_print("Open:             %d BLE link(s), %d socket(s)\n", ble, socks);
+    }
+    lastWifi = wifi && !wifiUp && firstLine(UCXAPP_WIFI_LAST_FILE, ssid, sizeof(ssid));
+    lastBle = ble == 0 && firstLine(UCXAPP_BLE_LAST_FILE, last, sizeof(last));
+    if (lastWifi || lastBle) {
+        ucxapp_print("Last used:        ");
+        if (lastWifi) {
+            ucxapp_print("Wi-Fi '%s' (wifi.profile.auto)%s", ssid, lastBle ? ", " : "");
+        }
+        if (lastBle) {
+            ucxapp_print("BLE '%s' (bt.profile.auto)", last);
+        }
+        ucxapp_print("\n");
+    }
     return UCXAPP_OK;
 }
 
@@ -466,6 +605,7 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "at.reset", "", "Reboot the module (AT+CPWROFF), same as dev.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
     { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as dev.factory; type 'confirm'", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
     { "dev.info", "", "Manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
+    { "dev.summary", "", "Short overview shown on connect: model, firmware, radios, Wi-Fi and Thread state, open links and sockets", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceSummary },
     { "dev.status", "", "Overview: module, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
     { "dev.uptime", "", "Time since the module's last +STARTUP", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },

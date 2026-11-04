@@ -56,6 +56,8 @@ uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t
 /* Wi-Fi ("ssid  rssi  ch\nip") and cellular status cached by the command worker; empty when unknown. */
 void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSize);
 void ucxapp_ui_wifi_set(bool up);   /* URC context safe */
+void ucxapp_ui_thread_changed(void);   /* URC context safe: re-read the Thread role */
+void ucxapp_ui_thread_text(char *out, size_t size);   /* role, "off", or empty without Thread firmware */
 
 /* Streams are read with a private cursor. Peek clamps the cursor if the reader fell behind and
  * never moves past the data it returns: advance the cursor by the consumed amount yourself. */

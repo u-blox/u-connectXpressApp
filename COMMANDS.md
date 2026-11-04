@@ -108,6 +108,7 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | Command | Arguments | Description |
 |---|---|---|
 | `dev.info` | | Manufacturer, model, firmware version |
+| `dev.summary` | | Short overview shown on connect (text UI, shell, web page once per session, `dev.use`): model, firmware, radios, Wi-Fi and Thread state, open BLE links and sockets, a newer firmware (built-in release or the one `fw.update` last found) and the last Wi-Fi profile and BLE peer when not connected |
 | `dev.caps` | | Capabilities grouped by radio, Wi-Fi features and Bluetooth LE features: model, firmware, Wi-Fi, Bluetooth LE, Thread, the saved region, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support, then what to try next. A Bluetooth LE only module (NORA-B26) shows `Wi-Fi: no` and no Wi-Fi features; the TUI and web UI then hide the Wi-Fi, socket and network groups. `Thread: yes` when the module answers `AT+UTHE?` (Thread firmware); otherwise `thread.*` is hidden |
 | `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
 | `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |

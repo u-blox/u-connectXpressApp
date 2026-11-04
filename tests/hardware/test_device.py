@@ -17,6 +17,14 @@ def test_connects_and_reports_model(app_exe, port_a):
 
 
 @pytest.mark.hardware
+def test_summary_names_the_module_and_its_radios(app_exe, port_a):
+    out = _run(app_exe, port_a, "dev.summary")
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"^Module:\s+.*NORA-(W36|B2\d).*, firmware \d+\.\d+\.\d+", out.stdout, re.M), out.stdout
+    assert re.search(r"^Radios:\s+.*Bluetooth LE", out.stdout, re.M), out.stdout
+
+
+@pytest.mark.hardware
 def test_device_info_and_wifi_status(app_exe, port_a):
     out = _run(app_exe, port_a, "dev.info", "wifi.status", "sock.list")
     assert out.returncode == 0, out.stdout

@@ -146,6 +146,24 @@ def test_tui_with_a_module_shows_the_dashboard(app_exe, tmp_path):
     assert "AT+GMI" in module.log or "AT+GMM" in module.log, module.log
 
 
+def test_tui_status_row_shows_the_thread_role_and_the_summary(app_exe, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-b26-thread.yaml")
+    profile["commands"]["AT+UTHE?"] = ["+UTHE:1", "OK"]
+    module = Vucx(profile)
+    try:
+        t = Tui(app_exe, module.start(), tmp_path)
+        t.pump(2.5)
+        rc, out = t.quit()
+    finally:
+        module.stop()
+    assert rc == 0, out[-3000:]
+    assert "THRD leader" in out, out[-3000:]
+    assert "Radios:" in out and "Thread" in out, out[-3000:]
+
+
 def test_tui_needs_a_terminal(app_exe, tmp_path):
     out = subprocess.run([str(app_exe), "COM255", "--tui"], capture_output=True, text=True, timeout=30,
                          errors="replace", stdin=subprocess.DEVNULL, cwd=tmp_path)

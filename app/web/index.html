@@ -9,7 +9,7 @@ header{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.55rem 1
 h1{margin:0;font-size:1.05rem;font-weight:700}.logo{height:1.9rem;width:auto}
 #st{font-size:.8rem;color:var(--warm);display:flex;align-items:center;gap:.4rem}#st::before{content:'';width:.6rem;height:.6rem;border-radius:50%;background:currentColor}
 #st.ok{color:var(--ok)}#st.bad{color:var(--err)}#st.bad::before{animation:bl 1s steps(2) infinite}@keyframes bl{50%{opacity:0}}
-.chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok)}.chip.off{color:var(--mut);opacity:.7}#state{display:flex;gap:.3rem;flex-wrap:wrap}
+.chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok)}.chip.off{color:var(--mut);opacity:.7}.chip.ck{cursor:pointer}#state{display:flex;gap:.3rem;flex-wrap:wrap}
 #vw{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}#vw button{border:0;border-radius:0;background:none}#vw button.on{background:var(--ac);color:#04121c;font-weight:600}
 #busy{margin-left:auto;font-size:.85rem;color:var(--warm);display:flex;align-items:center;gap:.4rem}
 #busy:not(:empty)::before{content:'';width:.8rem;height:.8rem;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite}
@@ -62,8 +62,9 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--bd)}.frow span:first-child{flex:1;font-family:Consolas,monospace}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
+#ver{color:var(--mut);font-size:.72rem;white-space:nowrap;margin-left:.4rem}
 @media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;overflow-x:auto;flex-wrap:nowrap}
- #busy{margin-left:0}#keys,#vw{display:none}
+ #busy{margin-left:0}#keys,#vw,#ver{display:none}
  #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1;padding:.4rem .2rem}#tabs button.on{background:var(--ac);border-color:var(--ac);color:#04121c}
  main,body.uc main{display:block;height:auto;padding:.4rem}.pane,body.uc .pane{display:none;height:calc(100dvh - 13rem)}.pane.on,body.uc .pane.on{display:flex}.pane h2{display:none}
  footer{position:sticky;bottom:0;background:var(--bg);padding:.4rem}#cmd,#flt,.c input,.c select{font-size:16px}
@@ -90,7 +91,7 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <div class="pane" id="pe"><h2>What's happening</h2><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
-<button id="run">Run</button></footer><div id="hint"></div><div id="keys"></div>
+<button id="run">Run</button><span id="ver"></span></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><input type="file" id="up"><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
 <script>
@@ -349,13 +350,17 @@ function events(){const es=new EventSource('/events');
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));
- es.addEventListener('state',e=>{const s=$('state'),ps=JSON.parse(e.data).split(' | ');s.textContent='';ps.forEach(p=>{
-  s.appendChild(el('span','chip '+(/( -|down|n\/a)$/.test(p)?'off':'on'),p));const m=p.match(/^(BLE|Sockets) (.+)$/);
+ const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status'};
+ es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';ps.forEach(p=>{
+  const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|disabled|detached)$/.test(p)?'off':'on'),p)),k=CK[p.split(' ')[0]];
+  if(k){c.classList.add('ck');c.title='Run '+k;c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
   if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2]==='-'?[]:m[2].split(' ')});
+  if(!sessionStorage.getItem('ucxs')&&!/^Wi-Fi -|no module/.test(raw)&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
+ api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v}).catch(()=>{});
  let mh=0,hh=0,sec='';const side=$('grp');
  gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
   if(w==='module'&&!mh){mh=1;sec='';side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}

@@ -164,6 +164,12 @@ bool ucxappLogEventsEnabled(void);   /* app.log.events.on: URC events are also p
 void ucxapp_register_mqtt_cmds(void);
 void ucxapp_register_thread_cmds(void);
 const char *ucxapp_thread_role_name(int32_t role);
+/* Store files shared between command packs */
+#define UCXAPP_FW_LATEST_FILE "ucxapp.fwlatest"   /* newest release zip name fw.update found */
+#define UCXAPP_WIFI_LAST_FILE "ucxapp.wifilast"
+#define UCXAPP_BLE_LAST_FILE  "ucxapp.blelast"
+/* Thread role ("leader", ...) or "off"; false on a module without Thread firmware. */
+bool ucxapp_thread_dash(ucxapp_t *app, char *out, size_t size);
 int32_t ucxapp_thread_joiner_result(void);
 void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);

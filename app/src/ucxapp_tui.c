@@ -403,6 +403,12 @@ static bool refreshDash(void)
     snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s", extra);
     dashArea(&n, ids[0] != '\0', "BLE", text, &changed);
 
+    ucxapp_ui_thread_text(extra, sizeof(extra));
+    if (extra[0] != '\0') {
+        dashArea(&n, strcmp(extra, "off") != 0 && strcmp(extra, "disabled") != 0 && strcmp(extra, "detached") != 0,
+                 "THRD", extra, &changed);
+    }
+
     port = ucxapp_stream_open_port("gnss");
     bool on = ucxapp_gnss_dash(extra, sizeof(extra));
     snprintf(text, sizeof(text), "%s%s%s", on ? extra : "not open", port != NULL ? "\n" : "", port != NULL ? port : "");
@@ -1222,6 +1228,9 @@ int ucxapp_tui_run(ucxapp_t *app)
     fputs("\033[?1049h\033[2J", stdout);
     logLocal(ucxapp_version_text());
     logLocal("u-connectXpressApp text UI: Up/Down + Enter pick a command, or just type; Esc toggles list/input. 'help' lists commands.");
+    if (app->ucx != NULL) {
+        (void)ucxapp_ui_submit("dev.summary");
+    }
 
     while (!quit) {
         int key;

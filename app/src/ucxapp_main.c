@@ -162,6 +162,10 @@ static int cmdDeviceUse(ucxapp_t *app, int argc, char *argv[])
     }
     app->ucx = &gUcxHandle;
     ucxapp_print("active module: %s\n", argv[1]);
+    {
+        char summary[] = "dev.summary";
+        (void)ucxapp_cmd_exec(app, summary);
+    }
     return UCXAPP_OK;
 }
 
@@ -576,6 +580,9 @@ int main(int argc, char *argv[])
         snprintf(line, sizeof(line), "dev.connect %s", port);
         if (runLine(&app, line, json) != UCXAPP_OK && !json) {
             ucxapp_print("continuing without a device\n");
+        } else if (app.ucx != NULL && !json && execCount == 0 && (shellMode || webMode)) {
+            char summary[] = "dev.summary";
+            (void)ucxapp_cmd_exec(&app, summary);
         }
     }
     for (int i = 0; i < execCount && rc == 0; i++) {

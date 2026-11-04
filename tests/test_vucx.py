@@ -231,6 +231,68 @@ def test_thread_refused_without_thread_firmware(app_exe):
     assert "thread.status needs Thread; this module has no Thread firmware" in out.stdout, out.stdout
 
 
+def _summary(exe, profile, cwd, *before):
+    from harness.vucx import Vucx
+
+    module = Vucx(profile)
+    try:
+        out = _run(exe, module.start(), *before, "dev.summary", cwd=cwd)
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout
+    return out.stdout.split("Module:")[-1]
+
+
+def _store(tmp_path, **files):
+    (tmp_path / "storage").mkdir(exist_ok=True)
+    for name, text in files.items():
+        (tmp_path / "storage" / f"ucxapp.{name}").write_text(text + "\n")
+
+
+def test_dev_summary_of_a_connected_wifi_module(app_exe, tmp_path, monkeypatch):
+    pytest.importorskip("yaml")
+    monkeypatch.setenv("UCX_REGDOMAIN", "etsi")
+    _store(tmp_path, wifilast="home", blelast="tag")
+    out = _summary(app_exe, "wifi.yaml", tmp_path, "wifi.connect vucx-net secret123")
+    assert "NORA-W36, firmware 3.5.0" in out, out
+    assert re.search(r"^Radios:\s+Wi-Fi, Bluetooth LE$", out, re.M), out
+    assert re.search(r"^Wi-Fi:\s+.*IP 192\.168\.1\.50$", out, re.M), out
+    assert "Update:" not in out and "Thread:" not in out and "Wi-Fi 'home'" not in out, out
+    assert re.search(r"^Last used:\s+BLE 'tag' \(bt\.profile\.auto\)$", out, re.M), out
+
+
+def test_dev_summary_notes_old_firmware_and_last_used(app_exe, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import load
+
+    profile = load("basic.yaml")
+    profile["identity"] = {**profile.get("identity", {}), "version": "3.2.0-0"}
+    _store(tmp_path, wifilast="home", blelast="tag", fwlatest="NORA-W36-3.4.0.zip")
+    out = _summary(app_exe, profile, tmp_path)
+    assert re.search(r"^Update:\s+firmware 3\.5\.0 is out, update with fw\.update$", out, re.M), out
+    assert "Last used:        Wi-Fi 'home' (wifi.profile.auto), BLE 'tag' (bt.profile.auto)" in out, out
+    assert "Open:" not in out, out
+
+
+def test_dev_summary_uses_the_release_fw_update_found(app_exe, tmp_path):
+    pytest.importorskip("yaml")
+    _store(tmp_path, fwlatest="NORA-B26-9.9.1.zip")
+    out = _summary(app_exe, "nora-b26.yaml", tmp_path)
+    assert re.search(r"^Radios:\s+Bluetooth LE$", out, re.M), out
+    assert "firmware 9.9.1 is out" in out and "Wi-Fi" not in out and "Last used" not in out, out
+
+
+def test_dev_summary_of_a_thread_leader(app_exe, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import load
+
+    profile = load("nora-b26-thread.yaml")
+    profile["commands"]["AT+UTHE?"] = ["+UTHE:1", "OK"]
+    out = _summary(app_exe, profile, tmp_path)
+    assert re.search(r"^Radios:\s+Bluetooth LE, Thread$", out, re.M), out
+    assert re.search(r"^Thread:\s+leader$", out, re.M), out
+
+
 def test_thread_usage_errors(app_exe):
     pytest.importorskip("yaml")
     from harness.vucx import Vucx

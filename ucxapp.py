@@ -1655,6 +1655,11 @@ def web_preview(exe, port):
                                        "c": rest[0].strip() if m and int(m.group(1)) > 1 and rest else ""}))
             elif u.path == "/api/files":
                 self.reply("[]")
+            elif u.path == "/api/version":
+                out = subprocess.run([str(exe), "--offline", "--exec", "app.version"], capture_output=True,
+                                     text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout
+                line = next((x.strip() for x in out.splitlines() if "u-connectXpressApp" in x), "")
+                self.reply(json.dumps({"v": line}))
             elif u.path == "/events":
                 self.events()
             else:

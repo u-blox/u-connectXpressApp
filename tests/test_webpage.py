@@ -164,6 +164,8 @@ class Mock(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/examples"):
             self.reply(json.dumps([{"t": "Fit check", "l": "usecase.tool\nusecase.tool 2.5"},
                                    {"t": "Join with PEAP", "l": "# factory\nwifi.peap FactoryNet u p ca.pem"}]))
+        elif self.path.startswith("/api/version"):
+            self.reply(json.dumps({"v": "u-connectXpressApp 3.5.0.261104 (built today)"}))
         elif self.path.startswith("/events"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -172,7 +174,15 @@ class Mock(BaseHTTPRequestHandler):
                                ("state", '"Wi-Fi up | BLE -"')):
                 self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
             self.wfile.flush()
-            self.server.stop.wait(5)
+            # the auto summary and the chip commands finish, other commands stay busy
+            acked = 0
+            while not self.server.stop.wait(0.05):
+                for url in self.server.posted[acked:]:
+                    acked += 1
+                    if re.search(r"cmd=(dev\.summary|wifi\.status)(&|$)", url):
+                        out = json.dumps("Module:           u-blox NORA-W36, firmware 3.5.0\n")
+                        self.wfile.write(f"event: out\ndata: {out}\n\nevent: done\ndata: 0\n\n".encode())
+                        self.wfile.flush()
 
     def do_POST(self):
         self.server.posted.append(self.path)
@@ -209,6 +219,16 @@ def test_page_in_a_browser(server):
         assert page.inner_text(".chip.on") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
         assert page.inner_text("#ev .e.wifi .x") == "link up"
         assert page.locator("#ev .e.wifi .t").count() == 1
+        # a module that is up gets its summary once, and the version sits in the footer
+        page.wait_for_selector(".blk .badge.ok")
+        assert "cmd=dev.summary&y=1" in server.posted[0] and "Module:" in page.inner_text("#out")
+        page.wait_for_function("document.getElementById('ver').textContent === 'v3.5.0.261104'")
+        # a status chip runs its status command
+        assert page.get_attribute(".chip.on", "title") == "Run wifi.status"
+        page.click(".chip.on")
+        page.wait_for_selector(".blk .badge.ok >> nth=1")
+        assert server.posted[1].endswith("cmd=wifi.status")
+        server.posted.clear()
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
         assert page.locator(".c select option").count() == 3
@@ -224,7 +244,7 @@ def test_page_in_a_browser(server):
                 break
             page.wait_for_timeout(100)
         assert any("cmd=wifi.connect" in u and "a0=stenmo" in u and "a1=secret" in u for u in server.posted)
-        assert "wifi.connect stenmo secret" in page.inner_text(".blk .bh")
+        assert "wifi.connect stenmo secret" in page.locator(".blk .bh").last.inner_text()
         assert page.is_disabled("#run")
         # the password is not remembered, the ssid is
         assert "secret" not in page.evaluate("localStorage.getItem('ucxf')")
@@ -263,6 +283,7 @@ def test_page_forms_flags_keys_and_rest(server):
         page.on("pageerror", lambda exc: js_errors.append(str(exc)))
         page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
         page.wait_for_selector("#st.ok")
+        page.wait_for_selector(".blk .badge.ok")   # the auto summary is done
         page.click("summary:has-text('demo')")
         page.wait_for_selector(".c select.fm")
         bridge = page.locator(".c").nth(0)
@@ -384,6 +405,7 @@ def test_web_preview_serves_the_real_commands():
         while "event: done" not in seen:
             seen += events.readline().decode()
         assert "Preview | no module" in seen and "900 MB/30 min" in seen
+        assert "u-connectXpressApp" in json.loads(get("/api/version"))["v"]
     finally:
         proc.terminate()
         proc.wait(10)

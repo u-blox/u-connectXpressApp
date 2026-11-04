@@ -50,12 +50,18 @@
 #define APP_ARCH "arm64"
 #elif defined(__arm__)
 #define APP_ARCH "arm"
+#elif defined(__wasm64__)
+#define APP_ARCH "wasm64"
+#elif defined(__wasm32__)
+#define APP_ARCH "wasm32"
 #else
 #define APP_ARCH "unknown"
 #endif
 
 #if defined(_MSC_VER)
 #define APP_COMPILER "MSVC " STR(_MSC_VER)
+#elif defined(__clang__)
+#define APP_COMPILER "clang " __clang_version__
 #elif defined(__GNUC__)
 #define APP_COMPILER "gcc " __VERSION__
 #else

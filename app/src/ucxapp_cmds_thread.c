@@ -29,6 +29,26 @@ const char *ucxapp_thread_role_name(int32_t role)
     return role >= 0 && role < (int32_t)(sizeof(kRoles) / sizeof(kRoles[0])) ? kRoles[role] : "unknown";
 }
 
+bool ucxapp_thread_dash(ucxapp_t *app, char *out, size_t size)
+{
+    uEnabled_t on = U_ENABLED_NO;
+    uCxThreadGetStatus_t st;
+
+    if (!ucxapp_module_has_thread(app) || uCxThreadGetEnabled(app->ucx, &on) != 0) {
+        return false;
+    }
+    if (on != U_ENABLED_YES) {
+        snprintf(out, size, "off");
+        return true;
+    }
+    snprintf(out, size, "on");
+    if (uCxThreadGetStatusBegin(app->ucx, &st)) {
+        snprintf(out, size, "%s", ucxapp_thread_role_name(st.device_role));
+    }
+    uCxEnd(app->ucx);
+    return true;
+}
+
 static void printHex(const char *label, const uByteArray_t *b)
 {
     ucxapp_print("%s", label);

@@ -324,7 +324,7 @@ static int cmdBtScan(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-#define BT_LAST_FILE  "ucxapp.blelast"
+#define BT_LAST_FILE  UCXAPP_BLE_LAST_FILE
 
 /* Starts a connect and waits until the link is listed; *up tells whether it came up. */
 static void centralSecurity(ucxapp_t *app);

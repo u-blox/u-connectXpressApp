@@ -324,6 +324,8 @@ static bool fwLookupLatest(ucxapp_t *app, char *path, size_t pathSize, char *nam
     free(json);
     if (!found) {
         ucxapp_print("ERROR: no release found for %s\n", family);
+    } else {
+        (void)ucxapp_store_save(UCXAPP_FW_LATEST_FILE, name, strlen(name));
     }
     return found;
 }

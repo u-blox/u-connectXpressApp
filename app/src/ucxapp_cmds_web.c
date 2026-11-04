@@ -12,6 +12,7 @@
 #include "ucxapp_store.h"
 #include "ucxapp_thread.h"
 #include "ucxapp_tls.h"
+#include "ucxapp_tui.h"
 #include "ucxapp_ui.h"
 
 #ifdef _MSC_VER
@@ -696,6 +697,21 @@ static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     uWebServerSendJSON(resp, gBuf);
 }
 
+static void routeVersion(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    size_t n = 0;
+
+    (void)user;
+    if (!tokenOk(req)) {
+        uWebServerSendError(resp, 403, "token required");
+        return;
+    }
+    n += (size_t)snprintf(gBuf, API_BUF, "{\"v\":\"");
+    jsonStr(gBuf, &n, ucxapp_version_text());
+    snprintf(gBuf + n, API_BUF - n, "\"}");
+    uWebServerSendJSON(resp, gBuf);
+}
+
 typedef struct {
     char q[48];
     bool prefix;
@@ -982,6 +998,7 @@ static const struct {
     { U_HTTP_METHOD_POST, "/api/exec",     routeExec },
     { U_HTTP_METHOD_GET,  "/api/groups",   routeList },
     { U_HTTP_METHOD_GET,  "/api/commands", routeList },
+    { U_HTTP_METHOD_GET,  "/api/version",  routeVersion },
     { U_HTTP_METHOD_GET,  "/api/find",     routeFind },
     { U_HTTP_METHOD_GET,  "/api/complete", routeComplete },
     { U_HTTP_METHOD_GET,  "/api/examples", routeExamples },

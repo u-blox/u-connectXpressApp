@@ -108,6 +108,21 @@ uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t
 /* Filled by the worker between commands, so the UI thread never talks to the module. */
 static char gWifiText[96];
 static char gCellText[96];
+static char gThreadRole[16];   /* empty: no Thread firmware */
+static volatile uint32_t gThreadVersion;
+static volatile uint32_t gThreadDirty;
+
+void ucxapp_ui_thread_changed(void)
+{
+    gThreadDirty++;
+}
+
+void ucxapp_ui_thread_text(char *out, size_t size)
+{
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(out, size, "%s", gThreadRole);
+    U_CX_MUTEX_UNLOCK(gLock);
+}
 
 void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSize)
 {
@@ -121,7 +136,7 @@ static void refreshDashCache(bool force)
 {
     static uint32_t seenWifi = 0xFFFFFFFFu;
     static const void *seenUcx;
-    static uint32_t wifiMs, cellMs;
+    static uint32_t wifiMs, cellMs, threadMs, seenThread;
     uint32_t now = ucxapp_platform_tick_ms();
     char text[96];
 
@@ -134,7 +149,9 @@ static void refreshDashCache(bool force)
             gWifiVersion++;
             U_CX_MUTEX_LOCK(gLock);
             gWifiText[0] = '\0';
+            gThreadRole[0] = '\0';
             U_CX_MUTEX_UNLOCK(gLock);
+            gThreadVersion++;
         }
     }
     if (gApp != NULL && gApp->ucx != NULL &&
@@ -153,6 +170,21 @@ static void refreshDashCache(bool force)
         snprintf(gWifiText, sizeof(gWifiText), "%s", text);
         U_CX_MUTEX_UNLOCK(gLock);
     }
+#ifndef UCXAPP_LITE
+    if (gApp != NULL && gApp->ucx != NULL && (force || seenThread != gThreadDirty || now - threadMs > 10000u)) {
+        threadMs = now;
+        seenThread = gThreadDirty;
+        if (!ucxapp_thread_dash(gApp, text, sizeof(text))) {
+            text[0] = '\0';
+        }
+        U_CX_MUTEX_LOCK(gLock);
+        if (strcmp(text, gThreadRole) != 0) {
+            snprintf(gThreadRole, sizeof(gThreadRole), "%.15s", text);
+            gThreadVersion++;
+        }
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
+#endif
     if (force || now - cellMs > 10000u) {
         cellMs = now;
         if (!ucxapp_cell_dash(text, sizeof(text))) {
@@ -182,7 +214,7 @@ static size_t appendHandles(char *out, size_t size, size_t n, const char *label,
 
 uint32_t ucxapp_ui_state(char *out, size_t size)
 {
-    uint32_t version = ucxapp_handle_version() + gWifiVersion;
+    uint32_t version = ucxapp_handle_version() + gWifiVersion + gThreadVersion * 7u;
     bool bleOnly = gWifiUp == -2;   /* Bluetooth LE only module: no Wi-Fi or socket chips */
     size_t n = bleOnly ? 0 : (size_t)snprintf(out, size, "Wi-Fi %s | ", gWifiUp < 0 ? "-" : gWifiUp ? "up" : "down");
 
@@ -190,6 +222,11 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
         return version;
     }
     n = appendHandles(out, size, n, "BLE", UCXAPP_HANDLE_CONN);
+    U_CX_MUTEX_LOCK(gLock);
+    if (gThreadRole[0] != '\0' && n + strlen(gThreadRole) + 11 < size) {
+        n += (size_t)snprintf(out + n, size - n, " | Thread %s", gThreadRole);
+    }
+    U_CX_MUTEX_UNLOCK(gLock);
     if (!bleOnly && n + 14 < size) {
         n += (size_t)snprintf(out + n, size - n, " | ");
         n = appendHandles(out, size, n, "Sockets", UCXAPP_HANDLE_SOCK);

@@ -16,6 +16,7 @@ ENTRY = re.compile(
 )
 
 NEW_COMMANDS = (
+    "dev.summary",
     "web.start", "web.stop", "web.status",
     "hid.setup", "hid.status", "hid.key", "hid.text", "hid.mouse", "hid.click", "hid.media", "hid.client",
     "utils.qr.text", "utils.qr.wifi", "utils.qr.geo", "utils.zip", "utils.unzip",

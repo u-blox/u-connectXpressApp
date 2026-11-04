@@ -566,7 +566,7 @@ static int findProfile(const profile_t *list, int count, const char *name)
     return -1;
 }
 
-#define LAST_FILE       "ucxapp.wifilast"
+#define LAST_FILE       UCXAPP_WIFI_LAST_FILE
 
 static bool loadLastUsed(char *name, size_t size)
 {

@@ -16,15 +16,26 @@ ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor o
 - **Ready to run**: signed Windows `.exe`, single Linux binary and STM32 images on the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases).
 
 ```
-   Shell / TUI      Web UI       --exec / --json / --script (CI, production test)
-        \             |             /
-         +------ command engine ---+      one table of commands (app/src/ucxapp_cmds_*.c)
-                      |
-               u-connectClient            AT client library
-                      |
-                UART (SPI coming)
-                      |
-           NORA-W36 / NORA-B26 module
+ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+ │  Shell, TUI  │ │   Browser,   │ │ --exec/json, │ │    STM32     │
+ │              │ │  module web  │ │ --script, CI │ │   firmware   │
+ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+        └────────────────┴───────┬────────┴────────────────┘
+                                 ▼
+               ╔═══════════════════════════════════╗
+               ║        one command engine         ║
+               ║   same commands on every target   ║
+               ╚═════════════════╤═════════════════╝
+                                 ▼
+               ┌───────────────────────────────────┐
+               │  u-connectClient (AT client lib)  │
+               └─────────────────┬─────────────────┘
+                                 │  UART (SPI coming)
+                                 ▼
+               ┌───────────────────────────────────┐
+               │       NORA-W36  /  NORA-B26       │
+               │   Wi-Fi  Bluetooth LE  Thread    │
+               └───────────────────────────────────┘
 ```
 
 ### Supported modules

@@ -63,6 +63,10 @@
    "+UWSST:2,6",
    "OK"
   ],
+  "AT+UWSST=3 [wifi=down]": [
+   "+UWSST:3,1",
+   "OK"
+  ],
   "AT+UWSST=3": [
    "+UWSST:3,2",
    "OK"
@@ -608,6 +612,9 @@
   "AT+CPWROFF": [
    "+STARTUP"
   ],
+  "AT+UWSC=* [pw=bad]": [
+   "+UEWLD:0,15"
+  ],
   "AT+UWSC=*": [
    "+UEWLU:0,AABBCCDDEEF0,6",
    "+UEWSNU"
@@ -673,6 +680,21 @@
   ]
  },
  "state": {
+  "AT+UWSSW=*wrong*": {
+   "pw": "bad"
+  },
+  "AT+UWSSW=*": {
+   "pw": "ok"
+  },
+  "AT+UWSC=* [pw=bad]": {
+   "wifi": "down"
+  },
+  "AT+UWSC=*": {
+   "wifi": "up"
+  },
+  "AT+UWSDC": {
+   "wifi": "down"
+  },
   "AT+UHTCRP=0,\"/generate_204\"": {
    "page": "probe"
   },

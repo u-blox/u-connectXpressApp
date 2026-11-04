@@ -18,6 +18,7 @@ commands:
   "AT+UWSST=0": ['+UWSST:0,"vucx-net"', "OK"]
   "AT+UWSST=1": ["+UWSST:1,AABBCCDDEEF0", "OK"]
   "AT+UWSST=2": ["+UWSST:2,6", "OK"]
+  "AT+UWSST=3 [wifi=down]": ["+UWSST:3,1", "OK"]
   "AT+UWSST=3": ["+UWSST:3,2", "OK"]
   "AT+UWSST=4": ["+UWSST:4,-45", "OK"]
   "AT+UWSST=*": ['+UWSST:0,"vucx-net"', "OK"]
@@ -52,8 +53,16 @@ commands:
   'AT+USECD="myca",0': ["+USECD:0,00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF", "OK"]
   'AT+USECD="myca",1': ["+USECD:1,1024", "OK"]
   'AT+USECD="myca",*': ["+USECD:2,323032363031303130303030303030", "OK"]
+# Starts connected; a password containing "wrong" makes the AP refuse (802.11 reason 15, 4-way handshake timeout).
+state:
+  "AT+UWSSW=*wrong*": {pw: bad}
+  "AT+UWSSW=*": {pw: ok}
+  "AT+UWSC=* [pw=bad]": {wifi: down}
+  "AT+UWSC=*": {wifi: up}
+  "AT+UWSDC": {wifi: down}
 urcs:
   "AT+CPWROFF": ["+STARTUP"]
+  "AT+UWSC=* [pw=bad]": ["+UEWLD:0,15"]
   "AT+UWSC=*": ["+UEWLU:0,AABBCCDDEEF0,6", "+UEWSNU"]
   "AT+UWSDC": ["+UEWLD:0,0"]
   "AT+USOC=*": ["+UESOC:0"]

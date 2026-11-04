@@ -315,7 +315,7 @@ static int startAndWait(ucxapp_t *app, const char *ssid, uint32_t timeoutS)
 {
     uCxHandle_t *ucx = app->ucx;
 
-    ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+    ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
     int32_t r = uCxWifiStationConnect(ucx, 0);
     if (r != 0) {
         /* A previous attempt can still be pending in the module; stop it and try once more. */
@@ -335,7 +335,13 @@ static int startAndWait(ucxapp_t *app, const char *ssid, uint32_t timeoutS)
         ucxapp_print("ERROR: failed to start connection (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
-    if (!ucxapp_events_wait(URC_FLAG_NETWORK_UP, timeoutS)) {
+    bool event = ucxapp_events_wait(URC_FLAG_NETWORK_UP | URC_FLAG_WIFI_LINK_DOWN, timeoutS);
+    if (event && !isConnected(ucx)) {
+        ucxapp_print("ERROR: the access point refused the connection (wrong password or out of range)\n");
+        uCxWifiStationDisconnect(ucx);
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!event) {
         ucxapp_print("ERROR: timeout waiting for network up\n");
         uCxWifiStationDisconnect(ucx);   /* abort the pending attempt, else the next connect gets ERROR:15 */
         U_CX_PORT_SLEEP_MS(1000);

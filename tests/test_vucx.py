@@ -316,6 +316,20 @@ def test_wifi_connect_status_disconnect(app_exe, wifi_module):
     assert "192.168.1.50" in out.stdout, out.stdout + str(wifi_module.log)
 
 
+def test_wifi_status_after_disconnect_says_not_connected(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123", "wifi.disconnect", "wifi.status")
+    assert "wifi: disconnected" in out.stdout, out.stdout
+
+
+def test_wifi_wrong_password_fails_fast_with_a_hint(app_exe, wifi_module):
+    start = time.monotonic()
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net wrongpass")
+    assert out.returncode != 0, out.stdout
+    assert "wrong password" in out.stdout, out.stdout
+    assert time.monotonic() - start < 15, "should not wait for the connect timeout"
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123")
+    assert out.returncode == 0 and "Connected to 'vucx-net'" in out.stdout, out.stdout
+
 def test_at_trace_hides_wifi_password(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "app.log.at.on", "wifi.connect vucx-net secret123", "app.log.at.off")
     assert "AT+UWSSW=" in out.stdout, out.stdout

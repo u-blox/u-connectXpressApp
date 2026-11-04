@@ -90,6 +90,54 @@ def test_example_scripts_use_real_commands(app_exe):
         assert script.read_text(encoding="utf-8").startswith("#"), f"{script.name}: explain the goal first"
 
 
+def test_exec_stops_at_the_first_failure(app_exe):
+    out, res = _json(app_exe, "app.version", "no.such.command", "app.uptime")
+    assert out.returncode != 0
+    assert [r["command"] for r in res] == ["app.version", "no.such.command"]
+
+
+def _script(tmp_path, text, *extra):
+    script = tmp_path / "s.ucx"
+    script.write_text(text)
+    return subprocess.run([sys.executable, "ucxapp.py", "--script", str(script), "--offline", *extra], cwd=ROOT,
+                          capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+
+
+def test_script_expect_fail_skip_and_junit(app_exe, tmp_path):
+    junit = tmp_path / "r.xml"
+    out = _script(tmp_path, "# goal\n\napp.version\nexpect \\d+\\.\\d+\nno.such.command\nexpect-fail\napp.uptime\n",
+                  "--junit", str(junit))
+    assert out.returncode == 1, out.stdout
+    assert "PASS  app.version" in out.stdout and "PASS  no.such.command" in out.stdout
+    assert "SKIP  app.uptime" in out.stdout and "2/3 passed" in out.stdout
+    xml = junit.read_text()
+    assert 'tests="3" failures="0" skipped="1"' in xml and xml.count("<testcase") == 3 and "<skipped/>" in xml
+
+
+def test_script_expect_fail_on_success_is_a_failure(app_exe, tmp_path):
+    junit = tmp_path / "r.xml"
+    out = _script(tmp_path, "app.version\nexpect-fail\n", "--junit", str(junit))
+    assert out.returncode == 1 and "expected failure" in out.stdout
+    assert 'failures="1"' in junit.read_text() and "<failure " in junit.read_text()
+
+
+@pytest.mark.parametrize("text, error", [
+    ("expect x\napp.version\n", "before the first command"),
+    ("# only a comment\n", "no commands"),
+    ("app.version\n" * 65, "at most 64"),
+])
+def test_script_rejects_bad_scripts(tmp_path, text, error):
+    out = _script(tmp_path, text)
+    assert out.returncode != 0 and error in out.stdout + out.stderr
+
+
+def test_script_missing_file_is_a_clean_error(tmp_path):
+    out = subprocess.run([sys.executable, "ucxapp.py", "--script", str(tmp_path / "none.ucx"), "--offline"],
+                         cwd=ROOT, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+    assert out.returncode != 0 and "script not found" in out.stdout + out.stderr
+    assert "Traceback" not in out.stderr
+
+
 def test_wifi_survey_needs_a_module(app_exe):
     _, res = _json(app_exe, "wifi.survey")
     assert res[0]["code"] == "NOT_CONNECTED"

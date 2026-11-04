@@ -1477,6 +1477,8 @@ def doctor():
 def parse_script(path):
     """[(command, [expect regex...], expect_fail)] from a script file."""
     steps = []
+    if not Path(path).is_file():
+        fail(f"{path}: script not found")
     for n, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):

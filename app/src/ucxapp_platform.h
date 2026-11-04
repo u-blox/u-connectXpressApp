@@ -60,6 +60,9 @@ void ucxapp_platform_terminal_size(int *cols, int *rows);
 /** Next key without blocking, or -1. Enter is 13, Backspace 8, Esc 27, Ctrl-C 3, others as above or ASCII. */
 int ucxapp_platform_read_key(void);
 
+/** Waits up to ms for keyboard input, returning early when a key arrives. */
+void ucxapp_platform_wait_key(uint32_t ms);
+
 /** IPv4 address of the host's main LAN/Wi-Fi interface (virtual and link-local ones skipped); false if none. */
 bool ucxapp_platform_local_ip(char *out, size_t size);
 

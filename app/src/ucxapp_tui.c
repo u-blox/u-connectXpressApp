@@ -232,10 +232,49 @@ static void out(const char *fmt, ...)
     }
 }
 
+static void outRaw(const char *s, size_t n)
+{
+    if (gFrameLen + n + 512 >= sizeof(gFrame)) {
+        return;
+    }
+    memcpy(gFrame + gFrameLen, s, n);
+    gFrameLen += n;
+}
+
+/* Screen rows already on the terminal, so an unchanged row is not sent again. */
+static uint32_t gRowHash[MAX_ROWS + 8];
+static bool gRowValid[MAX_ROWS + 8];
+
+static void rowsInvalidate(void)
+{
+    memset(gRowValid, 0, sizeof(gRowValid));
+}
+
+/* Drops the row written since start when the terminal already shows it. */
+static void rowEnd(int row, size_t start)
+{
+    uint32_t h = 2166136261u;
+
+    if (row < 0 || row >= (int)(sizeof(gRowHash) / sizeof(gRowHash[0]))) {
+        return;
+    }
+    for (size_t i = start; i < gFrameLen; i++) {
+        h = (h ^ (uint8_t)gFrame[i]) * 16777619u;
+    }
+    if (gRowValid[row] && gRowHash[row] == h) {
+        gFrameLen = start;
+    } else {
+        gRowHash[row] = h;
+        gRowValid[row] = true;
+    }
+}
+
 static void outRepeat(const char *glyph, int n)
 {
+    size_t len = strlen(glyph);
+
     for (int i = 0; i < n; i++) {
-        out("%s", glyph);
+        outRaw(glyph, len);
     }
 }
 
@@ -256,12 +295,12 @@ static void outCell(const char *text, int width, int col, bool reverse)
         while ((p[len] & 0xC0) == 0x80) {
             len++;
         }
-        out("%.*s", len, p);
+        outRaw(p, (size_t)len);
         p += len;
         cols++;
     }
     for (; cols < width; cols++) {
-        out(" ");
+        outRaw(" ", 1);
     }
     if (col != 0 || reverse) {
         out("\033[0m");
@@ -787,13 +826,18 @@ static void drawFrame(int rows, bool busy)
     evFirst -= gEvScroll;
 
     gFrameLen = 0;
-    out("\033[?25l\033[1;1H");
+    out("\033[?25l");
+    size_t rowStart = gFrameLen;
+
+    out("\033[1;1H");
     outTitleBorder(G_TL, "Commands", W_CMD);
     outTitleBorder(G_TJ, gLogScroll > 0 ? "Log (scrolled, PgDn)" : "Log", W_LOG);
     outTitleBorder(G_TJ, gEvScroll > 0 ? "Status / Events (scrolled)" : "Status / Events", W_EVT);
     out(G_TR);
+    rowEnd(0, rowStart);
 
     for (int r = 0; r < body; r++) {
+        rowStart = gFrameLen;
         out("\033[%d;1H" G_V, r + 2);
         drawCommandCell(r, body, W_CMD);
         out(G_V);
@@ -818,8 +862,10 @@ static void drawFrame(int rows, bool busy)
             outCell(t, W_EVT, col, false);
         }
         out(G_V);
+        rowEnd(r + 1, rowStart);
     }
 
+    rowStart = gFrameLen;
     out("\033[%d;1H" G_BL, body + 2);
     outRepeat(G_H, W_CMD);
     out(G_BJ);
@@ -827,8 +873,10 @@ static void drawFrame(int rows, bool busy)
     out(G_BJ);
     outRepeat(G_H, W_EVT);
     out(G_BR);
+    rowEnd(body + 1, rowStart);
 
-    /* hint lines */
+    /* hint lines: one segment, because a long hint wraps onto the second line */
+    rowStart = gFrameLen;
     out("\033[%d;1H", body + 4);
     outCell("", W_CMD + W_LOG + W_EVT + 4, 0, false);
     out("\033[%d;1H", body + 3);
@@ -866,8 +914,9 @@ static void drawFrame(int rows, bool busy)
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 90, false);
         }
     }
+    rowEnd(body + 2, rowStart);
 
-    /* input line */
+    /* input line: always sent, it leaves the cursor in place */
     {
         bool atMode = ucxapp_at_mode_active();
         int promptLen = atMode ? 4 : 2;
@@ -1180,7 +1229,7 @@ const char *ucxapp_version_text(void)
 int ucxapp_tui_run(ucxapp_t *app)
 {
     uint32_t logCur, evCur, doneSeen, stateSeen = 0;
-    int rc, cols, rows, lastRows = 0, lastCols = 0;
+    int rc, cols, rows, lastRows = 0, lastCols = 0, repaintTick = 0;
     bool dirty = true, busy = false, quit = false;
 
     if (!ucxapp_platform_terminal_enter()) {
@@ -1226,6 +1275,7 @@ int ucxapp_tui_run(ucxapp_t *app)
     ucxapp_io_set(&kNullIo);   /* keep stdout clean; the log sink still receives everything */
     ucxappLogWarnLock(true);
     fputs("\033[?1049h\033[2J", stdout);
+    rowsInvalidate();
     logLocal(ucxapp_version_text());
     logLocal("u-connectXpressApp text UI: Up/Down + Enter pick a command, or just type; Esc toggles list/input. 'help' lists commands.");
     if (app->ucx != NULL) {
@@ -1259,6 +1309,12 @@ int ucxapp_tui_run(ucxapp_t *app)
         if (ucxapp_platform_tick_ms() - dashMs >= 1000u) {
             dashMs = ucxapp_platform_tick_ms();
             if (refreshDash()) {
+                dirty = true;
+            }
+            /* repaint everything now and then: stray console output is otherwise kept by the row diff */
+            if (++repaintTick >= 5) {
+                repaintTick = 0;
+                rowsInvalidate();
                 dirty = true;
             }
         }
@@ -1309,6 +1365,7 @@ int ucxapp_tui_run(ucxapp_t *app)
         if (rows != lastRows) {
             lastRows = rows;
             fputs("\033[2J", stdout);
+            rowsInvalidate();
             dirty = true;
         }
         {
@@ -1331,7 +1388,7 @@ int ucxapp_tui_run(ucxapp_t *app)
             drawFrame(rows, busy);
             dirty = false;
         }
-        U_CX_PORT_SLEEP_MS(20);
+        ucxapp_platform_wait_key(20);
     }
 
     fputs("\033[0m\033[?25h\033[?1049l", stdout);

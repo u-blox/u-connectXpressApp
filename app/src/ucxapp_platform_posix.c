@@ -126,6 +126,20 @@ static int readByte(void)
     return read(STDIN_FILENO, &c, 1) == 1 ? (int)c : -1;
 }
 
+void ucxapp_platform_wait_key(uint32_t ms)
+{
+#ifdef __EMSCRIPTEN__
+    usleep(ms * 1000u);
+#else
+    fd_set in;
+    struct timeval tv = { (time_t)(ms / 1000u), (suseconds_t)((ms % 1000u) * 1000u) };
+
+    FD_ZERO(&in);
+    FD_SET(STDIN_FILENO, &in);
+    (void)select(STDIN_FILENO + 1, &in, NULL, NULL, &tv);
+#endif
+}
+
 int ucxapp_platform_read_key(void)
 {
     int c = readByte();

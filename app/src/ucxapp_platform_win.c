@@ -345,6 +345,11 @@ void ucxapp_platform_terminal_size(int *cols, int *rows)
     }
 }
 
+void ucxapp_platform_wait_key(uint32_t ms)
+{
+    (void)WaitForSingleObject(GetStdHandle(STD_INPUT_HANDLE), ms);
+}
+
 int ucxapp_platform_read_key(void)
 {
     HANDLE in = GetStdHandle(STD_INPUT_HANDLE);

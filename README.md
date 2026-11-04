@@ -30,7 +30,7 @@ ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor o
                ┌───────────────────────────────────┐
                │  u-connectClient (AT client lib)  │
                └─────────────────┬─────────────────┘
-                                 │  UART (SPI coming)
+                                 │  UART / SPI
                                  ▼
                ┌───────────────────────────────────┐
                │       NORA-W36  /  NORA-B26       │

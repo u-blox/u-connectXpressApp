@@ -139,7 +139,7 @@ Do not add a `Co-authored-by: Copilot` trailer (or any other AI co-author traile
 ## Performance Priorities
 
 - Latency and throughput are the main requirements for every bridge (UART, UDP, TCP, BLE, CAN, GNSS, IMU). Batch per datagram or write, avoid per-byte calls, and never block a data path with a long sleep (idle polls use 1 ms).
-- SPI for AT and DATA (instead of UART) is coming in u-connectClient. Keep the transport behind the port layer so the command code in `app/src/` does not change when SPI lands.
+- AT and DATA run over UART or SPI (u-connectClient). Keep the transport behind the port layer so the command code in `app/src/` stays the same for both.
 - CAN frames use the fixed 17-byte record in `app/src/ucxapp_can.h` (ts_ms, id, dlc, data[8]), batched per UDP datagram. CAN code stays out of the AT, UART and `hw.*` paths; `ucxapp_cmds_can.c` owns the controller and `can.bridge`. Backends: bxCAN/FDCAN (FreeRTOS) and Zephyr CAN on STM32 boards, SocketCAN on Linux (`can.open can0`, e.g. a CANable), an emulated loopback elsewhere. On boards the bridge runs in its own task and the URC hooks only set flags.
 
 ## Version Numbering

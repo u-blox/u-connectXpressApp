@@ -1081,9 +1081,10 @@ void ucxapp_ui_compose(const char *name, const char *const *values, int count, b
         count--;
     }
     if (raw) {
-        if (count > 0) {
+        /* raw values go in as typed; every one counts, so a stray raw flag cannot drop arguments */
+        for (int i = 0; i < count; i++) {
             put(out, size, &n, ' ');
-            putStr(out, size, &n, values[0]);
+            putStr(out, size, &n, values[i]);
         }
     } else {
         for (int i = 0; i < count; i++) {

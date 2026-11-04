@@ -1560,7 +1560,7 @@ def compose(name, values, raw):
     while values and values[-1] == "":
         values = values[:-1]
     if raw:
-        return f"{name} {values[0]}" if values else name
+        return " ".join([name] + values)
     parts = [name]
     for v in values:
         if v == "" or any(c in v for c in ' \t"'):

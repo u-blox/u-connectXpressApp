@@ -405,6 +405,14 @@ def test_web_preview_serves_the_real_commands():
         while "event: done" not in seen:
             seen += events.readline().decode()
         assert "Preview | no module" in seen and "900 MB/30 min" in seen
+        # raw with several values keeps them all: the use-case "Run steps" button once lost the example number
+        post = urllib.request.Request(base + "/api/exec?cmd=examples&a0=uc-provision&a1=1&r=1", method="POST",
+                                      headers={"X-Token": token})
+        assert urllib.request.urlopen(post, timeout=10).read() == b"accepted"
+        seen = ""
+        while "event: done" not in seen:
+            seen += events.readline().decode()
+        assert "Running uc-provision example 1" in seen, seen
         assert "u-connectXpressApp" in json.loads(get("/api/version"))["v"]
     finally:
         proc.terminate()

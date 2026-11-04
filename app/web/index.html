@@ -335,7 +335,7 @@ function steps(){const g=UC[uc].g||'uc-'+uc,s=$('steps');if(ucl===g)return;ucl=g
  xs.forEach(x=>{n++;if(/^usecase\.tool/.test(x.l))return;const i=n,c=el('div','card'),r=el('div','r'),rb=el('button','','Run steps');c.appendChild(el('h3','',x.t));
   x.l.split('\n').forEach(l=>{const k=el('code',l[0]==='#'?'n':'',l);if(l[0]!=='#'){k.title='Put in the command line to edit';k.onclick=()=>{$('at').checked=false;cmd.value=l;cmd.focus();showHint()}}c.appendChild(k)});
   const ex=g==='usecase'?['usecase.example',[String(i)]]:['examples',[g,String(i)]];
-  rb.title='Runs the lines in order, stops at the first error ('+ex[0]+' '+ex[1].join(' ')+')';rb.onclick=()=>run(ex[0],ex[1],1);r.appendChild(rb);c.appendChild(r);s.appendChild(c)})}).catch(()=>{ucl=''})}
+  rb.title='Runs the lines in order, stops at the first error ('+ex[0]+' '+ex[1].join(' ')+')';rb.onclick=()=>run(ex[0],ex[1]);r.appendChild(rb);c.appendChild(r);s.appendChild(c)})}).catch(()=>{ucl=''})}
 function pick(k){uc=k;localStorage.setItem('ucxc',k);const u=UC[k];$('ucs').value=k;$('uh').textContent=u.t;$('ud').textContent=u.d;$('mb').hidden=k!=='tool';
  const f=$('fit');f.textContent='';const n=el('span','note','Run it to rate each requirement: ok, limit, check or gap.');n.style.gridColumn='1/-1';f.appendChild(n);
  draw();if(document.body.classList.contains('uc'))steps()}

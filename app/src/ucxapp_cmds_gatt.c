@@ -1705,7 +1705,7 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
         uCxWifiStationDisconnect(ucx);
         snprintf(resp, sizeof(resp), "OK:FORGOTTEN");
     } else {
-        snprintf(resp, sizeof(resp), "ERROR:UNKNOWN_CMD");
+        snprintf(resp, sizeof(resp), "ERROR:UNKNOWN_CMD:%.32s", cmd);
     }
     wpsRespond(app, conn, resp);
 }

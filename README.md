@@ -34,7 +34,7 @@ ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor o
                                  ▼
                ┌───────────────────────────────────┐
                │       NORA-W36  /  NORA-B26       │
-               │   Wi-Fi  Bluetooth LE  Thread    │
+               │   Wi-Fi  Bluetooth LE  Thread     │
                └───────────────────────────────────┘
 ```
 

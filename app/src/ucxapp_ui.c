@@ -603,7 +603,7 @@ static const char *const kCmdOrder[] = {
     "dev.info", "dev.status", "dev.reboot", "dev.uptime", "dev.diagnose", "dev.caps",
     "dev.stack", "dev.crash", "dev.factory",
     "app.log.level", "app.log.save", "app.log.stop", "app.log.clear", "app.defaults",
-    "fw.update", "fw.download", "fw.flash", "fw.bootloader",
+    "fw.update", "fw.download", "fw.github.list", "fw.list", "fw.flash", "fw.bootloader",
     "bt.scan", "bt.connect", "bt.disconnect", "bt.list", "bt.bonds", "bt.profile.connect", "bt.profile.auto",
     "bt.profile.add", "bt.profile.list", "bt.profile.remove", "bt.pairing", "bt.security", "bt.iocap",
     "bt.confirm", "bt.passkey", "bt.autoconfirm", "bt.unbond", "bt.defaults",

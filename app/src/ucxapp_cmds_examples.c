@@ -226,6 +226,12 @@ static const example_t kExamples[] = {
 
     { "fw", "Update to the newest firmware",
       "dev.info\nfw.update\ndev.info" },
+    { "fw", "Update to the newest firmware, evaluation builds included",
+      "dev.info\nfw.update eval\ndev.info" },
+    { "fw", "List the firmware releases on GitHub for the connected module",
+      "fw.github.list" },
+    { "fw", "List the firmware already downloaded to the store",
+      "fw.list" },
     { "fw", "Flash a given file",
       "fw.flash NORA-W36X-3.5.0.zip" },
     { "fw", "Rescue a module stuck in bootloader",

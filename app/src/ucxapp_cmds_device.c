@@ -44,6 +44,7 @@ static int cmdDeviceInfo(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#ifndef UCXAPP_LITE
 /* "3.5.0-156" -> {3,5,0}; false if no x.y.z. */
 static bool versionOf(const char *s, int v[3])
 {
@@ -143,10 +144,8 @@ static int cmdDeviceSummary(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     wifi = ucxapp_module_has_wifi(app);
-#ifndef UCXAPP_LITE
     char role[16];
     thread = ucxapp_thread_dash(app, role, sizeof(role));
-#endif
     ucxapp_print("Module:           %s%s%s, firmware %s\n", maker, maker[0] != '\0' ? " " : "", model, fw);
     ucxapp_print("Radios:           %sBluetooth LE%s\n", wifi ? "Wi-Fi, " : "", thread ? ", Thread" : "");
     if (versionOf(fw, cur) && knownLatest(model, latest) && versionCmp(cur, latest) < 0) {
@@ -157,11 +156,9 @@ static int cmdDeviceSummary(ucxapp_t *app, int argc, char *argv[])
         wifiUp = true;
         ucxapp_print("Wi-Fi:            '%s', IP %s\n", ssid, ip);
     }
-#ifndef UCXAPP_LITE
     if (thread && strcmp(role, "off") != 0) {
         ucxapp_print("Thread:           %s\n", role);
     }
-#endif
     ble = ucxapp_handle_list(UCXAPP_HANDLE_CONN, handles, 16);
     socks = wifi ? ucxapp_handle_list(UCXAPP_HANDLE_SOCK, handles, 16) : 0;
     if (ble > 0 || socks > 0) {
@@ -181,6 +178,7 @@ static int cmdDeviceSummary(ucxapp_t *app, int argc, char *argv[])
     }
     return UCXAPP_OK;
 }
+#endif
 
 static int cmdDeviceStatus(ucxapp_t *app, int argc, char *argv[])
 {
@@ -605,7 +603,9 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "at.reset", "", "Reboot the module (AT+CPWROFF), same as dev.reboot", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
     { "at.factory", "<confirm>", "Factory reset (AT+USYFR) and reboot, same as dev.factory; type 'confirm'", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
     { "dev.info", "", "Manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
+#ifndef UCXAPP_LITE
     { "dev.summary", "", "Short overview shown on connect: model, firmware, radios, Wi-Fi and Thread state, open links and sockets", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceSummary },
+#endif
     { "dev.status", "", "Overview: module, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
     { "dev.uptime", "", "Time since the module's last +STARTUP", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },

@@ -60,6 +60,9 @@ BOARDS = {
 # Kept and buildable with --board, but left out of --board all, --everything, CI and releases.
 PAUSED_BOARDS = ("g071",)
 ACTIVE_BOARDS = [b for b in BOARDS if b not in PAUSED_BOARDS]
+# Zephyr only: f103 overflows its 128 KB flash.
+PAUSED_ZEPHYR_BOARDS = ("f103",)
+ZEPHYR_BOARDS = [b for b in ACTIVE_BOARDS if b not in PAUSED_ZEPHYR_BOARDS]
 MEMORY_DOC = ROOT / "docs" / "STM32_MEMORY.md"
 
 UBLOX_VID = 0x1546
@@ -1081,7 +1084,7 @@ def everything(args):
     stm32_tools()
     jobs.update({b: ["--stm32", "--board", b, *flags] for b in ACTIVE_BOARDS})
     if zephyr_available():
-        jobs.update({f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ACTIVE_BOARDS})
+        jobs.update({f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ZEPHYR_BOARDS})
     else:
         print("Zephyr workspace or west not found, skipping the Zephyr builds")
     if emsdk_env(required=False):
@@ -1267,7 +1270,7 @@ def zephyr(args, extra):
             fail("--board all supports only --clean, --build, --rebuild and --flash")
         flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild),
                                  ("--flash", args.flash)) if on]
-        return build_many(args, {f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ACTIVE_BOARDS})
+        return build_many(args, {f"z-{b}": ["--stm32-zephyr", "--board", b, *flags] for b in ZEPHYR_BOARDS})
     boards = sorted(p.stem for p in (ROOT / "app" / "zephyr" / "boards").glob("*.overlay"))
     board, name = zephyr_board(args.board), BOARDS[args.board][1]
     if board not in boards:
@@ -1277,6 +1280,9 @@ def zephyr(args, extra):
     if args.clean or args.rebuild:
         shutil.rmtree(ROOT / bd, ignore_errors=True)
         print("Cleaned", bd)
+    if (ROOT / bd).is_dir() and not (ROOT / bd / "build.ninja").exists():
+        # An interrupted configure leaves a tree west reuses but ninja cannot load.
+        shutil.rmtree(ROOT / bd, ignore_errors=True)
     if args.build or args.rebuild:
         modules = zephyr_env()
         # Relative paths: west fails when the source and the current directory are on different drives.

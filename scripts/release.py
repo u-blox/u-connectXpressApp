@@ -36,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_THUMBPRINT = "EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E"
 STM32_BOARDS = ("h753", "f767", "f439", "f407", "f401", "f446", "f103")
+ZEPHYR_BOARDS = ("h753", "f767", "f439", "f407", "f401", "f446")
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -123,7 +124,7 @@ def package(tree, archive, root=None):
     """Zip the tree (or the root folder of it); zipfile keeps the Linux binary executable."""
     if root is None:
         missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
-        missing += [f"zephyr_{b}" for b in STM32_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
+        missing += [f"zephyr_{b}" for b in ZEPHYR_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
         for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm"):
             if not (tree / f).is_file():
                 missing.append(f)

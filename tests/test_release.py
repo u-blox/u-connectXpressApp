@@ -28,8 +28,9 @@ def jobs():
 def test_every_board_is_released_on_freertos_and_zephyr(jobs):
     assert {i["board"] for i in jobs["stm32"]["strategy"]["matrix"]["include"]} == \
         {ucxapp.BOARDS[b][0] for b in ucxapp.ACTIVE_BOARDS}
-    assert set(jobs["zephyr"]["strategy"]["matrix"]["board"]) == set(ucxapp.ACTIVE_BOARDS)
+    assert set(jobs["zephyr"]["strategy"]["matrix"]["board"]) == set(ucxapp.ZEPHYR_BOARDS)
     assert set(release_py().STM32_BOARDS) == set(ucxapp.ACTIVE_BOARDS)
+    assert set(release_py().ZEPHYR_BOARDS) == set(ucxapp.ZEPHYR_BOARDS)
 
 
 def test_bundle_collects_every_build(jobs):
@@ -54,6 +55,8 @@ def test_everything_builds_freertos_zephyr_and_the_browser(monkeypatch):
     assert ucxapp.everything(args) == 0
     for b in ucxapp.ACTIVE_BOARDS:
         assert seen[b][:3] == ["--stm32", "--board", b]
+        assert (f"z-{b}" in seen) == (b in ucxapp.ZEPHYR_BOARDS)
+    for b in ucxapp.ZEPHYR_BOARDS:
         assert seen[f"z-{b}"][:3] == ["--stm32-zephyr", "--board", b]
     assert not any(b in seen or f"z-{b}" in seen for b in ucxapp.PAUSED_BOARDS)
     assert seen["wasm"][0] == "--wasm"

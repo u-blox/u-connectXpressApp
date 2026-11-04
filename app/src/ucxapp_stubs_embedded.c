@@ -28,6 +28,9 @@ size_t ucxapp_gnss_summary(char *out, size_t size) { (void)size; out[0] = '\0'; 
 size_t ucxapp_imu_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
 void ucxapp_ui_event(const char *text) { (void)text; }
 void ucxapp_ui_wifi_set(bool up) { (void)up; }
+#ifndef UCXAPP_LITE
+void ucxapp_ui_thread_changed(void) { }
+#endif
 void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel) { (void)text; (void)prefill; (void)cancel; }
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {

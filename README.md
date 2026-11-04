@@ -1,25 +1,19 @@
 # u-connectXpressApp
 
-**Develop, test and automate u-connectXpress applications from your PC or an STM32 board.**
+**Your u-connectXpress module, live in seconds. Plug in, type a command, see it work, then automate exactly that.**
+
+**[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial. No EVK? Click **Virtual module**.
 
 ```powershell
-ucxapp wifi.regdomain etsi
-ucxapp wifi.scan
 ucxapp wifi.connect MySsid MyPassword
 ucxapp mqtt.publish test/ucx hello
+ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor on any phone
 ```
 
-Wi-Fi stays off until you say where you are: the first Wi-Fi command at the prompt asks once ("Where are you located?", pick 0-10 or type a place such as `europe`, `usa` or `japan`) and saves the answer. `wifi.regdomain` changes it later (`wifi.regdomain <0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|place>`; `world` is allowed everywhere). Scripts and CI can set `UCX_REGDOMAIN` instead.
-
-**Platforms:** Windows | Linux | STM32 | [Browser](https://u-blox.github.io/u-connectXpressApp/)
-
-**Try it now:** [u-blox.github.io/u-connectXpressApp](https://u-blox.github.io/u-connectXpressApp/) runs the app in Chrome or Edge and talks to the module over Web Serial, nothing to install.
-
-| Connect | Build | Develop | Maintain |
-|---|---|---|---|
-| Wi-Fi, Bluetooth LE, TCP/UDP, TLS | HTTP, MQTT, GATT, SPS | Shell, scripts, CI, web UI, STM32 | Device info, certificates, firmware |
-
-The same commands work in the interactive shell, in `--exec` scripts, in the browser and on an STM32 board: learn a command by hand, then automate exactly that.
+- **One command set, everywhere**: interactive shell, `--exec` scripts, CI, the browser, the module's own web UI and STM32 firmware (FreeRTOS and Zephyr).
+- **Batteries included**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, TLS, HTTP, MQTT, certificates, firmware update.
+- **Built for testing**: `--json`, `--script` with `expect`, JUnit reports, AT traces with Wireshark export, `dev.diagnose` with PASS/FAIL verdicts.
+- **Ready to run**: signed Windows `.exe`, single Linux binary and STM32 images on the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases).
 
 ```
    Shell / TUI      Web UI       --exec / --json / --script (CI, production test)
@@ -33,8 +27,6 @@ The same commands work in the interactive shell, in `--exec` scripts, in the bro
            NORA-W36 / NORA-B26 module
 ```
 
-Every interface runs the same commands, so what works in the shell works in a script, in the browser and on an STM32 board.
-
 ### Supported modules
 
 | Capability | NORA-W36 | NORA-B26 | NORA-W56, W57 |
@@ -43,29 +35,19 @@ Every interface runs the same commands, so what works in the shell works in a sc
 | Bluetooth LE, GATT, SPS, HID | yes | yes | not yet |
 | Wi-Fi, sockets, TLS, HTTP, MQTT | yes | - | not yet |
 
-The app asks the connected module what it can do (`dev.caps`) and blocks commands it does not support.
-
-### Scope
-
-A feature belongs in ucxapp only if it demonstrates, tests, automates or integrates a u-connectXpress capability. GNSS, IMU and cellular are there to feed data through the module (bridges, demos), not to become applications of their own.
-
-| Windows | Linux | STM32 firmware |
-|---|---|---|
-| Signed `.exe`, FTDI driver built in | Single binary | NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI |
-
-Download ready-made builds from the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases). No installation needed.
+The app asks the module what it can do (`dev.caps`) and shows a short summary on connect.
 
 ## Try it in 30 seconds
 
 ```powershell
-ucxapp dev.info
+ucxapp
 ```
 
-Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
+No port needed: the app finds your EVK, shows the module, firmware and radios, and opens the shell. Type `help`, or `wifi.example` for ready-to-copy recipes. The first Wi-Fi command asks once where you are (regulatory domain); CI sets `UCX_REGDOMAIN`.
 
 ## What do you want to do?
 
-No Wi-Fi or Bluetooth background needed: pick a goal, run the recipe, read the verdict. Each recipe in [examples/use-cases/](examples/use-cases/) explains what it does and what you need, and checks its own result.
+Pick a goal, run the recipe, read the verdict. No radio background needed.
 
 | Your goal | Run | What you get |
 |---|---|---|
@@ -75,113 +57,19 @@ No Wi-Fi or Bluetooth background needed: pick a goal, run the recipe, read the v
 | Replace a serial cable with Bluetooth LE | `ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
 | Something does not work | `ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
 
-The Wi-Fi recipes take the network name and password from `UCX_WIFI_SSID` and `UCX_WIFI_PASS`; passwords are masked in the AT trace and in recorded sessions. Every group of commands also has worked examples: type `wifi.example`, `mqtt.example` or `gatt.example` in the shell.
+## Wow in one line
 
-## Powerful one-liners
-
-**Get online and fetch a web page**
 ```powershell
-ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "net.ping u-blox.com" --exec "http.get https://example.com"
+ucxapp --exec "wifi.connect MySsid ${UCX_WIFI_PASS}" --exec "http.get https://example.com"   # online in seconds
+ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"                   # newest firmware, SHA256 checked
+ucxapp COM13 --web                                                                           # the module serves its own web UI
+ucxapp --script examples/automation/production-test.ucx --junit production.xml               # production test with a CI report
+ucxapp --json dev.info                                                                       # machine-readable for your tools
 ```
 
-**Scan the air for networks**
-```powershell
-ucxapp wifi.scan
-```
+Something not working? `ucxapp dev.diagnose` checks module, Wi-Fi, DNS, internet and certificates and tells you what to try next.
 
-**Update the module firmware over XMODEM, with SHA256 verification**
-```powershell
-ucxapp fw.flash module.bin
-```
-
-**Always the newest firmware**: look up the latest GitHub release for the connected module and flash it
-```powershell
-ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
-```
-
-**Download firmware straight from GitHub and flash it**: the module fetches the release asset over Wi-Fi (redirects followed), the app verifies the SHA256 and flashes it
-```powershell
-ucxapp --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
-```
-`fw.download` deletes the file if the SHA256 does not match, so a bad download is never flashed. Without Wi-Fi, download the file in a browser and use `fw.flash` directly.
-
-**Remote control from any browser**: the module serves its own web UI over Wi-Fi
-```powershell
-ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
-```
-It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or laptop for a command box with live output.
-`ucxapp COM13 --web` does the same without the text UI: it joins the best saved Wi-Fi network if needed, starts the web server and runs until q, Esc or Ctrl+C.
-
-**No install: the app in the browser**: the whole app runs as WebAssembly in Chrome or Edge and talks to the EVK over Web Serial
-```powershell
-.\ucxapp --wasm            # builds build/wasm/site and serves http://127.0.0.1:8098/
-```
-Click **Connect module**, pick the EVK port, and every command works from the page. The page remembers that port: on the next visit, and when the EVK is plugged back in, it reopens it without asking; **Disconnect module** forgets it. No EVK at hand? **Virtual module** connects a simulated NORA-W36 (Wi-Fi scan and connect, sockets, Bluetooth peer and GATT) instead. The site is static and published on GitHub Pages by `.github/workflows/pages.yml`: https://u-blox.github.io/u-connectXpressApp/
-
-**Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
-```powershell
-ucxapp COM13 --exec "utils.tls.ca.create" --exec "utils.tls.server.create server 192.168.1.42" --exec "wifi.connect MySsid MyPassword" --exec "gnss.open" --exec "gnss.bridge tls 2947" --shell
-```
-Clients trust `tls-ca.crt`; another module connects with `cert.upload ca tls-ca.crt` and `sock.tls`.
-
-**Use it in CI and test scripts**: every `--exec` runs in order and the app exits with code 1 on the first failure.
-
-## Automation and diagnostics
-
-**Machine-readable output**: `--json` prints one JSON object per command with `success`, a stable `code` (`OK`, `USAGE`, `NOT_CONNECTED`, `UNKNOWN_CMD`, `FAILED`), the `error` text, the `output` lines and the `Key: value` lines as `data`.
-```powershell
-ucxapp --json dev.info
-{"command":"dev.info","success":true,"code":"OK","output":[...],"data":{"manufacturer":"u-blox","model":"NORA-W36","firmware_version":"3.1.0"}}
-```
-`help --json` lists every command with its arguments and whether it needs a module or is destructive (`danger`).
-
-**Keep secrets off the command line**: `${NAME}` in `--exec` and shell commands takes an environment variable, and `wifi.connect <ssid> -` prompts for the password.
-```powershell
-$env:UCX_WIFI_PASS = "..."; ucxapp --exec 'wifi.connect MySsid ${UCX_WIFI_PASS}'
-```
-
-**Test scripts with a report**: one command per line, `expect <regex>` checks the output of the command above, `expect-fail` expects it to fail. Steps print PASS/FAIL; `--junit` writes a report for CI. See [examples/](examples/).
-```powershell
-ucxapp --script examples/automation/production-test.ucx --junit production.xml
-```
-
-**Support report**: `dev.caps` shows what the module and this build can do; `dev.diagnose` checks the module, Wi-Fi, DNS, internet and certificates, gives each check PASS, FAIL, NOT RUN or NOT SUPPORTED with a hint for what to try next, and ends with PASS, PARTIAL or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
-
-## Highlights
-
-- **Bluetooth**: scan, connect, bond, SPS, GATT client and server, saved profiles
-- **Wi-Fi** (NORA-W36): station and AP modes, scanning, auto-reconnect, saved profiles
-- **Network services**: sockets, HTTP/HTTPS, MQTT, TLS and certificates, ping, DNS
-- **Firmware updates**: XMODEM with SHA256 verification
-- **Scriptable**: `--exec` for one-shots, `--shell` for interactive use
-- **Portable C11 command layer**: add a command by adding one table entry
-- **On a microcontroller too**: run the same shell on an STM32 Nucleo board with the module wired to a UART, with a transparent `bridge` mode for AT debugging
-
-## Commands at a glance
-
-Type `help` in the shell, or `help wifi` to filter by prefix. `examples` lists ready-to-copy command sequences; `gnss.example` (or `examples gnss`) shows them for one group. Full list with arguments: [command reference](COMMANDS.md).
-
-| Area | Commands |
-|---|---|
-| Device | `dev.info`, `dev.reboot`, `dev.factory confirm`, `at <raw AT command>` |
-| Settings | `cfg.show`, `cfg.save <file>`, `cfg.load <file>`, `cfg.diff <file> [file2]` (back up, clone and compare module settings) |
-| AT trace | `at.trace <file>`, `at.trace.stop`, `at.trace.show <file>`, `at.trace.pcap <file>`, `at.decode <urc>`, `at.replay <file>` (timed, decoded AT log; Wireshark pcapng export) |
-| Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*`, `wifi.locate` |
-| Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
-| Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
-| Performance | `perf.latency`, `perf.throughput`, `perf.echo`, `perf.phone` (round-trip time and throughput over TCP, UDP or SPS, e.g. against `echo.u-blox.com` port 7 or the u-connectXplorer phone app) |
-| Phone app | `xplorer.connect`, `xplorer.info`, `xplorer.call`, `xplorer.echo` (remote control of u-connectXplorer, so the phone is the other end of a test) |
-| MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
-| App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
-| Bluetooth | `bt.scan`, `bt.connect`, `bt.filter`, `bt.name`, `bt.addr`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
-| GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.*`, `gatt.server.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
-| HID | `hid.setup`, `hid.text`, `hid.key`, `hid.mouse`, `hid.click`, `hid.media` (Bluetooth keyboard, mouse and media keys); `hid.client` (read a BLE keyboard or mouse) |
-| Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
-| Sensors | `gnss.detect`, `gnss.open`, `gnss.status`, `gnss.sats`, `gnss.bridge`, `imu.detect`, `imu.open`, `imu.status`, `imu.bridge` (PC serial sensors, bridged over TCP, UDP or BLE) |
-| Cellular | `cell.detect`, `cell.open`, `cell.status`, `cell.apn`, `cell.attach`, `cell.ping`, `cell.connect`, `cell.bridge`, `cell.at` (a cellular modem on a PC serial port) |
-| Certificates | `cert.list`, `cert.upload`, `cert.info`, `cert.remove` |
-| Firmware | `fw.download [latest [file]]` or `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
-| Web UI | `web.start`, `web.stop`, `web.status`, `web.export` |
+Every command, with arguments: [COMMANDS.md](COMMANDS.md), or `help` in the shell.
 
 ## Quick start from source
 
@@ -193,44 +81,32 @@ git submodule update --init --recursive third-party/mbedtls
 .\ucxapp             # builds on first run, then starts the shell
 ```
 
-Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm` (emsdk).
-Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
+Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm`. Details: [BUILDING.md](BUILDING.md).
 
-## Memory footprint
+## Small enough for a microcontroller
 
-Release builds, updated by `.\ucxapp --everything --build`. On Windows and Linux: executable size and peak RAM
-after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [docs/STM32_MEMORY.md](docs/STM32_MEMORY.md)).
+The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Updated by `.\ucxapp --everything --build` ([details](docs/STM32_MEMORY.md)).
 
 <!-- memory -->
 | Target | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
 |---|---|---|---|---|---|---|---|
-| `win` | Windows x64 | 1.7 MB | - | - | 8.6 MB | - | - |
-| `linux` | Linux x64 | 1.5 MB | - | - | 2.3 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 538 KB | 2048 KB | 26% | 320 KB | 512 KB | 63% |
-| `f767` | NUCLEO-F767ZI | 525 KB | 2048 KB | 26% | 331 KB | 368 KB | 90% |
-| `f439` | NUCLEO-F439ZI | 528 KB | 2048 KB | 26% | 137 KB | 192 KB | 72% |
-| `f407` | STM32F4DISCOVERY | 525 KB | 1024 KB | 51% | 110 KB | 128 KB | 86% |
-| `f401` | NUCLEO-F401RE | 450 KB | 512 KB | 88% | 83 KB | 96 KB | 87% |
-| `f446` | NUCLEO-F446RE | 462 KB | 512 KB | 90% | 102 KB | 128 KB | 80% |
+| `win` | Windows x64 | 2.1 MB | - | - | 8.9 MB | - | - |
+| `linux` | Linux x64 | 2.1 MB | - | - | 2.4 MB | - | - |
+| `h753` | NUCLEO-H753ZI | 491 KB | 2048 KB | 24% | 309 KB | 512 KB | 60% |
+| `f767` | NUCLEO-F767ZI | 480 KB | 2048 KB | 23% | 323 KB | 368 KB | 88% |
+| `f439` | NUCLEO-F439ZI | 483 KB | 2048 KB | 24% | 126 KB | 192 KB | 66% |
+| `f407` | STM32F4DISCOVERY | 480 KB | 1024 KB | 47% | 103 KB | 128 KB | 81% |
+| `f401` | NUCLEO-F401RE | 453 KB | 512 KB | 89% | 83 KB | 96 KB | 87% |
+| `f446` | NUCLEO-F446RE | 465 KB | 512 KB | 91% | 102 KB | 128 KB | 80% |
 | `f103` | NUCLEO-F103RB | 122 KB | 128 KB | 96% | 15 KB | 20 KB | 79% |
 | `g071` | NUCLEO-G071RB | 127 KB | 128 KB | 100% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
-## Documentation
+## Secure by default
 
-- [Command reference](COMMANDS.md): every command with usage
-- [Building, flashing and releasing](BUILDING.md): prerequisites, launchers, STM32 boards, signing, file structure
-- [u-connectClient](https://github.com/u-blox/u-connectClient): the small-footprint AT client library underneath
+Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key; XOR obfuscation on STM32), the web UI needs a random 128-bit token (`web.start https` for untrusted networks), passwords never appear in traces, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
 
-## Security notes
-
-- Saved Wi-Fi passwords (`ucxapp.wifi`, `wifi.profile.*`) are encrypted with AES-256-GCM using a random per-install key in `storage/ucxapp.key` (owner-only on Linux). The profiles file alone reveals nothing; whoever has both files, or runs ucxapp as you, can read the passwords. STM32 builds (no mbedTLS) still use XOR obfuscation. Profiles saved by older versions (XOR) are not read any more: add them again.
-- `utils.encrypt` / `utils.decrypt` protect any file with a passphrase (AES-256-GCM, PBKDF2-HMAC-SHA256 with 600000 iterations).
-- The web UI is protected by a random 128-bit token in the printed URL. Use `web.start https` on networks you do not trust.
-
-### EU Cyber Resilience Act and RED cybersecurity (EN 18031)
-
-ucxapp is a test and integration tool, not the radio product; the NORA module carries the RED conformity (secure boot, signed module firmware). What the app can show is pinned to tests in [tests/test_cra.py](tests/test_cra.py): an SBOM of every component (`app.sbom`), no default passwords (random web token, client certificates from the local CA), stored secrets sealed and kept out of logs, TLS/DTLS with mbedTLS and malformed input rejected. The process items (vulnerability reporting, support period, signed releases) are handled by the u-blox release process.
+Built on [u-connectClient](https://github.com/u-blox/u-connectClient), the small-footprint AT client library.
 
 ---
 

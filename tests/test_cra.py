@@ -2,7 +2,7 @@
 
 Each item points to the tests that prove it; this file fails when one of them is renamed or removed. Items that
 belong to the module (secure boot, signed module firmware) or the process (vulnerability handling, support
-period) are listed in README.md, not tested here.
+period) belong to the module and the u-blox release process, not tested here.
 """
 
 import ast

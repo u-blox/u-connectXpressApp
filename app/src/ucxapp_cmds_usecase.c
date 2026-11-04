@@ -59,6 +59,7 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
     } else {
         row("[ok]", "Station + AP", "both at once: wifi.peap or wifi.eap, then wifi.ap.enable (WPA2, max 5 stations)");
         row("[check]", "Enterprise", "EAP-TLS (wifi.eap) and PEAP (wifi.peap); confirm WPA3-Enterprise with the factory AP");
+        row("[ok]", "Roaming", "the tool moves between factory APs (same SSID): wifi.roaming on before joining");
     }
     row("[ok]", "Protocols", "the host runs them over module sockets (sock.*) or MQTT (mqtt.*)");
     row("[limit]", "HTTPS, 5 PCs", "TLS ends on the host (web.start 443 <token> https); 6 module sockets, the listener takes 2");

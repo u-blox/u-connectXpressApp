@@ -1628,6 +1628,15 @@ static void wpsScan(ucxapp_t *app, int32_t conn)
     wpsRespond(app, conn, "OK:SCAN_DONE");
 }
 
+/* A phone may send the same network twice (text and protobuf, or a retry); joining again would drop the link. */
+static bool wpsAlreadyJoined(ucxapp_t *app, const char *ssid)
+{
+    char cur[40];
+    char ip[40];
+
+    return ucxapp_wifi_get_status(app->ucx, cur, sizeof(cur), ip, sizeof(ip)) && strcmp(cur, ssid) == 0;
+}
+
 static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
 {
     uCxHandle_t *ucx = app->ucx;
@@ -1650,8 +1659,10 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
             const char *password = first + 1;
             const char *auth = last + 1;
 
-            r = uCxWifiStationSetConnectionParams(ucx, 0, ssid);
-            if (r != 0) {
+            if (wpsAlreadyJoined(app, ssid)) {
+                snprintf(resp, sizeof(resp), "OK:CONNECTING:%.64s", ssid);
+                gWpsProvisioned = true;
+            } else if ((r = uCxWifiStationSetConnectionParams(ucx, 0, ssid)) != 0) {
                 snprintf(resp, sizeof(resp), "ERROR:SET_SSID_FAILED:%d", (int)r);
             } else {
                 r = strcmp(auth, "OPEN") == 0
@@ -1937,6 +1948,14 @@ static int wpsPbSetConfig(ucxapp_t *app, int32_t conn, const uint8_t *cfg, size_
     }
     if (ssid[0] == '\0' || (auth != PB_AUTH_OPEN && pass[0] == '\0')) {
         return PB_INVALID_ARGUMENT;
+    }
+    if (wpsAlreadyJoined(app, ssid)) {
+        memset(pass, 0, sizeof(pass));
+        ucxapp_print("[WPS] SET_CONFIG %s: already connected\n", ssid);
+        gWpsProvisioned = true;
+        gWpsPbConn = conn;
+        gWpsPbWait = WPS_PB_WAIT_S;
+        return PB_SUCCESS;
     }
     if (!ucxapp_wifi_apply_regdomain(app->ucx)) {
         return PB_INTERNAL_ERROR;

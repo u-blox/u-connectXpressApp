@@ -594,10 +594,12 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
         assert "the phone sent the Wi-Fi settings" in out.stdout, out.stdout[-3000:]
         assert "secret123" not in out.stdout, out.stdout[-3000:]
         for line in ("[WPS] response: op 1 status 0", "[WPS] response: op 2 status 0",
-                     "[WPS] scan result: vucx-net -45 dBm", "[WPS] SET_CONFIG vucx-net: connecting",
+                     "[WPS] scan result: vucx-net -45 dBm", "[WPS] SET_CONFIG vucx-net: already connected",
                      "[WPS] response: op 4 status 0", "[WPS] result: connected"):
             assert line in out.stdout, out.stdout[-3000:]
         assert any(c.startswith("AT+UBTGIS=0,42,08021000") for c in nora.log), nora.log[-30:]
+        # the same network twice (text, then protobuf) joins at most once (none if the module is already on it)
+        assert sum(c.startswith("AT+UWSC=") for c in nora.log) <= 1, nora.log[-40:]
     if case in ("mower", "farm"):   # PointPerfect over the modem's data link: request up, corrections down
         assert any(c.startswith("GET /NEAR-SPARTN ") for c in modem.log), modem.log[-20:]
         assert "NTRIP: streaming corrections from /NEAR-SPARTN" in out.stdout, out.stdout[-3000:]

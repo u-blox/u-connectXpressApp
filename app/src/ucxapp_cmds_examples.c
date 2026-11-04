@@ -349,9 +349,9 @@ static const example_t kExamples[] = {
     { "usecase", "Fit check, then with a measured rate",
       "usecase.tool\nusecase.tool 2.5" },
     { "usecase", "Join the factory network with a user name (PEAP)",
-      "cert.list\nwifi.peap FactoryNet tool17 Secret123 ca.pem\nwifi.status" },
+      "cert.list\nwifi.roaming on\nwifi.peap FactoryNet tool17 Secret123 ca.pem\nwifi.status" },
     { "usecase", "Join the factory network with certificates (EAP-TLS)",
-      "cert.list\nwifi.eap FactoryNet ca.pem client.pem client.key tool17\nwifi.status" },
+      "cert.list\nwifi.roaming on\nwifi.eap FactoryNet ca.pem client.pem client.key tool17\nwifi.status" },
     { "usecase", "Access point for the laptops, next to the station",
       "wifi.ap.enable Tool17 Tool17Pass\nwifi.ap.status" },
 #if UCXAPP_HOST

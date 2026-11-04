@@ -716,9 +716,9 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 
 | Command | Arguments | Description |
 |---|---|---|
-| `utils.qr.text` | `<text...>` | Print a QR code for any text |
-| `utils.qr.wifi` | `<ssid> [password] [WPA\|WEP\|nopass] [hidden]` | Print a Wi-Fi join QR code |
-| `utils.qr.geo` | `<lat> <lon>` | Print a location QR code |
+| `utils.qr.text` | `<text...> [small\|large]` | Print a QR code for any text. `small` (default) draws two module rows per text line with half blocks, `large` two characters per module for terminals without them |
+| `utils.qr.wifi` | `<ssid> [password] [WPA\|WEP\|nopass] [hidden] [small\|large]` | Print a Wi-Fi join QR code; the keywords may come in any order, and without a password (or with `nopass`) the code is for an open network |
+| `utils.qr.geo` | `<lat> <lon> [small\|large]` | Print a location QR code |
 | `utils.zip` | `<archive.zip> <file> [file...]` | Create a zip archive from up to 6 files (deflate; no device needed) |
 | `utils.unzip` | `<archive.zip> [dir]` | Extract a zip archive, default into the current directory (no device needed) |
 | `utils.cert.info` | `<file> [pw]` | Show what a PKCS#12, PKCS#7, DER or PEM file holds: subject, issuer, validity, which certificate matches the key, key type and size (no device needed, not on STM32) |

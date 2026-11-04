@@ -16,6 +16,14 @@ def test_submodule_is_u_connect_client():
     assert "ucxclient" not in text
 
 
+def test_test_files_have_unique_basenames():
+    """tests/ has no __init__.py, so pytest imports by basename: two test_x.py stop the whole collection."""
+    seen = {}
+    for path in sorted((ROOT / "tests").rglob("test_*.py")):
+        assert path.name not in seen, f"{path} and {seen[path.name]} share a basename"
+        seen[path.name] = path
+
+
 # First major version of each action that runs on Node.js 24 (older ones print "Node.js 20 is deprecated").
 NODE24_ACTIONS = {
     "actions/checkout": 5, "actions/setup-python": 6, "actions/cache": 5, "actions/upload-artifact": 5,

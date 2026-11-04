@@ -183,6 +183,12 @@ class Mock(BaseHTTPRequestHandler):
                         out = json.dumps("Module:           u-blox NORA-W36, firmware 3.5.0\n")
                         self.wfile.write(f"event: out\ndata: {out}\n\nevent: done\ndata: 0\n\n".encode())
                         self.wfile.flush()
+                    elif re.search(r"cmd=examples(%20|\+| )uc-provision$", url):
+                        out = json.dumps("Examples for uc-provision\n\n 1. Wait for a phone\n    > bt.pairing on\n"
+                                         "\n 2. Or: own access point\n    > wifi.ap.status\n\n"
+                                         "Run one with examples uc-provision <number> (stops at the first error)\n")
+                        self.wfile.write(f"event: out\ndata: {out}\n\nevent: done\ndata: 0\n\n".encode())
+                        self.wfile.flush()
 
     def do_POST(self):
         self.server.posted.append(self.path)
@@ -269,6 +275,31 @@ def test_page_in_a_browser(server):
         assert page.is_visible("#pc")
         browser.close()
     assert not js_errors, js_errors
+
+
+def test_example_titles_in_the_log_run_on_click(server):
+    """No typing 'examples uc-provision 2': each listed example is a link that runs it."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector(".blk .badge.ok")
+        page.fill("#cmd", "examples uc-provision")
+        page.press("#cmd", "Enter")
+        page.wait_for_selector(".blk .scan >> nth=1")
+        assert page.locator(".blk .scan").count() == 2
+        server.posted.clear()
+        page.click(".blk .scan:has-text('2. Or: own access point')")
+        for _ in range(50):
+            if server.posted:
+                break
+            page.wait_for_timeout(100)
+        browser.close()
+    assert server.posted and server.posted[0].endswith("cmd=examples&a0=uc-provision&a1=2"), server.posted
 
 
 def test_page_forms_flags_keys_and_rest(server):
@@ -362,6 +393,7 @@ def test_preview_composes_lines_like_the_app():
 
     assert ucxapp.compose("wifi.connect", ["My Net", 'a"b', ""], False) == 'wifi.connect "My Net" "a\\"b"'
     assert ucxapp.compose("at", ["AT+GMM ?"], True) == "at AT+GMM ?"
+    assert ucxapp.compose("examples", ["uc-provision", "1"], True) == "examples uc-provision 1"
     assert ucxapp.compose("dev.info", [""], False) == "dev.info"
 
 

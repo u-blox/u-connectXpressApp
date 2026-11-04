@@ -130,6 +130,12 @@ function scanLinks(b){const lines=b.body.textContent.split('\n');b.body.textCont
  lines.forEach((l,i)=>{const m=l.match(/^\s*(\d+)\s{2}(.+?)\s+[0-9A-F]{2}(:[0-9A-F]{2}){5}/);
   if(m){const d=el('div','scan',l);d.title='Click to connect to '+m[2].trim();d.onclick=()=>{cmd.value='wifi.connect '+m[1]+' ';cmd.focus();showHint()};b.body.appendChild(d)}
   else b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))})}
+function exLinks(b){const lines=b.body.textContent.split('\n');let g='',grp=0;b.body.textContent='';
+ lines.forEach((l,i)=>{const h=l.match(/^Examples for (\S+?)(\.\*)?$/);if(h){g=h[1];grp=!!h[2]}
+  const m=g&&l.match(/^ (\d+)\. (.+)$/);
+  if(m){const d=el('div','scan',l),n=m[1],gg=g,isGrp=grp;d.title='Click to run: '+m[2]+' (stops at the first error)';
+   d.onclick=()=>isGrp?run(gg+'.example',[n]):run('examples',[gg,n]);b.body.appendChild(d)}
+  else b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))})}
 function regLinks(b){const lines=b.body.textContent.split('\n');let on=0;b.body.textContent='';
  lines.forEach((l,i)=>{if(/^Where are you located\?/.test(l))on=1;const m=on&&l.match(/^\s*(\d+)\s{2}([a-z]+)\s+(.+?)(\s+<- current)?$/);
   if(m){const d=el('div','scan',l);d.title='Click to set the region to '+m[3];d.onclick=()=>run('wifi.regdomain',[m[2]]);b.body.appendChild(d)}
@@ -153,6 +159,7 @@ function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  b.badge.className='badge '+(rc?'bad':'ok');b.badge.textContent=(rc?'exit '+rc:'ok')+', '+((Date.now()-b.t0)/1000).toFixed(1)+' s';
  if(/^wifi\.scan/.test(b.cmd))scanLinks(b);
  if(/^Where are you located\?/m.test(b.body.textContent))regLinks(b);
+ if(!rc&&/^Examples for /m.test(b.body.textContent))exLinks(b);
  if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
  if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b)}
 

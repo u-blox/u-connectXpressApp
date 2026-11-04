@@ -10,6 +10,8 @@ Environment (an empty value means "not attached", as set by `ucxapp --detect --t
 Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (NORA-B26).
   UCX_GNSS_PORT, UCX_GNSS_BAUD   GNSS receiver (default: what gnss.detect finds)
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
+  UCX_HID_PEER  serial console of a Linux BLE peer (the i.MX91 hub, root login) for the HID tests; not probed
+  UCX_HID_PEER_BAUD, UCX_HID_PEER_USER   its baud rate (default 115200) and login (default root)
 """
 
 import concurrent.futures
@@ -145,6 +147,7 @@ def pytest_configure(config):
         "thread: every module the test uses needs Thread firmware (dev.caps)",
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
+        "hid_peer: needs a Linux BLE peer on its serial console (UCX_HID_PEER, e.g. the i.MX91 hub)",
         "stress: long repeated runs; only with -m stress",
         "soak: hours-long run checked every few minutes (UCX_SOAK_HOURS); only with -m soak",
     ):
@@ -171,6 +174,8 @@ def _skip_reason(item, exe, hw):
     for name in ("gnss", "imu"):
         if item.get_closest_marker(name) and not hw[name]:
             return f"no {name.upper()} found (set UCX_{name.upper()}_PORT)"
+    if item.get_closest_marker("hid_peer") and not os.environ.get("UCX_HID_PEER"):
+        return "no Linux BLE peer (set UCX_HID_PEER to the i.MX91 console port)"
     if item.get_closest_marker("wifi"):
         sys.path.insert(0, str(ROOT / "tests" / "hardware"))
         from hwutil import _has_wifi
@@ -253,4 +258,18 @@ def gnss():
 @pytest.fixture(scope="session")
 def imu():
     return _source("imu")
+
+
+@pytest.fixture(scope="session")
+def hid_peer():
+    """The Linux BLE peer, logged in and with the peer script copied over."""
+    sys.path.insert(0, str(ROOT / "tests" / "hardware"))
+    from linuxpeer import LinuxPeer
+
+    peer = LinuxPeer(os.environ["UCX_HID_PEER"])
+    try:
+        peer.upload()
+        yield peer
+    finally:
+        peer.close()
 

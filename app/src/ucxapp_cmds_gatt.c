@@ -1101,7 +1101,7 @@ static const srvChar_t kSpsChars[] = {
 
 static const srvChar_t kWpsChars[] = {
     { "wps.info", 0, kWpsInfo, PROP_READ,  0, { 0 }, 64,  0, false, "NORA-W36 WiFi-Prov 1.0" },
-    { "wps.ctrl", 0, kWpsCtrl, PROP_WRITE, 1, { 0 }, 244, 0, false, NULL },
+    { "wps.ctrl", 0, kWpsCtrl, PROP_WRITE | PROP_INDICATE, 1, { 0 }, 244, 0, false, NULL },
     { "wps.data", 0, kWpsData, PROP_NOTIFY, 1, { 0 }, 244, 0, false, NULL },
 };
 
@@ -1501,15 +1501,19 @@ static int cmdServerDemo(ucxapp_t *app, int argc, char *argv[])
 /* ---- server: write events, Wi-Fi provisioning ---------------------------- */
 
 #ifndef WPS_QUEUE
-#define WPS_QUEUE   4
+#define WPS_QUEUE   6
 #endif
 #define WPS_CMD_MAX 257
 #define WPS_SCANS   8
 
 typedef struct {
     int32_t conn;
+    size_t len;
     char text[WPS_CMD_MAX];
 } wpsCmd_t;
+
+/* A request starting with this byte (protobuf field 1, varint) is the Nordic protocol; text commands are letters. */
+#define WPS_PB_TAG 0x08
 
 /* The URC task queues commands; the foreground (gatt.listen or a server example) runs them. */
 static wpsCmd_t gWpsQueue[WPS_QUEUE];
@@ -1549,9 +1553,18 @@ void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data,
         size_t n = len < WPS_CMD_MAX - 1 ? len : WPS_CMD_MAX - 1;
         memcpy(gWpsQueue[gWpsHead].text, data, n);
         gWpsQueue[gWpsHead].text[n] = '\0';
+        gWpsQueue[gWpsHead].len = n;
         gWpsQueue[gWpsHead].conn = conn;
         gWpsHead = next;
-        ucxapp_print("[WPS] command received: %s\n", gWpsQueue[(next + WPS_QUEUE - 1) % WPS_QUEUE].text);
+        if (n > 1 && data[0] == WPS_PB_TAG) {
+            ucxapp_print("[WPS] request received: op %d\n", data[1]);
+        } else if (n > 11 && memcmp(data, "SET_CONFIG:", 11) == 0) {
+            const char *colon = memchr(data + 11, ':', n - 11);
+            ucxapp_print("[WPS] command received: SET_CONFIG:%.*s:***\n",
+                         (int)(colon != NULL ? (size_t)(colon - (const char *)data) - 11 : n - 11), data + 11);
+        } else {
+            ucxapp_print("[WPS] command received: %s\n", gWpsQueue[(next + WPS_QUEUE - 1) % WPS_QUEUE].text);
+        }
         return;
     }
     if (gServerQuiet) {
@@ -1686,13 +1699,347 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
     wpsRespond(app, conn, resp);
 }
 
+/* ---- Nordic Wi-Fi Provisioning (nRF Connect SDK wifi_prov protobuf), spoken by u-connectXplorer and the Nordic
+ * apps: a Request on the control point, its Response as an indication there, Results (scan records, connection
+ * state) as notifications on Data Out. */
+enum { PB_GET_STATUS = 1, PB_START_SCAN, PB_STOP_SCAN, PB_SET_CONFIG, PB_FORGET_CONFIG };
+enum { PB_SUCCESS = 0, PB_INVALID_ARGUMENT, PB_INVALID_PROTO, PB_INTERNAL_ERROR };
+enum { PB_DISCONNECTED = 0, PB_CONNECTED = 4, PB_CONNECTION_FAILED = 5 };
+enum { PB_AUTH_OPEN = 0, PB_AUTH_WPA3_PSK = 6, PB_AUTH_SAE = 10, PB_AUTH_SAE_EXT_KEY = 23 };
+#define PB_FAIL_TIMEOUT 2
+#define WPS_PB_WAIT_S   30
+
+typedef struct {
+    uint8_t b[200];
+    size_t n;
+} pbBuf_t;
+
+static int32_t gWpsPbConn = -1;   /* connection waiting for the result of a protobuf SET_CONFIG */
+static int gWpsPbWait;            /* polls (seconds) left to wait for it */
+
+static void pbVarint(pbBuf_t *p, uint64_t v)
+{
+    do {
+        uint8_t c = (uint8_t)(v & 0x7F);
+        v >>= 7;
+        if (v != 0) {
+            c |= 0x80;
+        }
+        if (p->n < sizeof(p->b)) {
+            p->b[p->n++] = c;
+        }
+    } while (v != 0);
+}
+
+static void pbInt(pbBuf_t *p, unsigned field, int64_t v)
+{
+    pbVarint(p, (uint64_t)field << 3);
+    pbVarint(p, (uint64_t)v);   /* negative int32 as 10 bytes of two's complement, as protobuf does */
+}
+
+static void pbBytes(pbBuf_t *p, unsigned field, const void *d, size_t len)
+{
+    pbVarint(p, ((uint64_t)field << 3) | 2);
+    pbVarint(p, len);
+    if (p->n + len <= sizeof(p->b)) {
+        memcpy(p->b + p->n, d, len);
+        p->n += len;
+    }
+}
+
+static bool pbReadVarint(const uint8_t **p, const uint8_t *end, uint64_t *v)
+{
+    *v = 0;
+    for (unsigned shift = 0; *p < end && shift < 64; shift += 7) {
+        uint8_t c = *(*p)++;
+        *v |= (uint64_t)(c & 0x7F) << shift;
+        if ((c & 0x80) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Next field of a message: a varint value in v or bytes in d and len; false at the end or on malformed input. */
+static bool pbNext(const uint8_t **p, const uint8_t *end, unsigned *field, uint64_t *v, const uint8_t **d, size_t *len)
+{
+    uint64_t tag;
+
+    *d = NULL;
+    *len = 0;
+    if (*p >= end || !pbReadVarint(p, end, &tag)) {
+        return false;
+    }
+    *field = (unsigned)(tag >> 3);
+    switch (tag & 7) {
+    case 0:
+        return pbReadVarint(p, end, v);
+    case 2:
+        if (!pbReadVarint(p, end, v) || *v > (uint64_t)(end - *p)) {
+            return false;
+        }
+        *d = *p;
+        *len = (size_t)*v;
+        *p += *len;
+        return true;
+    case 1:
+    case 5: {
+        size_t skip = (tag & 7) == 1 ? 8 : 4;
+        if ((size_t)(end - *p) < skip) {
+            return false;
+        }
+        *p += skip;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+static void wpsPbIndicate(ucxapp_t *app, int32_t conn, const pbBuf_t *msg)
+{
+    const srvRec_t *ctrl = findSrv("wps.ctrl");
+
+    if (ctrl == NULL || uCxGattServerSendIndication(app->ucx, conn, ctrl->value, msg->b, (int32_t)msg->n) != 0) {
+        ucxapp_print("[WPS] response not sent (client not subscribed to the control point?)\n");
+    }
+}
+
+static void wpsPbNotify(ucxapp_t *app, int32_t conn, const pbBuf_t *msg)
+{
+    const srvRec_t *data = findSrv("wps.data");
+
+    if (data == NULL || uCxGattServerSendNotification(app->ucx, conn, data->value, msg->b, (int32_t)msg->n) != 0) {
+        ucxapp_print("[WPS] result not sent (client not subscribed to Data Out?)\n");
+    }
+}
+
+static void wpsPbState(ucxapp_t *app, int32_t conn, int state, int reason)
+{
+    pbBuf_t r = { .n = 0 };
+
+    pbInt(&r, 2, state);
+    if (reason >= 0) {
+        pbInt(&r, 3, reason);
+    }
+    wpsPbNotify(app, conn, &r);
+    ucxapp_print("[WPS] result: %s\n", state == PB_CONNECTED ? "connected" : state == PB_CONNECTION_FAILED
+                                                                             ? "connection failed" : "disconnected");
+}
+
+/* DeviceStatus: state, the SSID (WifiInfo) and the IPv4 address (ConnectionInfo). */
+static void wpsPbStatus(ucxapp_t *app, pbBuf_t *out)
+{
+    char ssid[40];
+    char ip[40];
+    pbBuf_t st = { .n = 0 };
+    bool up = ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip));
+
+    pbInt(&st, 1, up ? PB_CONNECTED : PB_DISCONNECTED);
+    if (up) {
+        pbBuf_t info = { .n = 0 };
+        uSockIpAddress_t addr;
+
+        pbBytes(&info, 1, ssid, strlen(ssid));
+        pbBytes(&st, 10, info.b, info.n);
+        if (uCxStringToIpAddress(ip, &addr) == 0 && addr.type == U_SOCK_ADDRESS_TYPE_V4) {
+            uint8_t v4[4] = { (uint8_t)(addr.address.ipv4 >> 24), (uint8_t)(addr.address.ipv4 >> 16),
+                              (uint8_t)(addr.address.ipv4 >> 8), (uint8_t)addr.address.ipv4 };
+            pbBuf_t conn = { .n = 0 };
+
+            pbBytes(&conn, 1, v4, sizeof(v4));
+            pbBytes(&st, 11, conn.b, conn.n);
+        }
+    }
+    pbBytes(out, 10, st.b, st.n);
+}
+
+/* Scan, then send one ScanRecord per network: WifiInfo (SSID, BSSID, channel, auth), then the RSSI. The results are
+ * collected first: no other AT command may run while the scan response is being read. */
+static int wpsPbScan(ucxapp_t *app, int32_t conn)
+{
+    struct {
+        char ssid[33];
+        uint8_t bssid[U_MAC_ADDR_LEN];
+        int32_t channel;
+        int32_t rssi;
+        int auth;
+    } found[WPS_SCANS];
+    uCxWifiStationScanDefault_t net;
+    int count = 0;
+
+    if (!ucxapp_wifi_apply_regdomain(app->ucx)) {
+        return PB_INTERNAL_ERROR;
+    }
+    uCxAtClientSetCommandTimeout(app->ucx->pAtClient, 60000, false);
+    uCxWifiStationScanDefaultBegin(app->ucx);
+    while (uCxWifiStationScanDefaultGetNext(app->ucx, &net)) {
+        if (count < WPS_SCANS && net.ssid != NULL && net.ssid[0] != '\0') {
+            snprintf(found[count].ssid, sizeof(found[count].ssid), "%s", net.ssid);
+            memcpy(found[count].bssid, net.bssid.address, sizeof(found[count].bssid));
+            found[count].channel = net.channel;
+            found[count].rssi = net.rssi;
+            found[count].auth = (net.authentication_suites & 0x20) ? PB_AUTH_WPA3_PSK
+                                : (net.authentication_suites & 0x18) ? 4 /* WPA/WPA2-PSK */ : PB_AUTH_OPEN;
+            count++;
+        }
+    }
+    uCxEnd(app->ucx);
+    for (int i = 0; i < count; i++) {
+        pbBuf_t info = { .n = 0 };
+        pbBuf_t rec = { .n = 0 };
+        pbBuf_t res = { .n = 0 };
+
+        pbBytes(&info, 1, found[i].ssid, strlen(found[i].ssid));
+        pbBytes(&info, 2, found[i].bssid, sizeof(found[i].bssid));
+        pbInt(&info, 4, found[i].channel);
+        pbInt(&info, 5, found[i].auth);
+        pbBytes(&rec, 1, info.b, info.n);
+        pbInt(&rec, 2, found[i].rssi);
+        pbBytes(&res, 1, rec.b, rec.n);
+        wpsPbNotify(app, conn, &res);
+        ucxapp_print("[WPS] scan result: %s %d dBm\n", found[i].ssid, (int)found[i].rssi);
+    }
+    return PB_SUCCESS;
+}
+
+/* SetConfig: WifiConfig { WifiInfo wifi = 1 { ssid = 1, auth = 5 }, passphrase = 2 }. */
+static int wpsPbSetConfig(ucxapp_t *app, int32_t conn, const uint8_t *cfg, size_t cfgLen)
+{
+    char ssid[33] = "";
+    char pass[65] = "";
+    uint64_t auth = 4;
+    const uint8_t *p = cfg;
+    const uint8_t *d;
+    unsigned field;
+    uint64_t v;
+    size_t len;
+    int32_t r;
+
+    while (pbNext(&p, cfg + cfgLen, &field, &v, &d, &len)) {
+        if (field == 1 && d != NULL) {
+            const uint8_t *q = d;
+            const uint8_t *qd;
+            size_t qlen;
+
+            while (pbNext(&q, d + len, &field, &v, &qd, &qlen)) {
+                if (field == 1 && qd != NULL && qlen < sizeof(ssid)) {
+                    memcpy(ssid, qd, qlen);
+                    ssid[qlen] = '\0';
+                } else if (field == 5 && qd == NULL) {
+                    auth = v;
+                }
+            }
+        } else if (field == 2 && d != NULL && len < sizeof(pass)) {
+            memcpy(pass, d, len);
+            pass[len] = '\0';
+        }
+    }
+    if (ssid[0] == '\0' || (auth != PB_AUTH_OPEN && pass[0] == '\0')) {
+        return PB_INVALID_ARGUMENT;
+    }
+    if (!ucxapp_wifi_apply_regdomain(app->ucx)) {
+        return PB_INTERNAL_ERROR;
+    }
+    bool wpa3 = auth == PB_AUTH_WPA3_PSK || auth == PB_AUTH_SAE || auth == PB_AUTH_SAE_EXT_KEY;
+    r = uCxWifiStationSetConnectionParams(app->ucx, 0, ssid);
+    if (r == 0) {
+        r = auth == PB_AUTH_OPEN ? uCxWifiStationSetSecurityOpen(app->ucx, 0)
+                                 : uCxWifiStationSetSecurityWpa(app->ucx, 0, pass, wpa3 ? U_WIFI_WPA_THRESHOLD_WPA3
+                                                                                        : U_WIFI_WPA_THRESHOLD_WPA2);
+    }
+    if (r == 0) {
+        r = uCxWifiStationConnect(app->ucx, 0);
+    }
+    memset(pass, 0, sizeof(pass));
+    if (r != 0) {
+        ucxapp_print("[WPS] SET_CONFIG %s failed (%d%s)\n", ssid, (int)r, ucxapp_errname(r));
+        return PB_INTERNAL_ERROR;
+    }
+    ucxapp_print("[WPS] SET_CONFIG %s: connecting\n", ssid);
+    gWpsProvisioned = true;
+    gWpsPbConn = conn;
+    gWpsPbWait = WPS_PB_WAIT_S;
+    return PB_SUCCESS;
+}
+
+static void wpsPbHandle(ucxapp_t *app, int32_t conn, const uint8_t *req, size_t reqLen)
+{
+    const uint8_t *p = req;
+    const uint8_t *d;
+    const uint8_t *cfg = NULL;
+    size_t len;
+    size_t cfgLen = 0;
+    unsigned field;
+    uint64_t v;
+    uint64_t op = 0;
+    int status = PB_SUCCESS;
+    pbBuf_t rsp = { .n = 0 };
+    pbBuf_t devStatus = { .n = 0 };
+
+    while (pbNext(&p, req + reqLen, &field, &v, &d, &len)) {
+        if (field == 1 && d == NULL) {
+            op = v;
+        } else if (field == 11 && d != NULL) {
+            cfg = d;
+            cfgLen = len;
+        }
+    }
+    if (p != req + reqLen) {
+        status = PB_INVALID_PROTO;
+    } else if (op == PB_GET_STATUS) {
+        wpsPbStatus(app, &devStatus);
+    } else if (op == PB_START_SCAN || op == PB_STOP_SCAN) {
+        status = PB_SUCCESS;   /* the scan runs after the response, results follow on Data Out */
+    } else if (op == PB_SET_CONFIG) {
+        status = cfg != NULL ? wpsPbSetConfig(app, conn, cfg, cfgLen) : PB_INVALID_ARGUMENT;
+    } else if (op == PB_FORGET_CONFIG) {
+        uCxWifiStationDisconnect(app->ucx);
+    } else {
+        status = PB_INVALID_ARGUMENT;
+    }
+    pbInt(&rsp, 1, (int64_t)op);
+    pbInt(&rsp, 2, status);
+    if (devStatus.n > 0) {
+        pbBytes(&rsp, 10, devStatus.b, devStatus.n);
+    }
+    wpsPbIndicate(app, conn, &rsp);
+    ucxapp_print("[WPS] response: op %d status %d\n", (int)op, status);
+    if (op == PB_START_SCAN && status == PB_SUCCESS) {
+        wpsPbScan(app, conn);
+    }
+}
+
+/* After a protobuf SET_CONFIG, tell the phone once the module has joined (or gave up), as it waits for that. */
+static void wpsPbCheck(ucxapp_t *app)
+{
+    char ssid[40];
+    char ip[40];
+
+    if (gWpsPbWait <= 0) {
+        return;
+    }
+    if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        gWpsPbWait = 0;
+        wpsPbState(app, gWpsPbConn, PB_CONNECTED, -1);
+    } else if (--gWpsPbWait == 0) {
+        wpsPbState(app, gWpsPbConn, PB_CONNECTION_FAILED, PB_FAIL_TIMEOUT);
+    }
+}
+
 static void wpsPoll(ucxapp_t *app)
 {
     while (gWpsTail != gWpsHead) {
         wpsCmd_t cmd = gWpsQueue[gWpsTail];
         gWpsTail = (gWpsTail + 1) % WPS_QUEUE;
-        wpsHandle(app, cmd.conn, cmd.text);
+        if (cmd.len > 0 && (uint8_t)cmd.text[0] == WPS_PB_TAG) {
+            wpsPbHandle(app, cmd.conn, (const uint8_t *)cmd.text, cmd.len);
+        } else {
+            wpsHandle(app, cmd.conn, cmd.text);
+        }
+        memset(cmd.text, 0, sizeof(cmd.text));
     }
+    wpsPbCheck(app);
 }
 
 void ucxapp_gatt_ensure_advertising(ucxapp_t *app)
@@ -1811,10 +2158,11 @@ static int serverExample(ucxapp_t *app, int argc, char *argv[], const char *key)
     if (p->u128 != NULL) {
         ucxapp_print("serving %s for %d s\n", p->title, (int)seconds);
         gWpsProvisioned = false;
+        gWpsPbWait = 0;
         for (int32_t t = 0; t < seconds; t++) {
             U_CX_PORT_SLEEP_MS(1000);
             wpsPoll(app);
-            if (gWpsProvisioned) {
+            if (gWpsProvisioned && gWpsPbWait == 0) {
                 ucxapp_print("the phone sent the Wi-Fi settings; the module is joining the network\n");
                 return UCXAPP_OK;
             }
@@ -2156,7 +2504,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
     { "gatt.server.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
-    { "gatt.server.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, serve until a phone sends the Wi-Fi settings or time is up", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
+    { "gatt.server.wps", "[seconds]", "Nordic Wi-Fi Provisioning server (u-connectXplorer, nRF apps); with seconds, serve until a phone sends the Wi-Fi settings or time is up", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
     { "gatt.server.servicechanged", "[conn] <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
     { "gatt.server.error", "[conn] <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
     { "gatt.server.readresp", "[conn] <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },

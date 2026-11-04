@@ -115,9 +115,17 @@ The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Up
 
 ## Secure by default
 
-Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key; XOR obfuscation on STM32), the web UI needs a random 128-bit token (`web.start https` for untrusted networks), passwords never appear in traces, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
+Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key), the web UI needs a random 128-bit token (`web.start https` for untrusted networks), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
 
-Built on [u-connectClient](https://github.com/u-blox/u-connectClient), the small-footprint AT client library.
+mbedTLS is only built into the host targets (Windows, Linux, browser), for `tls.*`, `utils.cert.*`, `utils.encrypt` and the sealed passwords. The STM32 builds (FreeRTOS and Zephyr) leave it out: the module does TLS itself and `cert.*` only uploads files to it. On STM32, saved Wi-Fi passwords are only obfuscated (XOR), not encrypted, so turn on read-out protection (RDP level 1) on boards that keep real credentials.
+
+## Part of u-connectXpress
+
+- **[u-connectXpress](https://github.com/u-blox/u-connectXpress)**: the AT command firmware in NORA-W36 and NORA-B26 that this app drives, with its documentation and examples.
+- **[u-connectXplorer](https://github.com/u-blox/u-connectXplorer)**: the companion phone and desktop app. It scans, browses GATT, talks SPS and NUS and provisions Wi-Fi over BLE. Use it as the phone on the other side of ucxapp: `gatt.server.sps` for a serial link, `gatt.server.hrs` for live data, `gatt.server.wps 120` to let it send the module the Wi-Fi settings. Get it on [Google Play](https://play.google.com/store/apps/details?id=com.ublox.uconnectxplorer) or the [App Store](https://apps.apple.com/app/u-connectxplorer/id6766648417).
+- **[u-connectClient](https://github.com/u-blox/u-connectClient)**: the small-footprint AT client library ucxapp is built on.
+
+Wi-Fi provisioning (`gatt.server.wps`, `gatt.client.wps`, `gatt.wps`) is the **Nordic Wi-Fi Provisioning Service** from the nRF Connect SDK (UUID `14387800-130c-49e7-b877-2881c89cb258`, protobuf messages), so u-connectXplorer and Nordic's provisioning apps work with it; the Bluetooth SIG has no standard service for this. "wps" here is not Wi-Fi Protected Setup (the router push button). The server also accepts ucxapp's own text commands (`SET_CONFIG:<ssid>:<password>:<WPA2|WPA3|OPEN>`) on the same service.
 
 ---
 

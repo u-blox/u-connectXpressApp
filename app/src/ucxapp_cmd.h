@@ -202,6 +202,7 @@ int ucxapp_web_local_request(const char *method, const char *path, const char *q
 const char *ucxapp_web_local_body(void);
 int ucxapp_web_local_length(void);
 const char *ucxapp_web_local_type(void);
+int ucxapp_web_local_busy(void);
 const char *ucxapp_web_local_poll(void);
 void ucxapp_register_usecase_cmds(void);    /* usecase.* fit checks (ucxapp_cmds_usecase.c) */
 void ucxapp_register_examples_cmds(void);   /* <group>.example and examples [group]; register last */

@@ -12,6 +12,7 @@ Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (N
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
   UCX_HID_PEER  serial console of a Linux BLE peer (the i.MX91 hub, root login) for the HID tests; not probed
   UCX_HID_PEER_BAUD, UCX_HID_PEER_USER   its baud rate (default 115200) and login (default root)
+  UCX_XPLORER, UCX_XPLORER_TOKEN   u-connectXplorer Remote Control (ws://<host>:8765) and its token; not probed
 """
 
 import concurrent.futures
@@ -148,6 +149,7 @@ def pytest_configure(config):
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
         "hid_peer: needs a Linux BLE peer on its serial console (UCX_HID_PEER, e.g. the i.MX91 hub)",
+        "xplorer: needs u-connectXplorer with Remote Control on (UCX_XPLORER)",
         "stress: long repeated runs; only with -m stress",
         "soak: hours-long run checked every few minutes (UCX_SOAK_HOURS); only with -m soak",
     ):
@@ -176,6 +178,8 @@ def _skip_reason(item, exe, hw):
             return f"no {name.upper()} found (set UCX_{name.upper()}_PORT)"
     if item.get_closest_marker("hid_peer") and not os.environ.get("UCX_HID_PEER"):
         return "no Linux BLE peer (set UCX_HID_PEER to the i.MX91 console port)"
+    if item.get_closest_marker("xplorer") and not os.environ.get("UCX_XPLORER"):
+        return "no u-connectXplorer (set UCX_XPLORER=ws://<host>:8765 and UCX_XPLORER_TOKEN)"
     if item.get_closest_marker("wifi"):
         sys.path.insert(0, str(ROOT / "tests" / "hardware"))
         from hwutil import _has_wifi

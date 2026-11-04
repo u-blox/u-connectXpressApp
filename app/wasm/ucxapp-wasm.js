@@ -4,7 +4,7 @@
 (() => {
   'use strict';
   const realFetch = window.fetch.bind(window), RealEventSource = window.EventSource;
-  let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null, opening = false;
+  let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null, opening = false, closing = null;
   const LAST_PORT = 'ucxapp.lastPort';
 
   /* Without cross-origin isolation (first visit, before the service worker reloads the page) threads cannot start. */
@@ -166,9 +166,12 @@
     document.getElementById('wsv').hidden = yes;
   }
 
-  function devConnect() {
-    M._ucxapp_webserial_ready(1);
+  async function devConnect() {
+    const mine = port || virt;
     connected(true);
+    await closing;
+    if ((port || virt) !== mine) return;   /* closed again while the previous close finished */
+    M._ucxapp_webserial_ready(1);
     const cmd = document.getElementById('cmd'), run = document.getElementById('run');
     if (cmd && run) { cmd.value = 'dev.connect webserial'; run.click(); } else exec('dev.connect webserial');
   }
@@ -181,16 +184,23 @@
     reading = false;
     port = writer = virt = null;
     M._ucxapp_webserial_ready(0);
-    try {
-      if (reader) await reader.cancel();
-      await loop;
-      if (w) await w.close();
-      if (p) await p.close();
-    } catch (e) {
-      console.warn('serial close', e);
-    }
-    await exec('dev.disconnect');
     connected(false);
+    /* a command still running on the dead port (dev.summary times out) answers 409: retry until it is
+       queued, then wait until it has run; the next connect waits for this so it finds the module closed */
+    const wait = () => new Promise(r => setTimeout(r, 100));
+    closing = (async () => {
+      try {
+        if (reader) await reader.cancel();
+        await loop;
+        if (w) await w.close();
+        if (p) await p.close();
+      } catch (e) {
+        console.warn('serial close', e);
+      }
+      for (let i = 0; (await exec('dev.disconnect')).status === 409 && i < 600; i++) await wait();
+      for (let i = 0; M._ucxapp_web_local_busy() && i < 600; i++) await wait();
+    })();
+    await closing;
   }
 
   async function connectVirtual() {

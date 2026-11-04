@@ -263,7 +263,7 @@ static const ucRow_t kHome[] = {
 static const ucRow_t kProvision[] = {
     { 0, "[ok]", "BLE", "every NORA module: the phone connects without a password", NULL },
     { 'w', "[ok]", "Wi-Fi", "the phone sends SSID and password, the module joins", NULL },
-    { 0, "[ok]", "Provisioning", "u-blox Wi-Fi Provisioning service: gatt.server.wps 120", "gatt.server.wps" },
+    { 0, "[ok]", "Provisioning", "Nordic Wi-Fi Provisioning service (u-connectXplorer can provision): gatt.server.wps 120", "gatt.server.wps" },
     { 0, "[check]", "Phone app", "an app that writes the provisioning service (or a generic GATT app)", NULL },
     { 0, "[ok]", "QR instead", "or join the device's own AP from a QR code: wifi.ap.enable", NULL },
 };

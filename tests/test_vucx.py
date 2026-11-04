@@ -95,18 +95,15 @@ def test_wifi_scan_lists_networks_strongest_first(app_exe, wifi_module):
     assert out.stdout.index("vucx-net") < out.stdout.index("vucx-far"), out.stdout
 
 
-def test_wifi_radio_refuses_until_regdomain_is_chosen(app_exe, wifi_module, tmp_path, monkeypatch):
+def test_wifi_radio_warns_and_uses_world_until_regdomain_is_chosen(app_exe, wifi_module, tmp_path, monkeypatch):
     monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
-    _run(app_exe, wifi_module.port, "wifi.profile.add home vucx-net secret123", cwd=tmp_path)
-    for command in ("wifi.scan", "wifi.connect vucx-net secret123", "wifi.ap.enable vucxap secret123",
-                    "wifi.profile.auto", "wifi.locate google k"):
-        out = _run(app_exe, wifi_module.port, command, cwd=tmp_path)
-        assert out.returncode != 0, command + "\n" + out.stdout
-        assert out.stdout.count("ERROR: choose the Wi-Fi regulatory domain") == 1, command + "\n" + out.stdout
-        assert "wifi.regdomain <world|etsi|" in out.stdout, out.stdout
-        assert "Scanning" not in out.stdout and "usable access point" not in out.stdout, out.stdout
-    radio = ("AT+UWRD=", "AT+UWSSC", "AT+UWSCP=", "AT+UWSC=", "AT+UWAPCP=", "AT+UWAPA")
-    assert not [c for c in wifi_module.log if c.startswith(radio)], wifi_module.log
+    out = _run(app_exe, wifi_module.port, "wifi.scan", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.count("WARNING: no Wi-Fi regulatory domain chosen, using 'world'") == 1, out.stdout
+    assert "wifi.regdomain <world|etsi|" in out.stdout, out.stdout
+    assert "vucx-net" in out.stdout, out.stdout
+    assert "AT+UWRD=0" in wifi_module.log, wifi_module.log
+    assert not (tmp_path / "storage" / "ucxapp.regdomain").exists()
 
 
 def test_wifi_regdomain_once_unlocks_the_radio(app_exe, wifi_module, tmp_path, monkeypatch):
@@ -161,13 +158,13 @@ def test_wifi_regdomain_unknown_place_shows_the_list(app_exe, wifi_module, tmp_p
     assert not (tmp_path / "storage" / "ucxapp.regdomain").exists()
 
 
-def test_wifi_radio_without_region_lists_the_choices(app_exe, wifi_module, tmp_path, monkeypatch):
-    """--exec never waits for an answer: it prints the list and the error and stops."""
+def test_wifi_radio_without_region_carries_on(app_exe, wifi_module, tmp_path, monkeypatch):
+    """--exec never waits for an answer: it warns, uses 'world' and runs the next command."""
     monkeypatch.delenv("UCX_REGDOMAIN", raising=False)
     out = _run(app_exe, wifi_module.port, "wifi.scan", "dev.info", cwd=tmp_path)
-    assert "Where are you located?" in out.stdout and "Choose 0-10" not in out.stdout, out.stdout
-    assert out.returncode != 0 and "ERROR: choose the Wi-Fi regulatory domain" in out.stdout, out.stdout
-    assert "NORA-W36" not in out.stdout.split("ERROR: choose the Wi-Fi regulatory domain")[1], out.stdout
+    assert "Choose 0-10" not in out.stdout, out.stdout
+    assert out.returncode == 0 and "WARNING: no Wi-Fi regulatory domain chosen" in out.stdout, out.stdout
+    assert "NORA-W36" in out.stdout.split("WARNING: no Wi-Fi regulatory domain chosen")[1], out.stdout
 
 
 def test_dev_caps_shows_region_and_wifi_features(app_exe, wifi_module, tmp_path, monkeypatch):
@@ -593,8 +590,14 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
     bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
     assert ran == count and not bad, (f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
                                       f"\nlast AT: {nora.log[-15:]}")
-    if case == "provision":   # the profile's virtual phone sends SET_CONFIG to gatt.server.wps
+    if case == "provision":   # the profile's virtual phone sends SET_CONFIG to gatt.server.wps, as text and protobuf
         assert "the phone sent the Wi-Fi settings" in out.stdout, out.stdout[-3000:]
+        assert "secret123" not in out.stdout, out.stdout[-3000:]
+        for line in ("[WPS] response: op 1 status 0", "[WPS] response: op 2 status 0",
+                     "[WPS] scan result: vucx-net -45 dBm", "[WPS] SET_CONFIG vucx-net: connecting",
+                     "[WPS] response: op 4 status 0", "[WPS] result: connected"):
+            assert line in out.stdout, out.stdout[-3000:]
+        assert any(c.startswith("AT+UBTGIS=0,42,08021000") for c in nora.log), nora.log[-30:]
     if case in ("mower", "farm"):   # PointPerfect over the modem's data link: request up, corrections down
         assert any(c.startswith("GET /NEAR-SPARTN ") for c in modem.log), modem.log[-20:]
         assert "NTRIP: streaming corrections from /NEAR-SPARTN" in out.stdout, out.stdout[-3000:]

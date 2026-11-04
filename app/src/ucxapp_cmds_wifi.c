@@ -247,9 +247,8 @@ static int loadRegDomain(void)
 
 static void printRegDomainRequired(void)
 {
-    printRegDomainMenu(-1);
-    ucxapp_print("ERROR: choose the Wi-Fi regulatory domain for the country you operate in first:\n"
-                 "       wifi.regdomain <" REGDOMAIN_HINT "|0-10>  ('world' is allowed everywhere, with fewer channels)\n");
+    ucxapp_print("WARNING: no Wi-Fi regulatory domain chosen, using 'world' (fewer channels); set yours with:\n"
+                 "         wifi.regdomain <" REGDOMAIN_HINT "|0-10>\n");
 }
 
 static void resetChannelList(uCxHandle_t *ucx);
@@ -268,12 +267,11 @@ static bool applyRegDomain(uCxHandle_t *ucx)
                          gRegDomains[dom].where);
             return true;
         }
-        ucxapp_print("ERROR: no region chosen; Wi-Fi scan, connect and AP need one (wifi.regdomain)\n");
-        return false;
     }
     if (dom < 0) {
+        /* not chosen: warn and use 'world', which is legal in every country */
         printRegDomainRequired();
-        return false;
+        dom = 0;
     }
     if (uCxWifiSetRegulatoryDomain(ucx, gRegDomains[dom].value) != 0) {
         ucxapp_print("WARNING: could not set regulatory domain '%s'\n", gRegDomains[dom].name);
@@ -281,7 +279,7 @@ static bool applyRegDomain(uCxHandle_t *ucx)
     return true;
 }
 
-/* Radio use (scan, connect, AP) needs a regulatory domain chosen by the user; false (printed) until there is one. */
+/* Applies the user's regulatory domain before scan, connect or AP; warns and uses 'world' when none is chosen. */
 bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx)
 {
     if (!applyRegDomain(ucx)) {
@@ -1500,7 +1498,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
     { "wifi.profile.auto", "",                   "Connect to the last used profile, else to the strongest known network in a scan", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
-    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); scan, connect and AP need it and ask the first time; at the prompt a numbered list helps (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
+    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); scan, connect and AP ask the first time and use 'world' (with a warning) until one is set; at the prompt a numbered list helps (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
     { "wifi.ap.enable",  "[ssid] [password=12345678] [channel=6]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },

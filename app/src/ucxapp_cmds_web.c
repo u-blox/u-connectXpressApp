@@ -1289,6 +1289,12 @@ const char *ucxapp_web_local_type(void)
     return gLocalResp.content_type;
 }
 
+/* 1 while a command from /api/exec is queued or running; the page waits on it before the next dev.connect. */
+int ucxapp_web_local_busy(void)
+{
+    return ucxapp_ui_busy() ? 1 : 0;
+}
+
 /* The events since the last call as "name<TAB>data" lines, the data as the event stream would carry it. */
 const char *ucxapp_web_local_poll(void)
 {

@@ -35,7 +35,8 @@ def _run(exe, port, *commands, timeout=120, cwd=None):
         pytest.fail(f"no result from {port} after {timeout} s running {list(commands)}\n--- output so far ---\n"
                     f"{partial[-2000:]}", pytrace=False)
     if "does not answer AT commands" in out.stdout:
-        pytest.exit(f"module on {port} does not answer AT commands: power-cycle it and run again\n{out.stdout[-300:]}",
+        pytest.exit(f"module on {port} does not answer AT commands: power-cycle it and run again\n"
+                    f"running {list(commands)}\n{out.stdout[-300:]}",
                     returncode=3)
     return out
 

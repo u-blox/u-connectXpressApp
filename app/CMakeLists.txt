@@ -219,7 +219,7 @@ if(NOT WIN32)
     target_link_options(ucxapp PRIVATE -pthread -sMODULARIZE=1 -sEXPORT_NAME=createUcxapp
       -sENVIRONMENT=web,worker -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8
       -sINITIAL_MEMORY=67108864 -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=262144
-      "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ucxapp_web_local_request,_ucxapp_web_local_body,_ucxapp_web_local_length,_ucxapp_web_local_type,_ucxapp_web_local_poll,_ucxapp_webserial_rx,_ucxapp_webserial_ready"
+      "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ucxapp_web_local_request,_ucxapp_web_local_body,_ucxapp_web_local_length,_ucxapp_web_local_type,_ucxapp_web_local_busy,_ucxapp_web_local_poll,_ucxapp_webserial_rx,_ucxapp_webserial_ready"
       -sEXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,HEAPU8)
     add_custom_command(TARGET ucxapp POST_BUILD
       COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
@@ -229,6 +229,11 @@ if(NOT WIN32)
               ${_ucx_site}
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${_ucx_site}/icon.svg
       VERBATIM)
+    # the site files above are copied after the link: a change to any of them alone must relink too
+    set_property(TARGET ucxapp APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
+      ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
   endif()
 
   return()

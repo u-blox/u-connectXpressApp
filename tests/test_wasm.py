@@ -20,7 +20,8 @@ FAKE_SERIAL = """
     writable: new WritableStream({ write(chunk) {
       const text = new TextDecoder().decode(chunk);
       window.__tx += text;
-      if (/\\r/.test(text)) setTimeout(() => push.enqueue(new TextEncoder().encode('\\r\\nOK\\r\\n')), 5);
+      if (/\\r/.test(text)) setTimeout(() => { try { push.enqueue(new TextEncoder().encode('\\r\\nOK\\r\\n')); }
+                                               catch (e) { /* closed: a real port drops it too */ } }, 5);
     } }),
     open: async () => {}, close: async () => {}, getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6015 }),
   };
@@ -64,6 +65,13 @@ def site():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}/"
     srv.shutdown()
+
+
+def run(page, cmd):
+    """Like a user: wait until Run is enabled again (a disabled button drops the click), then run."""
+    page.wait_for_function("!document.getElementById('run').disabled", timeout=60000)
+    page.fill("#cmd", cmd)
+    page.click("#run")
 
 
 def test_app_runs_in_the_browser(site):
@@ -111,16 +119,15 @@ def test_app_runs_in_the_browser(site):
         page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
         page.wait_for_function("document.getElementById('out').innerText.split('connected to webserial').length > 2",
                                timeout=60000)
-        page.fill("#cmd", "wifi.scan")
-        page.click("#run")
+        run(page, "wifi.scan")
         page.wait_for_function(
-            "document.getElementById('out').innerText.includes('choose the Wi-Fi regulatory domain')", timeout=30000)
-        page.fill("#cmd", "wifi.regdomain world")
-        page.click("#run")
-        page.wait_for_function("document.getElementById('out').innerText.includes('regdomain=world')", timeout=30000)
-        page.fill("#cmd", "wifi.scan")
-        page.click("#run")
+            "document.getElementById('out').innerText.includes('no Wi-Fi regulatory domain chosen')", timeout=30000)
         page.wait_for_function("document.getElementById('out').innerText.includes('vucx-net')", timeout=30000)
+        run(page, "wifi.regdomain world")
+        page.wait_for_function("document.getElementById('out').innerText.includes('regdomain=world')", timeout=30000)
+        run(page, "wifi.scan")
+        page.wait_for_function("document.getElementById('out').innerText.split('vucx-net').length > 2", timeout=60000)
+        assert page.inner_text("#out").count("no Wi-Fi regulatory domain chosen") == 1
         page.click("#wsc")
         page.wait_for_function("!document.getElementById('wsv').hidden", timeout=30000)
         browser.close()

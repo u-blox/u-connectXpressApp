@@ -120,6 +120,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_app.c
 
     src/ucxapp_cmds_mqtt.c
+    src/ucxapp_cmds_mdns.c
     src/ucxapp_cmds_thread.c
 
     src/ucxapp_cmds_bt.c
@@ -272,6 +273,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_sys.c
   src/ucxapp_cmds_app.c
   src/ucxapp_cmds_mqtt.c
+  src/ucxapp_cmds_mdns.c
   src/ucxapp_cmds_thread.c
   src/ucxapp_cmds_bt.c
   src/ucxapp_adv.c

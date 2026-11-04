@@ -77,4 +77,4 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - `bridge` keeps the core busy for lowest latency until you leave it.
 
 ## Module documentation
-Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).
+Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.mcp.json`).

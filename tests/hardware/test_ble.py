@@ -39,6 +39,25 @@ def test_bt_addr_and_name_round_trip(app_exe, port_a):
 
 
 @pytest.mark.hardware
+def test_bt_adv_custom_payload_round_trip(app_exe, port_a):
+    """Set a CHIPoBLE-style service data payload and an interval, start, read back, stop; a reboot restores defaults."""
+    _reboot(app_exe, port_a)
+    try:
+        out = _run(app_exe, port_a, "bt.adv", "bt.adv 0B16F6FF000F001234567800", "bt.adv interval 100 200", "bt.adv on",
+                   "bt.adv", "bt.adv off", "bt.adv")
+        assert out.returncode == 0, out.stdout
+        assert "advertising data set (12 bytes, connectable)" in out.stdout, out.stdout
+        assert "Data:          0B16F6FF000F001234567800 (12 bytes)" in out.stdout, out.stdout
+        assert "Interval:      100-200 ms" in out.stdout, out.stdout
+        assert re.search(r"^Advertising:   on", out.stdout, re.M), out.stdout
+        assert re.search(r"^Advertising:   off", out.stdout, re.M), out.stdout
+        out = _run(app_exe, port_a, "bt.adv 02010605094E4F5241 broadcast", "bt.adv", "bt.adv 0B16F6FF")
+        assert "Type:          broadcast" in out.stdout and "runs past the data" in out.stdout, out.stdout
+    finally:
+        _reboot(app_exe, port_a)
+
+
+@pytest.mark.hardware
 def test_bt_filter_text_and_hex(app_exe, port_a):
     try:
         out = _run(app_exe, port_a, "bt.filter clear", "bt.filter 0 9 NORA", "bt.filter 1 0xFF 4E4F5241",

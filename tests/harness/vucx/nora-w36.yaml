@@ -75,7 +75,15 @@ commands:
   "AT+UHTCRPOB=*": ["+UHTCRPOB:0,64", "OK"]
   "AT+UNTE?": ["+UNTE:1", "OK"]
   "AT+UNTSC?": ['+UNTSC:0,"pool.ntp.org",162.159.200.1,1', "OK"]
-  "AT+UBTA?": ["+UBTA:1,0,", "OK"]
+  "AT+UBTA?": ["+UBTA:1,0,[]", "OK"]
+  "AT+UBTADL?": ["+UBTADL:0B16F6FF000F001234567800,0", "OK"]
+  "AT+UBTALS?": ["+UBTALS:160,240", "OK"]
+  # mDNS: enabled, named vucx.local, one HTTP service with a TXT record
+  "AT+UMDE?": ["+UMDE:1", "OK"]
+  "AT+UMDHN?": ['+UMDHN:"vucx"', "OK"]
+  "AT+UMDSA=*": ["+UMDSA:0", "OK"]
+  "AT+UMDSL?": ['+UMDSL:0,"_http",0,80,"vucx dashboard"', "OK"]
+  "AT+UMDTRL=*": ['+UMDTRL:0,"path","/"', "OK"]
 # the network: an NTRIP caster on 2101, a CoAP server on 5683, everything else echoes; a client connects to 8000
 sockets:
   servers: {2101: ntrip, 5683: coap}
@@ -135,6 +143,8 @@ urcs:
   "AT+UMQC=*": ["+UEMQC:0"]
   "AT+UMQS=*": ["+UEMQSC:0,0", "+UEMQDA:0,4"]
   "AT+UMQDC=*": ["+UEMQDC:0,0"]
+  "AT+UMDE=1": ["+UEMDU"]
+  "AT+UMDE=0": ["+UEMDD"]
   "AT+UDGP=*": ["+UEDGP:1,32,12", "+UEDGPC:4,4,12,10,14"]
   "AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']
   "AT+UHTCRPOB=*": ['+UEHTCRS:0,200,"OK"']

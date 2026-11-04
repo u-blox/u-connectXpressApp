@@ -139,6 +139,17 @@ static const example_t kExamples[] = {
       "sock.open tcp\nsock.listen 8000\nsock.accept 60\nsock.read" },
     { "sock", "Latency test with an echo server",
       "sock.echo udp 7 120\n# send datagrams from the PC to <module-ip>:7" },
+    { "sock", "Listen to mDNS queries on the local link (multicast group)",
+      "sock.open udp\nsock.bind 5353\nsock.mcast join 224.0.0.251\nsock.recvfrom 512 30\nsock.mcast leave 224.0.0.251" },
+
+    { "mdns", "Be found as a name on the LAN: ping nora.local from any PC",
+      "wifi.connect MySsid MyPassword\nmdns.on nora\nmdns.status" },
+    { "mdns", "Advertise the web UI as a DNS-SD service with TXT records",
+      "web.start 80\nmdns.on nora\nmdns.add _http._tcp 80 \"NORA-W36 dashboard\" path=/ fw=3.5.0\n"
+      "# on a PC: dns-sd -B _http._tcp  or  avahi-browse -t _http._tcp" },
+    { "mdns", "Matter commissionable node advertisement (what a Matter controller browses for)",
+      "mdns.on\nmdns.add _matterc._udp 5540 A1B2C3D4E5F60718 VP=65521+32769 D=3840 CM=1 DT=257 DN=Light\n"
+      "mdns.status\n# change a record later, then stop advertising\nmdns.txt 0 CM 0\nmdns.remove all" },
 
     { "mqtt", "Publish and subscribe on a public broker",
       "mqtt.connect\nmqtt.subscribe ucx/demo/#\nmqtt.publish ucx/demo/hello \"hi from NORA\"\nmqtt.read 10" },
@@ -184,6 +195,9 @@ static const example_t kExamples[] = {
       "bt.connect NORA-W36\nbt.list" },
     { "bt", "Read and set the module's own name and address",
       "bt.name\nbt.addr\nbt.name MySensor" },
+    { "bt", "Custom advertising: a Matter commissionable (CHIPoBLE) service data record, then a broadcast-only beacon",
+      "bt.adv\nbt.adv 0B16F6FF000F001234567800\nbt.adv on\n# non-connectable: flags + complete name\n"
+      "bt.adv 02010605094E4F5241 broadcast\nbt.adv interval 100 200\nbt.adv off" },
 #ifndef UCXAPP_LITE
     { "bt", "Scan only for NORA-W36 names or u-blox manufacturer data (text or hex)",
       "bt.filter 0 9 NORA-W36\nbt.filter 1 0xFF 0x1701\nbt.filter\nbt.scan filter\nbt.filter clear" },
@@ -516,7 +530,7 @@ static const example_t kExamples[] = {
 #endif
 #if UCXAPP_HOST
     { "utils", "Handy tools",
-      "utils.qr.wifi MyNetwork MyPassword\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
+      "utils.qr.wifi MyNetwork MyPassword\nutils.qr.wifi GuestNet nopass large\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
 #endif
 };
 

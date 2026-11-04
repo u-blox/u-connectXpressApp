@@ -137,7 +137,7 @@ bool ucxapp_module_has_thread(ucxapp_t *app)
 bool ucxapp_cmd_needs_wifi(const char *name)
 {
     static const char *const kGroups[] = { "wifi.", "sock.", "mqtt.", "http.", "net.", "cert.", "tftp.", "web.",
-                                           "coap.", "dtls." };
+                                           "coap.", "dtls.", "mdns." };
 
     for (size_t i = 0; i < sizeof(kGroups) / sizeof(kGroups[0]); i++) {
         if (strncmp(name, kGroups[i], strlen(kGroups[i])) == 0) {

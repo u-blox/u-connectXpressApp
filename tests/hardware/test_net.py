@@ -61,6 +61,74 @@ def test_udp_socket_opens_and_closes(app_exe, port_a):
     assert "socket 0: UDP" in out.stdout, out.stdout
 
 
+MCAST_GROUP = "239.255.77.77"
+MCAST_PORT = 7010
+
+
+@pytest.mark.hardware
+def test_udp_multicast_group_receives_a_datagram_from_the_pc(app_exe, port_a):
+    """The module joins a multicast group on a bound UDP socket; a datagram the PC sends to the group arrives."""
+    wifi = _wifi_connect_command()
+    _reboot(app_exe, port_a)
+    ip_a, _ = _join_wifi(app_exe, port_a, wifi)
+    proc, seen, lines = _background(app_exe, port_a, wifi, "sock.open udp", f"sock.bind 0 {MCAST_PORT}",
+                                    f"sock.mcast 0 join {MCAST_GROUP}", "sock.mcast 0 join ff02::fb",
+                                    "sock.recvfrom 0 64 20", f"sock.mcast 0 leave {MCAST_GROUP}", "sock.close 0",
+                                    ready=f"joined {MCAST_GROUP}")
+    try:
+        # Send from the interface that reaches the module, so a VPN or virtual adapter does not swallow the group.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect((ip_a, MCAST_PORT))
+        local_ip = probe.getsockname()[0]
+        probe.close()
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        tx.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip))
+        for _ in range(5):
+            tx.sendto(b"ucx-mcast", (MCAST_GROUP, MCAST_PORT))
+            time.sleep(1)
+        tx.close()
+    finally:
+        text = _finish(proc, seen, lines)
+    assert "socket 0 joined ff02::fb" in text, text
+    assert "ucx-mcast" in text, f"no datagram from the group reached the module (does the access point pass " \
+                                f"multicast?):\n{text}"
+    assert f"socket 0 left {MCAST_GROUP}" in text, text
+
+
+@pytest.mark.hardware
+def test_mdns_hostname_and_service_round_trip(app_exe, port_a):
+    """Enable the responder with a host name, advertise a service with TXT records, edit them, remove it."""
+    wifi = _wifi_connect_command()
+    _reboot(app_exe, port_a)
+    name = f"ucxtest-{int(time.time()) % 100000}"
+    out = _run(app_exe, port_a, wifi, "mdns.status", timeout=120)
+    if "needs NORA-W36 firmware 3.4.1" in out.stdout:
+        pytest.skip("module firmware has no mDNS responder (3.4.1 or later)")
+    assert out.returncode == 0, out.stdout
+    try:
+        out = _run(app_exe, port_a, wifi, f"mdns.on {name} 15", "mdns.hostname",
+                   f"mdns.add _ucxtest._tcp 8080 {name} path=/ fw=test", timeout=120)
+        assert out.returncode == 0, out.stdout
+        assert f"mDNS up: {name}.local" in out.stdout, out.stdout
+        assert re.search(rf"^{re.escape(name)}\.local$", out.stdout, re.M), out.stdout
+        added = re.search(r"^Service (\d+) added: " + re.escape(name) + r"\._ucxtest\._tcp port 8080$", out.stdout,
+                          re.M)
+        assert added, out.stdout
+        sid = added.group(1)
+        out = _run(app_exe, port_a, wifi, f"mdns.txt {sid} fw changed", f"mdns.txt {sid} remove path", "mdns.status",
+                   timeout=120)
+        assert out.returncode == 0, out.stdout
+        assert re.search(rf"^\s*{sid}  {re.escape(name)}\._ucxtest\._tcp port 8080$", out.stdout, re.M), out.stdout
+        assert re.search(r"^      fw=changed$", out.stdout, re.M), out.stdout
+        assert "path=/" not in out.stdout, out.stdout
+        assert re.search(rf"^Host name:      {re.escape(name)}\.local$", out.stdout, re.M), out.stdout
+    finally:
+        out = _run(app_exe, port_a, wifi, "mdns.remove all", "mdns.status", "mdns.off", timeout=120)
+    assert out.returncode == 0, out.stdout
+    assert "0 service(s)" in out.stdout and "mDNS responder off" in out.stdout, out.stdout
+
+
 @pytest.mark.hardware
 def test_mqtt_publish_is_received_back(app_exe, port_a):
     wifi = _wifi_connect_command()

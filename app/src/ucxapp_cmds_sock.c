@@ -3,6 +3,7 @@
 #include "ucxapp_platform.h"
 #include "ucxapp_stats.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -422,6 +423,99 @@ static int cmdSockClose(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Multicast membership of a bound UDP socket: mDNS (224.0.0.251 / ff02::fb), Matter groups (ff35:40:fd00::...). */
+
+/* "ff02::fb" into the eight-group form the library parses; false if it is not an IPv6 text or too long. */
+static bool expandIpv6(const char *in, char *out, size_t size)
+{
+    const char *gap = strstr(in, "::");
+    const char *tail;
+    int left = 0, right = 0;
+    size_t n;
+
+    if (strchr(in, ':') == NULL || strlen(in) >= size) {
+        return false;
+    }
+    if (gap == NULL) {
+        strcpy(out, in);
+        return true;
+    }
+    tail = gap + 2;
+    if (strstr(tail, "::") != NULL) {
+        return false;
+    }
+    /* groups on each side of the gap: one more than the colons between them, none when the side is empty */
+    for (const char *p = in; p < gap; p++) {
+        left += (*p == ':');
+    }
+    left += (gap > in);
+    for (const char *p = tail; *p != '\0'; p++) {
+        right += (*p == ':');
+    }
+    right += (*tail != '\0');
+    if (left + right >= 8) {
+        return false;
+    }
+    n = (size_t)(gap - in);
+    memcpy(out, in, n);
+    for (int i = 0; i < 8 - left - right; i++) {
+        if (n + 2 >= size) {
+            return false;
+        }
+        if (n > 0) {
+            out[n++] = ':';
+        }
+        out[n++] = '0';
+    }
+    if (*tail != '\0') {
+        if (n + 1 + strlen(tail) >= size) {
+            return false;
+        }
+        out[n++] = ':';
+        strcpy(out + n, tail);
+    } else {
+        out[n] = '\0';
+    }
+    return true;
+}
+
+static int cmdSockMcast(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t handle, r;
+    uSockIpAddress_t group;
+    char full[48];
+    bool join;
+
+    if (argc != 4 || !parseHandle(argv[1], &handle)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(argv[2], "join") == 0) {
+        join = true;
+    } else if (strcmp(argv[2], "leave") == 0) {
+        join = false;
+    } else {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!expandIpv6(argv[3], full, sizeof(full))) {
+        snprintf(full, sizeof(full), "%s", argv[3]);
+    }
+    if (uCxStringToIpAddress(full, &group) != 0 ||
+        (group.type == U_SOCK_ADDRESS_TYPE_V4 && (group.address.ipv4 >> 28) != 0xE) ||
+        (group.type == U_SOCK_ADDRESS_TYPE_V6 && (group.address.ipv6[3] >> 24) != 0xFF)) {
+        ucxapp_print("ERROR: %s is not a multicast group (224.0.0.0/4 or ff00::/8)\n", argv[3]);
+        return UCXAPP_ERR_USAGE;
+    }
+    r = uCxSocketMulticastGroup(app->ucx, handle, join ? U_SOCKET_GROUP_ACTION_JOIN : U_SOCKET_GROUP_ACTION_LEAVE,
+                                &group);
+    if (r != 0) {
+        ucxapp_print("ERROR: %s %s failed (%d%s); the socket must be a UDP socket bound with sock.bind\n",
+                     join ? "joining" : "leaving", argv[3], (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("socket %d %s %s\n", (int)handle, join ? "joined" : "left", argv[3]);
+    return UCXAPP_OK;
+}
+
 static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
 {
     uCxSocketListStatus_t status;
@@ -524,6 +618,7 @@ static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.accept",  "[wait_s=30]",                 "Wait for an incoming TCP connection", UCXAPP_CMD_NEEDS_DEVICE, cmdSockAccept },
     { "sock.sendto",  "[handle] <host> <port> <text>", "Send a UDP datagram",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockSendTo },
     { "sock.recvfrom", "[handle] [max] [wait_s=5]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
+    { "sock.mcast",   "[handle] <join|leave> <group>", "Join or leave a multicast group (224.0.0.251, ff02::fb) on a bound UDP socket", UCXAPP_CMD_NEEDS_DEVICE, cmdSockMcast },
     { "sock.close",   "[handle] | all",           "Close a socket, or every socket on the module", UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
     { "sock.list",    "",                         "List open sockets",                    UCXAPP_CMD_NEEDS_DEVICE, cmdSockList },
     { "sock.echo",    "<tcp|udp> <port> [seconds=60]", "Echo server for latency and throughput tests (one TCP client)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockEcho },

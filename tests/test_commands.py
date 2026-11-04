@@ -31,6 +31,8 @@ NEW_COMMANDS = (
     "gatt.writelong", "gatt.wps", "file.hash",
     "bt.defaults", "bt.bonds", "bt.unbond",
     "ft.on", "ft.off", "ft.status", "ft.get", "ft.put", "ft.list", "ft.remove", "ft.selftest", "app.time",
+    "mdns.status", "mdns.on", "mdns.off", "mdns.hostname", "mdns.add", "mdns.remove", "mdns.txt",
+    "sock.mcast", "bt.adv",
 )
 
 

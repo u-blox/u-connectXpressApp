@@ -12,6 +12,9 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_ui.h"
 #include "u_cx_http.h"
+#ifndef UCXAPP_LITE
+#include "u_cx_mdns.h"
+#endif
 #include "u_cx_mqtt.h"
 #include "u_cx_socket.h"
 #include "u_cx_sps.h"
@@ -172,6 +175,9 @@ static void threadDownUrc(struct uCxHandle *h)                              { (v
 static void threadRoleUrc(struct uCxHandle *h, uThreadDeviceRole_t r)        { (void)h; evt("thread: role %s", ucxapp_thread_role_name(r)); ucxapp_ui_thread_changed(); }
 static void threadSrpUrc(struct uCxHandle *h, int32_t id, uThreadSrpState_t s) { (void)h; evt("thread: srp service %d state %d", (int)id, (int)s); }
 static void threadJoinerUrc(struct uCxHandle *h, uThreadJoinerResult_t r)   { (void)h; gJoinerResult = (int32_t)r; evt("thread: joiner result %d", (int)r); ucxapp_events_signal(URC_FLAG_THREAD_JOINER); }
+
+static void mdnsUpUrc(struct uCxHandle *h)                                  { (void)h; evt("mdns: up"); ucxapp_events_signal(URC_FLAG_MDNS_UP); }
+static void mdnsDownUrc(struct uCxHandle *h)                                { (void)h; evt("mdns: down"); ucxapp_events_signal(URC_FLAG_MDNS_DOWN); }
 #endif
 
 void ucxapp_urc_register(uCxHandle_t *ucx)
@@ -222,6 +228,9 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
     uCxThreadRegisterRoleChanged(ucx, threadRoleUrc);
     uCxThreadRegisterSrpServiceState(ucx, threadSrpUrc);
     uCxThreadRegisterJoinerResult(ucx, threadJoinerUrc);
+
+    uCxMdnsRegisterMdnsUp(ucx, mdnsUpUrc);
+    uCxMdnsRegisterMdnsDown(ucx, mdnsDownUrc);
 #endif
 
     uCxGattClientRegisterNotification(ucx, gattNotifyUrc);

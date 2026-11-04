@@ -516,6 +516,7 @@ int main(int argc, char *argv[])
     ucxapp_register_thread_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_sock_cmds();
+    ucxapp_register_mdns_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_certfile_cmds();

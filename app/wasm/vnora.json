@@ -366,7 +366,35 @@
    "OK"
   ],
   "AT+UBTA?": [
-   "+UBTA:1,0,",
+   "+UBTA:1,0,[]",
+   "OK"
+  ],
+  "AT+UBTADL?": [
+   "+UBTADL:0B16F6FF000F001234567800,0",
+   "OK"
+  ],
+  "AT+UBTALS?": [
+   "+UBTALS:160,240",
+   "OK"
+  ],
+  "AT+UMDE?": [
+   "+UMDE:1",
+   "OK"
+  ],
+  "AT+UMDHN?": [
+   "+UMDHN:\"vucx\"",
+   "OK"
+  ],
+  "AT+UMDSA=*": [
+   "+UMDSA:0",
+   "OK"
+  ],
+  "AT+UMDSL?": [
+   "+UMDSL:0,\"_http\",0,80,\"vucx dashboard\"",
+   "OK"
+  ],
+  "AT+UMDTRL=*": [
+   "+UMDTRL:0,\"path\",\"/\"",
    "OK"
   ],
   "AT+UBTGR=0,102": [
@@ -665,6 +693,12 @@
   ],
   "AT+UMQDC=*": [
    "+UEMQDC:0,0"
+  ],
+  "AT+UMDE=1": [
+   "+UEMDU"
+  ],
+  "AT+UMDE=0": [
+   "+UEMDD"
   ],
   "AT+UDGP=*": [
    "+UEDGP:1,32,12",

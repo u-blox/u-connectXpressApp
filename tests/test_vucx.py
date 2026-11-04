@@ -366,15 +366,22 @@ SCENARIOS = {
             "http.get http://example.com 50", "http.post http://example.com/p a=1", "wifi.portal check"],
     "sock": ["sock.open tcp", "sock.connect 0 example.com 80", "sock.send 0 hello", "sock.read 0 64 1",
              "sock.list", "sock.close 0", "sock.open udp", "sock.bind 0 5000",
-             "sock.sendto 0 192.168.1.10 5000 hi", "sock.recvfrom 0 64 1", "sock.listen 0 8000",
+             "sock.sendto 0 192.168.1.10 5000 hi", "sock.recvfrom 0 64 1", "sock.mcast 0 join 224.0.0.251",
+             "sock.mcast 0 join ff02::fb", "sock.mcast 0 leave 224.0.0.251", "sock.listen 0 8000",
              "sock.accept 1", "sock.tls 0 ca", "sock.close all"],
+    "mdns": ["mdns.status", "mdns.hostname", "mdns.hostname vucx", "mdns.on", "mdns.on vucx 2",
+             "mdns.add _http._tcp 80 \"vucx dashboard\" path=/ fw=3.5.0", "mdns.add _matterc._udp 5540 VP=65521+32769",
+             "mdns.txt 0 CM 1", "mdns.txt 0 remove CM", "mdns.txt 0 clear", "mdns.status", "mdns.remove 0",
+             "mdns.remove all", "mdns.off"],
     "mqtt": ["mqtt.connect broker.local 1883", "mqtt.subscribe a/# 1", "mqtt.publish a/b hello",
              "mqtt.read 1", "mqtt.unsubscribe a/#", "mqtt.disconnect"],
     "cert": ["cert.list", "cert.info myca"],
     "bt": ["bt.scan", "bt.scan full", "bt.connect 1", "bt.list", "bt.pairing on", "bt.iocap yesno",
            "bt.security sc", "bt.defaults secure", "bt.defaults", "bt.autoconfirm off", "bt.confirm yes",
            "bt.passkey 123456", "bt.bonds", "bt.unbond all", "bt.profile.add vucx C0:FF:EE:00:11:22",
-           "bt.profile.list", "bt.profile.connect vucx", "bt.profile.auto", "bt.disconnect 0"],
+           "bt.profile.list", "bt.profile.connect vucx", "bt.profile.auto", "bt.disconnect 0",
+           "bt.adv", "bt.adv 0B16F6FF000F001234567800", "bt.adv 02010605094E4F5241 broadcast",
+           "bt.adv interval 100 200", "bt.adv on", "bt.adv off"],
     "gatt-client": ["bt.connect C0:FF:EE:00:11:22", "gatt.services 0", "gatt.chars 0", "gatt.read 0 18",
                     "gatt.write 0 18 0102", "gatt.write 0 18 text:hi norsp", "gatt.writelong 0 18 0102030405",
                     "gatt.subscribe 0 18 notify", "gatt.listen", "gatt.listen 1", "gatt.listen off",
@@ -420,6 +427,57 @@ def test_command_group_runs_against_module(app_exe, nora, group):
     assert len(nora.log) > 3, nora.log
     errors = [line for line in out.stdout.splitlines() if re.search(r"\bERROR\b|(?<!\b0 )\b[Ff]ailed\b", line)]
     assert not errors, "\n".join(errors) + f"\nlast AT: {nora.log[-10:]}"
+
+
+def test_mdns_service_with_txt_records(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["mdns.on nora 2", "mdns.add _http._tcp 80 \"vucx dashboard\" path=/ fw=3.5.0",
+                                      "mdns.status", "mdns.txt 0 remove fw", "mdns.remove all", "mdns.off"],
+                 log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    log = nora.log
+    assert 'AT+UMDHN="nora"' in log and "AT+UMDE=1" in log and "AT+UMDE=0" in log, log
+    assert 'AT+UMDSA="_http",0,80,"vucx dashboard"' in log, log
+    assert 'AT+UMDTRA=0,"path","/"' in log and 'AT+UMDTRA=0,"fw","3.5.0"' in log, log
+    assert 'AT+UMDTRR=0,"fw"' in log and "AT+UMDSR=0" in log, log
+    assert "mDNS up: vucx.local" in out.stdout, out.stdout          # the profile's +UEMDU and host name
+    assert "Service 0 added: vucx dashboard._http._tcp port 80" in out.stdout, out.stdout
+    assert re.search(r"^ 0  vucx dashboard\._http\._tcp port 80\n      path=/$", out.stdout, re.M), out.stdout
+    assert "1 service(s) removed" in out.stdout and "mDNS responder off" in out.stdout, out.stdout
+
+
+def test_mdns_usage_errors_send_nothing(app_exe, nora):
+    for bad in ("mdns.add http 80", "mdns.add _http._tcp 0", "mdns.add _http._tcp 80 inst =novalue",
+                "mdns.txt 0", "mdns.remove x", "mdns.on 1 2 3"):
+        out = _run(app_exe, nora.port, bad)
+        assert out.returncode != 0 and "usage:" in out.stdout.lower(), (bad, out.stdout)
+    assert not any(c.startswith("AT+UMD") for c in nora.log), nora.log
+
+
+def test_sock_mcast_expands_ipv6_and_rejects_unicast(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["sock.open udp", "sock.bind 0 5353", "sock.mcast 0 join 224.0.0.251",
+                                      "sock.mcast 0 join ff02::fb", "sock.mcast 0 leave ff02::fb",
+                                      "sock.mcast 0 join 192.168.1.1", "sock.close 0"], log=nora.log)
+    log = nora.log
+    assert "AT+USOMG=0,1,224.0.0.251" in log, log
+    assert "AT+USOMG=0,1,[ff02:0000:0000:0000:0000:0000:0000:00fb]" in log, log
+    assert "AT+USOMG=0,0,[ff02:0000:0000:0000:0000:0000:0000:00fb]" in log, log
+    assert not any("192.168.1.1" in c for c in log), log
+    assert "socket 0 joined ff02::fb" in out.stdout and "is not a multicast group" in out.stdout, out.stdout
+
+
+def test_bt_adv_shows_sets_and_validates(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["bt.adv", "bt.adv 0B16F6FF000F001234567800",
+                                      "bt.adv 02010605094E4F5241 broadcast", "bt.adv interval 100 200",
+                                      "bt.adv 0B16F6FF", "bt.adv 0102", "bt.adv on", "bt.adv off"], log=nora.log)
+    log = nora.log
+    assert "AT+UBTADL=0B16F6FF000F001234567800" in log, log
+    assert "AT+UBTADL=02010605094E4F5241,2" in log, log
+    assert "AT+UBTALS=160,320" in log and "AT+UBTAL" in log and "AT+UBTALD" in log, log
+    assert not any(c in ("AT+UBTADL=0B16F6FF", "AT+UBTADL=0102") for c in log), log
+    assert "Interval:      100-150 ms" in out.stdout and "Type:          connectable" in out.stdout, out.stdout
+    assert "0B16F6FF000F001234567800 (12 bytes)" in out.stdout, out.stdout
+    assert "runs past the data" in out.stdout, out.stdout
+    assert "advertising interval 100-200 ms" in out.stdout, out.stdout
 
 
 def test_cert_upload_list_and_info(app_exe, nora, tmp_path):

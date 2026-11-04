@@ -11,7 +11,7 @@ ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor o
 ```
 
 - **One command set, everywhere**: interactive shell, `--exec` scripts, CI, the browser, the module's own web UI and STM32 firmware (FreeRTOS and Zephyr).
-- **Batteries included**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, TLS, HTTP, MQTT, certificates, firmware update.
+- **Batteries included**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, multicast, mDNS, TLS, HTTP, MQTT, certificates, firmware update.
 - **Built for testing**: `--json`, `--script` with `expect`, JUnit reports, AT traces with Wireshark export, `dev.diagnose` with PASS/FAIL verdicts.
 - **Ready to run**: signed Windows `.exe`, single Linux binary and STM32 images on the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases).
 

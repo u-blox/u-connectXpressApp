@@ -142,6 +142,7 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.connect` | `[addr[,random]\|n\|name]` | With no argument: connect to the last used profile, else scan and take the strongest known device (same as `bt.profile.auto`). Otherwise connect by address, by the number from the last `bt.scan`, or by profile or device name (a unique start of the name is enough). A name that is not in the last scan is looked for with a filtered scan: filter slot 9 is set to the first 10 bytes of the name on AD type 9 (complete local name) and restored afterwards; the module compares bytes, so the case must match. Suggests `bt.profile.add` for devices not yet saved |
 | `bt.addr` | `[addr]` | Show the module's Bluetooth address, or set it as `XX:XX:XX:XX:XX:XX`; a new address is stored and takes effect after `dev.reboot` |
 | `bt.name` | `[name]` | Show the module's Bluetooth device name, or set it; a new name is active at once and stored |
+| `bt.adv` | `[on\|off\|<hex> [connectable\|scannable\|broadcast]\|interval <min_ms> [max_ms]]` | Legacy advertising. Without arguments: on/off, interval, type and the custom AD payload decoded. `on`/`off` starts or stops it (the GATT server examples start it themselves). A hex payload (3-31 bytes of `<len> <type> <value>` AD structures, `0x` and `:` allowed) replaces the module's default data; `connectable` (default; the module prepends the flags, so 28 bytes at most), `scannable` (non-connectable) or `broadcast` (non-connectable, non-scannable) sets the type. `interval` takes 20-10240 ms and applies to the next start. The payload is stored by the module |
 | `bt.filter` | `[<0-9> <ad_type> <text\|hex>\|<0-9> clear\|clear]` | Scan data filters. Without arguments: list them. Otherwise set filter 0-9 to an AD type (decimal or `0x..`: 9 complete name, 8 short name, 0xFF manufacturer data, 3 16-bit UUIDs) and up to 10 bytes to match, as text (`NORA`, case-sensitive) or hex (`4E4F5241`, `0x4E4F5241`, `4E:4F:52:41`; a text that is valid hex, like `CAFE`, is read as hex), or clear one or all. Used by `bt.scan filter` and kept in the module. Not in lite builds |
 | `bt.cs` | `[on\|off\|initiator]` | Bluetooth Channel Sounding (NORA-B26/B27, firmware 3.4 or later). Without arguments: the mode. `on` makes the module a reflector, so a connected initiator (a phone or tag reader that supports Channel Sounding) measures the distance to it; `initiator` (NORA-B26 cs_initiator evaluation firmware) makes the module measure it; the setting is stored. Progress (capabilities exchanged, security, procedure on or off) is printed as it happens. Read the result on the initiator, or with `gatt.client.ras` when the module is the client. Not in lite builds |
 | `bt.cs.range` | `<conn> [seconds=10\|on\|off]` | Initiator: range a reflector and print the distance the module computes (median filter plus Kalman filter, see `bt.cs.filter`), then the count and range of readings; any key stops. Ranging needs a bonded link; when the module refuses, the command bonds and retries for 15 s. `on`/`off` starts or stops ranging in the background, with distances in the events. Not in lite builds |
@@ -330,6 +331,7 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "tftp.on rw"
 | `sock.accept` | `[wait_s=30]` | Wait for an incoming TCP connection (default 30 s) and print its handle |
 | `sock.sendto` | `[handle] <host> <port> <text...>` | Send a UDP datagram |
 | `sock.recvfrom` | `[handle] [max] [wait_s=5]` | Receive a UDP datagram and print the sender |
+| `sock.mcast` | `[handle] <join\|leave> <group>` | Join or leave a multicast group on a UDP socket that is bound with `sock.bind`: IPv4 `224.0.0.0/4` (mDNS `224.0.0.251`) or IPv6 `ff00::/8` (`ff02::fb`, `::` shorthand accepted). Afterwards `sock.recvfrom` sees the group's datagrams |
 | `sock.close` | `[handle] \| all` | Close a socket, or every socket on the module |
 | `sock.list` | | List open sockets |
 | `sock.echo` | `<tcp\|udp> <port> [seconds=60]` | Echo server for latency/throughput tests (default 60 s, one TCP client) |
@@ -346,6 +348,29 @@ ucxapp COM13 `
 
 # Send a UDP datagram
 ucxapp COM13 --exec "sock.open udp" --exec "sock.sendto 0 192.168.1.20 5000 hello"
+```
+
+### mDNS
+
+The module's mDNS responder (NORA-W36 firmware 3.4.1 or later) answers for `<hostname>.local` and advertises DNS-SD services (RFC 6763) on the Wi-Fi link, so PCs, phones and Matter controllers find it without a DNS server. Wi-Fi (station or access point) must be up before `mdns.on`; the responder follows the link and the `+UEMDU`/`+UEMDD` events show in the event log. The module holds 3 services with 10 TXT records each. There is no browse or resolve on the module yet (`thread.dns` has them over Thread); browse from a PC with `dns-sd -B _http._tcp` or `avahi-browse -t _http._tcp`.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `mdns.status` | | Responder on/off, host name and every advertised service (`id  instance._type._tcp port N`) with its TXT records |
+| `mdns.on` | `[hostname] [wait_s=5]` | Enable the responder, with a new host name if given, and wait for the up event; without it in time the responder stays enabled and comes up when Wi-Fi has an address |
+| `mdns.off` | | Disable the responder |
+| `mdns.hostname` | `[name]` | Show or set the host name advertised as `<name>.local` (default: the Wi-Fi host name); another device with the same name makes the module rename itself |
+| `mdns.add` | `<_type._tcp\|_type._udp> <port> [instance] [key=value ...]` | Advertise a service and print its id. The type is written as DNS-SD does (`_http._tcp`, `_matterc._udp`), the instance name (up to 63 characters, quoted when it has spaces) defaults to the host name, and every `key=value` becomes a TXT record. Fails when the module already holds 3 services |
+| `mdns.remove` | `<id>\|all` | Stop advertising one service or all of them |
+| `mdns.txt` | `<id> <key> <value> \| <id> remove <key> \| <id> clear` | Add or replace one TXT record on a service, remove one, or clear them all |
+
+```powershell
+# Reachable as nora.local, with the web UI announced as an HTTP service
+ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start 80" `
+  --exec "mdns.on nora" --exec "mdns.add _http._tcp 80 \"NORA-W36 dashboard\" path=/"
+
+# What a Matter controller looks for while commissioning
+ucxapp COM13 --exec "mdns.add _matterc._udp 5540 A1B2C3D4E5F60718 VP=65521+32769 D=3840 CM=1" --exec "mdns.status"
 ```
 
 ### Performance (perf)

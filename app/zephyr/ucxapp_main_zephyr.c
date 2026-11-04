@@ -358,6 +358,7 @@ int main(void)
 #endif
     ucxapp_register_sock_cmds();
 #ifndef UCXAPP_LITE
+    ucxapp_register_mdns_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_perf_cmds();

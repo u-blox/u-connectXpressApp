@@ -1,8 +1,4 @@
 {
   "servers": {
-    "u-blox-docs": {
-      "type": "http",
-      "url": "https://ublox.mcp.kapa.ai/"
-    }
   }
 }

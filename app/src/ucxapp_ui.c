@@ -434,6 +434,7 @@ static const groupInfo_t kModuleGroups[] = {
     { "thread", "Wi-Fi, Thread", "Thread mesh: network, join, role, addresses, neighbours, SRP and DNS" },
     { "net",    "IP services", "Ping, DNS, NTP and iperf" },
     { "sock",   "IP services", "TCP and UDP sockets on the module" },
+    { "mdns",   "IP services", "mDNS responder: <hostname>.local and DNS-SD services the module advertises" },
     { "http",   "IP services", "HTTP(S) client on the module" },
     { "mqtt",   "IP services", "MQTT client on the module" },
     { "cert",   "IP services", "Certificates and keys stored on the module" },

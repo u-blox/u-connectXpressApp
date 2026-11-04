@@ -23,4 +23,4 @@ Always use `--detect` (or `gnss.detect`, `imu.detect`, `--list-modules`, `--list
 - `.\ucxapp --coverage` runs the offline app tests on a gcov build in WSL and writes line coverage to `build/coverage.txt`.
 
 ## Module documentation
-Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).
+Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.mcp.json`).

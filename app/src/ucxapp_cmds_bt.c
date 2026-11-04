@@ -99,7 +99,6 @@ static bool parseAddr(const char *s, uBtLeAddress_t *addr)
     return true;
 }
 
-#ifndef UCXAPP_LITE   /* bt.filter: not in the 128 KB lite builds */
 static int hexDigit(char c)
 {
     return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
@@ -126,6 +125,7 @@ static int parseHexBytes(const char *s, uint8_t *out, int max)
     return n;
 }
 
+#ifndef UCXAPP_LITE   /* bt.filter: not in the 128 KB lite builds */
 /* A filter pattern: hex bytes ("4E494E41", "0x4E494E41", "4E:49") or else the text itself ("NORA"). */
 static int parsePattern(const char *s, uint8_t *out, int max)
 {
@@ -1240,6 +1240,121 @@ static int cmdBtName(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#define ADV_DATA_MAX 31
+
+static const char *advTypeName(int32_t type)
+{
+    return type == U_BT_ADV_TYPE_NON_CONNECTABLE_SCANNABLE ? "scannable" :
+           type == U_BT_ADV_TYPE_NON_CONNECTABLE_NON_SCANNABLE ? "broadcast" : "connectable";
+}
+
+static int advFailed(const char *what, int32_t r)
+{
+    ucxapp_print("ERROR: %s failed (%d%s)\n", what, (int)r, ucxapp_errname(r));
+    return UCXAPP_ERR_FAILED;
+}
+
+/* bt.adv: legacy advertising state, interval and the custom AD payload (CHIPoBLE, beacons, service UUIDs). */
+static int cmdBtAdv(ucxapp_t *app, int argc, char *argv[])
+{
+    uint8_t data[ADV_DATA_MAX];
+    int32_t r;
+
+    if (argc == 1) {
+        uCxBtGetAdvertiseInformation_t info;
+        uCxBtGetLegacyAdvertisementConfig_t cfg;
+        uCxBtGetLegacyAdvertiseDataAndType_t adv;
+
+        r = uCxBluetoothGetAdvertiseInformation(app->ucx, &info);
+        if (r != 0) {
+            return advFailed("reading the advertising state", r);
+        }
+        ucxapp_print("Advertising:   %s%s\n", info.legacy_adv ? "on" : "off", info.directed_adv ? " (directed)" : "");
+        if (uCxBluetoothGetLegacyAdvertisementConfig(app->ucx, &cfg) == 0) {
+            ucxapp_print("Interval:      %d-%d ms\n", (int)(cfg.advertisement_interval_minimum * 5 / 8),
+                         (int)(cfg.advertisement_interval_maximum * 5 / 8));
+        }
+        if (uCxBluetoothGetLegacyAdvertiseDataAndTypeBegin(app->ucx, &adv)) {
+            ucxapp_print("Type:          %s\n", advTypeName(adv.adv_type));
+            if (adv.adv_data.length > 0) {
+                ucxapp_print("Data:          ");
+                for (size_t i = 0; i < adv.adv_data.length; i++) {
+                    ucxapp_print("%02X", adv.adv_data.pData[i]);
+                }
+                ucxapp_print(" (%u bytes)\n", (unsigned)adv.adv_data.length);
+                ucxapp_adv_print(adv.adv_data.pData, adv.adv_data.length, "               ");
+            } else {
+                ucxapp_print("Data:          default (flags, name, SPS UUID)\n");
+            }
+        }
+        uCxEnd(app->ucx);
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "on") == 0) {
+        r = uCxBluetoothLegacyAdvertisementStart(app->ucx);
+        return r != 0 ? advFailed("starting advertising", r) : (ucxapp_print("advertising on\n"), UCXAPP_OK);
+    }
+    if (argc == 2 && strcmp(argv[1], "off") == 0) {
+        r = uCxBluetoothLegacyAdvertisementStop(app->ucx);
+        return r != 0 ? advFailed("stopping advertising", r) : (ucxapp_print("advertising off\n"), UCXAPP_OK);
+    }
+    if ((argc == 3 || argc == 4) && strcmp(argv[1], "interval") == 0) {
+        int32_t minMs, maxMs = 0;
+
+        if (!ucxapp_parse_int(argv[2], &minMs) || minMs < 20 || minMs > 10240 ||
+            (argc == 4 && (!ucxapp_parse_int(argv[3], &maxMs) || maxMs < minMs || maxMs > 10240))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (argc == 3) {
+            maxMs = minMs;
+        }
+        r = uCxBluetoothSetLegacyAdvertisementConfig(app->ucx, minMs * 8 / 5, maxMs * 8 / 5);
+        if (r != 0) {
+            return advFailed("setting the interval", r);
+        }
+        ucxapp_print("advertising interval %d-%d ms (applies to the next bt.adv on)\n", (int)minMs, (int)maxMs);
+        return UCXAPP_OK;
+    }
+    if (argc == 2 || argc == 3) {
+        const char *hex = (argv[1][0] == '0' && (argv[1][1] == 'x' || argv[1][1] == 'X')) ? argv[1] + 2 : argv[1];
+        int n = parseHexBytes(hex, data, ADV_DATA_MAX);
+        uBtAdvType_t type = U_BT_ADV_TYPE_CONNECTABLE_SCANNABLE;
+
+        if (n < 3) {
+            if (n < 0) {
+                ucxapp_print("ERROR: advertising data is 3-31 bytes of hex (AD structures: length, type, value)\n");
+            }
+            return UCXAPP_ERR_USAGE;
+        }
+        if (argc == 3) {
+            if (strcmp(argv[2], "scannable") == 0) {
+                type = U_BT_ADV_TYPE_NON_CONNECTABLE_SCANNABLE;
+            } else if (strcmp(argv[2], "broadcast") == 0) {
+                type = U_BT_ADV_TYPE_NON_CONNECTABLE_NON_SCANNABLE;
+            } else if (strcmp(argv[2], "connectable") != 0) {
+                return UCXAPP_ERR_USAGE;
+            }
+        }
+        for (int i = 0; i < n; i += data[i] + 1) {
+            if (data[i] == 0 || i + data[i] >= n) {
+                ucxapp_print("ERROR: AD structure at byte %d runs past the data; each one is <len> <type> <value...>\n", i);
+                return UCXAPP_ERR_USAGE;
+            }
+        }
+        r = argc == 3 ? uCxBluetoothSetLegacyAdvertiseDataAndType2(app->ucx, data, n, type)
+                      : uCxBluetoothSetLegacyAdvertiseDataAndType1(app->ucx, data, n);
+        if (r != 0) {
+            advFailed("setting the advertising data", r);
+            ucxapp_print("connectable advertising takes 28 bytes (the module adds the flags), others 31\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("advertising data set (%d bytes, %s)\n", n, advTypeName((int32_t)type));
+        ucxapp_adv_print(data, (size_t)n, "  ");
+        return UCXAPP_OK;
+    }
+    return UCXAPP_ERR_USAGE;
+}
+
 #ifndef UCXAPP_LITE
 static void printFilter(int32_t index, int32_t adType, const uint8_t *data, size_t len)
 {
@@ -1563,6 +1678,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, scan number, profile or device name (case-sensitive; an unscanned name is looked for first); no argument: the last used profile", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
     { "bt.name",       "[name]",              "Show or set the module's Bluetooth name (stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
     { "bt.addr",       "[addr]",              "Show or set the module's Bluetooth address (XX:XX:XX:XX:XX:XX, applies after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
+    { "bt.adv",        "[on|off|<hex> [connectable|scannable|broadcast]|interval <min_ms> [max_ms]]", "Legacy advertising: show it, start or stop it, set the custom AD payload (3-31 bytes, e.g. Matter service data) and its type, or the interval", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAdv },
 #ifndef UCXAPP_LITE
     { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "Scan data filters for bt.scan filter: AD type (9 name, 0xFF manufacturer data) and up to 10 bytes as text (NORA) or hex (4E4F5241)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
     { "bt.cs",         "[on|off|initiator]",  "Channel Sounding (NORA-B26/B27, stored): on makes the module a reflector an initiator can range; initiator (cs_initiator evaluation firmware) measures", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },

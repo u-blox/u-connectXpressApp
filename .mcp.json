@@ -1,0 +1,11 @@
+{
+	"mcpServers": {
+		"u-blox-docs": {
+			"type": "http",
+			"url": "https://ublox.mcp.kapa.ai/",
+			"tools": [
+				"*"
+			]
+		}
+	}
+}

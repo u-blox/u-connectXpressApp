@@ -54,6 +54,14 @@ def test_empty_module_answers_only_setup(app_exe):
     assert "ERROR" in out.stdout, out.stdout
 
 
+def test_at_mode_drops_a_typed_at_word(app_exe, vucx):
+    # The web AT box sends "at <line>"; in AT mode that must not reach the module as "at ati9".
+    _run(app_exe, vucx.port, "at", "at +GMM", "at ati9")
+    assert "AT+GMM" in vucx.log and "ati9" in vucx.log, vucx.log
+    assert "at +GMM" not in vucx.log and "at ati9" not in vucx.log, vucx.log
+    assert not any("web.stop" in line for line in vucx.log), vucx.log   # exit cleanup is not sent as AT
+
+
 def test_dev_info_shows_profile_identity(app_exe, vucx):
     out = _run(app_exe, vucx.port, "dev.info")
     assert out.returncode == 0, out.stdout

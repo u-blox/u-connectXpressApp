@@ -959,6 +959,14 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
             ucxapp_print("command mode\n");
             return UCXAPP_OK;
         }
+        /* "at ati9" (the web AT box or a habit from command mode) means "ati9": AT never has a space after it. */
+        if ((line[0] == 'a' || line[0] == 'A') && (line[1] == 't' || line[1] == 'T') &&
+            (line[2] == ' ' || line[2] == '\t')) {
+            line += 2 + strspn(line + 2, " \t");
+            if (*line == '\0') {
+                return UCXAPP_OK;
+            }
+        }
         return app->ucx != NULL ? ucxapp_at_send(app, line) : UCXAPP_ERR_NOT_CONNECTED;
     }
     {

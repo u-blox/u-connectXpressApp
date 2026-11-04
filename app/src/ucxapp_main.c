@@ -603,6 +603,7 @@ int main(int argc, char *argv[])
         rc = ucxapp_shell_run(&app);
     }
     ucxapp_session_end();
+    ucxapp_at_mode(false);   /* an "at" left on must not send the cleanup below to the module */
     {
         char stopLine[] = "web.stop";
         ucxapp_cmd_exec(&app, stopLine);

@@ -147,7 +147,7 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  if(busy){note('busy: '+$('busy').textContent);return}
  a=a?a.slice():null;if(a)while(a.length&&!a[a.length-1])a.pop();
  const sh=c+(a&&a.length?' '+a.join(' '):'');
- if(!yes){if(H[H.length-1]!==sh){H.push(sh);if(H.length>100)H.shift();localStorage.setItem('ucxh',JSON.stringify(H))}hi=H.length;recent()}
+ if(!yes)remember(sh);
  let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
  free=null;const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
@@ -245,7 +245,26 @@ function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),
  show(vs.length>1?Math.min(+FV[c.n+'|#']||0,vs.length-1):0);d.appendChild(g);return d}
 function recent(){const r=$('rc'),seen=[];r.textContent='';
  for(let i=H.length-1;i>=0&&seen.length<6;i--)if(!seen.includes(H[i]))seen.push(H[i]);
- seen.forEach(s=>{const b=el('button','',s);b.title='Run again: '+s;b.onclick=()=>run(s);r.appendChild(b)})}
+ seen.forEach(s=>{const b=el('button','',s.trim()),open=s.endsWith(' ');
+  b.title=open?'Put in the command line (the password is not stored)':'Run again: '+s;
+  b.onclick=()=>{if(open){$('at').checked=false;cmd.value=s;cmd.focus();showHint()}else run(s)};r.appendChild(b)})}
+/* History never keeps a secret: the line is cut before its password/PSK/token field and ends in a space, so the
+   chip fills the command line instead of running. Field names come from the command list (CM, as the forms use). */
+const PW=/^(pass|pw|psk|secret|token)/i;
+function tokens(s){return s.match(/"(?:\\.|[^"\\])*"|\S+/g)||[]}
+function scrub(line){const t=tokens(line),c=CM[t[0]];if(!c)return null;
+ const vs=c.v||[{p:'',f:c.f||[]}],pw=v=>(v.p?v.p.split(' '):[]);
+ const f=vs.find(v=>v.p&&t.slice(1,1+pw(v).length).join(' ')===v.p)||vs.find(v=>!v.p)||vs[0];
+ const at=f.f.findIndex(x=>!x[5]&&x[4]!=='f'&&PW.test(x[0])),cut=at<0?-1:1+pw(f).length+at;
+ return cut>=0&&cut<t.length?t.slice(0,cut).join(' ')+' ':line}
+function keep(s){if(H[H.length-1]!==s){H.push(s);if(H.length>100)H.shift()}localStorage.setItem('ucxh',JSON.stringify(H));hi=H.length;recent()}
+function remember(sh){const n=tokens(sh)[0]||'';if(!/\s/.test(sh.trim())){keep(sh);return}
+ if(CM[n]){keep(scrub(sh));return}
+ find(n,1).then(()=>keep(CM[n]?scrub(sh):sh.split(/\s+/)[0]+' ')).catch(()=>keep(n+' '))}
+/* entries saved before scrubbing existed are cleaned once the command list is known */
+{const names=[...new Set(H.filter(s=>/\s\S/.test(s.trim())).map(s=>tokens(s)[0]).filter(n=>n&&!/^at$/i.test(n)))];
+ names.forEach(n=>find(n,1).then(()=>{if(!CM[n])return;H=H.map(s=>tokens(s)[0]===n&&!s.endsWith(' ')?scrub(s):s);
+  localStorage.setItem('ucxh',JSON.stringify(H));recent()}).catch(()=>{}))}
 recent();
 function examples(g,d,btn){api('/api/examples?g='+enc(g)).then(r=>r.json()).then(xs=>{btn.remove();const wrap=el('div');
  xs.forEach((x,i)=>{const w=el('div','ex'),rb=el('button','exb','Run all');w.appendChild(el('i','',x.t));

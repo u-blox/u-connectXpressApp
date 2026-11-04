@@ -529,3 +529,47 @@ def test_every_form_lays_out_without_overlaps():
                 if a["l"] < b["r"] - 1 and b["l"] < a["r"] - 1 and a["t"] < b["b"] - 1 and b["t"] < a["b"] - 1:
                     bad.append(f"{f['name']}: '{a['ph']}' overlaps '{b['ph']}'")
     assert len(forms) > 300 and not bad, "\n".join(bad)
+
+@pytest.mark.app
+def test_history_never_stores_a_password():
+    """The recent-command chips and Up/Down history live in localStorage: a password is cut off, also from old
+    entries, and such a chip fills the command line instead of running."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    proc = subprocess.Popen([sys.executable, "-u", str(ROOT / "ucxapp.py"), "--web-preview", "0"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+    try:
+        for line in proc.stdout:
+            m = re.search(r"http://127\.0\.0\.1:(\d+)/#t=(\w+)", line)
+            if m:
+                break
+        assert m
+        with sync_api.sync_playwright() as p:
+            try:
+                browser = p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"no browser: {exc}")
+            page = browser.new_page()
+            url = f"http://127.0.0.1:{m.group(1)}/#t={m.group(2)}"
+            page.goto(url)
+            page.evaluate("localStorage.setItem('ucxh', JSON.stringify(['wifi.peap Corp anna OldSecret1 ca.pem']))")
+            page.reload()
+            page.wait_for_selector("#st.ok")
+            page.wait_for_function("!localStorage.getItem('ucxh').includes('OldSecret1')")
+            assert "wifi.peap Corp anna " in page.evaluate("localStorage.getItem('ucxh')")
+            for line in ("wifi.connect 4 GqpZvmK8@r5yL#AP", 'wifi.ap.enable "My AP" Sup3rSecret',
+                         "wifi.profile.add home homenet Hush123"):
+                page.fill("#cmd", line)
+                page.press("#cmd", "Enter")
+                page.wait_for_selector("#run:not([disabled])")
+            page.wait_for_function("JSON.parse(localStorage.getItem('ucxh')).length >= 4")
+            stored = page.evaluate("localStorage.getItem('ucxh')")
+            for secret in ("GqpZvmK8", "Sup3rSecret", "Hush123"):
+                assert secret not in stored, stored
+            assert "wifi.connect 4 " in stored and "wifi.profile.add home homenet " in stored, stored
+            page.fill("#cmd", "")
+            page.click("#rc button:has-text('wifi.connect 4')")
+            assert page.input_value("#cmd") == "wifi.connect 4 "
+            browser.close()
+    finally:
+        proc.terminate()
+        proc.wait(10)

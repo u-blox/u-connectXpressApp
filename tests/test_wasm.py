@@ -68,6 +68,7 @@ def test_public_look_is_only_on_the_site(tmp_path):
     subprocess.run(["cmake", f"-DPAGE={page}", f"-DOUT={out}", "-P", str(WASM / "site.cmake")], check=True)
     html = out.read_text(encoding="ascii")
     assert html.index('href="fx.css"') < html.index("</head>")
+    assert "localStorage.getItem('fxoff')==='1')document.getElementById('fx-css').disabled=true" in html
     assert html.index("</script>", html.index("<script>\n")) < html.index('src="fx.js"') < html.index("</body>")
     assert "fx.css" not in page.read_text(encoding="ascii") and "fx.js" not in page.read_text(encoding="ascii")
     for f in (ROOT / "app" / "web" / "public").iterdir():
@@ -91,6 +92,30 @@ def run(page, cmd):
     page.wait_for_function("!document.getElementById('run').disabled", timeout=60000)
     page.fill("#cmd", cmd)
     page.click("#run")
+
+
+def test_fx_off_has_no_colors(site):
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script(FAKE_SERIAL)
+        page.add_init_script("localStorage.setItem('fxoff','1')")
+        page.goto(site)
+        page.wait_for_selector("#fx-tg")
+        assert page.evaluate("document.getElementById('fx-css').disabled")
+        assert "gradient" not in page.eval_on_selector("#ucs", "e => getComputedStyle(e).backgroundImage")
+        assert "gradient" not in page.eval_on_selector("h1", "e => getComputedStyle(e).backgroundImage")
+        assert not page.query_selector("#fx-bg")
+        # a direct link turns it back on and remembers it
+        page.goto(site + "?fx=1")
+        page.wait_for_selector("#fx-bg")
+        assert not page.evaluate("document.getElementById('fx-css').disabled")
+        assert page.evaluate("localStorage.getItem('fxoff')") == "0"
+        browser.close()
 
 
 def test_app_runs_in_the_browser(site):

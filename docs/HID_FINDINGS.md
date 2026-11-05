@@ -37,7 +37,7 @@ The W36 results are from earlier runs; only `[report]` was rerun on the W36 on 2
 1. **Bonded host reconnect after a module reboot fails.** BlueZ `Connect` returns `le-connection-abort-by-local`; btmon earlier showed "ACL Connection Already Exists" because the BlueZ auto-connect for bonded devices raced the explicit connect. This is the same pattern as Windows taking the link. Probably test logic (let the auto-connect make the link), not yet confirmed.
 2. **Notifications not reported (possible firmware issue).** With a large GATT database on the peer (report handles 0x014C/0x0182), btmon showed the keyboard notifications sent over the air, but the module gave no `+UEBTGCN` URC. It went away after a bluetoothd restart on the peer. Needs a minimal repro between two NORA-W36 modules with notifications on high handles.
 3. **`AT+UBTGCCW=<conn>,<handle>,0` returns `ERROR:114`** after a subscription on a bonded, encrypted link (every `hid.client off`). Check against the AT manual and the security level.
-5. **NORA-B26 goes silent during the HID client test (most serious).** The module stopped answering AT commands in the first step of the test (after `bt.unbond all`), so the run aborts with "does not answer AT commands". After a power-cycle the module answers again, but a later run silences it again. Replaying the same steps by hand with raw serial probes did not reproduce it, and the port briefly disappeared from the OS (COM24 not found). Suspect the USB/UART connection or a leftover state from the previous process before firmware. Check the port with `.\ucxapp --detect`, then compare the AT trace with the W36. See "NORA-B26 hang: reproduce with NUT" below.
+5. **NORA-B26 goes silent during the HID client test (most serious).** The module stopped answering AT commands in the first step of the test (after `bt.unbond all`), so the run aborts with "does not answer AT commands". After a power-cycle the module answers again, but a later run silences it again. Replaying the same steps by hand with raw serial probes did not reproduce it, and the port briefly disappeared from the OS (COM24 not found). Suspect the USB/UART connection or a leftover state from the previous process before firmware. Check the port with `.\ucxapp --detect`, then compare the AT trace with the W36. The failing sequence is a reboot (`AT+CPWROFF`), then `AT+UBTUB` and `AT+UBTBDL`.
 4. **Two-module GATT tests fail** (`tests/hardware/test_ble.py`, NORA-W36 on two ports): the client cannot find the server name `ucxgatt` in the scan. Check that the second module advertises before suspecting the firmware.
 
 ## Reproduce without HID
@@ -50,24 +50,6 @@ py -m pytest tests\hardware\test_gatt_isolate.py
 ```
 
 The four cases are low/high handles × plain/bonded. If only `high-bonded` fails, the firmware is the likely suspect. The test has not run on hardware yet.
-
-## NORA-B26 hang: reproduce with NUT
-
-The NUT framework (`E:\u-blox\nut`, .NET 8 / NUnit, `NoraB26` configuration) already has an unbond-all test that matches the step where the module went silent:
-
-- `uConnectTest/uConnect/Func/Bt/UnBond.cs`: `UnBondAllLowEnergy(nrOfTesters 1..5)` bonds N testers, runs `dut.Bt.UnbondAll()`, then reads the bonded list with `dut.At.ReadBondedDevices`. `UnBondAllAndImmediateFactoryResetLowEnergy` adds a factory reset straight after the unbond, which is also suspicious.
-- `testlists/norab26.playlist` does **not** list the `UnBondAll*` tests. It only lists `ValidateUnBondDuringBond*` from `ValidateSecurityBondLE`. So the nightly B26 run never hits this path.
-
-Steps (from `E:\u-blox\nut`):
-
-```powershell
-Copy-Item config\user-config.yaml.example config\user-config.yaml   # set ComPort/LogPort for the B26 and a W36 tester
-inv generate-config
-inv build
-inv run-test-selection --product NoraB26 --test-selection "class = NUnitTest.Func.Bt.UnBond"
-```
-
-See the `ucx-nut` skill (`.github/skills/ucx-nut/SKILL.md`) for the general workflow. Not yet run. Whether it reproduces the silence is unknown. Record the AT trace and the log port for each run so it can be compared with the W36. The NUT `UnBond` tests need testers (a second module), so the B26 is the DUT and one W36 is the tester.
 
 ## Next steps
 

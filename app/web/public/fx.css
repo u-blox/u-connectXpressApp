@@ -1,0 +1,108 @@
+/* Public site only (GitHub Pages, ucxapp --wasm): motion and glow on top of app/web/index.html.
+   The page served from the app and the boards stays without this layer. */
+:root{--glass:#121a26b8;--glow:0 0 0 1px #29b6f655,0 0 24px #29b6f633}
+html{background:#070a10}
+body{position:relative;overflow-x:hidden}
+#fx-bg{position:fixed;inset:0;z-index:-1;pointer-events:none}
+body::before{content:'';position:fixed;inset:-20%;z-index:-2;pointer-events:none;filter:blur(60px);opacity:.55;
+ background:radial-gradient(30% 35% at 20% 25%,#1565c0 0%,transparent 70%),radial-gradient(28% 30% at 80% 20%,#6a1b9a 0%,transparent 70%),
+ radial-gradient(35% 30% at 60% 85%,#00838f 0%,transparent 70%),radial-gradient(20% 25% at 15% 80%,#b71c1c55 0%,transparent 70%);
+ animation:fx-aurora 28s ease-in-out infinite alternate}
+@keyframes fx-aurora{0%{transform:translate3d(0,0,0) rotate(0) scale(1)}50%{transform:translate3d(4%,-3%,0) rotate(8deg) scale(1.08)}100%{transform:translate3d(-4%,3%,0) rotate(-6deg) scale(1.02)}}
+
+/* header: glass with a moving accent line */
+header{position:sticky;top:0;z-index:5;background:#0b111acc;backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4)}
+header::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;
+ background:linear-gradient(90deg,transparent,#29b6f6,#a07cff,#ff3b6b,#29b6f6,transparent);background-size:200% 100%;animation:fx-flow 6s linear infinite}
+@keyframes fx-flow{to{background-position:-200% 0}}
+h1{background:linear-gradient(90deg,#fff 0%,#9be3ff 25%,#fff 50%,#c9b6ff 75%,#fff 100%);background-size:200% 100%;
+ -webkit-background-clip:text;background-clip:text;color:transparent;animation:fx-flow 8s linear infinite}
+.logo{transition:transform .4s cubic-bezier(.3,1.6,.5,1),filter .4s}.logo:hover{transform:scale(1.12) rotate(-4deg);filter:drop-shadow(0 0 10px #e6000088)}
+
+/* live dot: radar rings */
+#st{position:relative}#st.ok::before{animation:fx-radar 2s ease-out infinite}
+@keyframes fx-radar{0%{box-shadow:0 0 0 0 #66d17a99,0 0 0 0 #66d17a55}70%{box-shadow:0 0 0 .55rem #66d17a00,0 0 0 1.1rem #66d17a00}100%{box-shadow:0 0 0 0 #66d17a00,0 0 0 0 #66d17a00}}
+.chip{transition:color .4s,box-shadow .4s,transform .2s}.chip:not(.off){box-shadow:0 0 10px -2px currentColor}.chip.ck:hover{transform:translateY(-1px) scale(1.05)}
+.chip.fx-pop{animation:fx-pop .6s cubic-bezier(.3,1.8,.5,1)}
+@keyframes fx-pop{0%{transform:scale(.6);filter:brightness(2.2)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+#vw{box-shadow:0 0 0 1px #ffffff08}#vw button{transition:background .3s,color .3s}#vw button.on{background:linear-gradient(135deg,#29b6f6,#4f8cff);box-shadow:0 0 18px #29b6f666}
+
+/* panes: glass, staggered entrance */
+#out,#ev,#side,.sc,#gc{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 30px #0006,inset 0 1px 0 #ffffff0a;transition:box-shadow .4s,border-color .4s}
+#out:hover,#ev:hover,#side:hover,.sc:hover{border-color:#2b3c55}
+
+/* use case and virtual module pickers: glowing gradient ring */
+#wsvm{-webkit-appearance:none;appearance:none;padding:.4rem 2rem .4rem .9rem;font:inherit;font-weight:700;cursor:pointer;border-radius:999px}
+#ucs,#wsvm{border:2px solid transparent;color:#fff;letter-spacing:.01em;text-shadow:0 0 12px #29b6f688;
+ background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right .85rem center/.7rem padding-box,
+ linear-gradient(135deg,#0f1a2b,#1a1233) padding-box,linear-gradient(90deg,#29b6f6,#a07cff,#ff3b6b,#66d17a,#29b6f6) 0 0/300% 100% border-box;
+ box-shadow:0 0 18px #29b6f655,0 0 36px #a07cff33;animation:fx-ring 6s linear infinite;transition:transform .25s cubic-bezier(.3,1.6,.5,1),box-shadow .3s}
+#wsvm{animation-delay:-3s}
+#ucs:hover,#ucs:focus,#wsvm:hover,#wsvm:focus{outline:none;transform:translateY(-2px) scale(1.04);box-shadow:0 0 0 4px #29b6f622,0 0 26px #29b6f699,0 0 54px #a07cff66}
+@keyframes fx-ring{to{background-position:right .85rem center,0 0,-300% 0}}
+#ucs option,#wsvm option{background:#121a26;color:#fff;font-weight:600}
+.pane{animation:fx-up .7s cubic-bezier(.2,.9,.3,1) both}.pane:nth-child(2){animation-delay:.08s}.pane:nth-child(3){animation-delay:.16s}.pane:nth-child(4){animation-delay:.24s}
+footer,#hint,#keys{animation:fx-up .7s .3s cubic-bezier(.2,.9,.3,1) both}
+@keyframes fx-up{from{opacity:0;transform:translateY(18px) scale(.985)}}
+
+/* buttons: lift, glow, ripple, shimmer on Run */
+button{position:relative;overflow:hidden;transition:background .2s,border-color .2s,transform .15s,box-shadow .25s}
+button:not(:disabled):hover{transform:translateY(-1px);box-shadow:var(--glow)}button:not(:disabled):active{transform:translateY(0) scale(.97)}
+.fx-rip{position:absolute;border-radius:50%;pointer-events:none;background:#ffffff55;transform:scale(0);animation:fx-rip .6s ease-out forwards}
+@keyframes fx-rip{to{transform:scale(4);opacity:0}}
+#run{background:linear-gradient(110deg,#29b6f6 0%,#29b6f6 40%,#b3e9ff 50%,#29b6f6 60%,#29b6f6 100%);background-size:250% 100%;animation:fx-shine 3.5s ease-in-out infinite}
+@keyframes fx-shine{0%,60%{background-position:100% 0}100%{background-position:-150% 0}}
+#run:disabled{background:repeating-linear-gradient(45deg,#29b6f6 0 10px,#1e88c7 10px 20px);background-size:28px 28px;animation:fx-stripes .6s linear infinite;opacity:.8}
+@keyframes fx-stripes{to{background-position:28px 0}}
+#busy:not(:empty){text-shadow:0 0 8px #ffd54a88}
+#cmd{transition:border-color .3s,box-shadow .3s}#cmd:focus{box-shadow:0 0 0 3px #29b6f633,0 0 24px #29b6f622}
+
+/* log blocks and events */
+.blk.fx-in{animation:fx-slide .45s cubic-bezier(.2,.9,.3,1)}
+@keyframes fx-slide{from{opacity:0;transform:translateX(-14px)}}
+.blk{transition:border-color .5s}.blk.fx-ok{border-left-color:var(--ok)}.blk.fx-bad{border-left-color:var(--err)}
+.badge{transition:color .3s,box-shadow .3s}.badge.ok{box-shadow:0 0 12px -2px var(--ok);animation:fx-pop .5s cubic-bezier(.3,1.8,.5,1)}
+.badge.bad{box-shadow:0 0 12px -2px var(--err);animation:fx-shake .45s}
+@keyframes fx-shake{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+.e.n{animation:gl 1.2s ease-out,fx-slide .35s cubic-bezier(.2,.9,.3,1)}
+
+/* command forms and use case cards: spotlight under the pointer */
+.c{transition:background .25s}.c:hover{background:radial-gradient(14rem circle at var(--mx,50%) var(--my,50%),#29b6f614,transparent 70%)}
+.card{position:relative;background:radial-gradient(18rem circle at var(--mx,50%) var(--my,-50%),#29b6f61f,transparent 65%),var(--bg2);
+ transition:border-color .3s,transform .3s cubic-bezier(.2,.9,.3,1),box-shadow .3s}
+.card:hover{border-color:#29b6f688;transform:translateY(-3px);box-shadow:0 12px 32px #0008,0 0 0 1px #29b6f633}
+.card.fx-in{animation:fx-up .55s cubic-bezier(.2,.9,.3,1) both;animation-delay:calc(var(--i,0) * 70ms)}
+.fit .fx-in{animation:fx-up .4s cubic-bezier(.2,.9,.3,1) both;animation-delay:calc(var(--i,0) * 40ms)}
+.v.ok{box-shadow:0 0 10px -3px var(--ok)}.v.gap{box-shadow:0 0 10px -3px var(--err)}
+
+/* system diagram: breathing nodes, packets on live links */
+#dg g{transition:filter .5s}#dg g.on{filter:drop-shadow(0 0 8px var(--k))}#dg g.on rect{animation:fx-breathe 2.4s ease-in-out infinite}
+@keyframes fx-breathe{50%{fill:#17304d}}
+#dg g{cursor:default}#dg g:hover rect{stroke:var(--k,var(--ac))}
+#dg .fx-pk{fill:var(--k);filter:drop-shadow(0 0 4px var(--k))}
+
+/* splash */
+#fx-splash{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:radial-gradient(circle at 50% 45%,#13213a,#05080d 70%);transition:opacity .7s,visibility .7s}
+#fx-splash.gone{opacity:0;visibility:hidden}
+#fx-splash .w{position:relative;width:9rem;height:9rem;display:grid;place-items:center}
+#fx-splash img{width:4.5rem;height:4.5rem;animation:fx-pop 1s cubic-bezier(.3,1.8,.5,1)}
+#fx-splash .r{position:absolute;inset:0;border:2px solid #29b6f6;border-radius:50%;opacity:0;animation:fx-wave 2.2s ease-out infinite}
+#fx-splash .r:nth-child(2){animation-delay:.7s;border-color:#a07cff}#fx-splash .r:nth-child(3){animation-delay:1.4s;border-color:#ff3b6b}
+@keyframes fx-wave{0%{transform:scale(.4);opacity:.9}100%{transform:scale(1.8);opacity:0}}
+#fx-splash p{margin:1rem 0 0;text-align:center;font:600 1.1rem 'Segoe UI',system-ui,sans-serif;letter-spacing:.35em;color:#cfe9ff;text-transform:uppercase}
+#fx-splash p span{display:inline-block;opacity:0;animation:fx-up .5s cubic-bezier(.2,.9,.3,1) forwards}
+#fx-splash small{display:block;margin-top:.4rem;text-align:center;color:#7d8899;letter-spacing:.2em;font-size:.7rem}
+
+/* sparks and shockwave */
+.fx-spark{position:fixed;width:6px;height:6px;border-radius:50%;pointer-events:none;z-index:60}
+.fx-wave{position:fixed;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;border:2px solid var(--ok);pointer-events:none;z-index:60;animation:fx-shock .9s ease-out forwards}
+@keyframes fx-shock{to{transform:scale(14);opacity:0}}
+
+dialog[open]{animation:fx-up .35s cubic-bezier(.2,.9,.3,1)}dialog::backdrop{backdrop-filter:blur(4px)}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:linear-gradient(#29b6f655,#a07cff55);border-radius:9px}::-webkit-scrollbar-track{background:transparent}
+::selection{background:#29b6f655}
+
+body.fx-party h1{animation:fx-flow 1s linear infinite}body.fx-party::before{animation-duration:3s;opacity:.9}
+
+#fx-tg{font-weight:700;letter-spacing:.08em}#fx-tg.on{color:#ffd54a;border-color:#ffd54a88;box-shadow:0 0 12px -2px #ffd54a}
+body.fx-off *,body.fx-off *::before,body.fx-off *::after,body.fx-off::before{animation:none!important;transition:none!important}

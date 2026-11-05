@@ -87,6 +87,7 @@ def vnu_messages(path):
 
 WASM_SITE_PAGE = ROOT / "build" / "wasm" / "site" / "index.html"
 WASM_JS = ROOT / "app" / "wasm" / "ucxapp-wasm.js"
+FX_JS = ROOT / "app" / "web" / "public" / "fx.js"
 
 
 @pytest.mark.parametrize("path", [PAGE_FILE, WASM_SITE_PAGE], ids=["app", "wasm-site"])
@@ -98,9 +99,9 @@ def test_page_passes_the_w3c_validator(path):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.parametrize("source", ["page", "wasm"])
+@pytest.mark.parametrize("source", ["page", "wasm", "fx"])
 def test_script_syntax(tmp_path, source):
-    script = SCRIPT if source == "page" else WASM_JS.read_text(encoding="utf-8")
+    script = SCRIPT if source == "page" else (WASM_JS if source == "wasm" else FX_JS).read_text(encoding="utf-8")
     if shutil.which("node"):
         js = tmp_path / "page.js"
         js.write_text(script, encoding="utf-8")

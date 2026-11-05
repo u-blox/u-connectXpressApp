@@ -8,6 +8,7 @@ and STM32.
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
+  ucxapp --publish-web "new look"          build and test the browser site, commit app/web + app/wasm, push (Pages)
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
   ucxapp --detect --detect-force          also ask every other port for a NORA model (boards with plain FTDI names)
@@ -170,6 +171,9 @@ def parse(argv):
     g.add_argument("--web-preview", nargs="?", const=8099, type=int, metavar="PORT",
                    help="serve app/web/index.html on 127.0.0.1 (default port 8099) with this build's commands; "
                         "commands run in the host app without a module")
+    g.add_argument("--publish-web", nargs="?", const="Web: update the browser site", metavar="MESSAGE",
+                   help="build the WebAssembly site, run the web tests, commit app/web and app/wasm with MESSAGE and "
+                        "push master; the pages workflow then deploys it to GitHub Pages")
     args, extra = p.parse_known_args(argv)
     args.detect = args.detect or args.detect_force
     if args.ports is not None:
@@ -1384,7 +1388,8 @@ def wasm(args, extra):
     if args.clean or args.rebuild:
         shutil.rmtree(WASM_DIR, ignore_errors=True)
         print("Cleaned", WASM_DIR.relative_to(ROOT))
-    page = max(f.stat().st_mtime for f in [ROOT / "app" / "web" / "index.html", *(ROOT / "app" / "wasm").iterdir()])
+    page = max(f.stat().st_mtime for f in [ROOT / "app" / "web" / "index.html", *(ROOT / "app" / "wasm").iterdir(),
+                                           *(ROOT / "app" / "web" / "public").iterdir()])
     built = site / "ucxapp.wasm"
     if args.build or args.rebuild or (not args.clean and (not built.exists()
                                                          or max(newest_source(), page) > built.stat().st_mtime)):
@@ -1392,6 +1397,33 @@ def wasm(args, extra):
     if (args.build or args.clean or args.rebuild) and not args.run:
         return 0
     return wasm_serve(site, WASM_PORT)
+
+
+WEB_PATHS = ("app/web", "app/wasm")
+
+
+def git_out(*cmd):
+    return subprocess.run(["git", *cmd], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def publish_web(message):
+    require("git", "Install Git from https://git-scm.com/downloads")
+    branch = git_out("rev-parse", "--abbrev-ref", "HEAD")
+    if branch != "master":
+        fail(f"GitHub Pages deploys from master, this is {branch}")
+    wasm_build()
+    check([sys.executable, "-m", "pytest", "tests/test_wasm.py", "tests/test_webpage.py", "-p", "no:cacheprovider"],
+          "web tests")
+    check(["git", "add", "--", *WEB_PATHS], "git add")
+    if subprocess.call(["git", "diff", "--cached", "--quiet", "--", *WEB_PATHS], cwd=ROOT):
+        check(["git", "commit", "-m", message, "--", *WEB_PATHS], "git commit")
+    else:
+        print("No changes in", ", ".join(WEB_PATHS))
+    check(["git", "push", "origin", "master"], "git push")
+    m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?$", git_out("remote", "get-url", "origin"))
+    where = f"https://{m[1].lower()}.github.io/{m[2]}/" if m else "GitHub Pages"
+    print(f"Pushed; the pages workflow deploys {where} in a few minutes")
+    return 0
 
 
 # ---- Workspace tools ----
@@ -1756,6 +1788,8 @@ def main(argv):
         return selftest()
     if args.doctor:
         return doctor()
+    if args.publish_web is not None:
+        return publish_web(args.publish_web)
     if args.web_preview is not None:
         exe = host_exe(args.debug)
         if stale(exe):

@@ -236,6 +236,8 @@ if(NOT WIN32)
               ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26-thread.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26.json
               ${_ucx_site}
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${_ucx_site}/icon.svg
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/public/fx.css ${CMAKE_CURRENT_SOURCE_DIR}/web/public/fx.js
+              ${_ucx_site}
       VERBATIM)
     # the site files above are copied after the link: a change to any of them alone must relink too
     file(GLOB _ucx_boards ${CMAKE_CURRENT_SOURCE_DIR}/boards/*.json)
@@ -245,7 +247,8 @@ if(NOT WIN32)
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-w36.json
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26-thread.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26.json
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake ${_ucx_boards} ${_ucx_scripts}
-      ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
+      ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${CMAKE_CURRENT_SOURCE_DIR}/web/public/fx.css
+      ${CMAKE_CURRENT_SOURCE_DIR}/web/public/fx.js)
   endif()
 
   return()

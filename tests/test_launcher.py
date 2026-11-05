@@ -5,6 +5,8 @@ import os
 import subprocess
 import tarfile
 
+import pytest
+
 import ucxapp
 
 
@@ -107,6 +109,28 @@ def test_linux_host_run_forwards_the_test_variables(monkeypatch):
     remote = calls[0][-1]
     assert "UCX_WIFI_SSID='my net'" in remote and "UCX_LINUX_HOST" not in remote
     assert remote.endswith("python3 ucxapp.py --test tests/hardware")
+
+
+def test_publish_web_tests_then_commits_only_the_web_and_pushes_master(monkeypatch, capsys):
+    steps = []
+    outs = {("rev-parse", "--abbrev-ref", "HEAD"): "master",
+            ("remote", "get-url", "origin"): "https://github.com/U-Blox/u-connectXpressApp.git"}
+    monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: outs[cmd])
+    monkeypatch.setattr(ucxapp, "wasm_build", lambda: steps.append("build"))
+    monkeypatch.setattr(ucxapp, "check", lambda cmd, what, **kw: steps.append(what))
+    monkeypatch.setattr(ucxapp.subprocess, "call", lambda cmd, **kw: 1)  # staged web changes
+    assert ucxapp.main(["--publish-web", "new look"]) == 0
+    assert steps == ["build", "web tests", "git add", "git commit", "git push"]
+    assert "https://u-blox.github.io/u-connectXpressApp/" in capsys.readouterr().out
+
+
+def test_publish_web_refuses_a_branch_pages_does_not_deploy(monkeypatch):
+    monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: "feature")
+    monkeypatch.setattr(ucxapp, "wasm_build", lambda: pytest.fail("built on the wrong branch"))
+    with pytest.raises(SystemExit):
+        ucxapp.publish_web("x")
 
 
 def test_detect_force_probes_unnamed_ports(monkeypatch):

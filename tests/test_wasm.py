@@ -61,6 +61,20 @@ def test_page_script_is_injected_before_the_page_script(tmp_path):
     assert "coi-serviceworker.js" in html
 
 
+def test_public_look_is_only_on_the_site(tmp_path):
+    import subprocess
+    out = tmp_path / "index.html"
+    page = ROOT / "app" / "web" / "index.html"
+    subprocess.run(["cmake", f"-DPAGE={page}", f"-DOUT={out}", "-P", str(WASM / "site.cmake")], check=True)
+    html = out.read_text(encoding="ascii")
+    assert html.index('href="fx.css"') < html.index("</head>")
+    assert html.index("</script>", html.index("<script>\n")) < html.index('src="fx.js"') < html.index("</body>")
+    assert "fx.css" not in page.read_text(encoding="ascii") and "fx.js" not in page.read_text(encoding="ascii")
+    for f in (ROOT / "app" / "web" / "public").iterdir():
+        f.read_bytes().decode("ascii")
+    assert "body.fx-off" in (ROOT / "app" / "web" / "public" / "fx.css").read_text(encoding="ascii")
+
+
 @pytest.fixture
 def site():
     if not (SITE / "ucxapp.wasm").exists():

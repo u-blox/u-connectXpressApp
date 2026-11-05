@@ -520,7 +520,12 @@ static const example_t kExamples[] = {
     { "uc-livestock", "Load the paddock geofence (replace garden.kml with the paddock polygon)",
       "gnss.fence garden.kml\ngnss.open\ngnss.fence status" },
     { "uc-livestock", "Find a tag after a fence event (manual demonstration)",
-      "bt.name FarmTag-001\nbt.adv on\nbt.adv\n# edge host triggers this after a confirmed area event" },
+      "bt.name FarmTag-001\n"
+      "# Coded PHY S8 on every link: lowest rate, longest range (NORA-B26, ALMA-W1)\n"
+      "at AT+UBTCS4=4\nat AT+UBTCS5=4\n"
+      "bt.adv on\nbt.adv\n"
+      "# once the gateway connects, at AT+UBTPHYR=<handle> shows tx/rx PHY 4 (Coded)\n"
+      "# edge host triggers this after a confirmed area event" },
     { "uc-livestock", "Notify the farm server (the tag position over cellular)",
       "cell.open\ncell.attach on\ncell.connect farm.example.com 5000\n"
       "gnss.bridge cell\ngnss.bridge status\ngnss.bridge off\ncell.disconnect" },

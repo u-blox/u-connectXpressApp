@@ -281,6 +281,7 @@ static const ucRow_t kLivestock[] = {
     { 'g', "[check]", "Field position", "GNSS on a cow or lamb tag; indoor barn scan uses the handover scenario", "gnss.open" },
     { 0, "[ok]", "Geofence", "load a paddock polygon from KML; gnss.fence reports entering and leaving", "gnss.fence" },
     { 0, "[ok]", "Find the tag", "after an area event, advertise its tag ID for a nearby phone or gateway", "bt.adv" },
+    { 0, "[check]", "Coded PHY", "long range: 125 kbit/s S8 links reach about 4x 1M (NORA-B26, ALMA-W1; not NORA-W36)", "at" },
     { 0, "[check]", "Notify", "a cellular modem and SIM send the alert and position to the farm server", "cell.connect" },
     { 0, "[check]", "Alert policy", "edge host applies accuracy margin, dwell time, event ID, rate limit and offline queue", NULL },
     { 0, "[limit]", "Automation", "steps demonstrate components; automatic fence-to-BLE/cellular actions are not implemented", NULL },

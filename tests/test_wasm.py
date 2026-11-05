@@ -68,7 +68,7 @@ def test_public_look_is_only_on_the_site(tmp_path):
     subprocess.run(["cmake", f"-DPAGE={page}", f"-DOUT={out}", "-P", str(WASM / "site.cmake")], check=True)
     html = out.read_text(encoding="ascii")
     assert html.index('href="fx.css"') < html.index("</head>")
-    assert "localStorage.getItem('fxoff')==='1')document.getElementById('fx-css').disabled=true" in html
+    assert "if(localStorage.getItem('fxoff')!=='0')document.getElementById('fx-css').disabled=true" in html
     assert html.index("</script>", html.index("<script>\n")) < html.index('src="fx.js"') < html.index("</body>")
     assert "fx.css" not in page.read_text(encoding="ascii") and "fx.js" not in page.read_text(encoding="ascii")
     for f in (ROOT / "app" / "web" / "public").iterdir():
@@ -103,7 +103,7 @@ def test_fx_off_has_no_colors(site):
             pytest.skip(f"no browser: {exc}")
         page = browser.new_page()
         page.add_init_script(FAKE_SERIAL)
-        page.add_init_script("localStorage.setItem('fxoff','1')")
+        # a first visit (nothing stored) is plain
         page.goto(site)
         page.wait_for_selector("#fx-tg")
         assert page.evaluate("document.getElementById('fx-css').disabled")

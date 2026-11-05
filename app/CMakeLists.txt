@@ -152,6 +152,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_qr.c
     src/ucxapp_cmds_utils.c
     src/ucxapp_stream.c
+    src/ucxapp_vport.c
     src/ucxapp_corr.c
     src/ucxapp_cmds_gnss.c
     src/ucxapp_cmds_imu.c
@@ -161,6 +162,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_dash.c
     src/ucxapp_cmds_hid.c
     src/ucxapp_cmds_examples.c
+    src/ucxapp_demo.c
     src/ucxapp_cmds_usecase.c
     third-party/qrcodegen/qrcodegen.c
 
@@ -221,19 +223,25 @@ if(NOT WIN32)
       -sENVIRONMENT=web,worker -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8
       -sINITIAL_MEMORY=67108864 -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=262144
       "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_ucxapp_web_local_request,_ucxapp_web_local_body,_ucxapp_web_local_length,_ucxapp_web_local_type,_ucxapp_web_local_busy,_ucxapp_web_local_poll,_ucxapp_webserial_rx,_ucxapp_webserial_ready"
-      -sEXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,HEAPU8)
+      -sEXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,HEAPU8
+      # the board profiles and example scripts at the paths the examples use (app/boards/h753.json from /)
+      "SHELL:--embed-file ${CMAKE_CURRENT_SOURCE_DIR}/boards@/app/boards"
+      "SHELL:--embed-file ${CMAKE_CURRENT_SOURCE_DIR}/../examples@/examples")
     add_custom_command(TARGET ucxapp POST_BUILD
       COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
               -P ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
               ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json
-              ${_ucx_site}
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json ${_ucx_site}
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${_ucx_site}/icon.svg
       VERBATIM)
     # the site files above are copied after the link: a change to any of them alone must relink too
+    file(GLOB _ucx_boards ${CMAKE_CURRENT_SOURCE_DIR}/boards/*.json)
+    file(GLOB_RECURSE _ucx_scripts ${CMAKE_CURRENT_SOURCE_DIR}/../examples/*.ucx)
     set_property(TARGET ucxapp APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js
-      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake ${_ucx_boards} ${_ucx_scripts}
       ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
   endif()
 
@@ -304,6 +312,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_qr.c
   src/ucxapp_cmds_utils.c
   src/ucxapp_stream.c
+  src/ucxapp_vport.c
   src/ucxapp_corr.c
   src/ucxapp_cmds_gnss.c
   src/ucxapp_cmds_imu.c
@@ -313,6 +322,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_dash.c
   src/ucxapp_cmds_hid.c
   src/ucxapp_cmds_examples.c
+  src/ucxapp_demo.c
   src/ucxapp_cmds_usecase.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}

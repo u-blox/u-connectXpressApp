@@ -61,6 +61,10 @@ bool ucxapp_platform_clock_adjust(int64_t deltaSeconds)
 
 bool ucxapp_platform_key_pressed(void)
 {
+#ifdef __EMSCRIPTEN__
+    /* the browser has no keyboard on stdin, and its stdin always looks readable */
+    return false;
+#else
     fd_set fds;
     struct timeval tv = { 0, 0 };
     /* A pipe or /dev/null at EOF is always readable; only a terminal has keys (as _kbhit on Windows). */
@@ -70,6 +74,7 @@ bool ucxapp_platform_key_pressed(void)
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     return select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0;
+#endif
 }
 
 int ucxapp_platform_get_key(void)

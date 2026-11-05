@@ -107,6 +107,51 @@ static void closeSocket(modSock_t *m)
     uCxSocketClose(m->ucx, m->sock);
 }
 
+/* The virtual module has no DTLS peer behind its sockets (only a UDP echo and a demo client), so on it the
+ * handshake is skipped and the text goes in clear; dtls.selftest runs the real DTLS 1.2 handshake offline. */
+static const char kVirtualNote[] = "virtual module: no DTLS peer behind it, handshake skipped, data in clear "
+                                   "(dtls.selftest runs a real handshake)\n";
+
+static int pollReceive(modSock_t *m, uint8_t *buf, int len, int polls)
+{
+    int got = 0;
+    for (int i = 0; i < polls && got == 0; i++) {
+        got = modReceive(m, buf, len);
+        if (got == 0) {
+            ucxapp_platform_sleep_ms(DTLS_POLL_MS);
+        }
+    }
+    return got;
+}
+
+static int virtualClient(modSock_t *m, const char *host, int32_t port, const char *text, uint8_t *buf)
+{
+    ucxapp_print("%s", kVirtualNote);
+    int got = uCxSocketWrite(m->ucx, m->sock, (const uint8_t *)text, (int32_t)strlen(text)) < 0 ? -1 :
+              pollReceive(m, buf, DTLS_IO_MAX, DTLS_IO_POLLS);
+    closeSocket(m);
+    if (got <= 0) {
+        ucxapp_print("ERROR: no reply from %s:%d\n", host, (int)port);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("reply: %.*s\n", got, (const char *)buf);
+    return UCXAPP_OK;
+}
+
+static int virtualServer(modSock_t *m, uint8_t *buf)
+{
+    ucxapp_print("%s", kVirtualNote);
+    int got = pollReceive(m, buf, DTLS_IO_MAX, DTLS_PEER_POLLS);
+    if (got <= 0 || uCxSocketSendTo(m->ucx, m->sock, &m->peerIp, m->peerPort, buf, got) < 0) {
+        ucxapp_print("ERROR: no client\n");
+        closeSocket(m);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("echoed %d bytes\n", got);
+    closeSocket(m);
+    return UCXAPP_OK;
+}
+
 static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;
@@ -141,6 +186,9 @@ static int cmdClient(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: connect to %s:%d failed\n", argv[1], (int)port);
         closeSocket(&m);
         return UCXAPP_ERR_FAILED;
+    }
+    if (ucxapp_module_is_virtual(app)) {
+        return virtualClient(&m, argv[1], port, text, buf);
     }
     ucxapp_dtls_xport_t x = { clientSend, clientRecv, &m };
     ucxapp_dtls_conn_t *c = ucxapp_dtls_client_new(&x, UCXAPP_TLS_CA_NAME, argv[1], err, sizeof(err));
@@ -205,6 +253,9 @@ static int cmdServer(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("DTLS server on port %d, waiting for a client\n", (int)port);
+    if (ucxapp_module_is_virtual(app)) {
+        return virtualServer(&m, buf);
+    }
 
     /* The first datagram identifies the client for the cookie exchange; it is replayed to the handshake. */
     int got = 0;

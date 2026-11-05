@@ -134,13 +134,14 @@ static bool defineService(ucxapp_t *app)
         gActionHandle = rsp.value_handle;
     }
     if (r == 0) {
+        gDefined = true;   /* before activating: a bonded phone can write as soon as the service is active */
         r = uCxGattServerServiceActivate(app->ucx);
     }
     if (r != 0) {
+        gDefined = false;
         ucxapp_print("ERROR: cannot define the notification service (%d%s)\n", (int)r, ucxapp_errname(r));
         return false;
     }
-    gDefined = true;
     return true;
 }
 
@@ -150,10 +151,11 @@ static int cmdOn(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
+    gOn = true;   /* before defining and advertising: the phone's first write must not be lost */
     if (!gDefined && !defineService(app)) {
+        gOn = false;
         return UCXAPP_ERR_FAILED;
     }
-    gOn = true;   /* before advertising: a bonded phone can write as soon as the service is active */
     ucxapp_gatt_ensure_advertising(app);
     ucxapp_print("notification service on: the phone app pairs, then writes <id>|<app>|<title>|<text> to "
                  "7a3f0011-5c1e-4d2b-9f6a-3e8b2c4d5e6f\n");

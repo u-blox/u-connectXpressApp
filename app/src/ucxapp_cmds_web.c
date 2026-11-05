@@ -67,6 +67,7 @@ static uint32_t gUploadOff;
 
 /* WebAssembly build: the page calls the routes directly and polls the events, no socket server. */
 static bool gLocal;
+static uHttpRequest_t gLocalReq;            /* the page's requests; only these skip the token */
 static char gLocalEvents[4096];
 static size_t gLocalLen;
 
@@ -167,12 +168,15 @@ typedef struct {
     int32_t stateMs;
 } viewer_t;
 
-static viewer_t gViewers[U_WEBSERVER_MAX_CLIENTS];
+/* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
+   ucxapp_web_local_poll the last, so a module web server started from the page does not share cursors. */
+#define LOCAL_SLOT U_WEBSERVER_MAX_CLIENTS
+static viewer_t gViewers[U_WEBSERVER_MAX_CLIENTS + 1];
 
 /* > 0 when the event was taken by viewer i. */
 static int32_t sendTo(int i, const char *name, const char *data)
 {
-    if (!gLocal) {
+    if (i != LOCAL_SLOT) {
         return uWebServerSendSSEEvent(gServer, i, name, data) == 0 ? 1 : 0;
     }
     size_t need = strlen(name) + strlen(data) + 2;
@@ -189,7 +193,7 @@ static viewer_t *viewer(int i)
     viewer_t *v = &gViewers[i];
     uint32_t gen = 1;
 
-    if (!gLocal ? !uWebServerGetSSEClient(gServer, i, &gen) : i != 0) {
+    if (i == LOCAL_SLOT ? !gLocal : gServer == NULL || !uWebServerGetSSEClient(gServer, i, &gen)) {
         v->gen = 0;
         return NULL;
     }
@@ -204,13 +208,13 @@ static viewer_t *viewer(int i)
     return v;
 }
 
-/* Sends as much pending output as the engine takes; returns true if output is still waiting for someone. */
-static bool flushOutput(void)
+/* Sends as much pending output as the engine takes to viewers first..last; returns true if output is still waiting for someone. */
+static bool flushOutput(int first, int last)
 {
     char raw[256], json[600];
     bool pending = false;
 
-    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+    for (int i = first; i <= last; i++) {
         viewer_t *v = viewer(i);
 
         for (int round = 0; v != NULL && round < 32; round++) {
@@ -230,11 +234,11 @@ static bool flushOutput(void)
     return pending;
 }
 
-static void flushEvents(void)
+static void flushEvents(int first, int last)
 {
     char line[96], json[2 * sizeof(line) + 4];
 
-    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+    for (int i = first; i <= last; i++) {
         viewer_t *v = viewer(i);
 
         for (int round = 0; v != NULL && round < 4 && ucxapp_ui_event_peek(&v->evCur, line, sizeof(line)); round++) {
@@ -260,14 +264,14 @@ static void flushEvents(void)
 }
 
 /* Sent to a page on change, when it connects and every 5 s. */
-static void flushState(void)
+static void flushState(int first, int last)
 {
     char text[200], json[210];
     int32_t now = U_CX_PORT_GET_TIME_MS();
     uint32_t version = ucxapp_ui_state(text, sizeof(text));
 
     snprintf(json, sizeof(json), "\"%s\"", text);
-    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+    for (int i = first; i <= last; i++) {
         viewer_t *v = viewer(i);
 
         if (v != NULL && (version != v->stateSeen || now - v->stateMs >= 5000) && sendTo(i, "state", json) > 0) {
@@ -277,14 +281,14 @@ static void flushState(void)
     }
 }
 
-static void flushDone(void)
+static void flushDone(int first, int last)
 {
     int rc;
     uint32_t seq = ucxapp_ui_done_seq(&rc);
     char text[16], probe[8];
 
     snprintf(text, sizeof(text), "%d", rc);
-    for (int i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+    for (int i = first; i <= last; i++) {
         viewer_t *v = viewer(i);
         uint32_t cur = v != NULL ? v->logCur : 0;
 
@@ -320,10 +324,10 @@ static void pumpLoop(void *arg)
                 break;
             }
         }
-        bool pending = flushOutput();
-        flushEvents();
-        flushState();
-        flushDone();
+        bool pending = flushOutput(0, LOCAL_SLOT - 1);
+        flushEvents(0, LOCAL_SLOT - 1);
+        flushState(0, LOCAL_SLOT - 1);
+        flushDone(0, LOCAL_SLOT - 1);
         if (U_CX_PORT_GET_TIME_MS() - lastKeepAlive > KEEPALIVE_MS) {
             uWebServerBroadcastSSEEvent(gServer, "ka", "");
             lastKeepAlive = U_CX_PORT_GET_TIME_MS();
@@ -363,7 +367,7 @@ static bool tokenOk(const uHttpRequest_t *req)
     char t[TOKEN_LEN + 8];
     unsigned diff = 0;
 
-    if (gLocal) {
+    if (req == &gLocalReq) {
         return true;   /* the page and the app share one browser tab */
     }
     if (uWebServerGetHeader(req, "X-Token", t, sizeof(t)) != 0 && !cookieToken(req, t, sizeof(t)) &&
@@ -953,7 +957,7 @@ static void routeUpload(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
         uWebServerSendError(resp, 400, "bad file name");
         return;
     }
-    if (!gHttps && !gLocal && (isKey(name) || strncmp(name, "tls-", 4) == 0)) {
+    if (!gHttps && req != &gLocalReq && (isKey(name) || strncmp(name, "tls-", 4) == 0)) {
         uWebServerSendError(resp, 403, "keys and certificates need https (web.start https)");
         return;
     }
@@ -1091,7 +1095,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         U_CX_MUTEX_DELETE(gLock);
         return UCXAPP_ERR_FAILED;
     }
-    memset(gViewers, 0, sizeof(gViewers));   /* each page starts at the streams' end when it connects */
+    memset(gViewers, 0, sizeof(gViewers[0]) * LOCAL_SLOT);   /* each page starts at the streams' end when it connects */
 
     (void)uCxSocketSetReadMode(app->ucx, U_READ_MODE_BUFFERED);
     gServer = uWebServerInit(app->ucx, gPort);
@@ -1247,26 +1251,26 @@ bool ucxapp_web_local_begin(ucxapp_t *app)
     }
     gApp = app;
     gLocal = true;
-    memset(gViewers, 0, sizeof(gViewers));
-    (void)viewer(0);   /* the page's place in the streams starts here, not at its first poll */
+    memset(&gViewers[LOCAL_SLOT], 0, sizeof(gViewers[0]));
+    (void)viewer(LOCAL_SLOT);   /* the page's place in the streams starts here, not at its first poll */
     return true;
 }
 
 /* One request; the reply is read with ucxapp_web_local_body/_length/_type. Runs on the page's thread. */
 int ucxapp_web_local_request(const char *method, const char *path, const char *query, const char *body, int len)
 {
-    static uHttpRequest_t req;
+    uHttpRequest_t *req = &gLocalReq;
 
-    memset(&req, 0, sizeof(req));
+    memset(req, 0, sizeof(*req));
     memset(&gLocalResp, 0, sizeof(gLocalResp));
-    req.method = strcmp(method, "POST") == 0 ? U_HTTP_METHOD_POST : U_HTTP_METHOD_GET;
-    snprintf(req.path, sizeof(req.path), "%s", path);
-    snprintf(req.query, sizeof(req.query), "%s", query);
-    req.body = body;
-    req.body_length = len;
+    req->method = strcmp(method, "POST") == 0 ? U_HTTP_METHOD_POST : U_HTTP_METHOD_GET;
+    snprintf(req->path, sizeof(req->path), "%s", path);
+    snprintf(req->query, sizeof(req->query), "%s", query);
+    req->body = body;
+    req->body_length = len;
     for (size_t i = 0; gLocal && i < sizeof(kRoutes) / sizeof(kRoutes[0]); i++) {
-        if (kRoutes[i].method == req.method && strcmp(kRoutes[i].path, path) == 0) {
-            kRoutes[i].fn(&req, &gLocalResp, NULL);
+        if (kRoutes[i].method == req->method && strcmp(kRoutes[i].path, path) == 0) {
+            kRoutes[i].fn(req, &gLocalResp, NULL);
             return gLocalResp.status_code;
         }
     }
@@ -1301,10 +1305,10 @@ const char *ucxapp_web_local_poll(void)
     gLocalLen = 0;
     gLocalEvents[0] = '\0';
     if (gLocal) {
-        flushOutput();
-        flushEvents();
-        flushState();
-        flushDone();
+        flushOutput(LOCAL_SLOT, LOCAL_SLOT);
+        flushEvents(LOCAL_SLOT, LOCAL_SLOT);
+        flushState(LOCAL_SLOT, LOCAL_SLOT);
+        flushDone(LOCAL_SLOT, LOCAL_SLOT);
     }
     return gLocalEvents;
 }

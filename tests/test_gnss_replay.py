@@ -247,6 +247,16 @@ def test_virtual_receiver_in_malmo_and_from_the_host(app_exe, tmp_path):
     assert out.stdout.count("Virtual receiver at") == 2, out.stdout
 
 
+def test_virtual_receiver_reports_jamming_and_spoofing(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.cfg msg mon-rf 1", "gnss.cfg msg sec-sig 1",
+               "gnss.status", "gnss.watch 30", "gnss.status", "gnss.close", timeout=90)
+    assert "Security:  jamming none, spoofing none" in out.stdout, out.stdout
+    assert "JAM: interference detected (CW indicator 170/255)" in out.stdout, out.stdout
+    assert "ALERT jamming interference detected, spoofing none, antenna OK" in out.stdout, out.stdout
+    assert "JAM: cleared" in out.stdout and "SPOOF: spoofing indicated" in out.stdout, out.stdout
+    assert "SPOOF: cleared" in out.stdout, out.stdout
+
+
 @pytest.mark.parametrize(("command", "message"), [
     ("gnss.virtual off", "ERROR: no virtual receiver is running"),
     ("gnss.virtual 91 0", "usage"),

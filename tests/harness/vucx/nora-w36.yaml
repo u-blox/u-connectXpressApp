@@ -1,21 +1,53 @@
 # vucx profile: a NORA-W36 that says OK to everything it does not know, with Wi-Fi, a BLE peer,
 # a heart rate service and ANCS on the peer, a GATT server, an MQTT broker with one message waiting
-# and a hotel login page in front of the internet. Used to drive whole command groups and the use cases.
+# and a hotel login page in front of the internet, Thingstream/AssistNow and Wi-Fi location services behind it.
+# Used to drive whole command groups and the use cases.
 include: [wifi.yaml]
 default: ["OK"]
+# our own GATT server hands out handles like the module (service 40, characteristics 42/43, 45/46 ...; the next
+# service 60); URCs name a characteristic of the services being activated as {h:<uuid prefix>}, its CCCD as {c:...}
+gatt_server: true
 state:
   'AT+UHTCRP=0,"/generate_204"': {page: probe}
   'AT+UHTCRP=0,"/login*"': {page: login}
+  'AT+UHTCRP=0,"/ztp/assistnow/*"': {page: ztp}
+  'AT+UHTCRP=0,"/GetAssistNowData*"': {page: assistnow}
+  # wifi.locate: Google, Skyhook, HERE and Combain
+  'AT+UHTCRP=0,"/geolocation/v1/geolocate?key=*"': {page: locate}
+  'AT+UHTCRP=0,"/wps2/json/location?key=*"': {page: locate}
+  'AT+UHTCRP=0,"/v2/locate?apiKey=*"': {page: locate}
+  'AT+UHTCRP=0,"/?key=*"': {page: locate}
   "AT+UHTCRP=*": {page: other}
+  "AT+UHTCRPOB=* [page=ztp]": {page: ztp}
+  "AT+UHTCRPOB=* [page=locate]": {page: locate}
   "AT+UHTCRPOB=*": {page: posted, portal: open}
+  # BLE: the link to the peer, and numeric comparison once (bt.defaults secure sets Display Yes/No)
+  "AT+UBTC=*": {link: up}
+  "AT+UBTDC=*": {link: down}
+  "AT+UBTIOC=2": {iocap: yesno}
+  "AT+UBTIOC=*": {iocap: other}
+  "AT+UBTUC=*": {iocap: confirmed}
+  # Channel Sounding: a reflector in range once bt.cs initiator has set the role
+  "AT+UBTCSM=2": {cs: initiator}
+  "AT+UBTCSM=*": {cs: other}
+  "AT+UBTCSKF=*,*,0": {kf: "off"}
+  "AT+UBTCSKF=*": {kf: "on"}
 commands:
+  "AT+UBTCSKF? [kf=off]": ["+UBTCSKF:1,500,0", "OK"]
+  "AT+UBTCSKF?": ["+UBTCSKF:1,500,1", "OK"]
+  "AT+UBTCSRT?": ["+UBTCSRT:10", "OK"]
+  "AT+UBTCSREF?": ["+UBTCSREF:0", "OK"]
+  "AT+UBTCSIQ?": ["+UBTCSIQ:0", "OK"]
   "AT+UBTDFD=9": ["+UBTDFD:9,0,", "OK"]
   "AT+UBTDFD?": ["+UBTDFD:0,9,4E4F5241", "+UBTDFD:3,255,0102FF", "OK"]
   "AT+UBTDFD*": ["OK"]
   "AT+UBTD*":
     - '+UBTD:C0FFEE001122p,-50,"vucx-hrs",0,020106030D18'
+    - '+UBTD:C0FFEE001155p,-58,"NORA-W36",0,02010609094E4F52412D573336'
+    - '+UBTD:C0FFEE001166r,-64,"reflector",0,020106'
     - '+UBTD:C0FFEE001133r,-70,"",0,020106'
     - "OK"
+  "AT+UBTCL [link=down]": ["OK"]
   "AT+UBTCL": ["+UBTCL:0,C0FFEE001122p", "OK"]
   "AT+UBTBDL": ["+UBTBDL:C0FFEE001144p", "OK"]
   "AT+UBTRSS=*": ["+UBTRSS:-55", "OK"]
@@ -46,10 +78,6 @@ commands:
   "AT+UBTGCDD=*": ["+UBTGCDD:0,18,19,2902", "OK"]
   "AT+UBTGR=*": ["+UBTGR:0,18,0048", "OK"]
   "AT+UBTGRU=*": ["+UBTGRU:0,18,0048", "OK"]
-  "AT+UBTGS=*": ["+UBTGS:40", "OK"]
-  "AT+UBTGC=*": ["+UBTGC:42,43", "OK"]
-  "AT+UBTGHCC=*": ["+UBTGHCC:44,45", "OK"]
-  "AT+UBTGD=*": ["+UBTGD:46", "OK"]
   "AT+USYLA=*": ["+USYLA:C0FFEE001144", "OK"]
   "AT+USYTU?": ["+USYTU:0000000065000000", "OK"]
   "AT+USYEC?": ["+USYEC:0", "OK"]
@@ -71,6 +99,16 @@ commands:
     - "+UHTCGBB:0,0\x01<html><form method='post' action='/login'><input type='hidden' name='token' value='t1'>\
       <input name='room'><input name='surname'><input type='checkbox' name='accept' value='yes'></form></html>"
     - "OK"
+  # AssistNow: Thingstream registration, then one UBX-MGA-INI-TIME_UTC frame as the assistance data
+  "AT+UHTCGBB=* [page=ztp]":
+    - "+UHTCGBB:0,0\x01{\"chipcode\":\"VUCXdemoChipcode=\",\"allowedData\":[\"ulorb_l1\",\"ukion\",\"usvht\"]}"
+    - "OK"
+  "AT+UHTCGBB=* [page=assistnow]":
+    - "+UHTCGBB:0,0\x01\xB5\x62\x13\x40\x18\x00\x10\x00\x00\x80\xEA\x07\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xEE\x34"
+    - "OK"
+  "AT+UHTCGBB=* [page=locate]":
+    - "+UHTCGBB:0,0\x01{\"location\":{\"lat\":55.6125,\"lng\":12.9925,\"accuracy\":25}}"
+    - "OK"
   "AT+UHTCGBB=*": ["+UHTCGBB:0,0\x01<html>vucx</html>", "OK"]
   "AT+UHTCRPOB=*": ["+UHTCRPOB:0,64", "OK"]
   "AT+UNTE?": ["+UNTE:1", "OK"]
@@ -84,10 +122,12 @@ commands:
   "AT+UMDSA=*": ["+UMDSA:0", "OK"]
   "AT+UMDSL?": ['+UMDSL:0,"_http",0,80,"vucx dashboard"', "OK"]
   "AT+UMDTRL=*": ['+UMDTRL:0,"path","/"', "OK"]
-# the network: an NTRIP caster on 2101, a CoAP server on 5683, everything else echoes; a client connects to 8000
+# the network: an NTRIP caster on 2101, a CoAP server on 5683, SNTP on 123, TFTP on 69, HTTP on 80, the ft file
+# server on 6970, everything else echoes; a TCP client connects to a listener on an accept port, a UDP client sends
+# one datagram to a bound one
 sockets:
-  servers: {2101: ntrip, 5683: coap}
-  accept: [8000]
+  servers: {2101: ntrip, 5683: coap, 123: ntp, 69: tftp, 80: http, 6970: ft}
+  accept: [8000, 4433]
 # the BLE peer (C0FFEE001122) also has every service the gatt.client.* and hid.client examples look for
 peer:
   start: 100
@@ -120,9 +160,17 @@ peer:
       chars: [["2A4A", R, "11010002"],
               ["2A4B", R, "05010906A1018501050719E029E71500250175019508810295017508810195067508150025650507190029658100C0"],
               ["2A4E", R w, "01"], ["2A4D", R N, "0000000000000000", {"2908": "0101"}], ["2A4C", w]]
+    # the ft file server (ft.on on the other module): writes to CTRL/DATA are answered by FtServer
+    - uuid: "7A3F00015C1E4D2B9F6A3E8B2C4D5E6F"
+      chars: [["7A3F00025C1E4D2B9F6A3E8B2C4D5E6F", W w N], ["7A3F00035C1E4D2B9F6A3E8B2C4D5E6F", w N]]
 urcs:
+  "AT+UBTC=* [iocap=yesno]": ["+UEBTC:0,C0FFEE001122p", "+UEBTUC:C0FFEE001122p,123456"]
   "AT+UBTC=*": ["+UEBTC:0,C0FFEE001122p"]
   "AT+UBTDC=*": ["+UEBTDC:0"]
+  "AT+UBTUC=*,1": ["+UEBTB:C0FFEE001122p,0"]
+  "AT+UBTB=*": ["+UEBTB:C0FFEE001122p,0"]
+  "AT+UBTCSP=0,1 [cs=initiator]":
+    ["+UEBTCSS:0,2,0", "+UEBTCSM:0,1480", "+UEBTCSM:0,1510", "+UEBTCSM:0,1495", "+UEBTCSM:0,1502"]
   # ANCS: one notification on the phone (uid 42), its attributes, then the generic write answer
   "AT+UBTGCCW=0,36,1": ["+UEBTGCN:0,35,001C04012A000000"]
   "AT+UBTGW=0,38,002A000000*":
@@ -130,13 +178,13 @@ urcs:
       050F003230323631303237543139303030300605005265706C79070500436C656172"
   # Wi-Fi provisioning: any command on the control point (159) is answered on the data point (161)
   "AT+UBTGW=0,159,*": ["+UEBTGCN:0,161,5354415455533A434F4E4E45435445443A767563782D6E65743A3139322E3136382E312E3530"]
-  # ... and a phone provisions our own Wi-Fi Provisioning server: SET_CONFIG:vucx-net:secret123:WPA2 as text on 42,
-  # then as u-connectXplorer does it (Nordic protobuf): GET_STATUS, START_SCAN, SET_CONFIG vucx-net/secret123 WPA2
+  # ... and a phone provisions our own Wi-Fi Provisioning server: SET_CONFIG:vucx-net:secret123:WPA2 as text on the
+  # control point, then as u-connectXplorer does it (Nordic protobuf): GET_STATUS, START_SCAN, SET_CONFIG ... WPA2
   "AT+UBTGC=14387803130C49E7B8772881C89CB258*":
-    - "+UEBTGCW:0,42,5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0"
-    - "+UEBTGCW:0,42,0801,0"
-    - "+UEBTGCW:0,42,0802,0"
-    - "+UEBTGCW:0,42,08045A210A140A08767563782D6E65741206FFFFFFFFFFFF28041209736563726574313233,0"
+    - "+UEBTGCW:0,{h:14387802},5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0"
+    - "+UEBTGCW:0,{h:14387802},0801,0"
+    - "+UEBTGCW:0,{h:14387802},0802,0"
+    - "+UEBTGCW:0,{h:14387802},08045A210A140A08767563782D6E65741206FFFFFFFFFFFF28041209736563726574313233,0"
   "AT+UBTGW=*": ["+UEBTGCN:0,18,0048"]
   "AT+UWAPA*": ["+UEWAPU", "+UEWAPNU"]
   "AT+UWAPD*": ["+UEWAPD"]
@@ -148,8 +196,9 @@ urcs:
   "AT+UDGP=*": ["+UEDGP:1,32,12", "+UEDGPC:4,4,12,10,14"]
   "AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']
   "AT+UHTCRPOB=*": ['+UEHTCRS:0,200,"OK"']
-  # a host connects, enables notifications (every characteristic gets CCCD 43) and writes a phone notification
+  # a host connects and, for the service being activated, enables the HID keyboard report or writes a phone
+  # notification to the notification service
   "AT+UBTGSA":
     - "+UEBTC:0,C0FFEE001122p"
-    - "+UEBTGCW:0,43,0100,0"
-    - "+UEBTGCW:0,42,377C57686174734170707C416E6E617C44696E6E657220617420383F,0"
+    - "+UEBTGCW:0,{c:2A4D},0100,0"
+    - "+UEBTGCW:0,{h:7A3F0011},31377C4D657373616765737C416E6E617C53656520796F752061742035,0"

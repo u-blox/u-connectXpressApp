@@ -822,7 +822,8 @@ static int cmdWifiPortal(ucxapp_t *app, int argc, char *argv[])
         probe = argv[i++];
     }
     if (strcmp(argv[1], "check") == 0 && i == argc) {
-        return portalCheck(app, probe) == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+        /* a login page is a result, not an error; only no internet at all fails */
+        return portalCheck(app, probe) >= 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     if (strcmp(argv[1], "login") != 0 || argc - i > PORTAL_MAX_FIELDS) {
         return UCXAPP_ERR_USAGE;
@@ -1001,7 +1002,7 @@ static const ucxapp_cmd_t gNetCmds[] = {
     { "http.get", "<url> [show_bytes]", "HTTP(S) GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
     { "http.download", "<url> <file>", "Download to a file, following redirects", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownload },
     { "http.post", "<url> <body> [content_type]", "HTTP(S) POST (default form-urlencoded), prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPost },
-    { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel or guest Wi-Fi login page: check detects it, login fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
+    { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel or guest Wi-Fi login page: check detects it (fails only without internet), login fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
     { "wifi.portal.form", "<html_file> <page_url> [field=value ...]", "What wifi.portal login would submit for a saved login page (no module needed)", 0, cmdWifiPortalForm },
 };
 

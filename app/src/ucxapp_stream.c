@@ -12,6 +12,7 @@
 #include "ucxapp_stats.h"
 #include "ucxapp_thread.h"
 #include "ucxapp_tls.h"
+#include "ucxapp_vport.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -114,6 +115,7 @@ struct bridge {
     bool ntripStreaming;           /* response header passed */
     bool ntripBle;                 /* also send the receiver stream to a BLE Nordic UART client */
     char ntripMount[64];
+    char args[96];                 /* the <kind>.bridge arguments that started it, to spot a repeat */
     char ntripReq[480];
     char ntripHdr[256];
     size_t ntripHdrLen;
@@ -214,7 +216,7 @@ static void readerLoop(void *arg)
         if (s->uart == NULL) {
             ucxapp_platform_sleep_ms(20);
         } else {
-            n = uPortUartRead(s->uart, buf, sizeof(buf), 20);
+            n = ucxapp_uart_read(s->uart, buf, sizeof(buf), 20);
         }
         if (n > 0) {
             ingest(s, buf, (size_t)n);
@@ -243,9 +245,9 @@ ucxapp_stream_t *ucxapp_stream_open(const char *port, int32_t baud, const ucxapp
     s->cfg = *cfg;
     snprintf(s->port, sizeof(s->port), "%s", port);
     s->baud = baud;
-    bool virt = strncmp(port, "virt:", 5) == 0;
+    bool virt = strncmp(port, "virt:", 5) == 0 && !ucxapp_vport_is(port);
 
-    s->uart = virt ? NULL : uPortUartOpen(port, baud, false);
+    s->uart = virt ? NULL : ucxapp_uart_open(port, baud);
     if (s->uart == NULL && !virt) {
         free(s);
         return NULL;
@@ -255,7 +257,7 @@ ucxapp_stream_t *ucxapp_stream_open(const char *port, int32_t baud, const ucxapp
     s->reader = ucxapp_thread_start(readerLoop, s);
     if (s->reader == NULL) {
         if (s->uart != NULL) {
-            uPortUartClose(s->uart);
+            ucxapp_uart_close(s->uart);
         }
         U_CX_MUTEX_DELETE(s->writeLock);
         U_CX_MUTEX_DELETE(s->lock);
@@ -289,7 +291,7 @@ void ucxapp_stream_close(ucxapp_stream_t *s)
     s->stop = true;
     ucxapp_thread_join(s->reader);
     if (s->uart != NULL) {
-        uPortUartClose(s->uart);
+        ucxapp_uart_close(s->uart);
     }
     if (s->log != NULL) {
         fclose(s->log);
@@ -317,7 +319,7 @@ bool ucxapp_stream_write(ucxapp_stream_t *s, const uint8_t *data, size_t len)
         return s->cfg.write != NULL && s->cfg.write(s->cfg.ctx, data, len);
     }
     U_CX_MUTEX_LOCK(s->writeLock);
-    ok = uPortUartWrite(s->uart, data, len) == (int32_t)len;
+    ok = ucxapp_uart_write(s->uart, data, len) == (int32_t)len;
     U_CX_MUTEX_UNLOCK(s->writeLock);
     return ok;
 }
@@ -841,7 +843,7 @@ static void ntripStart(bridge_t *b)
 {
     b->ntripStreaming = false;
     b->ntripHdrLen = 0;
-    (void)uPortUartWrite(b->out, (const uint8_t *)b->ntripReq, strlen(b->ntripReq));
+    (void)ucxapp_uart_write(b->out, (const uint8_t *)b->ntripReq, strlen(b->ntripReq));
 }
 
 /* A modem in transparent mode leaves it with one of these lines when the far side or the network drops the socket. */
@@ -871,11 +873,11 @@ static bool cellRelink(bridge_t *b)
     uint32_t waitMs = 1000;
 
     ucxapp_print("%s bridge: cellular link on %s lost, reconnecting\n", b->s->cfg.kind, b->outPort);
-    uPortUartClose(b->out);
+    ucxapp_uart_close(b->out);
     b->out = NULL;
     while (!b->senderStop) {
         if (ucxapp_cell_relink()) {
-            b->out = uPortUartOpen(b->outPort, b->outBaud, false);
+            b->out = ucxapp_uart_open(b->outPort, b->outBaud);
             if (b->out != NULL) {
                 b->relinks++;
                 ucxapp_print("%s bridge: cellular link on %s reconnected\n", b->s->cfg.kind, b->outPort);
@@ -910,16 +912,16 @@ static void uartBridgeLoop(void *arg)
             if (b->ntripStreaming && b->gga[0] != '\0' && (int32_t)(ucxapp_platform_tick_ms() - b->nextGga) >= 0) {
                 b->nextGga = ucxapp_platform_tick_ms() + b->ggaPeriodMs;
                 n = strlen(b->gga);
-                if (uPortUartWrite(b->out, (const uint8_t *)b->gga, n) == (int32_t)n) {
+                if (ucxapp_uart_write(b->out, (const uint8_t *)b->gga, n) == (int32_t)n) {
                     b->sent += (uint32_t)n;
                 }
             }
-        } else if (n > 0 && uPortUartWrite(b->out, chunk, n) == (int32_t)n) {
+        } else if (n > 0 && ucxapp_uart_write(b->out, chunk, n) == (int32_t)n) {
             b->sent += (uint32_t)n;
         } else if (n > 0) {
             b->dropped += (uint32_t)n;
         }
-        int32_t r = uPortUartRead(b->out, chunk, sizeof(chunk), 20);
+        int32_t r = ucxapp_uart_read(b->out, chunk, sizeof(chunk), 20);
         int32_t skip = 0;
         if (r > 0 && b->cellLink && cellLinkLost(b, chunk, (size_t)r)) {
             if (!cellRelink(b)) {
@@ -960,7 +962,8 @@ static bool hasNtrip(const ucxapp_stream_t *s)
 {
     for (int i = 0; i < MAX_BRIDGES; i++) {
         if (s->br[i] != NULL && s->br[i]->ntrip) {
-            ucxapp_print("ERROR: an NTRIP bridge is already running on the %s (bridge %d)\n", s->cfg.kind, i + 1);
+            ucxapp_print("ERROR: an NTRIP bridge is already running on the %s (bridge %d; %s.bridge off %d first)\n",
+                         s->cfg.kind, i + 1, s->cfg.kind, i + 1);
             return true;
         }
     }
@@ -988,7 +991,8 @@ static bridge_t *bridgeBegin(ucxapp_stream_t *s, ucxapp_t *app, int kind)
         return NULL;
     }
     if ((kind == BR_BLE || kind == BR_SPS) && hasBle(s)) {
-        ucxapp_print("ERROR: a BLE bridge is already running on the %s\n", s->cfg.kind);
+        ucxapp_print("ERROR: a BLE bridge is already running on the %s (%s.bridge status, then %s.bridge off <n>)\n", s->cfg.kind,
+                     s->cfg.kind, s->cfg.kind);
         return NULL;
     }
     b = calloc(1, sizeof(*b));
@@ -1027,7 +1031,7 @@ static void bridgeStop(bridge_t *b)
         b->sender = NULL;
     }
     if (b->out != NULL) {
-        uPortUartClose(b->out);
+        ucxapp_uart_close(b->out);
         b->out = NULL;
     }
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -1191,7 +1195,8 @@ static bool ntripSetup(bridge_t *b, ucxapp_t *app, const char *mount, const char
     if (ble && app->ucx == NULL) {
         ucxapp_print("ERROR: ble needs a connected module\n");
     } else if (ble && hasBle(b->s)) {
-        ucxapp_print("ERROR: a BLE bridge is already running on the %s\n", b->s->cfg.kind);
+        ucxapp_print("ERROR: a BLE bridge is already running on the %s (%s.bridge status, then %s.bridge off <n>)\n",
+                     b->s->cfg.kind, b->s->cfg.kind, b->s->cfg.kind);
         bridgeStop(b);
         return false;
     }
@@ -1453,7 +1458,7 @@ static bridge_t *uartOpen(ucxapp_stream_t *s, ucxapp_t *app, const char *port, i
     if (b == NULL) {
         return NULL;
     }
-    b->out = uPortUartOpen(port, baud, false);
+    b->out = ucxapp_uart_open(port, baud);
     if (b->out == NULL) {
         ucxapp_print("ERROR: cannot open %s\n", port);
         bridgeStop(b);
@@ -1581,6 +1586,24 @@ static int openStreams(ucxapp_stream_t *out[MAX_STREAMS])
     }
     regUnlock();
     return n;
+}
+
+int ucxapp_stream_bridge_stop_port(const char *port)
+{
+    ucxapp_stream_t *s[MAX_STREAMS];
+    int n = openStreams(s);
+    int stopped = 0;
+
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < MAX_BRIDGES; j++) {
+            if (s[i]->br[j] != NULL && strcmp(s[i]->br[j]->outPort, port) == 0) {
+                ucxapp_print("stopping %s.bridge %d (it uses %s)\n", s[i]->cfg.kind, j + 1, port);
+                bridgeStop(s[i]->br[j]);
+                stopped++;
+            }
+        }
+    }
+    return stopped;
 }
 
 const char *ucxapp_stream_open_port(const char *kind)
@@ -1740,7 +1763,7 @@ static bool parseUuid128(const char *s, uint8_t out[16])
 }
 
 /* bridge subcommand shared by gnss, imu, cell, can and hw: argv[1] is tcp|udp|ble|uart|off|status. */
-int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], int32_t defaultPort)
+static int bridgeCmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], int32_t defaultPort)
 {
     int32_t port = defaultPort;
     int32_t baud = 115200;
@@ -1858,6 +1881,43 @@ int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *
         return ucxapp_stream_bridge_uart(s, app, argv[2], baud) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     return UCXAPP_ERR_USAGE;
+}
+
+/* Starting the same bridge twice (a script or example run again) reports the running one instead of taking a slot. */
+int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], int32_t defaultPort)
+{
+    char key[sizeof(((bridge_t *)0)->args)];
+    bridge_t *before[MAX_BRIDGES];
+    size_t n = 0;
+    int rc;
+
+    key[0] = '\0';
+    for (int i = 1; i < argc && n < sizeof(key); i++) {
+        int w = snprintf(key + n, sizeof(key) - n, i > 1 ? " %s" : "%s", argv[i]);
+        n += w > 0 ? (size_t)w : 0;
+    }
+    if (argc < 2 || strcasecmp(argv[1], "status") == 0 || strcasecmp(argv[1], "off") == 0 || n >= sizeof(key)) {
+        return bridgeCmd(s, app, argc, argv, defaultPort);
+    }
+    ucxapp_stream_lock(s);
+    for (int i = 0; i < MAX_BRIDGES; i++) {
+        before[i] = s->br[i];
+        if (s->br[i] != NULL && strcasecmp(s->br[i]->args, key) == 0) {
+            ucxapp_stream_unlock(s);
+            ucxapp_print("%s.bridge %s is already running as bridge %d\n", s->cfg.kind, key, i + 1);
+            return UCXAPP_OK;
+        }
+    }
+    ucxapp_stream_unlock(s);
+    rc = bridgeCmd(s, app, argc, argv, defaultPort);
+    ucxapp_stream_lock(s);
+    for (int i = 0; i < MAX_BRIDGES; i++) {
+        if (s->br[i] != NULL && s->br[i] != before[i]) {
+            snprintf(s->br[i]->args, sizeof(s->br[i]->args), "%s", key);
+        }
+    }
+    ucxapp_stream_unlock(s);
+    return rc;
 }
 
 /* ---- URC hooks ---- */

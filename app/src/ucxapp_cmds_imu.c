@@ -13,6 +13,7 @@
 #include "u_port_uart.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_stream.h"
+#include "ucxapp_vport.h"
 
 #ifdef _WIN32
 #define strcasecmp _stricmp
@@ -266,7 +267,7 @@ static const uint8_t kBnoIdReq[] = { 0xAA, 0x01, 0x00, 0x01 };
 static int32_t listen(const char *port, int32_t baud, int proto, const uint8_t *req, size_t reqLen, uint32_t ms,
                       imu_t *s)
 {
-    uPortUartHandle_t h = uPortUartOpen(port, baud, false);
+    uPortUartHandle_t h = ucxapp_uart_open(port, baud);
     uint8_t buf[256];
     uint32_t start = ucxapp_platform_tick_ms();
     int32_t total = 0;
@@ -277,10 +278,10 @@ static int32_t listen(const char *port, int32_t baud, int proto, const uint8_t *
     memset(s, 0, sizeof(*s));
     s->proto = proto;
     if (req != NULL) {
-        (void)uPortUartWrite(h, req, reqLen);
+        (void)ucxapp_uart_write(h, req, reqLen);
     }
     while (ucxapp_platform_tick_ms() - start < ms) {
-        int32_t n = uPortUartRead(h, buf, sizeof(buf), 50);
+        int32_t n = ucxapp_uart_read(h, buf, sizeof(buf), 50);
         if (n > 0) {
             feed(s, buf, (size_t)n);
             total += n;
@@ -289,7 +290,7 @@ static int32_t listen(const char *port, int32_t baud, int proto, const uint8_t *
             break;
         }
     }
-    uPortUartClose(h);
+    ucxapp_uart_close(h);
     return total;
 }
 
@@ -342,14 +343,15 @@ static bool probeEntry(const char *port, void *result)
     return probePort(port, &r->proto, &r->baud);
 }
 
-static int detect(const char *only, char *outPort, size_t outSize, int *outProto, int32_t *outBaud)
+static int detect(const char *only, bool virt, char *outPort, size_t outSize, int *outProto, int32_t *outBaud)
 {
     static ucxapp_serial_port_t ports[32];
     static char names[32][32];
     portProbe_t results[32];
     int map[32];
     bool hits[32];
-    int count = ucxapp_platform_list_serial_ports(ports, 32);
+    bool onlyVirt = only != NULL && ucxapp_vport_is(only);
+    int count = onlyVirt ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
     int n = 0;
     int found = 0;
 
@@ -378,6 +380,21 @@ static int detect(const char *only, char *outPort, size_t outSize, int *outProto
             }
         }
         found++;
+    }
+    /* a virtual module gets the simulated WitMotion when no real IMU answers first */
+    if (onlyVirt || (only == NULL && virt)) {
+        portProbe_t r;
+
+        if (probePort(UCXAPP_VPORT_IMU, &r.proto, &r.baud)) {
+            ucxapp_print("  %s (%s): %s IMU at %d baud\n", UCXAPP_VPORT_IMU, ucxapp_vport_desc(UCXAPP_VPORT_IMU),
+                         kProtoName[r.proto], (int)r.baud);
+            if (found == 0 && outPort != NULL) {
+                snprintf(outPort, outSize, "%s", UCXAPP_VPORT_IMU);
+                *outProto = r.proto;
+                *outBaud = r.baud;
+            }
+            found++;
+        }
     }
     return found;
 }
@@ -476,12 +493,22 @@ static void snapshot(void)
 
 static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
 {
-    (void)app;
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_print("Scanning serial ports for a WitMotion or Bosch BNO055 IMU (all ports at once)...\n");
-    int n = detect(argc == 2 ? argv[1] : NULL, NULL, 0, NULL, NULL);
+    int open = 0;
+    bool openVirt = false;
+
+    /* the open IMU's port cannot be probed again: list it as it is */
+    if (gStream != NULL && (argc == 1 || strcasecmp(argv[1], ucxapp_stream_port(gStream)) == 0)) {
+        snapshot();
+        ucxapp_print("  %s: %s IMU, open now (imu.status)\n", ucxapp_stream_port(gStream), kProtoName[gSnap.proto]);
+        open = 1;
+        openVirt = ucxapp_vport_is(ucxapp_stream_port(gStream));
+    }
+    int n = open + (open == 1 && argc == 2 ? 0 :
+                    detect(argc == 2 ? argv[1] : NULL, ucxapp_module_is_virtual(app) && !openVirt, NULL, 0, NULL, NULL));
     ucxapp_print("%d IMU(s) found\n", n);
     return n > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
@@ -507,6 +534,10 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         }
     }
     if (gStream != NULL) {
+        if (argc == 1 || strcasecmp(argv[1], ucxapp_stream_port(gStream)) == 0) {
+            ucxapp_print("IMU already open on %s\n", ucxapp_stream_port(gStream));
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: %s is already open (imu.close first)\n", ucxapp_stream_port(gStream));
         return UCXAPP_ERR_FAILED;
     }
@@ -518,7 +549,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         int32_t db = 0;
 
         ucxapp_print("Detecting...\n");
-        if (detect(argc >= 2 ? port : NULL, port, sizeof(port), &dp, &db) == 0) {
+        if (detect(argc >= 2 ? port : NULL, ucxapp_module_is_virtual(app), port, sizeof(port), &dp, &db) == 0) {
             ucxapp_print("ERROR: no IMU found\n");
             return UCXAPP_ERR_FAILED;
         }
@@ -545,8 +576,9 @@ static int cmdClose(ucxapp_t *app, int argc, char *argv[])
     (void)app;
     (void)argc;
     (void)argv;
-    if (!needOpen()) {
-        return UCXAPP_ERR_FAILED;
+    if (gStream == NULL) {
+        ucxapp_print("no IMU open\n");
+        return UCXAPP_OK;
     }
     ucxapp_stream_close(gStream);
     gStream = NULL;
@@ -721,8 +753,8 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "imu.detect", "[port]", "Find a WitMotion or Bosch BNO055 IMU on the serial ports", 0, cmdDetect },
-    { "imu.open", "[port] [baud] [wit|bno055]", "Open an IMU (detects port, baud and type when omitted)", 0, cmdOpen },
+    { "imu.detect", "[port]", "Find a WitMotion or Bosch BNO055 IMU on the serial ports (a virtual module also offers virt:imu, a simulated WitMotion)", 0, cmdDetect },
+    { "imu.open", "[port] [baud] [wit|bno055]", "Open an IMU (detects port, baud and type when omitted; virt:imu is the simulated one)", 0, cmdOpen },
     { "imu.close", "", "Close the IMU", 0, cmdClose },
     { "imu.status", "", "Accel, gyro, angle, magnetometer, pressure, steps and counters", 0, cmdStatus },
     { "imu.log", "<file|off>", "Record the raw IMU byte stream to a file", 0, cmdLog },

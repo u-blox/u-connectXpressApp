@@ -180,7 +180,12 @@ static int cmdHidSetup(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (gDefined) {
-        ucxapp_print("HID service is already defined; restart the module to define it again\n");
+        if ((gRsec == U_GATT_SERVER_READ_SECURITY_AUTHENTICATED) == auth) {
+            ucxapp_print("HID service is already active: keyboard, mouse and media keys\n");
+            return UCXAPP_OK;
+        }
+        ucxapp_print("HID service is already defined %s; restart the module to define it again\n",
+                     auth ? "without auth" : "with auth");
         return UCXAPP_ERR_FAILED;
     }
     if (!ucxapp_gatt_server_fresh(app)) {

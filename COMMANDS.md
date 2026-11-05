@@ -46,7 +46,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
 | `examples` | `[group]` | List the groups that have examples, or show one group's examples |
-| `<group>.example [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, perf, mqtt, cert, bt, gatt, hid, web, fw, dev, cfg, at, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.example`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.example 1`); the web page's "Run all" uses this |
+| `<group>.example [n]`, `examples [group] [n]` | | Real scenarios with ready-to-type commands for gnss, imu, wifi, net, http, sock, perf, mqtt, cert, bt, gatt, hid, web, fw, dev, cfg, at, cell, can, hw, coap, tftp, ft, dtls, log, file and utils (`gnss.example`); only groups in the build are listed. With `n`, runs example n line by line and stops at the first error or before a command that changes data (`wifi.example 1`; on the Virtual module the ones that only change the module, such as `dev.factory`, run, but never `fw.*`); the web page's "Run all" uses this |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
 | `at.reset` | | Reboot the module (`AT+CPWROFF`); same as `dev.reboot` |
 | `at.factory` | `<confirm>` | Factory reset (`AT+USYFR`) and reboot; same as `dev.factory`, the word `confirm` is required |
@@ -484,7 +484,7 @@ ucxapp COM13 --exec "thread.dataset 0e08...<hex from ot-ctl dataset active -x>" 
 | `http.get` | `<url> [show_bytes]` | GET over HTTP or HTTPS (scheme optional, default HTTP); prints the status line and up to `show_bytes` (default 512) of the body |
 | `http.download` | `<url> <file>` | Download to a file, following up to 5 redirects in the app (the module firmware does not); needs a 2xx response, checks `Content-Length` when present, deletes the file on failure |
 | `http.post` | `<url> <body> [content_type]` | POST a body (default `application/x-www-form-urlencoded`), prints the status line and up to 512 bytes of the reply |
-| `wifi.portal` | `<check\|login> [probe_url] [field=value ...]` | Hotel/guest Wi-Fi login page (captive portal). `check` fetches `http://connectivitycheck.gstatic.com/generate_204` (or `probe_url`): 204 = online, a redirect or a page = login page in the way. `login` loads the login page (keeping its cookie), fills in its first `<form>` (hidden fields, checkboxes ticked, your `field=value` overrides), submits it and checks again. Pages built by JavaScript or with a captcha need a browser. Test with `tests/harness/captive_portal.py` |
+| `wifi.portal` | `<check\|login> [probe_url] [field=value ...]` | Hotel/guest Wi-Fi login page (captive portal). `check` fetches `http://connectivitycheck.gstatic.com/generate_204` (or `probe_url`): 204 = online, a redirect or a page = login page in the way (both succeed; only no answer at all fails). `login` loads the login page (keeping its cookie), fills in its first `<form>` (hidden fields, checkboxes ticked, your `field=value` overrides), submits it and checks again. Pages built by JavaScript or with a captcha need a browser. Test with `tests/harness/captive_portal.py` |
 | `wifi.portal.form` | `<html_file> <page_url> [field=value ...]` | Shows what `wifi.portal login` would submit for a saved login page (method, resolved action URL, url-encoded body, field names); no module needed. Use it to check a real hotel page saved from a browser |
 
 ```powershell
@@ -575,7 +575,7 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `gnss.watch` | `[seconds=10]` | Live card once a second: fix bars, used/seen satellites as dots, HDOP bars with a rating, position, UTC time and time to first fix since `gnss.open`; an `RTK` line with corrections and accuracy, an `ALERT` line on jamming, spoofing or an antenna fault. Default 10 s, any key stops |
 | `gnss.log` | `<file\|off> [nmea\|ubx]` | Record the raw receiver stream to a file; `nmea` keeps only valid NMEA sentences, `ubx` only valid UBX frames (a `.ubx` file u-center and `gnss.replay` open) |
 | `gnss.replay` | `<file.nmea\|file.ubx> [speed]` | Virtual receiver without hardware: plays an NMEA, UBX or mixed recording in real time (epochs paced by the RMC/GGA/GNS/ZDA time, or the UBX-NAV-PVT time of week) or at `speed` 0.1 to 100, from the start again at the end. Record one with `gnss.log <file> nmea\|ubx`, in u-center, or draw a route on [nmeagen.org](https://nmeagen.org/). Status, watch, fence, bridges and the use cases work on it as on a receiver; `gnss.send`, `rate` and `restart` are accepted and dropped. `gnss.close` stops |
-| `gnss.virtual` | `[host\|malmo\|<lat> <lon> [alt]\|off]` | Virtual receiver standing still: RMC, GGA, GSA and GSV once a second with the PC's UTC time and ten satellites. The position is the host's (Windows Location service; GeoClue `where-am-i` on Linux), the u-blox office in Malmo when the host has none (or with `malmo`), or the given one. Bridges, log, fence and the use cases work on it; `off` or `gnss.close` stops |
+| `gnss.virtual` | `[host\|malmo\|<lat> <lon> [alt]\|off]` | Virtual receiver standing still: RMC, GGA, GSA and GSV once a second with the PC's UTC time and ten satellites. The position is the host's (Windows Location service; GeoClue `where-am-i` on Linux), the u-blox office in Malmo when the host has none (or with `malmo`), or the given one. Bridges, log, fence and the use cases work on it; with `gnss.cfg msg sec-sig 1` or `mon-rf 1` it reports a scripted episode on a 60 s cycle (CW jamming from 3 to 13 s, spoofing indicated from 20 to 26 s), so `gnss.watch` shows the `JAM:` and `SPOOF:` lines; `off` or `gnss.close` stops |
 | `gnss.fence` | `<file.kml\|off\|status>` | Geofence from the first polygon (or line string) of a KML file: draw the area in Google My Maps and use *Export to KML/KMZ* with *Export as KML*, or save a place from Google Earth. While a receiver, replay or virtual receiver runs, `FENCE: outside <name> at <lat>, <lon>` and `FENCE: back inside <name>` report the crossings; `gnss.status` shows the state and how often it was left |
 | `gnss.export` | `<recording> <out.kml\|out.gpx>` | Track of an NMEA, UBX or mixed recording, one point per epoch with a fix: KML (Google Earth, import into Google My Maps) or GPX (with UTC times) |
 | `gnss.send` | `<hex...> \| <$NMEA> \| ubx <cls> <id> [hex...]` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
@@ -740,9 +740,9 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches are saved in `ucxapp.log` in the store and restored at the next start or reboot.
 | `session.record` | `<file.ucx>` | Record every command from now on to a script, with its output as `# ` comments, pauses as `#+` and failures as `#!`; passwords and tokens are written as `${UCX_WIFI_PASS}` / `${UCX_SECRET}`. Send the file to support |
 | `session.stop` | | Stop recording |
-| `session.replay` | `<file.ucx> [all] [stop]` | Run the commands of a recorded session or script (`${NAME}` expanded); firmware, factory reset and removals are skipped unless `all`; `stop` ends at the first failure |
+| `session.replay` | `<file.ucx> [all] [stop]` | Run the commands of a recorded session or script (`${NAME}` expanded); firmware, factory reset and removals are skipped unless `all`; `stop` ends at the first failure. A line `expect <regex>` after a command checks its output (`.`, `\d \w \s`, classes, groups with `\|`, `* + ?`, `^ $` per line), `expect-fail` that it fails |
 | `session.selftest` | | Offline check of secret masking (scripts, AT trace) and report file names |
-| `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `dev.info`, `dev.caps`, `dev.diagnose`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
+| `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `dev.info`, `dev.caps`, `dev.diagnose`; `expect`/`expect-fail` lines as in `session.replay`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
 | `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
@@ -804,10 +804,19 @@ API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `
 page inside the tab, and **Connect module** opens the EVK's serial port with Web Serial (Chrome or Edge,
 115200 baud) and runs `dev.connect webserial`. Module commands, sockets and bridges work as on the PC; host-only parts (serial port list, GNSS/IMU/cellular on PC ports, the terminal UI) do not.
 Files live in the tab's memory. **Virtual module** needs no hardware: it connects the same `webserial` device to a
-simulated NORA-W36 that answers from `app/wasm/vnora.json`, the `tests/harness/vucx/nora-w36.yaml` test profile
-(regenerate with `python -m harness.vucx --json nora-w36.yaml` from `tests/`; `test_wasm.py` checks they match).
-The profile's `peer:` block is a BLE peer with every service the `gatt.client.*` and `hid.client` commands look for;
-its `sockets:` block (echo, NTRIP caster on 2101, CoAP server on 5683) runs only in the Python vucx used by the tests.
+simulated NORA-W36 that answers from `app/wasm/vnora.json`, the `tests/harness/vucx/nora-w36.yaml` test profile;
+**Virtual Thread module** does the same with an ALMA-W1 with Thread, Wi-Fi and Bluetooth (`app/wasm/valma-w1.json`,
+`alma-w1-thread.yaml`) for the `thread` examples and the Thread use cases.
+Regenerate with `python -m harness.vucx --json <profile>` from `tests/`; `test_wasm.py` checks they match.
+The profile's `peer:` block is a BLE peer with every service the `gatt.client.*` and `hid.client` commands look for,
+and an `ft.on` file server (notes.txt, big.bin); its `sockets:` block is the network behind the module, in the
+browser as in the Python vucx used by the tests: an echo, an NTRIP caster on 2101, CoAP on 5683, SNTP on 123, TFTP
+on 69, HTTP on 80 and the ft TCP server on 6970; a listener on 8000 gets a client and a UDP socket bound to 4433 a
+datagram. Our own GATT server hands out handles as the module does (from 40, a service on the next multiple of 20).
+There is no DTLS peer, so on the virtual module `dtls.client` and `dtls.server` skip the handshake and say so
+(`dtls.selftest` runs a real one). The virtual GNSS, IMU, modem and PC (`virt:gnss`, `virt:imu`,
+`virt:cell`, `virt:pc`) are what `gnss.detect`, `imu.detect` and `cell.detect` find there, so the examples run end
+to end; missing demo files and unset `${VAR}`s get demo values.
 The site is static: `.github/workflows/pages.yml` publishes it on GitHub
 Pages, with `coi-serviceworker.js` adding the cross-origin isolation headers threads need.
 #### Text UI

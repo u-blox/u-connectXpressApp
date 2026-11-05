@@ -406,6 +406,15 @@ static int cmdSave(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+bool ucxapp_cfg_save_quiet(ucxapp_t *app, const char *name)
+{
+    cfg_text_t t = { 0 };
+    bool ok = app->ucx != NULL && readModule(app, &t) && ucxapp_store_save(name, t.buf, t.len);
+
+    free(t.buf);
+    return ok;
+}
+
 static int cmdLoad(ucxapp_t *app, int argc, char *argv[])
 {
     char line[CFG_LINE_MAX];

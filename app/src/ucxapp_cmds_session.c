@@ -7,6 +7,7 @@
 
 #if !defined(UCXAPP_LITE)
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -195,12 +196,264 @@ static int cmdStop(ucxapp_t *app, int argc, char *argv[])
 
 /* ---- replay ----------------------------------------------------------------------------------------------------- */
 
-/* Runs every command line of a script; danger commands only with all. Returns the number of failures, -1 if unreadable. */
+/* ---- expect: the regex subset the scripts use (as Python re.search with MULTILINE): literals, '.', \d \w \s and
+ * their negations, [classes], (groups|with|alternatives), * + ? and ^ $ at line ends. ---------------------------- */
+
+#define RE_MAX_STEPS 200000
+
+typedef struct reCont {
+    const char *p;                /* pattern still to match */
+    const char *end;
+    const char *guard;            /* starred group: where the last round started */
+    bool star;                    /* p is a group to repeat, then the rest */
+    const struct reCont *next;
+} reCont_t;
+
+typedef struct {
+    const char *start;
+    long steps;
+} reCtx_t;
+
+static bool reHere(reCtx_t *x, const char *p, const char *end, const char *t, const reCont_t *k);
+
+/* The end of the atom at p, NULL when the pattern is malformed. */
+static const char *reAtomEnd(const char *p, const char *end)
+{
+    if (*p == '\\') {
+        return p + 1 < end ? p + 2 : NULL;
+    }
+    if (*p == '[') {
+        const char *q = p + 1;
+        q += q < end && *q == '^';
+        q += q < end && *q == ']';
+        while (q < end && *q != ']') {
+            q += *q == '\\' ? 2 : 1;
+        }
+        return q < end ? q + 1 : NULL;
+    }
+    if (*p == '(') {
+        int depth = 0;
+        for (const char *q = p; q < end;) {
+            if (*q == '\\' || *q == '[') {
+                q = reAtomEnd(q, end);
+                if (q == NULL) {
+                    return NULL;
+                }
+                continue;
+            }
+            depth += *q == '(' ? 1 : *q == ')' ? -1 : 0;
+            q++;
+            if (depth == 0) {
+                return q;
+            }
+        }
+        return NULL;
+    }
+    return p + 1;
+}
+
+static bool reEscape(char e, char c)
+{
+    unsigned char u = (unsigned char)c;
+
+    switch (e) {
+    case 'd': return isdigit(u) != 0;
+    case 'D': return isdigit(u) == 0;
+    case 'w': return isalnum(u) != 0 || c == '_';
+    case 'W': return isalnum(u) == 0 && c != '_';
+    case 's': return isspace(u) != 0;
+    case 'S': return isspace(u) == 0;
+    case 'n': return c == '\n';
+    case 'r': return c == '\r';
+    case 't': return c == '\t';
+    default:  return c == e;
+    }
+}
+
+static bool reOne(const char *atom, char c)
+{
+    if (*atom == '.') {
+        return c != '\n';
+    }
+    if (*atom == '\\') {
+        return reEscape(atom[1], c);
+    }
+    if (*atom != '[') {
+        return *atom == c;
+    }
+    const char *q = atom + 1;
+    bool neg = *q == '^';
+    bool hit = false;
+    q += neg;
+    for (bool first = true; *q != ']' || first; first = false) {
+        if (*q == '\\') {
+            hit = hit || reEscape(q[1], c);
+            q += 2;
+        } else if (q[1] == '-' && q[2] != ']') {
+            hit = hit || (c >= q[0] && c <= q[2]);
+            q += 3;
+        } else {
+            hit = hit || c == *q;
+            q++;
+        }
+    }
+    return hit != neg;
+}
+
+/* Tries each top-level alternative of [p, end) at t. */
+static bool reAlts(reCtx_t *x, const char *p, const char *end, const char *t, const reCont_t *k)
+{
+    const char *a = p;
+
+    for (const char *q = p; q <= end;) {
+        if (q == end || *q == '|') {
+            if (reHere(x, a, q, t, k)) {
+                return true;
+            }
+            a = q + 1;
+            q++;
+            continue;
+        }
+        q = reAtomEnd(q, end);
+        if (q == NULL) {
+            return false;
+        }
+    }
+    return false;
+}
+
+/* Group gp..ge repeated any number of times, then rest. */
+static bool reStar(reCtx_t *x, const char *gp, const char *ge, const char *rest, const char *end, const char *t,
+                   const reCont_t *k)
+{
+    reCont_t again = { gp, end, t, true, k };
+
+    return reAlts(x, gp + 1, ge - 1, t, &again) || reHere(x, rest, end, t, k);
+}
+
+static bool reNext(reCtx_t *x, const char *t, const reCont_t *k)
+{
+    if (k == NULL) {
+        return true;
+    }
+    if (!k->star) {
+        return reHere(x, k->p, k->end, t, k->next);
+    }
+    const char *ge = reAtomEnd(k->p, k->end);
+    const char *rest = ge + 1;
+    /* a round that used no text ends the repetition */
+    return t == k->guard ? reHere(x, rest, k->end, t, k->next) : reStar(x, k->p, ge, rest, k->end, t, k->next);
+}
+
+static bool reHere(reCtx_t *x, const char *p, const char *end, const char *t, const reCont_t *k)
+{
+    if (++x->steps > RE_MAX_STEPS) {
+        return false;
+    }
+    if (p >= end) {
+        return reNext(x, t, k);
+    }
+    if (*p == '^') {
+        return (t == x->start || t[-1] == '\n') && reHere(x, p + 1, end, t, k);
+    }
+    if (*p == '$') {
+        return (*t == '\0' || *t == '\n' || *t == '\r') && reHere(x, p + 1, end, t, k);
+    }
+    const char *ae = reAtomEnd(p, end);
+    if (ae == NULL) {
+        return false;
+    }
+    char q = ae < end && (*ae == '*' || *ae == '+' || *ae == '?') ? *ae : '\0';
+    const char *rest = q != '\0' ? ae + 1 : ae;
+
+    if (*p == '(') {
+        reCont_t then = { rest, end, NULL, false, k };
+        reCont_t more = { p, end, t, true, k };
+        switch (q) {
+        case '?': return reAlts(x, p + 1, ae - 1, t, &then) || reHere(x, rest, end, t, k);
+        case '*': return reStar(x, p, ae, rest, end, t, k);
+        case '+': return reAlts(x, p + 1, ae - 1, t, &more);
+        default:  return reAlts(x, p + 1, ae - 1, t, &then);
+        }
+    }
+    if (q == '\0' || q == '?') {
+        if (*t != '\0' && reOne(p, *t) && reHere(x, rest, end, t + 1, k)) {
+            return true;
+        }
+        return q == '?' && reHere(x, rest, end, t, k);
+    }
+    size_t n = 0;
+    while (t[n] != '\0' && reOne(p, t[n])) {
+        n++;
+    }
+    for (size_t i = n + 1; i-- > (q == '+' ? 1u : 0u);) {
+        if (reHere(x, rest, end, t + i, k)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool reSearch(const char *pattern, const char *text)
+{
+    reCtx_t x = { text, 0 };
+    const char *end = pattern + strlen(pattern);
+
+    for (const char *t = text;; t++) {
+        if (reAlts(&x, pattern, end, t, NULL)) {
+            return true;
+        }
+        if (*t == '\0' || x.steps > RE_MAX_STEPS) {
+            return false;
+        }
+    }
+}
+
+/* ---- replay ----------------------------------------------------------------------------------------------------- */
+
+#define CAPTURE_MAX 16384
+
+static char gCapture[CAPTURE_MAX];
+static size_t gCaptureLen;
+
+static void captureSink(const char *text, size_t len)
+{
+    size_t n = len < CAPTURE_MAX - 1 - gCaptureLen ? len : CAPTURE_MAX - 1 - gCaptureLen;
+
+    memcpy(gCapture + gCaptureLen, text, n);
+    gCaptureLen += n;
+    gCapture[gCaptureLen] = '\0';
+}
+
+typedef struct {
+    enum { STEP_NONE, STEP_RAN, STEP_SKIPPED } state;
+    char line[LINE_MAX_LEN];
+    int rc;
+    bool expectFail;
+    int misses;
+} step_t;
+
+/* 1 when the step that ran failed: its result is not the expected one or an expect line did not match. */
+static int stepFailed(const step_t *s)
+{
+    if (s->state != STEP_RAN) {
+        return 0;
+    }
+    if (s->expectFail && s->rc == UCXAPP_OK) {
+        ucxapp_print("ERROR: '%s' should have failed (expect-fail)\n", s->line);
+        return 1;
+    }
+    return (s->rc != UCXAPP_OK) != s->expectFail || s->misses > 0 ? 1 : 0;
+}
+
+/* Runs every command line of a script; danger commands only with all. 'expect <regex>' after a command checks its
+ * output, 'expect-fail' that it fails (as ucxapp --script). Returns the number of failures, -1 if unreadable. */
 static int runScript(ucxapp_t *app, const char *path, bool all, bool stopOnFail, int *count)
 {
     char line[LINE_MAX_LEN];
     char expanded[LINE_MAX_LEN];
     char name[64];
+    static step_t step;
     int failed = 0;
     FILE *f = fopen(path, "r");
 
@@ -208,12 +461,35 @@ static int runScript(ucxapp_t *app, const char *path, bool all, bool stopOnFail,
     if (f == NULL) {
         return -1;
     }
+    step.state = STEP_NONE;
     while (fgets(line, sizeof(line), f) != NULL) {
         line[strcspn(line, "\r\n")] = '\0';
+        for (size_t n = strlen(line); n > 0 && (line[n - 1] == ' ' || line[n - 1] == '\t'); n--) {
+            line[n - 1] = '\0';
+        }
         const char *p = line + strspn(line, " \t");
         if (*p == '\0' || *p == '#') {
             continue;
         }
+        if (strcmp(p, "expect-fail") == 0 || strncmp(p, "expect ", 7) == 0 || strncmp(p, "expect\t", 7) == 0) {
+            const char *pattern = p + 6 + strspn(p + 6, " \t");
+            if (step.state == STEP_NONE) {
+                ucxapp_print("ERROR: '%s' before the first command\n", p);
+                failed++;
+            } else if (step.state == STEP_RAN && p[6] == '-') {
+                step.expectFail = true;
+            } else if (step.state == STEP_RAN && !reSearch(pattern, gCapture)) {
+                ucxapp_print("ERROR: no match for '%s' in the output of '%s'\n", pattern, step.line);
+                step.misses++;
+            }
+            continue;
+        }
+        failed += stepFailed(&step);
+        if (stopOnFail && failed > 0) {
+            step.state = STEP_NONE;
+            break;
+        }
+        step.state = STEP_SKIPPED;
         snprintf(name, sizeof(name), "%.*s", (int)strcspn(p, " \t"), p);
         const ucxapp_cmd_t *cmd = ucxapp_cmd_find(name);
         if (cmd != NULL && strncmp(cmd->name, "session.", 8) == 0) {
@@ -225,13 +501,19 @@ static int runScript(ucxapp_t *app, const char *path, bool all, bool stopOnFail,
         }
         ucxapp_print("> %s\n", p);
         (*count)++;
-        if (!ucxapp_expand_env(p, expanded, sizeof(expanded)) || ucxapp_cmd_exec(app, expanded) != UCXAPP_OK) {
-            failed++;
-            if (stopOnFail) {
-                break;
-            }
+        snprintf(step.line, sizeof(step.line), "%s", p);
+        step.state = STEP_RAN;
+        step.expectFail = false;
+        step.misses = 0;
+        gCaptureLen = 0;
+        gCapture[0] = '\0';
+        bool capturing = ucxapp_io_add_sink(captureSink);
+        step.rc = ucxapp_expand_env(p, expanded, sizeof(expanded)) ? ucxapp_cmd_exec(app, expanded) : UCXAPP_ERR_FAILED;
+        if (capturing) {
+            ucxapp_io_remove_sink(captureSink);
         }
     }
+    failed += stepFailed(&step);
     fclose(f);
     return failed;
 }

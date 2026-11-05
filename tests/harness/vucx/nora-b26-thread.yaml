@@ -3,10 +3,14 @@ identity:
   manufacturer: u-blox
   model: NORA-B26
   version: 3.5.0-0
-  serial: "0123456789"
+  serial: "VUCX0123456789"
 default: ["OK"]
+state:
+  "AT+UTHE=1": {thread: "on"}
+  "AT+UTHE=0": {thread: "off"}
 commands:
   "AT+CPWROFF": ["OK"]
+  "AT+UTHE? [thread=on]": ["+UTHE:1", "OK"]
   "AT+UTHE?": ["+UTHE:0", "OK"]
   "AT+UTHE=*": ["OK"]
   "AT+UTHDSN": ["OK"]
@@ -38,3 +42,4 @@ urcs:
   "AT+CPWROFF": ["+STARTUP"]
   "AT+UTHE=1": ["+UETHU:4"]
   "AT+UTHJS=*": ["+UETHJ:0"]
+  "AT+UDGP=*": ["+UEDGP:1,32,12", "+UEDGPC:4,4,12,10,14"]

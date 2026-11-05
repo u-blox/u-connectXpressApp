@@ -102,6 +102,8 @@ int32_t ucxapp_last_module_error(void)
 }
 
 static const void *gThreadFor;
+static const void *gVirtFor;
+static bool gCapsVirt;
 #ifndef UCXAPP_LITE
 static bool gCapsThread;
 #endif
@@ -110,6 +112,23 @@ void ucxapp_caps_reset(void)
 {
     gCapsFor = NULL;
     gThreadFor = NULL;
+    gVirtFor = NULL;
+}
+
+/* Virtual modules (vucx, the browser demo) report a serial number starting with "VUCX"; asked once per connection. */
+bool ucxapp_module_is_virtual(ucxapp_t *app)
+{
+    if (app == NULL || app->ucx == NULL) {
+        return false;
+    }
+    if (gVirtFor != (const void *)app->ucx) {
+        const char *text = NULL;
+
+        gCapsVirt = uCxGeneralGetSerialNumberBegin(app->ucx, &text) && text != NULL && strncmp(text, "VUCX", 4) == 0;
+        uCxEnd(app->ucx);
+        gVirtFor = app->ucx;
+    }
+    return gCapsVirt;
 }
 
 bool ucxapp_cmd_needs_thread(const char *name)
@@ -902,6 +921,13 @@ static int insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[])
             depth++;
         } else if (*u == '>' || *u == ']') {
             depth--;
+        } else if (*u == '|' && depth == 0 && *argc == 2) {
+            /* a word alternative ("[handle] | all") stands on its own */
+            const char *w = u + 1 + strspn(u + 1, " ");
+            size_t n = strcspn(w, " |");
+            if (n > 0 && strlen(argv[1]) == n && strncmp(w, argv[1], n) == 0) {
+                return -1;
+            }
         }
     }
     if (*argc >= UCXAPP_MAX_ARGS) {

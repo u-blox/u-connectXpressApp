@@ -1,0 +1,987 @@
+{
+ "commands": {
+  "AT": [
+   "OK"
+  ],
+  "ATE0": [
+   "OK"
+  ],
+  "ATE1": [
+   "OK"
+  ],
+  "AT+USYEE=1": [
+   "OK"
+  ],
+  "AT+GMI": [
+   "\"u-blox\"",
+   "OK"
+  ],
+  "AT+GMM": [
+   "\"ALMA-W1\"",
+   "OK"
+  ],
+  "AT+GMR": [
+   "\"3.5.0-0\"",
+   "OK"
+  ],
+  "AT+GSN": [
+   "\"VUCX0123456789\"",
+   "OK"
+  ],
+  "AT+CPWROFF": [
+   "OK"
+  ],
+  "AT+UWSSC*": [
+   "+UWSSC:AABBCCDDEEF0,\"vucx-net\",6,-45,8,8,8",
+   "+UWSSC:AABBCCDDEEF1,\"vucx-far\",36,-80,0,0,0",
+   "OK"
+  ],
+  "AT+UWSCP=*": [
+   "OK"
+  ],
+  "AT+UWSSW=*": [
+   "OK"
+  ],
+  "AT+UWSIPD=*": [
+   "OK"
+  ],
+  "AT+UWSC=*": [
+   "OK"
+  ],
+  "AT+UWSDC": [
+   "OK"
+  ],
+  "AT+UWSST=0": [
+   "+UWSST:0,\"vucx-net\"",
+   "OK"
+  ],
+  "AT+UWSST=1": [
+   "+UWSST:1,AABBCCDDEEF0",
+   "OK"
+  ],
+  "AT+UWSST=2": [
+   "+UWSST:2,6",
+   "OK"
+  ],
+  "AT+UWSST=3 [wifi=down]": [
+   "+UWSST:3,1",
+   "OK"
+  ],
+  "AT+UWSST=3": [
+   "+UWSST:3,2",
+   "OK"
+  ],
+  "AT+UWSST=4": [
+   "+UWSST:4,-45",
+   "OK"
+  ],
+  "AT+UWSST=*": [
+   "+UWSST:0,\"vucx-net\"",
+   "OK"
+  ],
+  "AT+UWSNST=1": [
+   "+UWSNST:1,255.255.255.0",
+   "OK"
+  ],
+  "AT+UWSNST=2": [
+   "+UWSNST:2,192.168.1.1",
+   "OK"
+  ],
+  "AT+UWSNST=*": [
+   "+UWSNST:0,192.168.1.50",
+   "OK"
+  ],
+  "AT+UWSIP=*": [
+   "+UWSIP:0,1,192.168.1.50,255.255.255.0,192.168.1.1,8.8.8.8,0.0.0.0",
+   "OK"
+  ],
+  "AT+UWSROE?": [
+   "+UWSROE:1",
+   "OK"
+  ],
+  "AT+UWRD?": [
+   "+UWRD:0",
+   "OK"
+  ],
+  "AT+UWRD=*": [
+   "OK"
+  ],
+  "AT+UWAPCP?": [
+   "+UWAPCP:\"vucxap\",6",
+   "OK"
+  ],
+  "AT+UWAPS?": [
+   "+UWAPS:1,0",
+   "OK"
+  ],
+  "AT+UWAPNST?": [
+   "+UWAPNST:0,192.168.0.1",
+   "+UWAPNST:1,255.255.255.0",
+   "OK"
+  ],
+  "AT+UWAPCS?": [
+   "+UWAPCS:AABBCCDDEE01",
+   "OK"
+  ],
+  "AT+UWSNST?": [
+   "+UWSNST:0,192.168.1.50",
+   "+UWSNST:1,255.255.255.0",
+   "+UWSNST:2,192.168.1.1",
+   "+UWSNST:3,192.168.1.1",
+   "+UWSNST:4,0.0.0.0",
+   "OK"
+  ],
+  "AT+USOCR=*": [
+   "+USOCR:0",
+   "OK"
+  ],
+  "AT+USOC=*": [
+   "OK"
+  ],
+  "AT+USOCL=*": [
+   "OK"
+  ],
+  "AT+USOST?": [
+   "+USOST:0,6,2",
+   "OK"
+  ],
+  "AT+USOST=*": [
+   "+USOST:0,6,2",
+   "OK"
+  ],
+  "AT+USOH=*": [
+   "+USOH:93.184.216.34",
+   "OK"
+  ],
+  "AT+USECL?": [
+   "+USECL:0,\"myca\"",
+   "+USECL:1,\"client\"",
+   "+USECL:2,\"key\"",
+   "OK"
+  ],
+  "AT+USECD=\"myca\",0": [
+   "+USECD:0,00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",
+   "OK"
+  ],
+  "AT+USECD=\"myca\",1": [
+   "+USECD:1,1024",
+   "OK"
+  ],
+  "AT+USECD=\"myca\",*": [
+   "+USECD:2,323032363031303130303030303030",
+   "OK"
+  ],
+  "AT+UBTCSKF? [kf=off]": [
+   "+UBTCSKF:1,500,0",
+   "OK"
+  ],
+  "AT+UBTCSKF?": [
+   "+UBTCSKF:1,500,1",
+   "OK"
+  ],
+  "AT+UBTCSRT?": [
+   "+UBTCSRT:10",
+   "OK"
+  ],
+  "AT+UBTCSREF?": [
+   "+UBTCSREF:0",
+   "OK"
+  ],
+  "AT+UBTCSIQ?": [
+   "+UBTCSIQ:0",
+   "OK"
+  ],
+  "AT+UBTDFD=9": [
+   "+UBTDFD:9,0,",
+   "OK"
+  ],
+  "AT+UBTDFD?": [
+   "+UBTDFD:0,9,4E4F5241",
+   "+UBTDFD:3,255,0102FF",
+   "OK"
+  ],
+  "AT+UBTDFD*": [
+   "OK"
+  ],
+  "AT+UBTD*": [
+   "+UBTD:C0FFEE001122p,-50,\"vucx-hrs\",0,020106030D18",
+   "+UBTD:C0FFEE001155p,-58,\"NORA-W36\",0,02010609094E4F52412D573336",
+   "+UBTD:C0FFEE001166r,-64,\"reflector\",0,020106",
+   "+UBTD:C0FFEE001133r,-70,\"\",0,020106",
+   "OK"
+  ],
+  "AT+UBTCL [link=down]": [
+   "OK"
+  ],
+  "AT+UBTCL": [
+   "+UBTCL:0,C0FFEE001122p",
+   "OK"
+  ],
+  "AT+UBTBDL": [
+   "+UBTBDL:C0FFEE001144p",
+   "OK"
+  ],
+  "AT+UBTRSS=*": [
+   "+UBTRSS:-55",
+   "OK"
+  ],
+  "AT+UBTCST=*": [
+   "+UBTCST:0,23",
+   "OK"
+  ],
+  "AT+UBTPHYR=*": [
+   "+UBTPHYR:0,2,2",
+   "OK"
+  ],
+  "AT+UBTM?": [
+   "+UBTM:3",
+   "OK"
+  ],
+  "AT+UBTLN?": [
+   "+UBTLN:\"vucx\"",
+   "OK"
+  ],
+  "AT+UPMPSL?": [
+   "+UPMPSL:0",
+   "OK"
+  ],
+  "AT+UBTIOC?": [
+   "+UBTIOC:0",
+   "OK"
+  ],
+  "AT+UBTBSM?": [
+   "+UBTBSM:0",
+   "OK"
+  ],
+  "AT+UBTPM?": [
+   "+UBTPM:1",
+   "OK"
+  ],
+  "AT+UBTGPSD=*": [
+   "+UBTGPSD:0,1,5,1800",
+   "+UBTGPSD:0,16,32,180D",
+   "+UBTGPSD:0,33,42,7905F431B5CE4E99A40F4B1E122D00D0",
+   "+UBTGPSD:0,100,103,1805",
+   "+UBTGPSD:0,104,110,181A",
+   "+UBTGPSD:0,111,116,1819",
+   "+UBTGPSD:0,117,122,1815",
+   "+UBTGPSD:0,123,126,180F",
+   "+UBTGPSD:0,127,135,180A",
+   "+UBTGPSD:0,136,141,185B",
+   "+UBTGPSD:0,142,147,6E400001B5A3F393E0A9E50E24DCCA9E",
+   "+UBTGPSD:0,148,154,2456E1B926E28F83E744F34F01E9D701",
+   "+UBTGPSD:0,155,162,14387800130C49E7B8772881C89CB258",
+   "+UBTGPSD:0,163,168,FFE5",
+   "+UBTGPSD:0,169,181,1812",
+   "+UBTGPSD:0,182,188,7A3F00015C1E4D2B9F6A3E8B2C4D5E6F",
+   "OK"
+  ],
+  "AT+UBTGPSDU=*": [
+   "+UBTGPSDU:0,16,32",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,33,42": [
+   "+UBTGSCD:0,34,10,35,9FBF120D630142D98C5825E699A21DBD",
+   "+UBTGSCD:0,37,08,38,69D1D8F345E149A898219BBDFDAAD9D9",
+   "+UBTGSCD:0,39,10,40,22EAC6E924D64BB5BE44B36ACE7C7BFB",
+   "OK"
+  ],
+  "AT+UBTGSCD=*": [
+   "+UBTGSCD:0,17,10,18,2A37",
+   "+UBTGSCD:0,20,02,21,2A38",
+   "OK"
+  ],
+  "AT+UBTGCDD=*": [
+   "+UBTGCDD:0,18,19,2902",
+   "OK"
+  ],
+  "AT+UBTGR=*": [
+   "+UBTGR:0,18,0048",
+   "OK"
+  ],
+  "AT+UBTGRU=*": [
+   "+UBTGRU:0,18,0048",
+   "OK"
+  ],
+  "AT+USYLA=*": [
+   "+USYLA:C0FFEE001144",
+   "OK"
+  ],
+  "AT+USYTU?": [
+   "+USYTU:0000000065000000",
+   "OK"
+  ],
+  "AT+USYEC?": [
+   "+USYEC:0",
+   "OK"
+  ],
+  "AT+USYUS?": [
+   "+USYUS:115200,1",
+   "OK"
+  ],
+  "AT+CSGT?": [
+   "+CSGT:1,\"+STARTUP\"",
+   "OK"
+  ],
+  "AT+UMQPB=*": [
+   "+UMQPB:0,1",
+   "OK"
+  ],
+  "AT+UMQRB=*": [
+   [
+    "+UMQRB:0,\"home/garage/cmd\"\u0001open",
+    "OK"
+   ],
+   [
+    "ERROR"
+   ]
+  ],
+  "AT+UHTCGH=* [page=probe portal=open]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 204 No Content\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=* [page=probe]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 302 Found\\r\\nLocation: http://portal.vucx/login?src=probe\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=* [page=login]": [
+   "+UHTCGH:0,0,\"HTTP/1.1 200 OK\\r\\nSet-Cookie: s=vucx; Path=/\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGH=*": [
+   "+UHTCGH:0,0,\"HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\n\\r\\n\"",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=probe]": [
+   "ERROR"
+  ],
+  "AT+UHTCGBB=* [page=login]": [
+   "+UHTCGBB:0,0\u0001<html><form method='post' action='/login'><input type='hidden' name='token' value='t1'><input name='room'><input name='surname'><input type='checkbox' name='accept' value='yes'></form></html>",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=ztp]": [
+   "+UHTCGBB:0,0\u0001{\"chipcode\":\"VUCXdemoChipcode=\",\"allowedData\":[\"ulorb_l1\",\"ukion\",\"usvht\"]}",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=assistnow]": [
+   "+UHTCGBB:0,0\u0001\u00b5b\u0013@\u0018\u0000\u0010\u0000\u0000\u0080\u00ea\u0007\u0001\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u00ee4",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=locate]": [
+   "+UHTCGBB:0,0\u0001{\"location\":{\"lat\":55.6125,\"lng\":12.9925,\"accuracy\":25}}",
+   "OK"
+  ],
+  "AT+UHTCGBB=*": [
+   "+UHTCGBB:0,0\u0001<html>vucx</html>",
+   "OK"
+  ],
+  "AT+UHTCRPOB=*": [
+   "+UHTCRPOB:0,64",
+   "OK"
+  ],
+  "AT+UNTE?": [
+   "+UNTE:1",
+   "OK"
+  ],
+  "AT+UNTSC?": [
+   "+UNTSC:0,\"pool.ntp.org\",162.159.200.1,1",
+   "OK"
+  ],
+  "AT+UBTA?": [
+   "+UBTA:1,0,[]",
+   "OK"
+  ],
+  "AT+UBTADL?": [
+   "+UBTADL:0B16F6FF000F001234567800,0",
+   "OK"
+  ],
+  "AT+UBTALS?": [
+   "+UBTALS:160,240",
+   "OK"
+  ],
+  "AT+UMDE?": [
+   "+UMDE:1",
+   "OK"
+  ],
+  "AT+UMDHN?": [
+   "+UMDHN:\"vucx\"",
+   "OK"
+  ],
+  "AT+UMDSA=*": [
+   "+UMDSA:0",
+   "OK"
+  ],
+  "AT+UMDSL?": [
+   "+UMDSL:0,\"_http\",0,80,\"vucx dashboard\"",
+   "OK"
+  ],
+  "AT+UMDTRL=*": [
+   "+UMDTRL:0,\"path\",\"/\"",
+   "OK"
+  ],
+  "AT+UTHE? [thread=on]": [
+   "+UTHE:1",
+   "OK"
+  ],
+  "AT+UTHE?": [
+   "+UTHE:0",
+   "OK"
+  ],
+  "AT+UTHE=*": [
+   "OK"
+  ],
+  "AT+UTHDSN": [
+   "OK"
+  ],
+  "AT+UTHDS?": [
+   "+UTHDS:0e080000000000010000000300000f",
+   "OK"
+  ],
+  "AT+UTHDS=*": [
+   "OK"
+  ],
+  "AT+UTHNC?": [
+   "+UTHNC:\"vucx-mesh\",15,4660,dead00beef00cafe,00112233445566778899aabbccddeeff",
+   "OK"
+  ],
+  "AT+UTHNC=*": [
+   "OK"
+  ],
+  "AT+UTHDT?": [
+   "+UTHDT:2,2000",
+   "OK"
+  ],
+  "AT+UTHDT=*": [
+   "OK"
+  ],
+  "AT+UTHS?": [
+   "+UTHS:4,1024,0a0b0c0d,1122334455667788",
+   "OK"
+  ],
+  "AT+UTHA?": [
+   "+UTHA:[fd00:0:0:0:0:ff:fe00:400],0",
+   "OK"
+  ],
+  "AT+UTHNL?": [
+   "+UTHNL:8877665544332211,2048,0,-60,3",
+   "OK"
+  ],
+  "AT+UTHCNT?": [
+   "+UTHCNT:4,3",
+   "+UTHCNT:8,120",
+   "+UTHCNT:30,7",
+   "OK"
+  ],
+  "AT+UTHSC": [
+   "+UTHSC:\"vucx-mesh\",dead00beef00cafe,4660,15,-55,200,1122334455667788,4,1",
+   "OK"
+  ],
+  "AT+UTHJS=*": [
+   "OK"
+  ],
+  "AT+UTHRT?": [
+   "+UTHRT:1,1024,1122334455667788,63,0,3,3,5,1",
+   "+UTHRT:2,2048,8877665544332211,2,1,3,3,7,1",
+   "OK"
+  ],
+  "AT+UTHLD?": [
+   "+UTHLD:0a0b0c0d,64,12,10,1",
+   "OK"
+  ],
+  "AT+UTHSE?": [
+   "+UTHSE:1",
+   "OK"
+  ],
+  "AT+UTHSHN?": [
+   "+UTHSHN:\"sensor-1\"",
+   "OK"
+  ],
+  "AT+UTHSSA=*": [
+   "+UTHSSA:1",
+   "OK"
+  ],
+  "AT+UTHSSL?": [
+   "+UTHSSL:1,\"_sensor._udp\",5683,\"sensor-1\",2",
+   "OK"
+  ],
+  "AT+UTHDB=*": [
+   "+UTHDB:\"sensor-1\"",
+   "+UTHDB:\"sensor-2\"",
+   "OK"
+  ],
+  "AT+UTHDR=*": [
+   "+UTHDR:\"sensor-1.default.service.arpa\",5683,[fd00:0:0:0:0:ff:fe00:400],",
+   "OK"
+  ],
+  "AT+UTHDH=*": [
+   "+UTHDH:[fd00:0:0:0:0:ff:fe00:400]",
+   "OK"
+  ],
+  "AT+UBTGR=0,102": [
+   "+UBTGR:0,102,EA070A1B0C2313020000",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,100,103": [
+   "+UBTGSCD:0,101,12,102,2A2B",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,102,103": [
+   "+UBTGCDD:0,102,103,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,106": [
+   "+UBTGR:0,106,2909",
+   "OK"
+  ],
+  "AT+UBTGR=0,109": [
+   "+UBTGR:0,109,9411",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,104,110": [
+   "+UBTGSCD:0,105,12,106,2A6E",
+   "+UBTGSCD:0,108,12,109,2A6F",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,106,107": [
+   "+UBTGCDD:0,106,107,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,109,110": [
+   "+UBTGCDD:0,109,110,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,113": [
+   "+UBTGR:0,113,04000000",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,111,116": [
+   "+UBTGSCD:0,112,02,113,2A6A",
+   "+UBTGSCD:0,114,10,115,2A67",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,113,113": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,115,116": [
+   "+UBTGCDD:0,115,116,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,119": [
+   "+UBTGR:0,119,01",
+   "OK"
+  ],
+  "AT+UBTGR=0,122": [
+   "+UBTGR:0,122,F401",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,117,122": [
+   "+UBTGSCD:0,118,12,119,2A56",
+   "+UBTGSCD:0,121,02,122,2A58",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,119,120": [
+   "+UBTGCDD:0,119,120,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,122,122": [
+   "OK"
+  ],
+  "AT+UBTGR=0,125": [
+   "+UBTGR:0,125,5A",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,123,126": [
+   "+UBTGSCD:0,124,12,125,2A19",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,125,126": [
+   "+UBTGCDD:0,125,126,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,129": [
+   "+UBTGR:0,129,752D626C6F78",
+   "OK"
+  ],
+  "AT+UBTGR=0,131": [
+   "+UBTGR:0,131,76756378",
+   "OK"
+  ],
+  "AT+UBTGR=0,133": [
+   "+UBTGR:0,133,332E352E30",
+   "OK"
+  ],
+  "AT+UBTGR=0,135": [
+   "+UBTGR:0,135,0011223344556677",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,127,135": [
+   "+UBTGSCD:0,128,02,129,2A29",
+   "+UBTGSCD:0,130,02,131,2A24",
+   "+UBTGSCD:0,132,02,133,2A26",
+   "+UBTGSCD:0,134,02,135,2A23",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,129,129": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,131,131": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,133,133": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,135,135": [
+   "OK"
+  ],
+  "AT+UBTGR=0,138": [
+   "+UBTGR:0,138,0F000000",
+   "OK"
+  ],
+  "AT+UBTGR=0,140": [
+   "+UBTGR:0,140,0100",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,136,141": [
+   "+UBTGSCD:0,137,02,138,2C14",
+   "+UBTGSCD:0,139,12,140,2C18",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,138,138": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,140,141": [
+   "+UBTGCDD:0,140,141,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,142,147": [
+   "+UBTGSCD:0,143,0C,144,6E400002B5A3F393E0A9E50E24DCCA9E",
+   "+UBTGSCD:0,145,10,146,6E400003B5A3F393E0A9E50E24DCCA9E",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,144,144": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,146,147": [
+   "+UBTGCDD:0,146,147,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,148,154": [
+   "+UBTGSCD:0,149,1C,150,2456E1B926E28F83E744F34F03E9D701",
+   "+UBTGSCD:0,152,1C,153,2456E1B926E28F83E744F34F04E9D701",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,150,151": [
+   "+UBTGCDD:0,150,151,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,153,154": [
+   "+UBTGCDD:0,153,154,2902",
+   "OK"
+  ],
+  "AT+UBTGR=0,157": [
+   "+UBTGR:0,157,767563782D77707320312E30",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,155,162": [
+   "+UBTGSCD:0,156,02,157,14387801130C49E7B8772881C89CB258",
+   "+UBTGSCD:0,158,08,159,14387802130C49E7B8772881C89CB258",
+   "+UBTGSCD:0,160,10,161,14387803130C49E7B8772881C89CB258",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,157,157": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,159,159": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,161,162": [
+   "+UBTGCDD:0,161,162,2902",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,163,168": [
+   "+UBTGSCD:0,164,10,165,FFE4",
+   "+UBTGSCD:0,167,0C,168,FFE9",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,165,166": [
+   "+UBTGCDD:0,165,166,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,168,168": [
+   "OK"
+  ],
+  "AT+UBTGR=0,171": [
+   "+UBTGR:0,171,11010002",
+   "OK"
+  ],
+  "AT+UBTGR=0,173": [
+   "+UBTGR:0,173,05010906A1018501050719E029E71500250175019508810295017508810195067508150025650507190029658100C0",
+   "OK"
+  ],
+  "AT+UBTGR=0,175": [
+   "+UBTGR:0,175,01",
+   "OK"
+  ],
+  "AT+UBTGR=0,177": [
+   "+UBTGR:0,177,0000000000000000",
+   "OK"
+  ],
+  "AT+UBTGR=0,179": [
+   "+UBTGR:0,179,0101",
+   "OK"
+  ],
+  "AT+UBTGSCD=0,169,181": [
+   "+UBTGSCD:0,170,02,171,2A4A",
+   "+UBTGSCD:0,172,02,173,2A4B",
+   "+UBTGSCD:0,174,06,175,2A4E",
+   "+UBTGSCD:0,176,12,177,2A4D",
+   "+UBTGSCD:0,180,04,181,2A4C",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,171,171": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,173,173": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,175,175": [
+   "OK"
+  ],
+  "AT+UBTGCDD=0,177,179": [
+   "+UBTGCDD:0,177,178,2902",
+   "+UBTGCDD:0,177,179,2908",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,181,181": [
+   "OK"
+  ],
+  "AT+UBTGSCD=0,182,188": [
+   "+UBTGSCD:0,183,1C,184,7A3F00025C1E4D2B9F6A3E8B2C4D5E6F",
+   "+UBTGSCD:0,186,14,187,7A3F00035C1E4D2B9F6A3E8B2C4D5E6F",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,184,185": [
+   "+UBTGCDD:0,184,185,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,187,188": [
+   "+UBTGCDD:0,187,188,2902",
+   "OK"
+  ]
+ },
+ "urcs": {
+  "AT+CPWROFF": [
+   "+STARTUP"
+  ],
+  "AT+UWSC=* [pw=bad]": [
+   "+UEWLD:0,15"
+  ],
+  "AT+UWSC=*": [
+   "+UEWLU:0,AABBCCDDEEF0,6",
+   "+UEWSNU"
+  ],
+  "AT+UWSDC": [
+   "+UEWLD:0,0"
+  ],
+  "AT+USOC=*": [
+   "+UESOC:0"
+  ],
+  "AT+UBTC=* [iocap=yesno]": [
+   "+UEBTC:0,C0FFEE001122p",
+   "+UEBTUC:C0FFEE001122p,123456"
+  ],
+  "AT+UBTC=*": [
+   "+UEBTC:0,C0FFEE001122p"
+  ],
+  "AT+UBTDC=*": [
+   "+UEBTDC:0"
+  ],
+  "AT+UBTUC=*,1": [
+   "+UEBTB:C0FFEE001122p,0"
+  ],
+  "AT+UBTB=*": [
+   "+UEBTB:C0FFEE001122p,0"
+  ],
+  "AT+UBTCSP=0,1 [cs=initiator]": [
+   "+UEBTCSS:0,2,0",
+   "+UEBTCSM:0,1480",
+   "+UEBTCSM:0,1510",
+   "+UEBTCSM:0,1495",
+   "+UEBTCSM:0,1502"
+  ],
+  "AT+UBTGCCW=0,36,1": [
+   "+UEBTGCN:0,35,001C04012A000000"
+  ],
+  "AT+UBTGW=0,38,002A000000*": [
+   "+UEBTGCN:0,40,002A000000000C00636F6D2E7768617473617070010400416E6E61020000030C0044696E6E657220617420383F050F003230323631303237543139303030300605005265706C79070500436C656172"
+  ],
+  "AT+UBTGW=0,159,*": [
+   "+UEBTGCN:0,161,5354415455533A434F4E4E45435445443A767563782D6E65743A3139322E3136382E312E3530"
+  ],
+  "AT+UBTGC=14387803130C49E7B8772881C89CB258*": [
+   "+UEBTGCW:0,{h:14387802},5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0",
+   "+UEBTGCW:0,{h:14387802},0801,0",
+   "+UEBTGCW:0,{h:14387802},0802,0",
+   "+UEBTGCW:0,{h:14387802},08045A210A140A08767563782D6E65741206FFFFFFFFFFFF28041209736563726574313233,0"
+  ],
+  "AT+UBTGW=*": [
+   "+UEBTGCN:0,18,0048"
+  ],
+  "AT+UWAPA*": [
+   "+UEWAPU",
+   "+UEWAPNU"
+  ],
+  "AT+UWAPD*": [
+   "+UEWAPD"
+  ],
+  "AT+UMQC=*": [
+   "+UEMQC:0"
+  ],
+  "AT+UMQS=*": [
+   "+UEMQSC:0,0",
+   "+UEMQDA:0,4"
+  ],
+  "AT+UMQDC=*": [
+   "+UEMQDC:0,0"
+  ],
+  "AT+UMDE=1": [
+   "+UEMDU"
+  ],
+  "AT+UMDE=0": [
+   "+UEMDD"
+  ],
+  "AT+UDGP=*": [
+   "+UEDGP:1,32,12",
+   "+UEDGPC:4,4,12,10,14"
+  ],
+  "AT+UHTCRG=*": [
+   "+UEHTCRS:0,200,\"OK\""
+  ],
+  "AT+UHTCRPOB=*": [
+   "+UEHTCRS:0,200,\"OK\""
+  ],
+  "AT+UBTGSA": [
+   "+UEBTC:0,C0FFEE001122p",
+   "+UEBTGCW:0,{c:2A4D},0100,0",
+   "+UEBTGCW:0,{h:7A3F0011},31377C4D657373616765737C416E6E617C53656520796F752061742035,0"
+  ],
+  "AT+UTHE=1": [
+   "+UETHU:4"
+  ],
+  "AT+UTHJS=*": [
+   "+UETHJ:0"
+  ]
+ },
+ "state": {
+  "AT+UWSSW=*wrong*": {
+   "pw": "bad"
+  },
+  "AT+UWSSW=*": {
+   "pw": "ok"
+  },
+  "AT+UWSC=* [pw=bad]": {
+   "wifi": "down"
+  },
+  "AT+UWSC=*": {
+   "wifi": "up"
+  },
+  "AT+UWSDC": {
+   "wifi": "down"
+  },
+  "AT+UHTCRP=0,\"/generate_204\"": {
+   "page": "probe"
+  },
+  "AT+UHTCRP=0,\"/login*\"": {
+   "page": "login"
+  },
+  "AT+UHTCRP=0,\"/ztp/assistnow/*\"": {
+   "page": "ztp"
+  },
+  "AT+UHTCRP=0,\"/GetAssistNowData*\"": {
+   "page": "assistnow"
+  },
+  "AT+UHTCRP=0,\"/geolocation/v1/geolocate?key=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/wps2/json/location?key=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/v2/locate?apiKey=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/?key=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=*": {
+   "page": "other"
+  },
+  "AT+UHTCRPOB=* [page=ztp]": {
+   "page": "ztp"
+  },
+  "AT+UHTCRPOB=* [page=locate]": {
+   "page": "locate"
+  },
+  "AT+UHTCRPOB=*": {
+   "page": "posted",
+   "portal": "open"
+  },
+  "AT+UBTC=*": {
+   "link": "up"
+  },
+  "AT+UBTDC=*": {
+   "link": "down"
+  },
+  "AT+UBTIOC=2": {
+   "iocap": "yesno"
+  },
+  "AT+UBTIOC=*": {
+   "iocap": "other"
+  },
+  "AT+UBTUC=*": {
+   "iocap": "confirmed"
+  },
+  "AT+UBTCSM=2": {
+   "cs": "initiator"
+  },
+  "AT+UBTCSM=*": {
+   "cs": "other"
+  },
+  "AT+UBTCSKF=*,*,0": {
+   "kf": "off"
+  },
+  "AT+UBTCSKF=*": {
+   "kf": "on"
+  },
+  "AT+UTHE=1": {
+   "thread": "on"
+  },
+  "AT+UTHE=0": {
+   "thread": "off"
+  }
+ },
+ "data": {},
+ "default": [
+  "OK"
+ ],
+ "gatt_server": true,
+ "ft_peer": [
+  184,
+  187
+ ],
+ "sockets": {
+  "servers": {
+   "2101": "ntrip",
+   "5683": "coap",
+   "123": "ntp",
+   "69": "tftp",
+   "80": "http",
+   "6970": "ft"
+  },
+  "accept": [
+   8000,
+   4433
+  ],
+  "ntrip": "d300133ed00003000000000000000000000000000000950a667302141f00269012000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627d15d73000f6c002690121151000000000000000000000000000000000000000000000000000000000000000102030405060708090a0b77c35c730406370891a2b3c012555555555555555555555555a8ac13547302028300269012000000000021b5620236100000000000000000000000000000000000484a6a756e6bd3000800000000000000004b2417d300133ed00003000000000000000000000000000000950a66",
+  "rtcm": "d300133ed00003000000000000000000000000000000950a66"
+ }
+}

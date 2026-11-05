@@ -1063,6 +1063,11 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
     (void)argc;
     (void)argv;
     if (count == 0) {
+        char ssid[64], ip[48];
+        if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+            ucxapp_print("no profiles saved; already connected to '%s' (%s)\n", ssid, ip);
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: no profiles (see wifi.profile.add)\n");
         return UCXAPP_ERR_FAILED;
     }

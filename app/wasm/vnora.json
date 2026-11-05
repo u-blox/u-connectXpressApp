@@ -25,7 +25,7 @@
    "OK"
   ],
   "AT+GSN": [
-   "\"0123456789\"",
+   "\"VUCX0123456789\"",
    "OK"
   ],
   "AT+CPWROFF": [
@@ -171,6 +171,26 @@
    "+USECD:2,323032363031303130303030303030",
    "OK"
   ],
+  "AT+UBTCSKF? [kf=off]": [
+   "+UBTCSKF:1,500,0",
+   "OK"
+  ],
+  "AT+UBTCSKF?": [
+   "+UBTCSKF:1,500,1",
+   "OK"
+  ],
+  "AT+UBTCSRT?": [
+   "+UBTCSRT:10",
+   "OK"
+  ],
+  "AT+UBTCSREF?": [
+   "+UBTCSREF:0",
+   "OK"
+  ],
+  "AT+UBTCSIQ?": [
+   "+UBTCSIQ:0",
+   "OK"
+  ],
   "AT+UBTDFD=9": [
    "+UBTDFD:9,0,",
    "OK"
@@ -185,7 +205,12 @@
   ],
   "AT+UBTD*": [
    "+UBTD:C0FFEE001122p,-50,\"vucx-hrs\",0,020106030D18",
+   "+UBTD:C0FFEE001155p,-58,\"NORA-W36\",0,02010609094E4F52412D573336",
+   "+UBTD:C0FFEE001166r,-64,\"reflector\",0,020106",
    "+UBTD:C0FFEE001133r,-70,\"\",0,020106",
+   "OK"
+  ],
+  "AT+UBTCL [link=down]": [
    "OK"
   ],
   "AT+UBTCL": [
@@ -248,6 +273,7 @@
    "+UBTGPSD:0,155,162,14387800130C49E7B8772881C89CB258",
    "+UBTGPSD:0,163,168,FFE5",
    "+UBTGPSD:0,169,181,1812",
+   "+UBTGPSD:0,182,188,7A3F00015C1E4D2B9F6A3E8B2C4D5E6F",
    "OK"
   ],
   "AT+UBTGPSDU=*": [
@@ -275,22 +301,6 @@
   ],
   "AT+UBTGRU=*": [
    "+UBTGRU:0,18,0048",
-   "OK"
-  ],
-  "AT+UBTGS=*": [
-   "+UBTGS:40",
-   "OK"
-  ],
-  "AT+UBTGC=*": [
-   "+UBTGC:42,43",
-   "OK"
-  ],
-  "AT+UBTGHCC=*": [
-   "+UBTGHCC:44,45",
-   "OK"
-  ],
-  "AT+UBTGD=*": [
-   "+UBTGD:46",
    "OK"
   ],
   "AT+USYLA=*": [
@@ -347,6 +357,18 @@
   ],
   "AT+UHTCGBB=* [page=login]": [
    "+UHTCGBB:0,0\u0001<html><form method='post' action='/login'><input type='hidden' name='token' value='t1'><input name='room'><input name='surname'><input type='checkbox' name='accept' value='yes'></form></html>",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=ztp]": [
+   "+UHTCGBB:0,0\u0001{\"chipcode\":\"VUCXdemoChipcode=\",\"allowedData\":[\"ulorb_l1\",\"ukion\",\"usvht\"]}",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=assistnow]": [
+   "+UHTCGBB:0,0\u0001\u00b5b\u0013@\u0018\u0000\u0010\u0000\u0000\u0080\u00ea\u0007\u0001\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u00ee4",
+   "OK"
+  ],
+  "AT+UHTCGBB=* [page=locate]": [
+   "+UHTCGBB:0,0\u0001{\"location\":{\"lat\":55.6125,\"lng\":12.9925,\"accuracy\":25}}",
    "OK"
   ],
   "AT+UHTCGBB=*": [
@@ -634,6 +656,19 @@
   ],
   "AT+UBTGCDD=0,181,181": [
    "OK"
+  ],
+  "AT+UBTGSCD=0,182,188": [
+   "+UBTGSCD:0,183,1C,184,7A3F00025C1E4D2B9F6A3E8B2C4D5E6F",
+   "+UBTGSCD:0,186,14,187,7A3F00035C1E4D2B9F6A3E8B2C4D5E6F",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,184,185": [
+   "+UBTGCDD:0,184,185,2902",
+   "OK"
+  ],
+  "AT+UBTGCDD=0,187,188": [
+   "+UBTGCDD:0,187,188,2902",
+   "OK"
   ]
  },
  "urcs": {
@@ -653,11 +688,28 @@
   "AT+USOC=*": [
    "+UESOC:0"
   ],
+  "AT+UBTC=* [iocap=yesno]": [
+   "+UEBTC:0,C0FFEE001122p",
+   "+UEBTUC:C0FFEE001122p,123456"
+  ],
   "AT+UBTC=*": [
    "+UEBTC:0,C0FFEE001122p"
   ],
   "AT+UBTDC=*": [
    "+UEBTDC:0"
+  ],
+  "AT+UBTUC=*,1": [
+   "+UEBTB:C0FFEE001122p,0"
+  ],
+  "AT+UBTB=*": [
+   "+UEBTB:C0FFEE001122p,0"
+  ],
+  "AT+UBTCSP=0,1 [cs=initiator]": [
+   "+UEBTCSS:0,2,0",
+   "+UEBTCSM:0,1480",
+   "+UEBTCSM:0,1510",
+   "+UEBTCSM:0,1495",
+   "+UEBTCSM:0,1502"
   ],
   "AT+UBTGCCW=0,36,1": [
    "+UEBTGCN:0,35,001C04012A000000"
@@ -669,10 +721,10 @@
    "+UEBTGCN:0,161,5354415455533A434F4E4E45435445443A767563782D6E65743A3139322E3136382E312E3530"
   ],
   "AT+UBTGC=14387803130C49E7B8772881C89CB258*": [
-   "+UEBTGCW:0,42,5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0",
-   "+UEBTGCW:0,42,0801,0",
-   "+UEBTGCW:0,42,0802,0",
-   "+UEBTGCW:0,42,08045A210A140A08767563782D6E65741206FFFFFFFFFFFF28041209736563726574313233,0"
+   "+UEBTGCW:0,{h:14387802},5345545F434F4E4649473A767563782D6E65743A7365637265743132333A57504132,0",
+   "+UEBTGCW:0,{h:14387802},0801,0",
+   "+UEBTGCW:0,{h:14387802},0802,0",
+   "+UEBTGCW:0,{h:14387802},08045A210A140A08767563782D6E65741206FFFFFFFFFFFF28041209736563726574313233,0"
   ],
   "AT+UBTGW=*": [
    "+UEBTGCN:0,18,0048"
@@ -712,8 +764,8 @@
   ],
   "AT+UBTGSA": [
    "+UEBTC:0,C0FFEE001122p",
-   "+UEBTGCW:0,43,0100,0",
-   "+UEBTGCW:0,42,377C57686174734170707C416E6E617C44696E6E657220617420383F,0"
+   "+UEBTGCW:0,{c:2A4D},0100,0",
+   "+UEBTGCW:0,{h:7A3F0011},31377C4D657373616765737C416E6E617C53656520796F752061742035,0"
   ]
  },
  "state": {
@@ -738,16 +790,88 @@
   "AT+UHTCRP=0,\"/login*\"": {
    "page": "login"
   },
+  "AT+UHTCRP=0,\"/ztp/assistnow/*\"": {
+   "page": "ztp"
+  },
+  "AT+UHTCRP=0,\"/GetAssistNowData*\"": {
+   "page": "assistnow"
+  },
+  "AT+UHTCRP=0,\"/geolocation/v1/geolocate?key=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/wps2/json/location?key=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/v2/locate?apiKey=*\"": {
+   "page": "locate"
+  },
+  "AT+UHTCRP=0,\"/?key=*\"": {
+   "page": "locate"
+  },
   "AT+UHTCRP=*": {
    "page": "other"
+  },
+  "AT+UHTCRPOB=* [page=ztp]": {
+   "page": "ztp"
+  },
+  "AT+UHTCRPOB=* [page=locate]": {
+   "page": "locate"
   },
   "AT+UHTCRPOB=*": {
    "page": "posted",
    "portal": "open"
+  },
+  "AT+UBTC=*": {
+   "link": "up"
+  },
+  "AT+UBTDC=*": {
+   "link": "down"
+  },
+  "AT+UBTIOC=2": {
+   "iocap": "yesno"
+  },
+  "AT+UBTIOC=*": {
+   "iocap": "other"
+  },
+  "AT+UBTUC=*": {
+   "iocap": "confirmed"
+  },
+  "AT+UBTCSM=2": {
+   "cs": "initiator"
+  },
+  "AT+UBTCSM=*": {
+   "cs": "other"
+  },
+  "AT+UBTCSKF=*,*,0": {
+   "kf": "off"
+  },
+  "AT+UBTCSKF=*": {
+   "kf": "on"
   }
  },
  "data": {},
  "default": [
   "OK"
- ]
+ ],
+ "gatt_server": true,
+ "ft_peer": [
+  184,
+  187
+ ],
+ "sockets": {
+  "servers": {
+   "2101": "ntrip",
+   "5683": "coap",
+   "123": "ntp",
+   "69": "tftp",
+   "80": "http",
+   "6970": "ft"
+  },
+  "accept": [
+   8000,
+   4433
+  ],
+  "ntrip": "d300133ed00003000000000000000000000000000000950a667302141f00269012000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627d15d73000f6c002690121151000000000000000000000000000000000000000000000000000000000000000102030405060708090a0b77c35c730406370891a2b3c012555555555555555555555555a8ac13547302028300269012000000000021b5620236100000000000000000000000000000000000484a6a756e6bd3000800000000000000004b2417d300133ed00003000000000000000000000000000000950a66",
+  "rtcm": "d300133ed00003000000000000000000000000000000950a66"
+ }
 }

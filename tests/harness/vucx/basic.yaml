@@ -3,7 +3,7 @@ identity:
   manufacturer: u-blox
   model: NORA-W36
   version: 3.5.0-0
-  serial: "0123456789"
+  serial: "VUCX0123456789"
 commands:
   "AT+CPWROFF": ["OK"]
   "AT+USYCI?": ['+USYCI:"Assert","","u_buffer.c",267,"3.5.0-0"', "OK"]

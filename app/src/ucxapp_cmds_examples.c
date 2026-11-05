@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_demo.h"
 #include "ucxapp_xplorer.h"
 
 #include <stdio.h>
@@ -16,12 +17,12 @@ static const example_t kExamples[] = {
     { "bridge", "Sensor hub: GNSS to the PC over Wi-Fi, IMU to a phone over BLE",
       "wifi.profile.auto\ngnss.open\nimu.open\ngnss.bridge tcp\nimu.bridge ble nus\nbridge.list" },
     { "bridge", "Asset tracker: GNSS over cellular, CAN over Wi-Fi",
-      "cell.open COM30\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.open\ngnss.bridge cell\n"
+      "cell.open\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.open\ngnss.bridge cell\n"
       "can.bridge udp 192.168.1.10 6000\nbridge.list" },
     { "bridge", "RTK rover: NTRIP in over Wi-Fi, position out over BLE",
-      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\nbridge.list" },
+      "wifi.profile.auto\ngnss.open\ngnss.bridge off\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\nbridge.list" },
     { "bridge", "Remote modem console over Wi-Fi",
-      "wifi.profile.auto\ncell.open COM30\ncell.bridge tcp 7000\n# telnet <module-ip> 7000 and type AT commands" },
+      "wifi.profile.auto\ncell.open\ncell.bridge tcp 7000\n# telnet <module-ip> 7000 and type AT commands" },
     { "bridge", "Stop everything",
       "bridge.list\nbridge.off" },
 
@@ -30,62 +31,62 @@ static const example_t kExamples[] = {
     { "gnss", "Watch the fix come in (time to first fix)",
       "gnss.open\ngnss.restart cold\ngnss.watch 60" },
     { "gnss", "u-center or gpsd on the PC over Wi-Fi",
-      "wifi.connect MyNetwork MyPassword\ngnss.bridge tcp\n# connect u-center / gpsd to <module-ip>:2947" },
+      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge tcp\n# connect u-center / gpsd to <module-ip>:2947" },
     { "gnss", "Phone app over BLE",
-      "gnss.bridge ble nus\n# open nRF Connect or a Serial Bluetooth Terminal app and connect" },
+      "gnss.open\ngnss.bridge ble nus\n# open nRF Connect or a Serial Bluetooth Terminal app and connect" },
     { "gnss", "Stream to a server or chart plotter",
-      "gnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udp 192.168.1.10 10110" },
+      "gnss.open\ngnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udp 192.168.1.10 10110" },
     { "gnss", "Several bridges at once (up to 4): u-center, OpenCPN and a phone",
-      "gnss.bridge tcp\ngnss.bridge udp 192.168.1.10 10110\ngnss.bridge ble nus\ngnss.bridge status\n"
+      "gnss.open\ngnss.bridge tcp\ngnss.bridge udp 192.168.1.10 10110\ngnss.bridge ble nus\ngnss.bridge status\n"
       "# stop one by its number, or all of them\ngnss.bridge off 2\ngnss.bridge off" },
     { "gnss", "RTK / PPP corrections from an NTRIP caster (PointPerfect, RTK2go)",
-      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 EU ${NTRIP_USER} ${NTRIP_PASS}\n"
+      "wifi.profile.auto\ngnss.open\ngnss.bridge off\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 EU ${NTRIP_USER} ${NTRIP_PASS}\n"
       "gnss.bridge status\ngnss.watch 60" },
     { "gnss", "RTK rover: corrections over Wi-Fi, position to a phone over BLE",
-      "wifi.profile.auto\ngnss.open\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\n"
+      "wifi.profile.auto\ngnss.open\ngnss.bridge off\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\n"
       "# connect a GNSS app (e.g. SW Maps) to the module's Nordic UART service" },
     { "gnss", "Secure remote access (TLS)",
-      "utils.tls.server.create gnss 192.168.1.50\ngnss.bridge tls 2948 gnss" },
+      "# once: utils.tls.ca.create\nutils.tls.server.create gnss 192.168.1.50\ngnss.open\ngnss.bridge tls 2948 gnss" },
     { "gnss", "Log a drive test",
-      "gnss.rate 5\ngnss.log drive.nmea nmea\n# ...drive...\ngnss.log off" },
+      "gnss.open\ngnss.rate 5\ngnss.log drive.nmea nmea\n# ...drive...\ngnss.watch 10\ngnss.log off" },
     { "gnss", "Replay a track without a receiver (recorded, or drawn on nmeagen.org)",
-      "gnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udp 192.168.1.10 10110" },
+      "gnss.close\ngnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udp 192.168.1.10 10110" },
     { "gnss", "No receiver at hand: a virtual one at the PC's location (u-blox Malmo if unknown)",
-      "gnss.virtual\ngnss.watch 5\ngnss.bridge tcp\n# or a fixed spot: gnss.virtual 55.6125 12.9925 10" },
+      "gnss.close\ngnss.virtual\ngnss.watch 5\ngnss.bridge tcp\n# or a fixed spot: gnss.virtual 55.6125 12.9925 10" },
     { "gnss", "u-center recording: log UBX, replay it, view the track in Google Earth",
-      "gnss.log drive.ubx ubx\n# ...drive...\ngnss.log off\ngnss.export drive.ubx drive.kml\ngnss.replay drive.ubx 5" },
+      "gnss.open\ngnss.log drive.ubx ubx\n# ...drive...\ngnss.watch 5\ngnss.log off\ngnss.export drive.ubx drive.kml\ngnss.close\ngnss.replay drive.ubx 5" },
     { "gnss", "Geofence from Google My Maps (draw the area, Export to KML)",
       "gnss.fence garden.kml\ngnss.open\ngnss.fence status\n# FENCE: lines report leaving and coming back" },
     { "gnss", "Fast first fix with u-blox AssistNow (token from the Thingstream portal)",
       "wifi.profile.auto\ngnss.open\ngnss.assist register ${ASSISTNOW_TOKEN}\ngnss.assist online\ngnss.watch 30\n"
       "# later runs only need: gnss.assist online" },
     { "gnss", "Recover a stuck receiver",
-      "gnss.restart cold\ngnss.status" },
+      "gnss.open\ngnss.restart cold\ngnss.status" },
     { "gnss", "PC tool through a second COM port",
-      "gnss.bridge uart COM20 115200\n# open COM20's partner port in u-center" },
+      "gnss.open\ngnss.bridge uart COM20 115200\n# open COM20's partner port in u-center" },
     { "gnss", "Send positions over cellular",
-      "cell.open COM30\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell" },
+      "cell.open\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.open\ngnss.bridge cell" },
     { "gnss", "Centimetre RTK with PointPerfect over MQTT (certificates and client ID from the Thingstream thing)",
       "cert.upload client device-cert.pem pointperfect\ncert.upload key device-key.pem pointperfect-key\n"
       "cert.upload ca AmazonRootCA1.pem pointperfect-ca\nwifi.profile.auto\ngnss.open\n"
       "gnss.bridge pointperfect ${PP_CLIENT_ID} eu\ngnss.watch 120\n# the RTK line goes DGNSS -> RTK float -> RTK fixed" },
     { "gnss", "Configure the receiver and keep it",
-      "gnss.cfg gnss gps,gal,bds,glo\ngnss.cfg model automotive\ngnss.cfg msg gsv 5\ngnss.cfg msg sec-sig 1\n"
+      "gnss.open\ngnss.cfg gnss gps,gal,bds,glo\ngnss.cfg model automotive\ngnss.cfg msg gsv 5\ngnss.cfg msg sec-sig 1\n"
       "gnss.cfg msg mon-rf 1\ngnss.cfg save" },
     { "gnss", "Jamming and spoofing watch",
-      "gnss.cfg msg sec-sig 1\ngnss.cfg msg mon-rf 1\ngnss.status\ngnss.watch 600\n"
+      "gnss.open\ngnss.cfg msg sec-sig 1\ngnss.cfg msg mon-rf 1\ngnss.status\ngnss.watch 600\n"
       "# JAM:, SPOOF: and ANT: lines report each change" },
     { "gnss", "Fast start after power off (save-on-shutdown)",
-      "gnss.backup save\n# power the receiver off and on, then:\ngnss.open\ngnss.backup status" },
+      "gnss.open\ngnss.backup save\n# power the receiver off and on, then:\ngnss.open\ngnss.backup status" },
 
     { "imu", "First look at the sensor",
       "imu.detect\nimu.open\nimu.status" },
     { "imu", "Stream to a PC over Wi-Fi",
-      "imu.rate 50\nimu.bridge tcp 9000\n# connect a TCP client to <module-ip>:9000" },
+      "imu.open\nimu.rate 50\nimu.bridge tcp 9000\n# connect a TCP client to <module-ip>:9000" },
     { "imu", "Live data to a phone over BLE",
-      "imu.bridge ble nus" },
+      "imu.open\nimu.bridge ble nus" },
     { "imu", "Record a session",
-      "imu.log motion.bin\n# ...move...\nimu.log off" },
+      "imu.open\nimu.log motion.bin\n# ...move...\nimu.log off" },
 #endif
 
     { "wifi", "Join a network and check it (choose your country's regulatory domain once first)",
@@ -102,7 +103,7 @@ static const example_t kExamples[] = {
       "cert.upload ca ca.pem ca\ncert.upload client client.pem client\ncert.upload key client.key key\n"
       "wifi.eap CorpNet ca client key device@corp.example" },
     { "wifi", "Enterprise network with PEAP user and password",
-      "cert.upload ca ca.pem ca\nwifi.peap CorpNet alice - ca" },
+      "cert.upload ca ca.pem ca\nwifi.peap CorpNet alice ${PEAP_PASSWORD} ca\n# or - instead of the password to type it" },
     { "wifi", "Watch the signal while walking around",
       "wifi.rssi 30 1" },
     { "wifi", "Is the Wi-Fi at the install spot good enough? (verdict with advice)",
@@ -145,7 +146,7 @@ static const example_t kExamples[] = {
     { "mdns", "Be found as a name on the LAN: ping nora.local from any PC",
       "wifi.connect MySsid MyPassword\nmdns.on nora\nmdns.status" },
     { "mdns", "Advertise the web UI as a DNS-SD service with TXT records",
-      "web.start 80\nmdns.on nora\nmdns.add _http._tcp 80 \"NORA-W36 dashboard\" path=/ fw=3.5.0\n"
+      "web.stop\nweb.start 80\nmdns.on nora\nmdns.add _http._tcp 80 \"NORA-W36 dashboard\" path=/ fw=3.5.0\n"
       "# on a PC: dns-sd -B _http._tcp  or  avahi-browse -t _http._tcp" },
     { "mdns", "Matter commissionable node advertisement (what a Matter controller browses for)",
       "mdns.on\nmdns.add _matterc._udp 5540 A1B2C3D4E5F60718 VP=65521+32769 D=3840 CM=1 DT=257 DN=Light\n"
@@ -165,7 +166,9 @@ static const example_t kExamples[] = {
     { "thread", "Start a new Thread network on this module (it becomes the leader)",
       "thread.network new\nthread.start\nthread.status\nthread.network" },
     { "thread", "Join a border router's network with its dataset",
-      "# on the border router: ot-ctl dataset active -x\nthread.dataset 0e080000000000010000000300000f35060004001fffe0...\n"
+      "# on the border router: ot-ctl dataset active -x\n"
+      "thread.dataset 0e080000000000010000000300000f010212340208dead00beef00cafe051000112233445566778899aabbccddeeff"
+      "0309767563782d6d657368\n"
       "thread.start\nthread.addr" },
     { "thread", "Join through a commissioner with a PSKd",
       "# on the commissioner: ot-ctl commissioner start; ot-ctl commissioner joiner add * J01NME\n"
@@ -207,9 +210,10 @@ static const example_t kExamples[] = {
       "bt.cs initiator\nbt.connect reflector\nbt.bond 0\nbt.cs.range 0 30\n# smoother or raw distances\nbt.cs.filter 1 500\nbt.cs.filter off\nbt.cs.rate 10" },
 #endif
     { "bt", "Save a device and reconnect later",
-      "bt.profile.add sensor C0:FF:EE:00:11:22\nbt.profile.connect sensor" },
-    { "bt", "Secure pairing",
-      "bt.defaults secure\nbt.pairing on\nbt.connect 1\nbt.confirm yes\nbt.bonds" },
+      "bt.profile.add sensor C0:FF:EE:00:11:22\nbt.profile.connect sensor\nbt.list\nbt.disconnect" },
+    { "bt", "Secure pairing: check the code yourself",
+      "bt.defaults secure\nbt.pairing on\nbt.autoconfirm off\nbt.connect 1\n# both sides show the same code\n"
+      "bt.confirm yes\nbt.bonds\nbt.autoconfirm on" },
 
     { "gatt", "Explore a remote device",
       "bt.connect 1\ngatt.services\ngatt.read 0x0003\ngatt.subscribe 0x0010 notify\ngatt.listen 30" },
@@ -234,9 +238,10 @@ static const example_t kExamples[] = {
       "bt.scan\nbt.connect 1\nhid.client 0\n# keys, mouse moves and media keys are printed\nhid.client off" },
 
     { "web", "Web UI from the module",
-      "wifi.connect MyNetwork MyPassword\nweb.start 80 mytoken\nweb.status\n# browse to http://<module-ip>/?token=mytoken" },
+      "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start 80 mytoken\nweb.status\n"
+      "# browse to http://<module-ip>/?token=mytoken" },
     { "web", "HTTPS web UI",
-      "utils.tls.server.create web 192.168.1.50\nweb.start 443 mytoken https web" },
+      "utils.tls.server.create web 192.168.1.50\n# a running server keeps its settings\nweb.stop\nweb.start 443 mytoken https web" },
 
     { "fw", "Update to the newest firmware",
       "dev.info\nfw.update\ndev.info" },
@@ -263,9 +268,9 @@ static const example_t kExamples[] = {
 
 #if UCXAPP_HOST
     { "cell", "Cellular data link",
-      "cell.detect\ncell.open COM30\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
+      "cell.detect\ncell.open\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
     { "cell", "Modem AT console from a PC tool over TCP",
-      "cell.open COM30\ncell.bridge tcp 7000" },
+      "cell.open\ncell.bridge tcp 7000" },
 #endif
 #if UCXAPP_HOST || defined(UCXAPP_CAN_HW)
     { "can", "Loopback test",
@@ -273,7 +278,7 @@ static const example_t kExamples[] = {
     { "can", "Listen on a real bus without disturbing it (STM32 board with a CAN transceiver)",
       "can.cfg 250000 listen\ncan.watch 30\ncan.status" },
     { "can", "CANable on Linux (SocketCAN, set up with: sudo ip link set can0 type can bitrate 500000 up)",
-      "can.open can0\ncan.send 0x123 11 22 33\ncan.watch 10\ncan.open emulated" },
+      "can.open can0\ncan.cfg 500000 normal\ncan.send 0x123 11 22 33\ncan.watch 10\ncan.open emulated" },
     { "can", "CAN frames to a PC over UDP (Windows, Linux or the STM32 board)",
       "can.bridge udp 192.168.1.10 6000\ncan.bridge status" },
     { "can", "CAN frames to a phone over SPS from the STM32 board",
@@ -281,7 +286,7 @@ static const example_t kExamples[] = {
 #endif
 #if UCXAPP_HOST
     { "can", "CAN frames to a server over cellular (reconnects when the link drops)",
-      "cell.open COM30\ncell.attach on\ncell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
+      "cell.open\ncell.attach on\ncell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
 
     { "hw", "Blink an LED and read a pin",
       "hw.profile.load app/boards/h753.json\nhw.led 0 on\nhw.gpio.read 3" },
@@ -300,11 +305,11 @@ static const example_t kExamples[] = {
     { "ft", "BLE file server (on one module)",
       "bt.defaults secure\nbt.pairing on\nft.on rw\nft.status\nft.off" },
     { "ft", "BLE file client (on the other module)",
-      "bt.scan\nbt.connect 1\nbt.confirm yes\nft.list 0\nft.get 0 notes.txt\nft.put 0 log.txt\nft.remove 0 log.txt" },
+      "bt.scan\n# the pairing code is accepted (bt.autoconfirm off to check it with bt.confirm)\nbt.connect 1\nft.list 0\nft.get 0 notes.txt\nft.put 0 log.txt\nft.remove 0 log.txt" },
     { "ft", "File server over Wi-Fi (TCP, faster; an alternative to TFTP with CRC-32 checks)",
       "wifi.connect\nft.on rw tcp\n# on the other module: ft.list 192.168.1.10\n# ft.get 192.168.1.10 notes.txt\n# ft.put 192.168.1.10:6970 log.txt\nft.off" },
     { "ft", "Continue an interrupted transfer",
-      "ft.get 192.168.1.10 big.bin big.bin 1455 resume\nft.put 192.168.1.10 big.bin big.bin 1455 resume" },
+      "wifi.connect\nft.get 192.168.1.10 big.bin big.bin 1455 resume\nft.put 192.168.1.10 big.bin big.bin 1455 resume" },
     { "ancs", "iPhone notifications (pair 'ucx ANCS' from the phone's Bluetooth settings)",
       "ancs.on\nbt.list\nancs.sub 0\nancs.list\nancs.show 42\nancs.action 42 neg\nancs.off" },
     { "notify", "Android notifications from a companion app",
@@ -329,9 +334,9 @@ static const example_t kExamples[] = {
       "wifi.connect MyNetwork MyPassword\nperf.latency tcp echo.u-blox.com 7 20\nperf.throughput tcp echo.u-blox.com 7 10 512\n"
       "perf.latency udp echo.u-blox.com 7 20\nperf.throughput udp echo.u-blox.com 7 10 512" },
     { "perf", "Module to module over Wi-Fi (B echoes, A measures)",
-      "# on module B\nperf.echo udp 7000 120\n# on module A, with B's address\nperf.latency udp 192.168.1.20 7000 50\nperf.throughput udp 192.168.1.20 7000 10 1000" },
+      "# on module B: perf.echo udp 7000 120\n# here on module A, with B's address\nperf.latency udp 192.168.1.20 7000 50\nperf.throughput udp 192.168.1.20 7000 10 1000" },
     { "perf", "Bluetooth SPS between two modules (B echoes, A measures)",
-      "# on module B\nperf.echo sps 120\n# on module A\nbt.connect <address-of-B>\nperf.latency sps 20\nperf.throughput sps 10 244" },
+      "# on module B: perf.echo sps 120\n# here on module A, B found by its name\nbt.connect NORA-W36\nperf.latency sps 20\nperf.throughput sps 10 244" },
 #if UCXAPP_XPLORER
     { "perf", "The u-connectXplorer phone as the other end (Wi-Fi echo and Bluetooth SPS)",
       "# phone: u-connectXplorer > Settings > Remote control on, note address and token\n"
@@ -354,12 +359,15 @@ static const example_t kExamples[] = {
 #endif
 
     { "app", "Capture a session for a bug report",
-      "app.log.level all\napp.log.save session.txt\n# ...reproduce...\napp.log.stop" },
+      "app.log.level all\napp.log.save session.txt\n# ...reproduce...\napp.log.stop\n"
+      "# the level is remembered: back to the default\napp.log.level warn" },
     { "file", "Look at local files",
       "file.list\nfile.view session.txt 20\nfile.hash sha256 session.txt" },
+#if !UCXAPP_HOST   /* file.recv and file.send need the board's own console */
     { "file", "Copy files to and from an STM32 board over its console (YMODEM)",
       "file.recv\n# ...start the YMODEM upload in Tera Term, or: ucxapp --stm32 --put fw.bin\nfile.hash sha256 fw.bin\n"
       "file.send fw.bin\n# ...start the YMODEM download, or: ucxapp --stm32 --get fw.bin" },
+#endif
     { "usecase", "Fit check, then with a measured rate",
       "usecase.tool\nusecase.tool 2.5" },
     { "usecase", "Join the factory network with a user name (PEAP)",
@@ -599,6 +607,9 @@ static int runExample(ucxapp_t *app, const char *group, int n)
             continue;
         }
         ucxapp_print("Running %s example %d: %s\n", group, n, kExamples[i].title);
+#if UCXAPP_HOST
+        ucxapp_demo_prepare(app);
+#endif
         while (*p != '\0') {
             const char *e = strchr(p, '\n');
             int len = e != NULL ? (int)(e - p) : (int)strlen(p);
@@ -610,14 +621,22 @@ static int runExample(ucxapp_t *app, const char *group, int n)
             if (line[0] == '#' || line[0] == '\0') {
                 continue;
             }
+#if UCXAPP_HOST
+            ucxapp_demo_line(app, line, sizeof(line));
+#endif
             snprintf(word, sizeof(word), "%.*s", (int)strcspn(line, " "), line);
             c = ucxapp_cmd_find(word);
-            if (c != NULL && (c->flags & UCXAPP_CMD_DANGER)) {
+            /* on the Virtual module, commands that only change the module run: it is a simulation */
+            if (c != NULL && (c->flags & UCXAPP_CMD_DANGER) &&
+                !(ucxapp_module_is_virtual(app) && (c->flags & UCXAPP_CMD_NEEDS_DEVICE) && strncmp(word, "fw.", 3) != 0)) {
                 ucxapp_print("stopped before '%s': it changes or deletes data, run it by hand\n", line);
                 return UCXAPP_ERR_FAILED;
             }
             ucxapp_print("> %s\n", line);
-            int rc = ucxapp_cmd_exec(app, line);
+            /* the echo keeps ${VAR}: the value may be a password or token */
+            char expanded[512];
+            int rc = ucxapp_expand_env(line, expanded, sizeof(expanded)) ? ucxapp_cmd_exec(app, expanded)
+                                                                           : UCXAPP_ERR_FAILED;
             if (rc != UCXAPP_OK) {
                 ucxapp_print("stopped: '%s' failed (%d); edit the placeholders and run the rest by hand\n", line, rc);
                 return rc;

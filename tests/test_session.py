@@ -45,6 +45,36 @@ def test_replay_missing_file(app_exe, tmp_path):
     assert "cannot read nope.ucx" in out.stdout
 
 
+def test_replay_expect_lines(app_exe, tmp_path):
+    (tmp_path / "e.ucx").write_text(
+        "app.version\n"
+        "expect u-connectXpressApp \\d+\\.\\d+\n"
+        "expect ^u-connect(Xpress|Foo)App\n"
+        "expect [A-Za-z]+ x?\\d*\n"
+        "no.such.command\n"
+        "expect-fail\n"
+        "utils.hash.text md5 a\n"
+        "expect ^0cc175b9c0f1b6a831c399e269772661$\n", encoding="utf-8")
+    out = _run_in(app_exe, tmp_path, "session.replay e.ucx")
+    assert out.returncode == 0, out.stdout
+    assert "replayed 3 command(s), 0 failed" in out.stdout, out.stdout
+
+
+def test_replay_expect_misses_fail(app_exe, tmp_path):
+    (tmp_path / "m.ucx").write_text(
+        "expect early\n"
+        "app.version\n"
+        "expect (Foo|Bar)+\n"
+        "utils.hash.text md5 a\n"
+        "expect-fail\n", encoding="utf-8")
+    out = _run_in(app_exe, tmp_path, "session.replay m.ucx")
+    assert out.returncode != 0, out.stdout
+    assert "ERROR: 'expect early' before the first command" in out.stdout, out.stdout
+    assert "ERROR: no match for '(Foo|Bar)+' in the output of 'app.version'" in out.stdout, out.stdout
+    assert "ERROR: 'utils.hash.text md5 a' should have failed (expect-fail)" in out.stdout, out.stdout
+    assert "replayed 2 command(s), 3 failed" in out.stdout, out.stdout
+
+
 def test_prod_test_needs_a_device(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "prod.test")
     assert "not connected to a module" in out.stdout

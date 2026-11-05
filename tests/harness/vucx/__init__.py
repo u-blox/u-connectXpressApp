@@ -2,7 +2,7 @@
 
 Empty by default: it only answers the AT setup commands. A YAML profile decides what else it can do:
 
-    identity: {manufacturer: u-blox, model: NORA-W36, version: 3.5.0-0, serial: "0000"}
+    identity: {manufacturer: u-blox, model: NORA-W36, version: 3.5.0-0, serial: "VUCX0000"}
     commands:                       # exact command or fnmatch pattern -> response lines ("OK" is not added)
       "AT+UWSC?": ["+UWSC:0,1", "OK"]
     urcs:                           # lines sent after the response to a matching command
@@ -14,8 +14,9 @@ Empty by default: it only answers the AT setup commands. A YAML profile decides 
       'AT+UHTCRP=0,"/login*"': {page: login}
 
 A list of lists is answered in turn (then from the start again). A line with \x01 sends the rest as binary data
-(SOH, 2-byte length, bytes), as the module does; commands with binary data (AT+X=... SOH len data) are matched
-on the text before the SOH. State setters apply after the answer, so a command can answer from the old state.
+(SOH, 2-byte length, bytes; one byte per character, so "\xB5" is 0xB5), as the module does; commands with binary
+data (AT+X=... SOH len data) are matched on the text before the SOH. State setters apply after the answer, so a
+command can answer from the old state.
 
     peer:                           # the connected BLE peer's GATT database, from handle `start` up
       start: 100
@@ -27,9 +28,14 @@ on the text before the SOH. State setters apply after the answer, so a command c
 becomes AT+UBTGPSD lines, one AT+UBTGSCD per service, AT+UBTGCDD per characteristic and AT+UBTGR per readable
 value (a CCCD follows every notifiable value). Static, so the browser's virtual module has it too.
 
-    sockets:                        # the network behind the module, run in Python (not in the browser)
+    gatt_server: true               # our own GATT server hands out handles per service (see GattServer)
+
+    sockets:                        # the network behind the module (the browser's virtual module runs it too)
       servers: {2101: ntrip, 5683: coap}   # remote port -> behaviour (echo for the rest; sink drops)
-      accept: [8000]                # listening ports a client connects to (it echoes)
+                                    # also ntp (SNTP time), tftp (any file is one block, writes are acked),
+                                    # http (200 with a Date header) and ft (the ft file server, see FtServer)
+      accept: [8000]                # listening ports a client connects to (it echoes); a UDP socket bound to
+                                    # one gets a datagram from a client
 
 answers AT+USOCR/USOC/USOWB/USOSTB/USORB/USORFB/USOCL/USOL/USOST? with real per-socket state.
 Only lines starting with AT are commands; anything else (data mode, a bridged stream) is logged and dropped, unless
@@ -41,13 +47,17 @@ Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the por
 As JSON for the browser's virtual module: python -m harness.vucx --json nora-w36.yaml > app/wasm/vnora.json
 """
 
+import base64
+import email.utils
 import fnmatch
+import hashlib
 import json
 import os
 import re
 import sys
 import threading
 import time
+import zlib
 from pathlib import Path
 
 from .. import corrections
@@ -65,9 +75,11 @@ def _hex(value):
 
 
 def peer_table(peer):
-    """(service discovery lines, commands) for a peer GATT database; see the module docstring."""
+    """(service discovery lines, commands, {characteristic uuid: value handle}) for a peer GATT database; see the
+    module docstring."""
     commands = {}
     services = []
+    values = {}
     h = int(peer.get("start", 100))
     for svc in peer.get("services") or []:
         start = h
@@ -80,6 +92,7 @@ def peer_table(peer):
             descs = []
             lines.append(f"+UBTGSCD:0,{h},{props:02X},{h + 1},{uuid}")
             val = h + 1
+            values.setdefault(uuid.upper(), val)
             h += 2
             if props & PROPS["R"]:
                 commands[f"AT+UBTGR=0,{val}"] = [f"+UBTGR:0,{val},{_hex(value)}", "OK"]
@@ -97,7 +110,7 @@ def peer_table(peer):
         for i, (val, descs) in enumerate(decls):
             last = decls[i + 1][0] - 2 if i + 1 < len(decls) else end
             commands[f"AT+UBTGCDD=0,{val},{last}"] = [f"+UBTGCDD:0,{val},{d},{u}" for d, u in descs] + ["OK"]
-    return services, commands
+    return services, commands, values
 
 
 def load(profile):
@@ -133,13 +146,157 @@ def table(profile=None):
         if key in ident:
             commands[cmd] = [f'"{ident[key]}"', "OK"]
     commands.update(p.get("commands") or {})
+    ft = None
     if p.get("peer"):
-        services, generated = peer_table(p["peer"])
+        services, generated, values = peer_table(p["peer"])
         base = [line for line in commands.get("AT+UBTGPSD=*", []) if line != "OK"]
         commands["AT+UBTGPSD=*"] = base + services + ["OK"]
         commands.update(generated)
+        if FtServer.CTRL in values and FtServer.DATA in values:
+            ft = [values[FtServer.CTRL], values[FtServer.DATA]]
     return {"commands": commands, "urcs": dict(p.get("urcs") or {}), "state": dict(p.get("state") or {}),
-            "data": dict(p.get("data") or {}), "default": p.get("default") or ["ERROR"]}
+            "data": dict(p.get("data") or {}), "default": p.get("default") or ["ERROR"],
+            "gatt_server": bool(p.get("gatt_server")), "ft_peer": ft}
+
+
+class FtServer:
+    """The ft file server (app/src/ucxapp_cmds_ft.c) behind the virtual module, read-write, with notes.txt and
+    big.bin to fetch. packet() takes one client packet (CTRL or DATA) and returns the server's replies as
+    (data, packet) pairs: a whole window of blocks at once, the next on each ACK, an ACK every 8 blocks of an upload.
+    Network carries them over TCP (framed, servers: {6970: ft}) and Vucx over BLE as notifications on the peer's
+    CTRL/DATA characteristics (the 7A3F0001 service in peer:). The browser's virtual module does the same."""
+
+    CTRL = "7A3F00025C1E4D2B9F6A3E8B2C4D5E6F"
+    DATA = "7A3F00035C1E4D2B9F6A3E8B2C4D5E6F"
+    WINDOW = 8
+
+    def __init__(self):
+        self.files = {"notes.txt": b"notes.txt: a demo file on the virtual ft server\n",
+                      "big.bin": bytes((i * 7 + (i >> 8)) & 0xFF for i in range(20000))}
+        self.links = {}
+
+    @staticmethod
+    def _u16(v):
+        return v.to_bytes(2, "little")
+
+    @staticmethod
+    def _u32(v):
+        return v.to_bytes(4, "little")
+
+    def _window(self, st, base):
+        body, blk = st["body"], st["blk"]
+        return [(True, self._u16(b) + body[b * blk:(b + 1) * blk])
+                for b in range(base, min(base + self.WINDOW, len(body) // blk + 1))]
+
+    def packet(self, link, data, pkt):
+        st = self.links.setdefault(link, {})
+        pkt = bytes(pkt)
+        if data:
+            return self._block(st, pkt)
+        if not pkt:
+            return []
+        op, le = pkt[0], (lambda a, b: int.from_bytes(pkt[a:b], "little"))
+        if op in (0x01, 0x07):         # GET, GET from an offset
+            hdr = 7 if op == 0x07 else 3
+            f, off = self.files.get(pkt[hdr:].decode("latin-1")), le(3, 7) if op == 0x07 else 0
+            if f is None or off > len(f) or le(1, 3) < 16:
+                return [(False, bytes([0x81, 1 if f is None else 4]))]
+            st.clear()
+            st.update(mode="get", body=f[off:], blk=le(1, 3))
+            return [(False, b"\x81\0" + self._u32(len(f)) + self._u32(zlib.crc32(f)))] + self._window(st, 0)
+        if op == 0x05 and st.get("mode") == "get":
+            nxt = le(1, 3)
+            if nxt > len(st["body"]) // st["blk"]:
+                st.clear()
+                return []
+            return self._window(st, nxt)
+        if op in (0x02, 0x08):         # PUT, PUT resume (no .part is kept: it starts over)
+            if len(pkt) < 12 or le(1, 3) < 16:
+                return [(False, bytes([0x80 | op, 4]))]
+            st.clear()
+            st.update(mode="put", blk=le(1, 3), size=le(3, 7), crc=le(7, 11), name=pkt[11:].decode("latin-1"),
+                      buf=b"", want=0, since=0)
+            return [(False, b"\x88\0" + self._u32(0) if op == 0x08 else b"\x82\0")]
+        if op == 0x03:
+            return ([(False, b"\x83\0" + self._u32(len(f)) + n.encode()) for n, f in self.files.items()]
+                    + [(False, b"\x83\xff")])
+        if op == 0x04:
+            return [(False, bytes([0x84, 0 if self.files.pop(pkt[1:].decode("latin-1"), None) is not None else 1]))]
+        if op == 0x06:
+            st.clear()
+        return []
+
+    def _block(self, st, pkt):
+        if st.get("mode") != "put" or len(pkt) < 2:
+            return []
+        if int.from_bytes(pkt[:2], "little") != st["want"]:
+            return [(False, b"\x85" + self._u16(st["want"]))]
+        st["buf"] += pkt[2:]
+        st["want"] += 1
+        st["since"] += 1
+        if len(pkt) - 2 < st["blk"]:   # the short block ends the file
+            ok = len(st["buf"]) == st["size"] and zlib.crc32(st["buf"]) == st["crc"]
+            if ok:
+                self.files[st["name"]] = st["buf"]
+            out = [(False, b"\x85" + self._u16(st["want"])), (False, bytes([0x87, 0 if ok else 6]))]
+            st.clear()
+            return out
+        if st["since"] >= self.WINDOW:
+            st["since"] = 0
+            return [(False, b"\x85" + self._u16(st["want"]))]
+        return []
+
+
+class GattServer:
+    """The module's own GATT server (gatt_server: true in the profile), for the defines no command entry answers:
+    handles count up from 40 since the last AT+CPWROFF like on the module: a service starts on the next multiple of 20,
+    a characteristic takes a declaration, value and CCCD handle (the first 41/42/43, the next 44/45/46), a descriptor
+    one. URC lines name a defined characteristic by UUID prefix, the first that matches: {h:7A3F0011} is its value
+    handle, {c:7A3F0011} its CCCD; a line naming none is left out. The URCs of AT+UBTGSA only see the services being
+    activated, so activating one service does not replay those of another. The browser's virtual module does too."""
+
+    REF = re.compile(r"\{([hc]):([0-9A-Fa-f]+)\}")
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.next = 40
+        self.chars = []
+        self.active = 0
+
+    def handle(self, cmd):
+        if cmd.startswith("AT+UBTGS="):
+            service = -(-self.next // 20) * 20
+            self.next = service + 1
+            return [f"+UBTGS:{service}", "OK"]
+        m = re.match(r"AT\+UBTG(C|HCC)=([0-9A-Fa-f]*)", cmd)
+        if m:
+            value, cccd = self.next + 1, self.next + 2
+            self.next += 3
+            self.chars.append((m[2].upper(), value, cccd))
+            return [f"+UBTG{m[1]}:{value},{cccd}", "OK"]
+        if cmd.startswith("AT+UBTGD="):
+            self.next += 1
+            return [f"+UBTGD:{self.next - 1}", "OK"]
+        return None
+
+    def _ref(self, kind, prefix, chars):
+        hit = [c for c in chars if c[0] and c[0].startswith(prefix.upper())]
+        return None if not hit else str(hit[0][1 if kind == "h" else 2])
+
+    def fill(self, lines, cmd=""):
+        chars = self.chars[self.active:] if cmd == "AT+UBTGSA" else self.chars
+        out = []
+        for line in lines:
+            refs = ({m[0]: self._ref(m[1], m[2], chars) for m in self.REF.finditer(line)}
+                    if isinstance(line, str) else {})
+            if None in refs.values():
+                continue
+            for ref, value in refs.items():
+                line = line.replace(ref, value)
+            out.append(line)
+        return out
 
 
 class Network:
@@ -156,10 +313,12 @@ class Network:
             + b"junk" + corrections.corrupt(corrections.rtcm(bytes(8)))
             + corrections.rtcm(bytes.fromhex("3ED00003") + bytes(15)))
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, ft=None):
         self.servers = {int(k): v for k, v in (cfg.get("servers") or {}).items()}
         self.accept = {int(p) for p in cfg.get("accept") or []}
+        self.ft = ft or FtServer()
         self.socks = {}
+        self.sps = {}   # SPS connection -> bytes echoed back, not read yet
 
     def _new(self, proto, port=0):
         n = next(i for i in range(64) if i not in self.socks)
@@ -176,6 +335,32 @@ class Network:
             tkl, kind_ = data[0] & 0x0F, (data[0] >> 4) & 3
             head = bytes([0x40 | ((2 if kind_ == 0 else 1) << 4) | tkl, 0x45])
             s["rx"].append((ip, port, head + data[2:4 + tkl] + b"\xff21.5"))
+        elif kind == "ntp" and len(data) >= 48:
+            sec = (int(time.time()) + 2208988800) & 0xFFFFFFFF
+            s["rx"].append((ip, port, bytes([0x24, 2]) + bytes(38) + sec.to_bytes(4, "big") + bytes(4)))
+        elif kind == "tftp" and len(data) >= 4:
+            op = int.from_bytes(data[:2], "big")
+            if op == 1:                # RRQ: one short DATA block is the whole file
+                name = data[2:].split(b"\0")[0].decode("latin-1")
+                s["rx"].append((ip, port, b"\0\3\0\1" + f"vucx demo file {name}\n".encode()))
+            elif op in (2, 3):         # WRQ, DATA: acknowledge
+                s["rx"].append((ip, port, b"\0\4" + (data[2:4] if op == 3 else b"\0\0")))
+        elif kind == "http":
+            body = b"" if data.startswith(b"HEAD ") else b"<html>vucx</html>"
+            s["rx"].append((ip, port, f"HTTP/1.1 200 OK\r\nDate: {email.utils.formatdate(usegmt=True)}\r\n"
+                                      f"Content-Type: text/html\r\nContent-Length: 17\r\nConnection: close\r\n\r\n"
+                                      .encode() + body))
+        elif kind == "ft":             # [len u16][channel][packet] frames both ways; the replies go as one read
+            acc = s.setdefault("acc", bytearray())
+            acc += data
+            out = b""
+            while len(acc) >= 3 and len(acc) >= 3 + int.from_bytes(acc[:2], "little"):
+                n = 3 + int.from_bytes(acc[:2], "little")
+                for is_data, pkt in self.ft.packet(id(s), acc[2] == 1, acc[3:n]):
+                    out += len(pkt).to_bytes(2, "little") + bytes([1 if is_data else 0]) + pkt
+                del acc[:n]
+            if out:
+                s["rx"].append((ip, port, out))
         elif kind == "echo":
             s["rx"].append((ip, port, data))
 
@@ -216,9 +401,26 @@ class Network:
             self.socks[int(m[1])].update(port=port, status=3 if cmd.startswith("AT+USOL") else 1)
             if cmd.startswith("AT+USOL") and port in self.accept:
                 return ["OK"], [f"+UESOIC:{self._new(6, port)},192.168.1.10,{m[1]}"]
+            if cmd.startswith("AT+USOB") and self.socks[int(m[1])]["proto"] == 17 and port in self.accept:
+                self.socks[int(m[1])]["rx"].append(("192.168.1.10", 50000, b"hello from the vucx demo client"))
+                return ["OK"], self._avail(m[1])
             return ["OK"], []
         if cmd == "AT+USOST?":
             return [f"+USOST:{n},{s['proto']},{s['status']}" for n, s in self.socks.items()] + ["OK"], []
+        # SPS: the BLE peer echoes (perf.echo sps on module B)
+        m = re.fullmatch(r"AT\+USPSC=(\d+)(?:,\d+)?", cmd)
+        if m:
+            self.sps[int(m[1])] = b""
+            return ["OK"], [f"+UESPSC:{m[1]}"]
+        m = re.fullmatch(r"AT\+USPSWB=(\d+),?", cmd)
+        if m and int(m[1]) in self.sps:
+            self.sps[int(m[1])] += bytes(data)
+            return [f"+USPSWB:{m[1]},{len(data)}", "OK"], [f"+UESPSDA:{m[1]},{len(self.sps[int(m[1])])}"]
+        m = re.fullmatch(r"AT\+USPSRB=(\d+),(\d+)", cmd)
+        if m and int(m[1]) in self.sps:
+            buf = self.sps[int(m[1])]
+            self.sps[int(m[1])] = buf[int(m[2]):]
+            return [(f"+USPSRB:{m[1]}", buf[:int(m[2])]), "OK"], []
         return None
 
     def _avail(self, n):
@@ -230,19 +432,47 @@ class Vucx:
     def __init__(self, profile=None):
         t = table(profile)
         p = load(profile) if profile is not None else {}
-        self.net = Network(p["sockets"]) if p.get("sockets") else None
+        self.ft = FtServer()
+        self.ft_peer = t["ft_peer"]
+        self.net = Network(p["sockets"], self.ft) if p.get("sockets") else None
         self.commands = t["commands"]
         self.urcs = t["urcs"]
         self.setters = t["state"]
         self.data = t["data"]
         self.default = t["default"]
+        self.gatt = GattServer() if t["gatt_server"] else None
         self.state = {}
         self.log = []   # every command received, for the tests
         self.payloads = []   # (command, binary data) for commands that carried data (AT+X=... SOH len data)
+        self.certs = {}   # uploaded certificates by name, for their fingerprint
         self._turn = {}
         self._urc_sent = {}
         self._fd = None
         self._stop = threading.Event()
+
+    def _ft_ble(self, cmd):
+        """A write to the peer's ft CTRL/DATA characteristic: the replies come back as notifications."""
+        m = re.fullmatch(r"AT\+UBTGWNR=(\d+),(\d+),([0-9A-Fa-f]*)", cmd)
+        if not m or not self.ft_peer or int(m[2]) not in self.ft_peer:
+            return None
+        ctrl, data = self.ft_peer
+        out = self.ft.packet("ble", int(m[2]) == data, bytes.fromhex(m[3]))
+        return ["OK"], [f"+UEBTGCN:{m[1]},{data if d else ctrl},{p.hex().upper()}" for d, p in out]
+
+    def _cert(self, cmd, data):
+        """Remembers uploaded certificates and answers the fingerprint of one, the SHA-256 of its DER, as the
+        module does (the browser's virtual module does the same)."""
+        m = re.match(r'AT\+USECUB=\d+,"([^"]+)"', cmd)
+        if m and data:
+            self.certs[m.group(1)] = bytes(data)
+            return None
+        m = re.match(r'AT\+USECD="([^"]+)",0$', cmd)
+        if not m or m.group(1) not in self.certs:
+            return None
+        cert = self.certs[m.group(1)]
+        pem = re.search(rb"-----BEGIN [^-]+-----(.*?)-----END", cert, re.S)
+        der = base64.b64decode(b"".join(pem.group(1).split())) if pem else cert
+        return [f"+USECD:0,{hashlib.sha256(der).hexdigest().upper()}", "OK"], None
 
     def _lookup(self, table, cmd):
         for exact in (True, False):
@@ -266,7 +496,7 @@ class Vucx:
                 soh = True
             else:
                 text, soh, data = line.partition("\x01")
-                data = data.encode()
+                data = data.encode("latin-1")   # one byte per character, so \xB5 is the byte 0xB5
             out += b"\r\n" + text.encode()
             if soh:
                 out += b"\x01" + len(data).to_bytes(2, "big") + data
@@ -282,9 +512,12 @@ class Vucx:
             if reply is not None:
                 os.write(self._fd, reply.encode())
             return
-        answer = self.net.handle(cmd, data) if self.net else None
+        answer = self._cert(cmd, data) or self._ft_ble(cmd) or (self.net.handle(cmd, data) if self.net else None)
         if answer is None:
-            answer = (self._lookup(self.commands, cmd) or self.default, self._lookup(self.urcs, cmd))
+            reply = self._lookup(self.commands, cmd) or (self.gatt.handle(cmd) if self.gatt else None)
+            answer = (reply or self.default, self._lookup(self.urcs, cmd))
+        if self.gatt and cmd == "AT+CPWROFF":
+            self.gatt.reset()
         self.state.update(self._lookup(self.setters, cmd) or {})
         self._send(answer[0])
         urc = answer[1]
@@ -292,10 +525,13 @@ class Vucx:
             done = self._urc_sent.get(id(urc), 0)
             if done < urc.get("times", 1 << 30):
                 self._urc_sent[id(urc)] = done + 1
-                threading.Timer(urc["after"], self._send_quiet, [urc["lines"]]).start()
+                lines = self.gatt.fill(urc["lines"], cmd) if self.gatt else urc["lines"]
+                threading.Timer(urc["after"], self._send_quiet, [lines]).start()
         elif urc:
             time.sleep(0.05)
-            self._send(urc)
+            self._send(self.gatt.fill(urc, cmd) if self.gatt else urc)
+        if self.gatt and cmd == "AT+UBTGSA":
+            self.gatt.active = len(self.gatt.chars)
 
     def _send_quiet(self, lines):
         try:
@@ -388,9 +624,20 @@ class Feeder:
     stop = Vucx.stop
 
 
+def browser_table(profile):
+    """table() plus the network behind the module, as app/wasm/vnora.json holds it for the browser."""
+    out = table(profile)
+    sockets = load(profile).get("sockets")
+    if sockets:   # the browser runs the same network; it gets the caster's stream as hex
+        out["sockets"] = {"servers": sockets.get("servers") or {}, "accept": sockets.get("accept") or [],
+                          "ntrip": Network.RTCM.hex(),
+                          "rtcm": corrections.rtcm(bytes.fromhex("3ED00003") + bytes(15)).hex()}
+    return out
+
+
 def main():
     if sys.argv[1:2] == ["--json"]:
-        print(json.dumps(table(sys.argv[2]), indent=1))
+        print(json.dumps(browser_table(sys.argv[2]), indent=1))
         return
     v = Vucx(sys.argv[1] if len(sys.argv) > 1 else None)
     print(v.start(), flush=True)

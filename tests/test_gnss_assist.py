@@ -37,9 +37,10 @@ def test_assist_predictive_orbits_when_the_plan_has_no_live_orbits(app_exe, tmp_
     assert "AssistNow uporb_1,ualm for gps,gal,bds,glo" in out.stdout, out.stdout
 
 
-def test_assist_id_needs_an_answering_receiver(app_exe, tmp_path):
+def test_assist_id_prints_the_ztp_request_from_the_virtual_receiver(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.assist id")
-    assert "ERROR: the receiver did not answer UBX-SEC-UNIQID" in out.stdout, out.stdout
+    assert "POST https://api.thingstream.io/ztp/assistnow/credentials" in out.stdout, out.stdout
+    assert '"UBX-SEC-UNIQID":"B5622703' in out.stdout and '"UBX-MON-VER":"B5620A04' in out.stdout, out.stdout
 
 
 @pytest.mark.parametrize(("command", "message"), [

@@ -94,6 +94,9 @@ bool ucxapp_cmd_needs_wifi(const char *name);   /* wifi., sock., mqtt., net. ...
 /** True when the module runs Thread firmware (answers AT+UTHE?); thread.* is blocked otherwise. */
 bool ucxapp_module_has_thread(ucxapp_t *app);
 bool ucxapp_cmd_needs_thread(const char *name);
+/** True for a simulated module (vucx or the browser's virtual module: serial number "VUCX..."); the GNSS, IMU and
+ *  cellular detectors then also offer simulated devices (virt:gnss, virt:imu, virt:cell). */
+bool ucxapp_module_is_virtual(ucxapp_t *app);
 
 /* Worked example number index (lines are '\n'-separated, '#' lines are notes); false past the end. */
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines);
@@ -151,6 +154,8 @@ void ucxapp_register_ancs_cmds(void);    /* ancs.* iPhone notifications (host on
 void ucxapp_register_notify_cmds(void);  /* notify.* phone notifications over a custom GATT service (host only) */
 void ucxapp_register_session_cmds(void); /* session.* record/replay and prod.test (host only) */
 void ucxapp_register_cfg_cmds(void);     /* cfg.* save/load/diff module settings (empty in UCXAPP_LITE builds) */
+/* cfg.save without output (not in UCXAPP_LITE builds); false when the module returned no settings. */
+bool ucxapp_cfg_save_quiet(ucxapp_t *app, const char *name);
 void ucxapp_register_trace_cmds(void);   /* at.trace, at.decode, at.replay (host only) */
 void ucxapp_register_perf_cmds(void);    /* perf.* RTT and throughput (empty in UCXAPP_LITE builds) */
 void ucxapp_register_xplorer_cmds(void); /* xplorer.* u-connectXplorer phone remote control (host only) */

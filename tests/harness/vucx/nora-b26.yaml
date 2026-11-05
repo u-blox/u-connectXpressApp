@@ -3,7 +3,7 @@ identity:
   manufacturer: u-blox
   model: NORA-B26
   version: 3.1.0-0
-  serial: "0123456789"
+  serial: "VUCX0123456789"
 commands:
   "AT+CPWROFF": ["OK"]
 urcs:

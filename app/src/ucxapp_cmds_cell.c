@@ -12,6 +12,7 @@
 #include "u_port_uart.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_stream.h"
+#include "ucxapp_vport.h"
 
 #ifdef _WIN32
 #define strcasecmp _stricmp
@@ -31,27 +32,29 @@ static char gMaker[64];   /* first line of ATI, used to pick the vendor ping com
 
 enum { AT_OK = 0, AT_ERROR = 1, AT_TIMEOUT = -1 };
 
-/* Sends one command and collects the reply until OK/ERROR; keeps reading extraMs after OK for URC lines. */
-static int atCmd(const char *cmd, char *resp, size_t size, int32_t timeoutMs, int32_t extraMs)
+/* Sends one command and collects the reply until OK/ERROR; keeps reading extraMs after OK for URC lines, or until
+ * "until" has been seen untilCount times. */
+static int atCmdUntil(const char *cmd, char *resp, size_t size, int32_t timeoutMs, int32_t extraMs, const char *until,
+                      int untilCount)
 {
     uint8_t scratch[64];
     size_t n = 0;
     int result = AT_TIMEOUT;
     uint32_t start;
 
-    while (uPortUartRead(gUart, scratch, sizeof(scratch), 10) > 0) {
+    while (ucxapp_uart_read(gUart, scratch, sizeof(scratch), 10) > 0) {
         /* drop stale bytes */
     }
     resp[0] = '\0';
     char line[320];
     int len = snprintf(line, sizeof(line), "%s\r", cmd);
-    if (len <= 0 || uPortUartWrite(gUart, (const uint8_t *)line, (size_t)len) < 0) {
+    if (len <= 0 || ucxapp_uart_write(gUart, (const uint8_t *)line, (size_t)len) < 0) {
         return AT_TIMEOUT;
     }
     start = ucxapp_platform_tick_ms();
     uint32_t doneMs = 0;
     while (ucxapp_platform_tick_ms() - start < (uint32_t)timeoutMs) {
-        int32_t got = uPortUartRead(gUart, scratch, sizeof(scratch), 50);
+        int32_t got = ucxapp_uart_read(gUart, scratch, sizeof(scratch), 50);
         for (int32_t i = 0; i < got && n < size - 1; i++) {
             resp[n++] = (char)scratch[i];
         }
@@ -73,9 +76,24 @@ static int atCmd(const char *cmd, char *resp, size_t size, int32_t timeoutMs, in
             }
         } else if (ucxapp_platform_tick_ms() - doneMs >= (uint32_t)extraMs) {
             break;
+        } else if (until != NULL) {
+            int seen = 0;
+            const char *last = NULL;
+            for (const char *p = strstr(resp, until); p != NULL; p = strstr(p + 1, until)) {
+                seen++;
+                last = p;
+            }
+            if (seen >= untilCount && strstr(last, "\r\n") != NULL) {   /* the last line is complete too */
+                break;
+            }
         }
     }
     return result;
+}
+
+static int atCmd(const char *cmd, char *resp, size_t size, int32_t timeoutMs, int32_t extraMs)
+{
+    return atCmdUntil(cmd, resp, size, timeoutMs, extraMs, NULL, 0);
 }
 
 /* Copies the text after "prefix" on the first line that starts with it. */
@@ -170,13 +188,13 @@ static bool openPort(const char *port, int32_t baud)
 {
     char resp[RESP_SIZE];
 
-    gUart = uPortUartOpen(port, baud, false);
+    gUart = ucxapp_uart_open(port, baud);
     if (gUart == NULL) {
         return false;
     }
     gOpen = true;
     if (atCmd("AT", resp, sizeof(resp), 600, 0) != AT_OK) {
-        uPortUartClose(gUart);
+        ucxapp_uart_close(gUart);
         gUart = NULL;
         gOpen = false;
         return false;
@@ -191,28 +209,65 @@ static bool openPort(const char *port, int32_t baud)
 static void closePort(void)
 {
     if (gOpen) {
-        uPortUartClose(gUart);
+        ucxapp_uart_close(gUart);
     }
     gUart = NULL;
     gOpen = false;
     gMaker[0] = '\0';
 }
 
+/* While bridged the serial port belongs to a stream; the remote side gets the modem's AT console. */
+static ucxapp_stream_t *gStream;
+
+/* Transparent data mode: the modem's UART carries the TCP/UDP payload, so any stream can bridge to that port. */
+static bool gDataMode;
+static char gLinkPort[32];
+static int32_t gLinkBaud;
+enum { VENDOR_UBLOX, VENDOR_QUECTEL, VENDOR_SIMCOM, VENDOR_TELIT, VENDOR_NORDIC };
+static int gVendor;
+static int gSock;
+static char gLinkHost[104];   /* what cell.connect opened, so a dropped link can be opened again */
+static int32_t gLinkRemote;
+static bool gLinkUdp;
+static bool gRelinking;
+
+/* The modem is busy as a data link or with its own bridge: say so instead of probing its port. */
+static bool cellBusy(void)
+{
+    if (gDataMode) {
+        ucxapp_print("  %s: data link to %s:%d now (cell.disconnect or cell.open for AT commands)\n",
+                     gLinkPort, gLinkHost, (int)gLinkRemote);
+        return true;
+    }
+    if (gStream != NULL) {
+        ucxapp_print("  %s: bridged now (cell.bridge off or cell.open for AT commands)\n", ucxapp_stream_port(gStream));
+        return true;
+    }
+    return false;
+}
+
+static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[]);
+
 /* ---- commands ---- */
 
 static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
 {
     static ucxapp_serial_port_t ports[32];
-    int count = ucxapp_platform_list_serial_ports(ports, 32);
+    bool onlyVirt = argc == 2 && ucxapp_vport_is(argv[1]);
+    int count = onlyVirt ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
     int found = 0;
-    (void)app;
 
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
     }
-    if (gOpen) {
-        ucxapp_print("ERROR: cellular module already open on %s (cell.close first)\n", gPort);
-        return UCXAPP_ERR_FAILED;
+    if (gOpen) {   /* the scan shares the open modem's UART: list that one only */
+        ucxapp_print("  %s: AT module at %d baud, open now: %s\n1 AT port(s) found\n", gPort, (int)gBaud, gMaker);
+        return UCXAPP_OK;
+    }
+    if ((argc == 1 || strcasecmp(argv[1], gDataMode ? gLinkPort : gStream != NULL ? ucxapp_stream_port(gStream) : "") == 0) &&
+        cellBusy()) {
+        ucxapp_print("1 AT port(s) found\n");
+        return UCXAPP_OK;
     }
     for (int i = 0; i < count; i++) {
         const ucxapp_serial_port_t *sp = &ports[i];
@@ -229,6 +284,13 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
             }
         }
     }
+    /* a virtual module gets the simulated SARA-R5 (virt:cell) */
+    if ((onlyVirt || (argc == 1 && ucxapp_module_is_virtual(app))) && openPort(UCXAPP_VPORT_CELL, 115200)) {
+        ucxapp_print("  %s (%s): AT module at 115200 baud: %s\n", UCXAPP_VPORT_CELL,
+                     ucxapp_vport_desc(UCXAPP_VPORT_CELL), gMaker);
+        closePort();
+        found++;
+    }
     ucxapp_print("%d AT port(s) found\n", found);
     return found > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
@@ -236,7 +298,6 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
 static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t baud = 115200;
-    (void)app;
 
     if (argc > 3 || (argc == 3 && (!ucxapp_parse_int(argv[2], &baud) || baud <= 0))) {
         return UCXAPP_ERR_USAGE;
@@ -248,6 +309,35 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         }
         ucxapp_print("ERROR: already open on %s (cell.close first)\n", gPort);
         return UCXAPP_ERR_FAILED;
+    }
+    if (gDataMode || gStream != NULL) {
+        const char *busy = gDataMode ? gLinkPort : ucxapp_stream_port(gStream);
+        if (argc == 2 && strcasecmp(argv[1], busy) != 0) {
+            ucxapp_print("ERROR: the cellular module is in use:\n");
+            (void)cellBusy();
+            return UCXAPP_ERR_FAILED;
+        }
+        /* cell.open is for AT commands: end the data link or the bridge that holds the port */
+        if (gDataMode) {
+            ucxapp_print("ending the data link to %s:%d\n", gLinkHost, (int)gLinkRemote);
+            int r = cmdDisconnect(app, 1, argv);
+            if (r != UCXAPP_OK) {
+                return r;
+            }
+        } else {
+            char port[32];
+            int32_t sbaud = ucxapp_stream_baud(gStream);
+            snprintf(port, sizeof(port), "%s", busy);
+            ucxapp_print("stopping the cell bridge on %s\n", port);
+            ucxapp_stream_close(gStream);
+            gStream = NULL;
+            if (!openPort(port, sbaud)) {
+                ucxapp_print("ERROR: no AT response on %s after the bridge\n", port);
+                return UCXAPP_ERR_FAILED;
+            }
+        }
+        ucxapp_print("cellular module open on %s at %d baud: %s\n", gPort, (int)gBaud, gMaker);
+        return UCXAPP_OK;
     }
     if (argc == 1) {
         static ucxapp_serial_port_t ports[32];
@@ -266,6 +356,9 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             if (gOpen && atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) != AT_OK) {
                 closePort();
             }
+        }
+        if (!gOpen && ucxapp_module_is_virtual(app)) {
+            (void)openPort(UCXAPP_VPORT_CELL, baud);
         }
         if (!gOpen) {
             ucxapp_print("ERROR: no cellular module found (cell.open <port>)\n");
@@ -479,25 +572,12 @@ static int cmdPing(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: ping is not mapped for '%s'; use cell.at with the module's ping command\n", gMaker);
         return UCXAPP_ERR_FAILED;
     }
-    int r = atCmd(cmd, resp, sizeof(resp), 15000, 12000);
+    /* 4 replies (u-blox), or 4 replies and the summary (Quectel) */
+    int r = atCmdUntil(cmd, resp, sizeof(resp), 15000, 12000, strstr(gMaker, "Quectel") != NULL ? "+QPING:" : "+UUPING",
+                       strstr(gMaker, "Quectel") != NULL ? 5 : 4);
     printLines(resp, cmd);
     return r == AT_OK ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
-
-/* While bridged the serial port belongs to a stream; the remote side gets the modem's AT console. */
-static ucxapp_stream_t *gStream;
-
-/* Transparent data mode: the modem's UART carries the TCP/UDP payload, so any stream can bridge to that port. */
-static bool gDataMode;
-static char gLinkPort[32];
-static int32_t gLinkBaud;
-enum { VENDOR_UBLOX, VENDOR_QUECTEL, VENDOR_SIMCOM, VENDOR_TELIT, VENDOR_NORDIC };
-static int gVendor;
-static int gSock;
-static char gLinkHost[104];   /* what cell.connect opened, so a dropped link can be opened again */
-static int32_t gLinkRemote;
-static bool gLinkUdp;
-static bool gRelinking;
 
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
 {
@@ -652,7 +732,7 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
 
         while (strstr(resp, "CONNECT") == NULL && strstr(resp, "+QIOPEN:") == NULL &&
                ucxapp_platform_tick_ms() - start < 150000u) {
-            int32_t got = uPortUartRead(gUart, buf, sizeof(buf), 100);
+            int32_t got = ucxapp_uart_read(gUart, buf, sizeof(buf), 100);
             for (int32_t i = 0; i < got && n < sizeof(resp) - 1; i++) {
                 resp[n++] = (char)buf[i];
             }
@@ -753,18 +833,19 @@ static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no cellular data link\n");
         return UCXAPP_ERR_FAILED;
     }
-    gUart = uPortUartOpen(gLinkPort, gLinkBaud, false);
+    (void)ucxapp_stream_bridge_stop_port(gLinkPort);
+    gUart = ucxapp_uart_open(gLinkPort, gLinkBaud);
     if (gUart == NULL) {
-        ucxapp_print("ERROR: cannot open %s (stop the bridge that uses it first)\n", gLinkPort);
+        ucxapp_print("ERROR: cannot open %s\n", gLinkPort);
         return UCXAPP_ERR_FAILED;
     }
     U_CX_PORT_SLEEP_MS(1200);
-    (void)uPortUartWrite(gUart, (const uint8_t *)"+++", 3);
+    (void)ucxapp_uart_write(gUart, (const uint8_t *)"+++", 3);
     U_CX_PORT_SLEEP_MS(1200);
-    while (uPortUartRead(gUart, buf, sizeof(buf), 50) > 0) {
+    while (ucxapp_uart_read(gUart, buf, sizeof(buf), 50) > 0) {
         /* drop the OK */
     }
-    uPortUartClose(gUart);
+    ucxapp_uart_close(gUart);
     gUart = NULL;
     gDataMode = false;
     if (!openPort(gLinkPort, gLinkBaud)) {
@@ -824,8 +905,8 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "cell.detect", "[port]", "Find a cellular modem answering AT on the PC serial ports", 0, cmdDetect },
-    { "cell.open", "[port] [baud=115200]", "Open a cellular modem on a PC serial port (finds it when omitted)", 0, cmdOpen },
+    { "cell.detect", "[port]", "Find a cellular modem answering AT on the PC serial ports (a virtual module also offers virt:cell, a simulated SARA-R5)", 0, cmdDetect },
+    { "cell.open", "[port] [baud=115200]", "Open a cellular modem on a PC serial port (finds it when omitted; virt:cell is the simulated one); ends a data link or cell bridge on it", 0, cmdOpen },
     { "cell.close", "", "Close the cellular modem", 0, cmdClose },
     { "cell.status", "", "SIM, signal, registration, operator and IP", 0, cmdStatus },
     { "cell.at", "<command>", "Send a raw AT command to the cellular modem", 0, cmdAt },
@@ -833,7 +914,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.attach", "[on|off]", "Attach and activate data (on), detach (off) or show the state", 0, cmdAttach },
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91) for gnss.bridge cell, imu.bridge cell, can.bridge cell", 0, cmdConnect },
-    { "cell.disconnect", "", "Leave transparent mode and close the socket", 0, cmdDisconnect },
+    { "cell.disconnect", "", "Leave transparent mode and close the socket (stops the bridges that use the link)", 0, cmdDisconnect },
     { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once", 0, cmdBridge },
 };
 

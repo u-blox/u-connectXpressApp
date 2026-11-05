@@ -426,6 +426,13 @@ def nora():
     module.stop()
 
 
+def test_example_runs_a_module_only_dangerous_command_on_the_virtual_module(app_exe, nora, tmp_path):
+    out = _run(app_exe, nora.port, "examples dev 2", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    assert "module reset to factory settings and rebooted" in out.stdout, out.stdout
+    assert "AT+USYFR" in nora.log, nora.log[-10:]
+
+
 @pytest.mark.parametrize("group", SCENARIOS)
 def test_command_group_runs_against_module(app_exe, nora, group):
     # net: three HTTP requests each wait 15 s for a response event the profile does not send
@@ -472,6 +479,12 @@ def test_sock_mcast_expands_ipv6_and_rejects_unicast(app_exe, nora):
     assert not any("192.168.1.1" in c for c in log), log
     assert "socket 0 joined ff02::fb" in out.stdout and "is not a multicast group" in out.stdout, out.stdout
 
+
+def test_sock_close_all_is_not_taken_for_the_current_socket(app_exe, nora):
+    """With a socket open, "all" is the word alternative of "[handle] | all", not text after the current handle."""
+    out = _shell(app_exe, nora.port, ["sock.open tcp", "sock.close all"], log=nora.log)
+    assert out.returncode == 0 and "usage:" not in out.stdout, out.stdout
+    assert "closed 1 socket(s)" in out.stdout and "AT+USOCL=0" in nora.log, (out.stdout, nora.log)
 
 def test_bt_adv_shows_sets_and_validates(app_exe, nora):
     out = _shell(app_exe, nora.port, ["bt.adv", "bt.adv 0B16F6FF000F001234567800",
@@ -663,7 +676,7 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
                      "[WPS] scan result: vucx-net -45 dBm", "[WPS] SET_CONFIG vucx-net: already connected",
                      "[WPS] response: op 4 status 0", "[WPS] result: connected"):
             assert line in out.stdout, out.stdout[-3000:]
-        assert any(c.startswith("AT+UBTGIS=0,42,08021000") for c in nora.log), nora.log[-30:]
+        assert any(c.startswith("AT+UBTGIS=0,45,08021000") for c in nora.log), nora.log[-30:]
         # the same network twice (text, then protobuf) joins at most once (none if the module is already on it)
         assert sum(c.startswith("AT+UWSC=") for c in nora.log) <= 1, nora.log[-40:]
     if case in ("mower", "farm"):   # PointPerfect over the modem's data link: request up, corrections down

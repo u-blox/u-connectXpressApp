@@ -67,6 +67,7 @@ int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *
 void ucxapp_stream_bridge_stop(ucxapp_stream_t *s);   /* every bridge */
 bool ucxapp_stream_bridge_stop_one(ucxapp_stream_t *s, int n);   /* bridge n (1-based); false if there is none */
 int ucxapp_stream_bridge_count(const ucxapp_stream_t *s);
+int ucxapp_stream_bridge_stop_port(const char *port);   /* every bridge (of any source) that writes to a UART port */
 /* "bridge: off" or one "bridge N: ..." line per bridge; lines after the first start with indent. */
 void ucxapp_stream_bridge_status(ucxapp_stream_t *s, const char *indent);
 bool ucxapp_stream_bridge_active(const ucxapp_stream_t *s);

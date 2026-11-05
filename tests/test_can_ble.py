@@ -97,9 +97,10 @@ def test_slcan_bridge_over_nus(app_exe, nora):
     _override(nora.commands, {"AT+UBTCST=*": ["+UBTCST:3,23", "OK"]})
     open_and_send = _hex("V\rN\rF\rS5\rZ1\rZ0\rO\rt1232AABB\r")
     close_and_try = _hex("C\rt1230\rS9\rQ\rT1FFFFFFF0\r")
-    # NUS rx and tx are both handle 42 in this profile; the phone opens at 250 kbit/s, sends a frame, later closes
-    nora.urcs["AT+UBTGSA"] = {"after": 1, "times": 1, "lines": [CONNECT, f"+UEBTGCW:0,42,{open_and_send},0"]}
-    nora.urcs["AT+UBTGNS=*"] = {"after": 1, "times": 1, "lines": [f"+UEBTGCW:0,42,{close_and_try},0"]}
+    # NUS tx is handle 42, rx {h:6E400002}; the phone opens at 250 kbit/s, sends a frame, later closes
+    rx = "{h:6E400002}"
+    nora.urcs["AT+UBTGSA"] = {"after": 1, "times": 1, "lines": [CONNECT, f"+UEBTGCW:0,{rx},{open_and_send},0"]}
+    nora.urcs["AT+UBTGNS=*"] = {"after": 1, "times": 1, "lines": [f"+UEBTGCW:0,{rx},{close_and_try},0"]}
     nora.start()
     out = _drive(app_exe, nora, "gatt.server.setup nus\ncan.bridge ble slcan\n",
                  lambda log: sum(c.startswith("AT+UBTGNS=0,42,") for c in log) >= 3)
@@ -115,7 +116,8 @@ def test_slcan_frame_codec_rejects_bad_frames(app_exe, nora):
     _override(nora.commands, {"AT+UBTCST=*": ["+UBTCST:3,247", "OK"]})
     bad = "t12\rt1239\rtXYZ0\rt8000\rt1232001\rt12320G11\rL\rt1230\r" + "x" * 50 + "\r"
     lines = _hex("O\r" + bad)
-    nora.urcs["AT+UBTGSA"] = {"after": 1, "times": 1, "lines": [CONNECT, f"+UEBTGCW:0,42,{lines},0"]}
+    rx = "{h:6E400002}"   # NUS rx; tx is handle 42
+    nora.urcs["AT+UBTGSA"] = {"after": 1, "times": 1, "lines": [CONNECT, f"+UEBTGCW:0,{rx},{lines},0"]}
     nora.start()
     out = _drive(app_exe, nora, "gatt.server.setup nus\ncan.bridge ble slcan\n",
                  lambda log: any(c.startswith("AT+UBTGNS=0,42,") for c in log))

@@ -836,7 +836,7 @@ static bool probeAllBauds(const char *port, void *result)
 }
 
 /* Scans one port (or all candidate ports at once). Writes the best hit to outPort/outBaud when given. */
-static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *outBaud)
+static int detect(const char *only, bool virt, char *outPort, size_t outPortSize, int32_t *outBaud)
 {
     static ucxapp_serial_port_t ports[32];
     static parser_t p;
@@ -844,7 +844,8 @@ static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *
     static char names[32][32];
     int map[32];
     bool hits[32];
-    int count = ucxapp_platform_list_serial_ports(ports, 32);
+    bool onlyVirt = only != NULL && strcasecmp(only, "virt:gnss") == 0;
+    int count = onlyVirt ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
     int n = 0;
     int found = 0;
     int best = -1;
@@ -903,6 +904,15 @@ static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *
             snprintf(outPort, outPortSize, "%s", names[best]);
             *outBaud = results[best].baud;
         }
+    }
+    /* a virtual module gets the virtual receiver (gnss.virtual malmo) when no real one answers first */
+    if (onlyVirt || (only == NULL && virt)) {
+        ucxapp_print("  virt:gnss (virtual receiver): GNSS at the u-blox Malmo office, NMEA and UBX NAV-PVT once a second\n");
+        if (found == 0 && outPort != NULL) {
+            snprintf(outPort, outPortSize, "virt:gnss");
+            *outBaud = 0;
+        }
+        found++;
     }
     return found;
 }
@@ -1106,14 +1116,85 @@ typedef struct {
     double lat, lon, alt;
     char source[40];
     uint32_t due;
-    uint8_t ans[96];   /* answers to commands, sent with the next poll; guarded by the stream lock */
+    uint32_t fixAt;    /* after a UBX-CFG-RST: the tick of the next fix, 0 when fixed */
+    uint32_t lostAt;
+    uint8_t secRate, rfRate;   /* SEC-SIG and MON-RF output rates set by gnss.cfg msg */
+    uint32_t secSince;         /* tick when the first of them was turned on: the demo episode starts there */
+    uint8_t ans[192];   /* answers to commands, sent with the next poll; guarded by the stream lock */
     size_t nAns;
 } virt_t;
 
 static virt_t gVirt;
 
+/* The output rates the virtual receiver keeps for SEC-SIG and MON-RF; turning the first on starts the episode. */
+static void virtMsgRate(virt_t *v, uint8_t cls, uint8_t id, uint8_t rate)
+{
+    bool was = v->secRate != 0 || v->rfRate != 0;
+
+    if (cls == 0x27 && id == 0x09) {
+        v->secRate = rate;
+    } else if (cls == 0x0A && id == 0x38) {
+        v->rfRate = rate;
+    }
+    if (!was && (v->secRate != 0 || v->rfRate != 0)) {
+        v->secSince = ucxapp_platform_tick_ms();
+    }
+}
+
+/* CFG-VALSET CFG-MSGOUT-SEC_SIG / MON_RF (UART1 or USB) and CFG-MSG turn the security output on and off. */
+static void virtCfg(virt_t *v, const uint8_t *f, size_t len)
+{
+    const uint8_t *pl = f + 6;
+
+    if (f[3] == 0x01 && len >= 3) {
+        virtMsgRate(v, pl[0], pl[1], pl[2]);
+        return;
+    }
+    for (size_t o = 4; f[3] == 0x8A && o + 5 <= len;) {
+        uint32_t key = (uint32_t)le32(pl + o);
+        uint32_t size = (key >> 28) & 7u;
+        size_t vn = size == 5 ? 8 : size == 4 ? 4 : size == 3 ? 2 : 1;
+
+        if (key == 0x20910635 || key == 0x20910637) {
+            virtMsgRate(v, 0x27, 0x09, pl[o + 4]);
+        } else if (key == 0x2091035a || key == 0x2091035c) {
+            virtMsgRate(v, 0x0A, 0x38, pl[o + 4]);
+        }
+        o += 4 + vn;
+    }
+}
+
+/* UBX-MON-RF and UBX-SEC-SIG (version 2) into out (room for 48 bytes) when turned on. A 60 s cycle from the moment
+   they were turned on: interference with a strong CW jammer from 3 to 13 s, spoofing indicated from 20 to 26 s. */
+static size_t virtSecurity(uint8_t *out, const virt_t *v, uint32_t now)
+{
+    uint32_t phase = ((now - v->secSince) / 1000u) % 60u;
+    uint8_t jam = phase >= 3 && phase < 13 ? 2 : 1;
+    uint8_t spoof = phase >= 20 && phase < 26 ? 2 : 1;
+    uint8_t pl[4 + 24] = { 0 };
+    size_t n = 0;
+
+    if (v->rfRate != 0) {   /* first, so the JAM: line carries this epoch's CW indicator */
+        pl[1] = 1;              /* one RF block (L1) */
+        pl[4 + 1] = jam;        /* jammingState */
+        pl[4 + 2] = 2;          /* antStatus OK */
+        pl[4 + 3] = 1;          /* antPower on */
+        pl[4 + 16] = jam == 2 ? 170 : 12;   /* jamInd: CW jamming indicator */
+        n += buildFrame(out, 0x0A, 0x38, pl, sizeof(pl));
+    }
+    if (v->secRate != 0) {
+        memset(pl, 0, sizeof(pl));
+        pl[0] = 2;
+        pl[1] = (uint8_t)(0x01 | (jam << 1) | 0x08 | (spoof << 4));
+        n += buildFrame(out + n, 0x27, 0x09, pl, 4);
+    }
+    return n;
+}
+
 /* Like a real receiver, the virtual one acknowledges UBX-CFG commands (not CFG-RST), accepts UBX-MGA data with
    UBX-MGA-ACK-DATA0 and answers UBX-UPD-SOS: a backup is acknowledged, and the last start was without one.
+   It answers the UBX-SEC-UNIQID and UBX-MON-VER polls as a u-blox M10, so AssistNow registration works.
+   With CFG-MSGOUT SEC-SIG or MON-RF on it reports a scripted jamming and spoofing episode (virtSecurity).
    Everything else is dropped. */
 static bool virtWrite(void *ctx, const uint8_t *d, size_t n)
 {
@@ -1121,7 +1202,8 @@ static bool virtWrite(void *ctx, const uint8_t *d, size_t n)
 
     for (size_t i = 0; i + 8 <= n;) {
         size_t len = le16(d + i + 4);
-        uint8_t pl[8] = { 0 };
+        uint8_t pl[40] = { 0 };
+        size_t plen = 8;
         uint8_t cls = 0;
         uint8_t id = 0;
 
@@ -1129,7 +1211,21 @@ static bool virtWrite(void *ctx, const uint8_t *d, size_t n)
             i++;
             continue;
         }
-        if (d[i + 2] == 0x06 && d[i + 3] != 0x04) {
+        if (d[i + 2] == 0x06 && d[i + 3] == 0x04 && len >= 2) {
+            /* a restart: the fix comes back after a hot, warm or cold start's typical time to first fix */
+            uint16_t bbr = (uint16_t)le16(d + i + 6);
+            uint32_t now = ucxapp_platform_tick_ms();
+            ucxapp_stream_lock(gStream);
+            v->lostAt = now;
+            v->fixAt = (now + (bbr == 0xFFFF ? 26000u : bbr != 0 ? 12000u : 2000u)) | 1u;
+            ucxapp_stream_unlock(gStream);
+        } else if (d[i + 2] == 0x06) {
+            ucxapp_stream_lock(gStream);
+            virtCfg(v, d + i, len);
+            if (v->nAns + 48 <= sizeof(v->ans)) {   /* the state right away, ahead of the ACK */
+                v->nAns += virtSecurity(v->ans + v->nAns, v, ucxapp_platform_tick_ms());
+            }
+            ucxapp_stream_unlock(gStream);
             cls = 0x05;
             id = 0x01;
             pl[0] = d[i + 2];
@@ -1144,11 +1240,23 @@ static bool virtWrite(void *ctx, const uint8_t *d, size_t n)
             id = 0x14;
             pl[0] = len == 0 ? 3 : 2;
             pl[4] = len == 0 ? 3 : 1;
+        } else if (d[i + 2] == 0x27 && d[i + 3] == 0x03 && len == 0) {
+            static const uint8_t kId[] = { 1, 0, 0, 0, 0x56, 0x55, 0x43, 0x58, 0x01 };
+            cls = 0x27;
+            id = 0x03;
+            plen = sizeof(kId);
+            memcpy(pl, kId, plen);
+        } else if (d[i + 2] == 0x0A && d[i + 3] == 0x04 && len == 0) {
+            cls = 0x0A;
+            id = 0x04;
+            plen = 40;
+            memcpy(pl, "ROM SPG 5.10 (7b202e)", 21);
+            memcpy(pl + 30, "000A0000", 8);
         }
         if (cls != 0) {
             ucxapp_stream_lock(gStream);
-            if (v->nAns + 16 <= sizeof(v->ans)) {
-                v->nAns += buildFrame(v->ans + v->nAns, cls, id, pl, cls == 0x05 ? 2 : 8);
+            if (v->nAns + 8 + plen <= sizeof(v->ans)) {
+                v->nAns += buildFrame(v->ans + v->nAns, cls, id, pl, cls == 0x05 ? 2 : plen);
             }
             ucxapp_stream_unlock(gStream);
         }
@@ -1186,7 +1294,56 @@ static void nmeaCoord(char *out, size_t size, double v, bool isLat)
              isLat ? (v < 0 ? 'S' : 'N') : (v < 0 ? 'W' : 'E'));
 }
 
-/* One epoch a second: RMC, GGA, GSA and GSV with ten GPS satellites, stamped with the host's UTC time. */
+/* UBX-NAV-PVT for the same epoch, so gnss.log ... ubx and gnss.export work on the virtual receiver too. */
+static void virtNavPvt(ucxapp_stream_t *s, const virt_t *v, time_t t, const struct tm *tm, bool fix, int sats)
+{
+    uint8_t pl[92] = { 0 };
+    uint8_t frame[100];
+    uint32_t itow = (uint32_t)(((long long)t - 315964800LL + 18LL) % 604800LL) * 1000u;
+    int32_t lon = (int32_t)llround(v->lon * 1e7);
+    int32_t lat = (int32_t)llround(v->lat * 1e7);
+    int32_t mm = (int32_t)llround(v->alt * 1e3);
+    const struct { size_t at; uint32_t val; } kU32[] = {
+        { 0, itow }, { 12, 30 }, { 24, (uint32_t)lon }, { 28, (uint32_t)lat }, { 32, (uint32_t)mm },
+        { 36, (uint32_t)mm }, { 40, 1500 }, { 44, 2500 }, { 68, 200 }, { 72, 18000000 }
+    };
+
+    pl[4] = (uint8_t)((tm->tm_year + 1900) & 0xFF);
+    pl[5] = (uint8_t)((tm->tm_year + 1900) >> 8);
+    pl[6] = (uint8_t)(tm->tm_mon + 1);
+    pl[7] = (uint8_t)tm->tm_mday;
+    pl[8] = (uint8_t)tm->tm_hour;
+    pl[9] = (uint8_t)tm->tm_min;
+    pl[10] = (uint8_t)tm->tm_sec;
+    pl[11] = 0x07;   /* date, time and fully resolved */
+    pl[20] = fix ? 3 : 0;      /* 3D */
+    pl[21] = fix ? 0x01 : 0;   /* gnssFixOK */
+    pl[22] = 0xE0;   /* confirmed date and time */
+    pl[23] = (uint8_t)sats;
+    for (size_t i = 0; i < sizeof(kU32) / sizeof(kU32[0]); i++) {
+        for (int b = 0; b < 4; b++) {
+            pl[kU32[i].at + (size_t)b] = (uint8_t)(kU32[i].val >> (8 * b));
+        }
+    }
+    pl[76] = 140;    /* pDOP 1.40 */
+    frame[0] = 0xB5;
+    frame[1] = 0x62;
+    frame[2] = 0x01;
+    frame[3] = 0x07;
+    frame[4] = (uint8_t)sizeof(pl);
+    frame[5] = 0;
+    memcpy(frame + 6, pl, sizeof(pl));
+    uint8_t a = 0, b = 0;
+    for (size_t i = 2; i < 6 + sizeof(pl); i++) {
+        a = (uint8_t)(a + frame[i]);
+        b = (uint8_t)(b + a);
+    }
+    frame[6 + sizeof(pl)] = a;
+    frame[7 + sizeof(pl)] = b;
+    ucxapp_stream_push(s, frame, sizeof(frame));
+}
+
+/* One epoch a second: RMC, GGA, NAV-PVT, GSA and GSV with ten GPS satellites, stamped with the host's UTC time. */
 static void virtPoll(void *ctx, ucxapp_stream_t *s)
 {
     static const int kSv[10][4] = {   /* PRN, elevation, azimuth, C/N0 */
@@ -1209,6 +1366,11 @@ static void virtPoll(void *ctx, ucxapp_stream_t *s)
     nAns = v->nAns;
     memcpy(ans, v->ans, nAns);
     v->nAns = 0;
+    uint32_t fixAt = v->fixAt;
+    uint32_t lostAt = v->lostAt;
+    if (fixAt != 0 && (int32_t)(now - fixAt) >= 0) {
+        v->fixAt = 0;
+    }
     ucxapp_stream_unlock(s);
     if (nAns > 0) {
         ucxapp_stream_push(s, ans, nAns);
@@ -1217,23 +1379,48 @@ static void virtPoll(void *ctx, ucxapp_stream_t *s)
         return;
     }
     v->due = now + 1000u;
+    uint8_t sec[48];
+    ucxapp_stream_lock(s);
+    size_t nSec = virtSecurity(sec, v, now);
+    ucxapp_stream_unlock(s);
+    bool fix = fixAt == 0 || (int32_t)(now - fixAt) >= 0;
+    int sats = 10;
+    if (!fix) {
+        /* searching: the satellites show up one by one, none used yet */
+        sats = 1 + (int)((now - lostAt) / 2500u);
+        sats = sats > 10 ? 10 : sats;
+    }
     nmeaCoord(lat, sizeof(lat), v->lat, true);
     nmeaCoord(lon, sizeof(lon), v->lon, false);
     strftime(hms, sizeof(hms), "%H%M%S.00", tm);
     strftime(dmy, sizeof(dmy), "%d%m%y", tm);
-    snprintf(body, sizeof(body), "GPRMC,%s,A,%s,%s,0.0,0.0,%s,,,A", hms, lat, lon, dmy);
-    pushNmea(s, body);
-    snprintf(body, sizeof(body), "GPGGA,%s,%s,%s,1,10,0.8,%.1f,M,0.0,M,,", hms, lat, lon, v->alt);
-    pushNmea(s, body);
-    snprintf(body, sizeof(body), "GPGSA,A,3,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,,,1.4,0.8,1.1",
-             kSv[0][0], kSv[1][0], kSv[2][0], kSv[3][0], kSv[4][0], kSv[5][0], kSv[6][0], kSv[7][0], kSv[8][0],
-             kSv[9][0]);
-    pushNmea(s, body);
-    for (int m = 0; m < 3; m++) {
-        int n = snprintf(body, sizeof(body), "GPGSV,3,%d,10", m + 1);
-        for (int i = m * 4; i < m * 4 + 4 && i < 10 && n > 0 && (size_t)n < sizeof(body); i++) {
+    if (fix) {
+        snprintf(body, sizeof(body), "GPRMC,%s,A,%s,%s,0.0,0.0,%s,,,A", hms, lat, lon, dmy);
+        pushNmea(s, body);
+        snprintf(body, sizeof(body), "GPGGA,%s,%s,%s,1,10,0.8,%.1f,M,0.0,M,,", hms, lat, lon, v->alt);
+        pushNmea(s, body);
+        virtNavPvt(s, v, t, tm, true, 10);
+        snprintf(body, sizeof(body), "GPGSA,A,3,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,,,1.4,0.8,1.1",
+                 kSv[0][0], kSv[1][0], kSv[2][0], kSv[3][0], kSv[4][0], kSv[5][0], kSv[6][0], kSv[7][0],
+                 kSv[8][0], kSv[9][0]);
+        pushNmea(s, body);
+    } else {
+        snprintf(body, sizeof(body), "GPRMC,%s,V,,,,,,,%s,,,N", hms, dmy);
+        pushNmea(s, body);
+        snprintf(body, sizeof(body), "GPGGA,%s,,,,,0,00,99.99,,,,,,", hms);
+        pushNmea(s, body);
+        virtNavPvt(s, v, t, tm, false, 0);
+        pushNmea(s, "GPGSA,A,1,,,,,,,,,,,,,99.99,99.99,99.99");
+    }
+    if (nSec > 0) {
+        ucxapp_stream_push(s, sec, nSec);
+    }
+    int pages = (sats + 3) / 4;
+    for (int m = 0; m < pages; m++) {
+        int n = snprintf(body, sizeof(body), "GPGSV,%d,%d,%02d", pages, m + 1, sats);
+        for (int i = m * 4; i < m * 4 + 4 && i < sats && n > 0 && (size_t)n < sizeof(body); i++) {
             n += snprintf(body + n, sizeof(body) - (size_t)n, ",%02d,%02d,%03d,%02d", kSv[i][0], kSv[i][1],
-                          kSv[i][2], kSv[i][3]);
+                          kSv[i][2], fix ? kSv[i][3] : kSv[i][3] - 8);
         }
         pushNmea(s, body);
     }
@@ -1288,15 +1475,27 @@ static void snapshot(void)
 
 static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
 {
-    (void)app;
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
     }
     ucxapp_print("Scanning serial ports for a GNSS receiver (all ports at once)...\n");
-    int n = detect(argc == 2 ? argv[1] : NULL, NULL, 0, NULL);
+    int open = 0;
+    bool openVirt = false;
+    if (gStream != NULL && (argc == 1 || strcmp(argv[1], ucxapp_stream_port(gStream)) == 0)) {
+        ucxapp_print("  %s: receiver open now (gnss.status)\n", ucxapp_stream_port(gStream));
+        open = 1;
+        openVirt = strncmp(ucxapp_stream_port(gStream), "virt:", 5) == 0;
+    }
+    /* The open receiver is listed already: scan only the other ports, without offering a second virtual one. */
+    int n = open + (open == 1 && argc == 2 ? 0 :
+                    detect(argc == 2 ? argv[1] : NULL, ucxapp_module_is_virtual(app) && !openVirt, NULL, 0, NULL));
     ucxapp_print("%d receiver(s) found\n", n);
     return n > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
+
+static int cmdVirtual(ucxapp_t *app, int argc, char *argv[]);
+
+static int cmdClose(ucxapp_t *app, int argc, char *argv[]);
 
 static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
 {
@@ -1305,10 +1504,17 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
     uint8_t frame[8];
     size_t n;
     ucxapp_stream_cfg_t cfg = { "gnss", onData, NULL, 0, NULL, NULL };
-    (void)app;
+    char name[] = "gnss.virtual";
+    char malmo[] = "malmo";
+    char *virtArgv[] = { name, malmo };
 
     if (argc > 3 || (argc == 3 && (!ucxapp_parse_int(argv[2], &baud) || baud < 300))) {
         return UCXAPP_ERR_USAGE;
+    }
+    if (gStream != NULL && argc == 1 && strcmp(ucxapp_stream_port(gStream), "virt:replay") == 0) {
+        /* gnss.open means the receiver; a replay is only a stand-in for one */
+        ucxapp_print("stopping the replay\n");
+        (void)cmdClose(app, 1, argv);
     }
     if (gStream != NULL) {
         if (argc == 1 || strcmp(argv[1], ucxapp_stream_port(gStream)) == 0) {
@@ -1323,10 +1529,13 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
     }
     if (argc < 3) {
         ucxapp_print("Detecting...\n");
-        if (detect(argc == 2 ? argv[1] : NULL, port, sizeof(port), &baud) == 0) {
+        if (detect(argc == 2 ? argv[1] : NULL, ucxapp_module_is_virtual(app), port, sizeof(port), &baud) == 0) {
             ucxapp_print("ERROR: no GNSS receiver found\n");
             return UCXAPP_ERR_FAILED;
         }
+    }
+    if (strcasecmp(port, "virt:gnss") == 0) {
+        return cmdVirtual(app, 2, virtArgv);
     }
     resetLive();
     gStream = ucxapp_stream_open(port, baud, &cfg);
@@ -1345,8 +1554,9 @@ static int cmdClose(ucxapp_t *app, int argc, char *argv[])
     (void)app;
     (void)argc;
     (void)argv;
-    if (!needOpen()) {
-        return UCXAPP_ERR_FAILED;
+    if (gStream == NULL) {
+        ucxapp_print("no receiver open\n");
+        return UCXAPP_OK;
     }
     ucxapp_stream_close(gStream);
     gStream = NULL;
@@ -1672,8 +1882,10 @@ static void printCard(void)
         }
         if (maxInt(gSnap.secJam, gSnap.rfJam) >= 2 || maxInt(gSnap.secSpoof, gSnap.navSpoof) >= 2 ||
             (gSnap.hasRf && gSnap.antStatus >= 3)) {
-            ucxapp_print(U8_VLINE " ALERT jamming %s, %s, antenna %s\n", kJam[maxInt(gSnap.secJam, gSnap.rfJam)],
-                         kSpoof[maxInt(gSnap.secSpoof, gSnap.navSpoof)], antName(gSnap.hasRf ? gSnap.antStatus : 1));
+            int spoof = maxInt(gSnap.secSpoof, gSnap.navSpoof);
+            ucxapp_print(U8_VLINE " ALERT jamming %s, spoofing %s, antenna %s\n",
+                         kJam[maxInt(gSnap.secJam, gSnap.rfJam)], spoof >= 2 ? kSpoof[spoof] + 9 : kSpoof[spoof],
+                         antName(gSnap.hasRf ? gSnap.antStatus : 1));
         }
     }
     for (int i = 0; i < 39; i++) {
@@ -1856,6 +2068,10 @@ static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (gStream != NULL) {
+        if (argc == 1 && gVirt.on) {
+            ucxapp_print("Virtual receiver already running (gnss.close stops it)\n");
+            return UCXAPP_OK;
+        }
         ucxapp_print("ERROR: %s is already open (gnss.close first)\n", ucxapp_stream_port(gStream));
         return UCXAPP_ERR_FAILED;
     }
@@ -1874,6 +2090,8 @@ static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
     gVirt.alt = alt;
     snprintf(gVirt.source, sizeof(gVirt.source), "%s", source);
     gVirt.due = ucxapp_platform_tick_ms();
+    gVirt.fixAt = 0;
+    gVirt.nAns = 0;
     gVirt.on = true;
     gStream = ucxapp_stream_open("virt:gnss", 0, &cfg);
     if (gStream == NULL) {
@@ -1881,8 +2099,18 @@ static int cmdVirtual(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot start the virtual receiver\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("Virtual receiver at %.7f, %.7f (%s): NMEA once a second; every gnss.* command and bridge works "
+    ucxapp_print("Virtual receiver at %.7f, %.7f (%s): NMEA and UBX NAV-PVT once a second; every gnss.* command and bridge works "
                  "on it (gnss.close stops)\n", lat, lon, source);
+    /* the first epoch is sent at once: wait for it so a gnss.status right after shows the fix */
+    for (uint32_t t0 = ucxapp_platform_tick_ms(); ucxapp_platform_tick_ms() - t0 < 1500u;) {
+        ucxapp_stream_lock(gStream);
+        bool fixed = gP.st.hasPos;
+        ucxapp_stream_unlock(gStream);
+        if (fixed) {
+            break;
+        }
+        ucxapp_platform_sleep_ms(20);
+    }
     return UCXAPP_OK;
 }
 
@@ -3085,15 +3313,15 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "gnss.detect", "[port]", "Find a GNSS receiver on the serial ports and its baud rate", 0, cmdDetect },
-    { "gnss.open", "[port] [baud]", "Open a receiver (detects port and baud when omitted)", 0, cmdOpen },
+    { "gnss.detect", "[port]", "Find a GNSS receiver on the serial ports and its baud rate (a virtual module also offers virt:gnss, the virtual receiver)", 0, cmdDetect },
+    { "gnss.open", "[port] [baud]", "Open a receiver (detects port and baud when omitted, and stops a replay; virt:gnss is gnss.virtual malmo)", 0, cmdOpen },
     { "gnss.close", "", "Close the receiver", 0, cmdClose },
     { "gnss.status", "", "Fix, position, RTK state and accuracy, time, satellites, jamming/spoofing/antenna and counters", 0, cmdStatus },
     { "gnss.sats", "", "Satellites in view with elevation, azimuth and signal strength", 0, cmdSats },
     { "gnss.watch", "[seconds=10]", "Live card once a second: fix, RTK, satellites, HDOP, position, time to first fix, jamming/spoofing alerts (any key stops)", 0, cmdWatch },
     { "gnss.log", "<file|off> [nmea|ubx]", "Record the raw receiver stream to a file; nmea or ubx keeps only valid sentences or frames, for gnss.replay and u-center", 0, cmdLog },
     { "gnss.replay", "<file.nmea|file.ubx> [speed]", "Virtual receiver from a recording (gnss.log, u-center, nmeagen.org) in real time or at speed 0.1-100, looping; every gnss.* command and bridge works on it", 0, cmdReplay },
-    { "gnss.virtual", "[host|malmo|<lat> <lon> [alt]|off]", "Virtual receiver at the host's location (Windows Location, GeoClue; u-blox Malmo when unknown) or a given position: NMEA once a second for bridges and tests", 0, cmdVirtual },
+    { "gnss.virtual", "[host|malmo|<lat> <lon> [alt]|off]", "Virtual receiver at the host's location (Windows Location, GeoClue; u-blox Malmo when unknown) or a given position: NMEA and UBX NAV-PVT once a second for bridges and tests", 0, cmdVirtual },
     { "gnss.fence", "<file.kml|off|status>", "Geofence from the first polygon of a KML file (Google My Maps, Google Earth); FENCE: lines when the position leaves or comes back", 0, cmdFence },
     { "gnss.export", "<recording> <out.kml|out.gpx>", "Track of an NMEA or UBX recording as KML (Google Earth, My Maps) or GPX, one point per epoch", 0, cmdExport },
     { "gnss.send", "<hex...> | <$NMEA> | ubx <cls> <id> [hex...]", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },

@@ -483,6 +483,10 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_OK;
     }
 #else
+    if (ucxapp_module_is_virtual(app)) {
+        ucxapp_print("SocketCAN needs Linux; %s is the emulated loopback for the virtual module demo\n", argv[1]);
+        return UCXAPP_OK;
+    }
     ucxapp_print("ERROR: SocketCAN interfaces need Linux; here can.* runs on the emulated loopback\n");
     return UCXAPP_ERR_FAILED;
 #endif

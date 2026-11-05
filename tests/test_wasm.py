@@ -37,13 +37,16 @@ def test_site_sources_are_ascii():
         f.read_bytes().decode("ascii")
 
 
-def test_virtual_module_is_the_vucx_nora_profile():
+@pytest.mark.parametrize("profile, site_file", [("nora-w36.yaml", "vnora.json"),
+                                                ("alma-w1-thread.yaml", "valma-w1.json")])
+def test_virtual_modules_are_the_vucx_profiles(profile, site_file):
     import json
 
     pytest.importorskip("yaml")
     from harness import vucx
-    assert json.loads((WASM / "vnora.json").read_text(encoding="ascii")) == vucx.table("nora-w36.yaml"), \
-        "regenerate: cd tests; python -m harness.vucx --json nora-w36.yaml > ../app/wasm/vnora.json"
+    expected = json.loads(json.dumps(vucx.browser_table(profile)))
+    assert json.loads((WASM / site_file).read_text(encoding="ascii")) == expected, \
+        f"regenerate: cd tests; python -m harness.vucx --json {profile} > ../app/wasm/{site_file}"
 
 
 def test_page_script_is_injected_before_the_page_script(tmp_path):

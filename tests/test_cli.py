@@ -75,6 +75,12 @@ def test_examples_lists_groups_and_rejects_extra_args(app_exe, tmp_path):
         assert f" {group}" in out.stdout
     assert _run(app_exe, tmp_path, "COM255", "gnss.example a b").returncode == 1
 
+
+def test_example_stops_before_a_dangerous_command_on_a_real_module(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "examples dev 2")
+    assert out.returncode == 1, out.stdout
+    assert "stopped before 'dev.factory confirm': it changes or deletes data, run it by hand" in out.stdout, out.stdout
+
 @pytest.mark.parametrize("command", ["web.start", "hid.status", "hid.key a", "wifi.ap.status", "gatt.writelong 0 1 00"])
 def test_new_device_commands_need_a_device(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -269,11 +275,11 @@ def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
     assert "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]" in out.stdout
     assert "<ssid> <user> <password> <ca> [1.2|1.3|any]" in out.stdout and "'-' prompts for the password" in out.stdout
     assert "wifi.eap CorpNet ca client key" in out.stdout
-    assert "wifi.peap CorpNet alice - ca" in out.stdout
+    assert "wifi.peap CorpNet alice ${PEAP_PASSWORD} ca" in out.stdout
 
 
 @pytest.mark.parametrize("command", [
-    "gnss.status", "gnss.close", "gnss.send 00", "gnss.log off", "gnss.bridge tcp", "gnss.bridge status",
+    "gnss.status", "gnss.send 00", "gnss.log off", "gnss.bridge tcp", "gnss.bridge status",
 ])
 def test_gnss_commands_need_an_open_receiver(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -282,12 +288,20 @@ def test_gnss_commands_need_an_open_receiver(app_exe, tmp_path, command):
 
 
 @pytest.mark.parametrize("command", [
-    "imu.status", "imu.close", "imu.send aa", "imu.rate 10", "imu.bridge udp host 5005", "imu.bridge ble",
+    "imu.status", "imu.send aa", "imu.rate 10", "imu.bridge udp host 5005", "imu.bridge ble",
 ])
 def test_imu_commands_need_an_open_sensor(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
     assert out.returncode == 1
     assert "no IMU open" in out.stdout
+
+
+@pytest.mark.parametrize("command, message", [("gnss.close", "no receiver open"), ("imu.close", "no IMU open")])
+def test_close_with_nothing_open_succeeds(app_exe, tmp_path, command, message):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 0, out.stdout
+    after = out.stdout.split("continuing without a device", 1)[-1]
+    assert message in after and "ERROR" not in after, out.stdout
 
 
 @pytest.mark.parametrize("command, usage", [

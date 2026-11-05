@@ -161,6 +161,10 @@ void ucxapp_register_perf_cmds(void);    /* perf.* RTT and throughput (empty in 
 void ucxapp_register_xplorer_cmds(void); /* xplorer.* u-connectXplorer phone remote control (host only) */
 void ucxapp_session_end(void);           /* close a running session.record at exit */
 void ucxapp_register_time_cmds(void);    /* app.time */
+size_t ucxapp_time_summary(char *out, size_t size);
+/* The place for the clock: a live GNSS fix, else the last wifi.locate or app.time geo answer, else "unknown". */
+void ucxapp_time_location(char *out, size_t size);
+void ucxapp_time_set_location(double lat, double lon, double accuracyM, const char *source);
 void ucxapp_register_can_cmds(void);     /* can.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_net_cmds(void);
 void ucxapp_register_sys_cmds(void);
@@ -286,9 +290,12 @@ bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len);
 /* Short dashboard fragments for the TUI and web status line; empty when inactive. */
 size_t ucxapp_gatt_summary(char *out, size_t size);
 size_t ucxapp_gnss_summary(char *out, size_t size);
+/* The current 2D or 3D fix of the open receiver; false without one. */
+bool ucxapp_gnss_position(double *lat, double *lon);
 size_t ucxapp_imu_summary(char *out, size_t size);
 /* One dash line body; false when that device is not open. */
 bool ucxapp_gnss_dash(char *out, size_t size);
+bool ucxapp_gnss_card(char *out, size_t size);
 bool ucxapp_cell_dash(char *out, size_t size);
 bool ucxapp_imu_dash(char *out, size_t size);
 

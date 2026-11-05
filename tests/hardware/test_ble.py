@@ -182,6 +182,9 @@ def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
                                     "gatt.client.bas", "gatt.send 0 sps ucx-sps", "gatt.sps.credits 0 10",
                                     "gatt.listen 60", "bt.disconnect"),
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    client_out = []    # read while waiting: a busy scan fills the pipe and blocks the client
+    reader = threading.Thread(target=lambda: client_out.extend(client.stdout), daemon=True)
+    reader.start()
     seen = ""
     deadline = time.time() + 90
     while "handle=31" not in seen and time.time() < deadline:  # B subscribes to bas.level
@@ -196,7 +199,9 @@ def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
             server.stdin.write(command + "\n")
             server.stdin.flush()
             time.sleep(1)
-        out, _ = client.communicate(timeout=120)
+        client.wait(timeout=120)
+        reader.join(timeout=10)
+        out = "".join(client_out)
     finally:
         _stop(server)
         client.kill()

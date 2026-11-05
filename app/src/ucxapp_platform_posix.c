@@ -372,6 +372,27 @@ bool ucxapp_platform_pulse_dtr(void *uartHandle)
 #endif
 }
 
+bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs)
+{
+#ifdef __EMSCRIPTEN__
+    (void)uartHandle;
+    (void)holdMs;
+    return false;
+#else
+    if (uPortUartSetDtr(uartHandle, false) != 0) {
+        return false;
+    }
+    ucxapp_platform_sleep_ms(holdMs);
+    for (int i = 0; i < 5; i++) {
+        uPortUartSetDtr(uartHandle, true);
+        ucxapp_platform_sleep_ms(10);
+        uPortUartSetDtr(uartHandle, false);
+        ucxapp_platform_sleep_ms(10);
+    }
+    return true;
+#endif
+}
+
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)
 {
 #ifdef __EMSCRIPTEN__

@@ -25,6 +25,8 @@ bool ucxapp_can_nus_rx(const uint8_t *data, size_t len)
 #endif
 void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len) { (void)data; (void)len; }
 size_t ucxapp_gnss_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
+bool ucxapp_gnss_position(double *lat, double *lon) { (void)lat; (void)lon; return false; }
+bool ucxapp_gnss_card(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return false; }
 size_t ucxapp_imu_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
 void ucxapp_ui_event(const char *text) { (void)text; }
 void ucxapp_ui_wifi_set(bool up) { (void)up; }

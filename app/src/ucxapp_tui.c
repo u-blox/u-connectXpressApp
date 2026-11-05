@@ -448,15 +448,18 @@ static bool refreshDash(void)
                  "THRD", extra, &changed);
     }
 
+    /* GNSS and IMU only while open */
     port = ucxapp_stream_open_port("gnss");
-    bool on = ucxapp_gnss_dash(extra, sizeof(extra));
-    snprintf(text, sizeof(text), "%s%s%s", on ? extra : "not open", port != NULL ? "\n" : "", port != NULL ? port : "");
-    dashArea(&n, on, "GNSS", text, &changed);
+    if (ucxapp_gnss_dash(extra, sizeof(extra))) {
+        snprintf(text, sizeof(text), "%s%s%s", extra, port != NULL ? "\n" : "", port != NULL ? port : "");
+        dashArea(&n, strncmp(extra, "no data", 7) != 0, "GNSS", text, &changed);
+    }
 
     port = ucxapp_stream_open_port("imu");
-    on = ucxapp_imu_dash(extra, sizeof(extra));
-    snprintf(text, sizeof(text), "%s%s%s", on ? extra : "not open", port != NULL ? "\n" : "", port != NULL ? port : "");
-    dashArea(&n, on, "IMU", text, &changed);
+    if (ucxapp_imu_dash(extra, sizeof(extra))) {
+        snprintf(text, sizeof(text), "%s%s%s", extra, port != NULL ? "\n" : "", port != NULL ? port : "");
+        dashArea(&n, true, "IMU", text, &changed);
+    }
 
     port = ucxapp_stream_open_port("cell");
     snprintf(text, sizeof(text), "%s%s%s", cellText[0] ? cellText : "not open", port != NULL ? "\n" : "",
@@ -907,7 +910,7 @@ static void drawFrame(int rows, bool busy)
         } else if (busy) {
             outCell("running...", W_CMD + W_LOG + W_EVT + 4, 33, false);
         } else {
-            char state[200];
+            char state[280];
 
             ucxapp_ui_state(state, sizeof(state));
             snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, PgUp/PgDn log, Ctrl+PgUp/PgDn events, F10 quit)", state);
@@ -1327,7 +1330,7 @@ int ucxapp_tui_run(ucxapp_t *app)
             dirty = true;
         }
         {
-            char state[200];
+            char state[280];
             uint32_t version = ucxapp_ui_state(state, sizeof(state));
 
             if (version != stateSeen) {

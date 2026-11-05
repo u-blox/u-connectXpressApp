@@ -231,8 +231,10 @@ if(NOT WIN32)
       COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
               -P ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js
-              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json
-              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json ${_ucx_site}
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-w36.json
+              ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26-thread.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26.json
+              ${_ucx_site}
       COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg ${_ucx_site}/icon.svg
       VERBATIM)
     # the site files above are copied after the link: a change to any of them alone must relink too
@@ -240,7 +242,8 @@ if(NOT WIN32)
     file(GLOB_RECURSE _ucx_scripts ${CMAKE_CURRENT_SOURCE_DIR}/../examples/*.ucx)
     set_property(TARGET ucxapp APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/ucxapp-wasm.js ${CMAKE_CURRENT_SOURCE_DIR}/wasm/coi-serviceworker.js
-      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/valma-w1.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-w36.json
+      ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26-thread.json ${CMAKE_CURRENT_SOURCE_DIR}/wasm/vnora-b26.json
       ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake ${_ucx_boards} ${_ucx_scripts}
       ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
   endif()

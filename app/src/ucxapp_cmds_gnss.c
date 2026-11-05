@@ -3,6 +3,7 @@
 #include "ucxapp_cmd.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1462,6 +1463,23 @@ size_t ucxapp_gnss_summary(char *out, size_t size)
     return n > 0 ? (size_t)n : 0;
 }
 
+bool ucxapp_gnss_position(double *lat, double *lon)
+{
+    ucxapp_stream_t *s = gStream;
+    bool ok;
+
+    if (s == NULL) {
+        return false;
+    }
+    ucxapp_stream_lock(s);
+    ok = gP.st.hasPos && (gP.st.fixType & 3) >= 2 && gP.st.lastMs != 0 &&
+         ucxapp_platform_tick_ms() - gP.st.lastMs <= 3000u;
+    *lat = gP.st.lat;
+    *lon = gP.st.lon;
+    ucxapp_stream_unlock(s);
+    return ok;
+}
+
 static void snapshot(void)
 {
     ucxapp_stream_lock(gStream);
@@ -1530,7 +1548,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
     if (argc < 3) {
         ucxapp_print("Detecting...\n");
         if (detect(argc == 2 ? argv[1] : NULL, ucxapp_module_is_virtual(app), port, sizeof(port), &baud) == 0) {
-            ucxapp_print("ERROR: no GNSS receiver found\n");
+            ucxapp_print("ERROR: no GNSS receiver found (gnss.virtual starts a virtual one)\n");
             return UCXAPP_ERR_FAILED;
         }
     }
@@ -1781,18 +1799,18 @@ static int hdopLevel(double h)
     return h <= 0.0 ? 0 : h < 1.0 ? 5 : h < 2.0 ? 4 : h < 5.0 ? 3 : h < 10.0 ? 2 : 1;
 }
 
-static void countSats(uint32_t now, int *used, int *seen)
+static void countSats(const gnss_t *s, uint32_t now, int *used, int *seen)
 {
     *used = 0;
     *seen = 0;
-    for (int i = 0; i < gSnap.nsat; i++) {
-        if (gSnap.sats[i].cno > 0) {
+    for (int i = 0; i < s->nsat; i++) {
+        if (s->sats[i].cno > 0) {
             (*seen)++;
-            *used += satUsed(&gSnap, &gSnap.sats[i], now) ? 1 : 0;
+            *used += satUsed(s, &s->sats[i], now) ? 1 : 0;
         }
     }
-    if (gSnap.satsUsed > *used) {
-        *used = gSnap.satsUsed;
+    if (s->satsUsed > *used) {
+        *used = s->satsUsed;
     }
     if (*seen < *used) {
         *seen = *used;
@@ -1815,7 +1833,7 @@ bool ucxapp_gnss_dash(char *out, size_t size)
         snprintf(out, size, "no data on %s", ucxapp_stream_port(gStream));
         return true;
     }
-    countSats(now, &used, &seen);
+    countSats(&gSnap, now, &used, &seen);
     snprintf(out, size, "%s  %d/%d sats  HDOP %.1f%s%s%s%s", kFix[gSnap.fixType & 3], used, seen, gSnap.hdop,
              rtkName(&gSnap) != NULL ? "  " : "", rtkName(&gSnap) != NULL ? rtkName(&gSnap) : "",
              maxInt(gSnap.secJam, gSnap.rfJam) >= 2 ? "  JAMMING" : "",
@@ -1823,19 +1841,106 @@ bool ucxapp_gnss_dash(char *out, size_t size)
     return true;
 }
 
-static void printCard(void)
+static size_t cardAdd(char *out, size_t size, size_t n, const char *fmt, ...)
+{
+    va_list ap;
+    int k = 0;
+
+    if (n + 1 < size) {
+        va_start(ap, fmt);
+        k = vsnprintf(out + n, size - n, fmt, ap);
+        va_end(ap);
+    }
+    n += k > 0 ? (size_t)k : 0;
+    return n < size ? n : size - 1;
+}
+
+/* The card lines (FIX, SATS, HDOP, POS, TIME, RTK, ALERT) of a fresh snapshot, one per '\n'. */
+static void cardText(const gnss_t *s, char *out, size_t size)
 {
     static const char *const kFix[] = { "no fix", "dead reckoning", "2D", "3D" };
     static const char *const kLevel[] = { "?", "poor", "moderate", "good", "excellent", "ideal" };
     static const char *const kBar[] = { "\xE2\x96\x81", "\xE2\x96\x82", "\xE2\x96\x83", "\xE2\x96\x85",
                                         "\xE2\x96\x87" };
     uint32_t now = ucxapp_platform_tick_ms();
-    int fix = gSnap.fixType & 3;
+    int fix = s->fixType & 3;
     int used;
     int seen;
-    int level = hdopLevel(gSnap.hdop);
+    int level = hdopLevel(s->hdop);
+    size_t n = 0;
 
-    countSats(now, &used, &seen);
+    out[0] = '\0';
+    countSats(s, now, &used, &seen);
+    n = cardAdd(out, size, n, "FIX   %s%s%s %-14s", fix >= 1 ? U8_FULL : U8_LIGHT, fix >= 2 ? U8_FULL : U8_LIGHT,
+                fix >= 3 ? U8_FULL : U8_LIGHT, kFix[fix]);
+    if (gFixMs != 0) {
+        n = cardAdd(out, size, n, " TTFF %u s\n", (unsigned)((gFixMs - gOpenMs) / 1000u));
+    } else {
+        n = cardAdd(out, size, n, " searching %u s\n", (unsigned)((now - gOpenMs) / 1000u));
+    }
+    n = cardAdd(out, size, n, "SATS  ");
+    for (int i = 0; i < seen && i < CARD_SATS; i++) {
+        n = cardAdd(out, size, n, "%s", i < used ? U8_DOT : U8_RING);
+    }
+    n = cardAdd(out, size, n, "%s %d used / %d seen\nHDOP  %.1f ", seen > CARD_SATS ? "+" : "", used, seen, s->hdop);
+    for (int i = 0; i < 5; i++) {
+        n = cardAdd(out, size, n, "%s", i < level ? kBar[i] : " ");
+    }
+    n = cardAdd(out, size, n, " %s\n", kLevel[level]);
+    if (s->hasPos) {
+        n = cardAdd(out, size, n, "POS   %.7f %c  %.7f %c  alt %.1f m\n", fabs(s->lat), s->lat < 0 ? 'S' : 'N',
+                    fabs(s->lon), s->lon < 0 ? 'W' : 'E', s->alt);
+    }
+    if (s->hasTime) {
+        n = cardAdd(out, size, n, "TIME  %04d-%02d-%02d %02d:%02d:%02d UTC\n", s->hasDate ? s->year : 0, s->month,
+                    s->day, s->hour, s->min, s->sec);
+    }
+    if (rtkName(s) != NULL || s->hasAcc) {
+        char age[24];
+        corrAgeText(s, age, sizeof(age));
+        n = cardAdd(out, size, n, "RTK   %s", rtkName(s) != NULL ? rtkName(s) : "none");
+        if (s->hasHp) {
+            n = cardAdd(out, size, n, "  \xC2\xB1%.4f m", s->hpHAcc);
+        } else if (s->hasAcc) {
+            n = cardAdd(out, size, n, "  \xC2\xB1%.3f m", s->hAcc);
+        }
+        n = cardAdd(out, size, n, "%s%s\n", age[0] != '\0' ? "  corrections " : "", age);
+    }
+    if (maxInt(s->secJam, s->rfJam) >= 2 || maxInt(s->secSpoof, s->navSpoof) >= 2 || (s->hasRf && s->antStatus >= 3)) {
+        int spoof = maxInt(s->secSpoof, s->navSpoof);
+        (void)cardAdd(out, size, n, "ALERT jamming %s, spoofing %s, antenna %s\n", kJam[maxInt(s->secJam, s->rfJam)],
+                      spoof >= 2 ? kSpoof[spoof] + 9 : kSpoof[spoof], antName(s->hasRf ? s->antStatus : 1));
+    }
+}
+
+/* The live card for the web page; false (and empty) unless a receiver is open with data under 3 s old. */
+bool ucxapp_gnss_card(char *out, size_t size)
+{
+    ucxapp_stream_t *s = gStream;
+    bool fresh;
+
+    out[0] = '\0';
+    if (s == NULL) {
+        return false;
+    }
+    ucxapp_stream_lock(s);
+    fresh = gP.st.lastMs != 0 && ucxapp_platform_tick_ms() - gP.st.lastMs <= 3000u;
+    if (fresh) {
+        if (gFixMs == 0 && gP.st.fixType >= 2 && gP.st.hasPos) {
+            gFixMs = ucxapp_platform_tick_ms();
+            gFixMs += gFixMs == 0 ? 1u : 0u;
+        }
+        cardText(&gP.st, out, size);
+    }
+    ucxapp_stream_unlock(s);
+    return fresh;
+}
+
+static void printCard(void)
+{
+    static char text[640];
+    uint32_t now = ucxapp_platform_tick_ms();
+
     ucxapp_print(U8_HLINE U8_HLINE U8_HLINE " GNSS ");
     for (int i = 0; i < 30; i++) {
         ucxapp_print(U8_HLINE);
@@ -1844,48 +1949,12 @@ static void printCard(void)
     if (gSnap.lastMs == 0 || now - gSnap.lastMs > 3000u) {
         ucxapp_print(U8_VLINE " no data from the receiver on %s\n", ucxapp_stream_port(gStream));
     } else {
-        ucxapp_print(U8_VLINE " FIX   %s%s%s %-14s", fix >= 1 ? U8_FULL : U8_LIGHT, fix >= 2 ? U8_FULL : U8_LIGHT,
-                     fix >= 3 ? U8_FULL : U8_LIGHT, kFix[fix]);
-        if (gFixMs != 0) {
-            ucxapp_print(" TTFF %u s\n", (unsigned)((gFixMs - gOpenMs) / 1000u));
-        } else {
-            ucxapp_print(" searching %u s\n", (unsigned)((now - gOpenMs) / 1000u));
-        }
-        ucxapp_print(U8_VLINE " SATS  ");
-        for (int i = 0; i < seen && i < CARD_SATS; i++) {
-            ucxapp_print(i < used ? U8_DOT : U8_RING);
-        }
-        ucxapp_print("%s %d used / %d seen\n", seen > CARD_SATS ? "+" : "", used, seen);
-        ucxapp_print(U8_VLINE " HDOP  %.1f ", gSnap.hdop);
-        for (int i = 0; i < 5; i++) {
-            ucxapp_print(i < level ? kBar[i] : " ");
-        }
-        ucxapp_print(" %s\n", kLevel[level]);
-        if (gSnap.hasPos) {
-            ucxapp_print(U8_VLINE " POS   %.7f %c  %.7f %c  alt %.1f m\n", fabs(gSnap.lat), gSnap.lat < 0 ? 'S' : 'N',
-                         fabs(gSnap.lon), gSnap.lon < 0 ? 'W' : 'E', gSnap.alt);
-        }
-        if (gSnap.hasTime) {
-            ucxapp_print(U8_VLINE " TIME  %04d-%02d-%02d %02d:%02d:%02d UTC\n", gSnap.hasDate ? gSnap.year : 0,
-                         gSnap.month, gSnap.day, gSnap.hour, gSnap.min, gSnap.sec);
-        }
-        if (rtkName(&gSnap) != NULL || gSnap.hasAcc) {
-            char age[24];
-            corrAgeText(&gSnap, age, sizeof(age));
-            ucxapp_print(U8_VLINE " RTK   %s", rtkName(&gSnap) != NULL ? rtkName(&gSnap) : "none");
-            if (gSnap.hasHp) {
-                ucxapp_print("  \xC2\xB1%.4f m", gSnap.hpHAcc);
-            } else if (gSnap.hasAcc) {
-                ucxapp_print("  \xC2\xB1%.3f m", gSnap.hAcc);
-            }
-            ucxapp_print("%s%s\n", age[0] != '\0' ? "  corrections " : "", age);
-        }
-        if (maxInt(gSnap.secJam, gSnap.rfJam) >= 2 || maxInt(gSnap.secSpoof, gSnap.navSpoof) >= 2 ||
-            (gSnap.hasRf && gSnap.antStatus >= 3)) {
-            int spoof = maxInt(gSnap.secSpoof, gSnap.navSpoof);
-            ucxapp_print(U8_VLINE " ALERT jamming %s, spoofing %s, antenna %s\n",
-                         kJam[maxInt(gSnap.secJam, gSnap.rfJam)], spoof >= 2 ? kSpoof[spoof] + 9 : kSpoof[spoof],
-                         antName(gSnap.hasRf ? gSnap.antStatus : 1));
+        cardText(&gSnap, text, sizeof(text));
+        for (const char *p = text; *p != '\0';) {
+            const char *end = strchr(p, '\n');
+            int len = end != NULL ? (int)(end - p) : (int)strlen(p);
+            ucxapp_print(U8_VLINE " %.*s\n", len, p);
+            p += len + (end != NULL ? 1 : 0);
         }
     }
     for (int i = 0; i < 39; i++) {

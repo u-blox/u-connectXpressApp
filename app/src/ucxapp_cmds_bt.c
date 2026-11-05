@@ -1674,13 +1674,13 @@ static int cmdBtCsPct(ucxapp_t *app, int argc, char *argv[])
 #endif
 
 static const ucxapp_cmd_t gBtCmds[] = {
-    { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s), named and strongest first; full decodes the advertising data, filter keeps only bt.filter matches", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
-    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, scan number, profile or device name (case-sensitive; an unscanned name is looked for first); no argument: the last used profile", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
+    { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s), named and strongest first; full decodes the data, filter applies bt.filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
+    { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, scan number, profile or device name (case-sensitive, scanned for); no argument: last profile", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
     { "bt.name",       "[name]",              "Show or set the module's Bluetooth name (stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
     { "bt.addr",       "[addr]",              "Show or set the module's Bluetooth address (XX:XX:XX:XX:XX:XX, applies after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
-    { "bt.adv",        "[on|off|<hex> [connectable|scannable|broadcast]|interval <min_ms> [max_ms]]", "Legacy advertising: show it, start or stop it, set the custom AD payload (3-31 bytes, e.g. Matter service data) and its type, or the interval", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAdv },
+    { "bt.adv",        "[on|off|<hex> [connectable|scannable|broadcast]|interval <min_ms> [max_ms]]", "Legacy advertising: show, start or stop it, or set the custom AD payload (3-31 bytes) and type, or the interval", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAdv },
 #ifndef UCXAPP_LITE
-    { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "Scan data filters for bt.scan filter: AD type (9 name, 0xFF manufacturer data) and up to 10 bytes as text (NORA) or hex (4E4F5241)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
+    { "bt.filter",     "[<0-9> <ad_type> <text|hex>|<0-9> clear|clear]", "Scan data filters for bt.scan filter: AD type (9 name, 0xFF maker data) and up to 10 bytes, text (NORA) or hex (4E4F5241)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFilter },
     { "bt.cs",         "[on|off|initiator]",  "Channel Sounding (NORA-B26/B27, stored): on makes the module a reflector an initiator can range; initiator (cs_initiator evaluation firmware) measures", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCs },
     { "bt.cs.range",   "<conn> [seconds=10|on|off]", "Initiator: range a reflector (bonds first if needed) and print the filtered distance for some seconds, or start/stop ranging in the background (events)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRange },
     { "bt.cs.rate",    "[intervals=20]",      "Initiator: connection intervals between measurements (1-65535, stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtCsRate },

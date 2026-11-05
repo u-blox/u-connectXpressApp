@@ -1,0 +1,8 @@
+# NORA-B26 with Thread firmware for the browser's "BLE + Thread" virtual module: the Bluetooth LE answers of
+# nora-b26-ble plus the Thread network of nora-b26-thread; the model hides Wi-Fi.
+include: [nora-b26-ble.yaml, nora-b26-thread.yaml]
+identity:
+  manufacturer: u-blox
+  model: NORA-B26
+  version: 3.5.0-0
+  serial: "VUCX0123456789"

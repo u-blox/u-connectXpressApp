@@ -1182,13 +1182,23 @@ static void buildLocation(uint8_t out[10])
 bool ucxapp_gatt_server_fresh(ucxapp_t *app)
 {
     static bool done;
+    char name[32] = "";
+    const char *now = NULL;
 
     if (done) {
         return true;
     }
-    ucxapp_print("rebooting the module so its GATT server starts clean (services defined earlier stay until a restart)\n");
+    /* Keep a name set (unsaved) just before, e.g. 'at +UBTLN=...', so peers still find the server by it. */
+    if (uCxBluetoothGetLocalNameBegin(app->ucx, &now) && now != NULL) {
+        snprintf(name, sizeof(name), "%s", now);
+    }
+    uCxEnd(app->ucx);
+    ucxapp_print("rebooting the module so its GATT server starts clean\n");
     if (!ucxapp_module_reboot(app)) {
         return false;
+    }
+    if (name[0] != '\0') {
+        uCxBluetoothSetLocalName(app->ucx, name);
     }
     done = true;
     return true;
@@ -2523,7 +2533,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
     { "gatt.server.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
-    { "gatt.server.wps", "[seconds]", "Nordic Wi-Fi Provisioning server (u-connectXplorer, nRF apps); with seconds, serve until a phone sends the Wi-Fi settings or time is up", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
+    { "gatt.server.wps", "[seconds]", "Nordic Wi-Fi Provisioning server (u-connectXplorer, nRF apps); with seconds, serve until a phone sends Wi-Fi settings", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
     { "gatt.server.servicechanged", "[conn] <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
     { "gatt.server.error", "[conn] <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
     { "gatt.server.readresp", "[conn] <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },

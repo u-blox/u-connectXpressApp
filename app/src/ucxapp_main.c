@@ -79,6 +79,20 @@ static bool connectModule(const char *port)
         }
     }
     if (!echoOk) {
+        ucxapp_print("module stuck: DTR low %u ms, 5 pulses, waiting for +STARTUP (10 s)\n", (unsigned)UCXAPP_DTR_HOLD_MS);
+        if (ucxapp_platform_recover_dtr(gAtClient.uartHandle, UCXAPP_DTR_HOLD_MS)) {
+            uint32_t start = ucxapp_platform_tick_ms();
+            while (!echoOk && ucxapp_platform_tick_ms() - start < 10000) {
+                uCxAtClientSetCommandTimeout(&gAtClient, 300, false);
+                echoOk = uCxSystemSetEchoOff(&gUcxHandle) == 0;
+            }
+            ucxapp_platform_pulse_dtr(gAtClient.uartHandle);    /* DTR back on, as before the sequence */
+            if (echoOk) {
+                ucxapp_print("module recovered by the DTR sequence\n");
+            }
+        }
+    }
+    if (!echoOk) {
         ucxapp_print("warning: could not disable echo\n");
     }
     if (uCxSystemSetExtendedError(&gUcxHandle, U_SYS_EXTENDED_ERRORS_ON) != 0) {

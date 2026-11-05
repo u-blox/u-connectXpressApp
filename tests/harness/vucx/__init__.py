@@ -44,7 +44,8 @@ Only lines starting with AT are commands; anything else (data mode, a bridged st
       "GET /*": "ICY 200 OK\\r\\n\\r\\n"   # an NTRIP caster behind a modem in transparent mode
 
 Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the port to open)
-As JSON for the browser's virtual module: python -m harness.vucx --json nora-w36.yaml > app/wasm/vnora.json
+As JSON for the browser's virtual modules: python -m harness.vucx --json alma-w1-thread.yaml > app/wasm/valma-w1.json
+(also nora-w36 > vnora-w36, nora-b26-ble-thread > vnora-b26-thread, nora-b26-ble > vnora-b26)
 """
 
 import base64
@@ -625,7 +626,7 @@ class Feeder:
 
 
 def browser_table(profile):
-    """table() plus the network behind the module, as app/wasm/vnora.json holds it for the browser."""
+    """table() plus the network behind the module, as app/wasm/valma-w1.json holds it for the browser."""
     out = table(profile)
     sockets = load(profile).get("sockets")
     if sockets:   # the browser runs the same network; it gets the caster's stream as hex

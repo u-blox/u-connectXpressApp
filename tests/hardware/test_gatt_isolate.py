@@ -18,7 +18,7 @@ from hwutil import _args, _reboot, _run, _stop
 
 pytestmark = [pytest.mark.hardware, pytest.mark.two_devices]
 
-FILLER = ["hrs", "cts", "ess", "lns", "aio", "sps", "wps", "ras"]
+FILLER = ["hrs", "cts", "ess", "lns", "aio", "sps", "wps"]  # adding ras hits the module's attribute limit (ERROR:17)
 NOTIFICATIONS = 3
 
 

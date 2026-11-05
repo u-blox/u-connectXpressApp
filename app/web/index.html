@@ -18,6 +18,7 @@ main{display:grid;grid-template-columns:19rem 3fr 2fr;gap:.7rem;padding:.7rem;he
 body.uc main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.uc #pu{grid-row:span 2}body.uc #pc,body:not(.uc) #pu{display:none}
 .pane{display:flex;flex-direction:column;min-height:0}.pane h2{margin:0 0 .35rem;color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}
 #out,#ev,#side,.sc{flex:1;overflow:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.6rem}
+#gc{flex:none;margin:0 0 .4rem;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.5rem .6rem;overflow-x:auto;cursor:pointer}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
 .badge,.v{font:700 .66rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:.05rem .4rem;border:1px solid currentColor;border-radius:4px;color:var(--warm)}.badge.ok,.v.ok{color:var(--ok)}.badge.bad,.v.gap{color:var(--err)}
@@ -62,7 +63,9 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--bd)}.frow span:first-child{flex:1;font-family:Consolas,monospace}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
-#ver{color:var(--mut);font-size:.72rem;white-space:nowrap;margin-left:.4rem}
+#ver{white-space:nowrap}#lv{display:flex;gap:.8rem;justify-content:flex-end}
+#meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
+#clock,#loc,#ver{font:12px Consolas,monospace;color:var(--mut);overflow-wrap:anywhere;text-align:right}
 @media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;overflow-x:auto;flex-wrap:nowrap}
  #busy{margin-left:0}#keys,#vw,#ver{display:none}
  #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1;padding:.4rem .2rem}#tabs button.on{background:var(--ac);border-color:var(--ac);color:#04121c}
@@ -88,10 +91,10 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <div class="r"><button id="fitb">Run fit check</button><input id="mb" placeholder="Mbit/s" title="Measured rate, e.g. from net.iperf; shows the 900 MB download time"></div></div></div>
 <div class="cards" id="steps"></div></div></div>
 <div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
-<div class="pane" id="pe"><h2>What's happening</h2><div id="ev"></div></div></main>
+<div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
-<button id="run">Run</button><span id="ver"></span></footer><div id="hint"></div><div id="keys"></div>
+<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><input type="file" id="up"><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
 <script>
@@ -309,6 +312,14 @@ const UC={
   h:['Tool','NORA-W36'],n:[['ble','Technician','BLE SPS'],['scan','Gateway','scan by name'],['wifi','Site Wi-Fi','office, depot'],['fw','Depot','updates','pu']]},
  implement:{t:'Farm implement (ISOBUS)',s:'Industry',d:'ISOBUS CAN data to the cab tablet over the module\'s AP or BLE, the work record to the cloud.',
   h:['Implement','NORA-W36'],n:[['can','ISOBUS','CAN 250k'],['ap','Cab tablet','AP, TCP'],['ble','Phone','BLE NUS'],['sock','Cloud','MQTT']]},
+ condition:{t:'Motor condition monitoring',s:'Industry',d:'An IMU on the motor housing records a healthy baseline, streams vibration to the analysis PC, and the host publishes an alarm to the plant broker.',
+  h:['Motor sensor','host + NORA-W36'],n:[['imu','IMU','100 Hz vibration'],['sock','Analysis PC','TCP stream'],['wifi','Plant Wi-Fi','EAP-TLS'],['alarm','Alarms','MQTT','warm']]},
+ agv:{t:'AGV or mobile robot',s:'Industry',d:'The robot roams between the hall\'s access points, the route is surveyed for coverage, latency to the fleet manager is measured while driving, and a phone reads it over BLE.',
+  h:['Robot','host + NORA-W36'],n:[['wifi','Hall Wi-Fi','roaming'],['sock','Fleet manager','latency, MQTT'],['ble','Technician','BLE SPS'],['safe','E-stop','wired, not Wi-Fi','pu']]},
+ eol:{t:'End-of-line test',s:'Industry',d:'Every unit on the production line is identified, gets the golden settings, passes a radio check and leaves a report under its serial number.',
+  h:['Unit','NORA module'],n:[['id','Identity','dev.info'],['cfg','Golden settings','cfg.load, cfg.diff','pu'],['ble','Radio check','bt.scan, wifi.scan'],['rep','Report','prod.test','warm']]},
+ blegw:{t:'BLE sensor gateway',s:'Industry',d:'A gateway finds wireless sensors by name, reads them over BLE and publishes the readings to the plant broker over Wi-Fi.',
+  h:['Gateway','host + NORA-W36'],n:[['ble','BLE sensors','scan, GATT'],['wifi','Plant Wi-Fi','station'],['sock','Plant broker','MQTT'],['lim','3 links','poll in turns','pu']]},
  edge:{t:'Edge AI sensor (ALMA-W1)',s:'Edge AI',d:'IMU training data, I2C sensors, results to the cloud; ALMA-W161/W166 run these u-connectXpress steps, ALMA-W111/W116 run the model on their NPU.',
   h:['Sensor','host + module'],n:[['imu','IMU','training data'],['sock','Notebook','stream'],['i2c','Sensors','I2C','pu'],['wifi','Cloud','MQTT']]},
  mesh:{t:'Thread sensor mesh',s:'Thread',d:'Battery sensors and mains-powered routers form a self-healing IPv6 mesh without a border router: one node makes the network, the others join with its dataset.',
@@ -319,17 +330,25 @@ const UC={
   h:['Unit','Thread module'],n:[['ds','Production line','one dataset'],['rt','Lights','routers'],['sleep','Sensors','sleepy','warm'],['cnt','Health','thread.counters','pu']]},
  gateway:{t:'Thread to cloud gateway (ALMA-W1)',s:'Thread',d:'Thread sensors register with an ALMA-W1 gateway, and the host relays their readings to MQTT over Wi-Fi.',
   h:['Gateway','host + ALMA-W1'],n:[['thr','Thread sensors','SRP, DNS-SD'],['wifi','Site Wi-Fi','station'],['sock','Cloud','MQTT'],['host','Host relay','no IPv6 routing','pu']]},
- boat:{t:'Boat or camper: GPS on the chart app',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
+ swarm:{t:'Distributed location: peers',s:'Location',d:'5-10 Thread nodes; external edge fusion.',
+  h:['Edge node','fusion + Thread'],n:[['thr','Peers','UDP'],['gnss','GNSS','position'],['imu','Sensors','edge fusion'],['ble','CS anchors','ranges']]},
+ recovery:{t:'Location: sensor-loss recovery',s:'Location',d:'Edge estimate from fresh peers when a sensor drops.',
+  h:['Edge estimator','ALMA ML host'],n:[['thr','Live peers','fresh only'],['gnss','GNSS health','interference'],['imu','Sensors','dead reckoning'],['ble','CS anchors','geometry']]},
+ handover:{t:'Indoor / outdoor location',s:'Location',d:'Edge-owned Wi-Fi/CS to GNSS handover with hysteresis.',
+  h:['Edge tracker','source + uncertainty'],n:[['wifi','Indoor Wi-Fi','fingerprint'],['ble','Anchors','CS'],['gnss','Outdoor GNSS','valid fix'],['imu','Sensors','continuity']]},
+ livestock:{t:'Livestock: geofence and finding',s:'Location',d:'Fence events start BLE finding and cellular alerts.',
+  h:['Animal tag','edge host'],n:[['gnss','Paddock','KML fence'],['ble','Finding','tag ID'],['cell','Farm server','alerts','pu'],['wifi','Barn','fingerprint']]},
+ boat:{t:'Boat or camper: GPS on the chart app',s:'Location',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
   h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial'],['ap','Tablets (5)','module AP, TCP 10110'],['log','Trip log','gnss.log','warm'],['ble','Phone','BLE NUS']]},
- rtk:{t:'Survey pole or rover: RTK',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
+ rtk:{t:'Survey pole or rover: RTK',s:'Location',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
   h:['Host','RTK GNSS + NORA-W36'],n:[['wifi','Wi-Fi','station'],['sock','NTRIP caster','RTCM in, GGA out'],['gnss','RTK receiver','ZED-F9P, ZED-X20P'],['ble','Rover or phone','BLE NUS']]},
- mower:{t:'Robotic lawn mower',d:'The owner sets the mower up from a phone over BLE, it joins the garden Wi-Fi and gets PointPerfect SPARTN corrections for its HP GNSS receiver; '+
+ mower:{t:'Robotic lawn mower',s:'Location',d:'The owner sets the mower up from a phone over BLE, it joins the garden Wi-Fi and gets PointPerfect SPARTN corrections for its HP GNSS receiver; '+
   'the phone follows it over BLE, and past the Wi-Fi the corrections and a theft alert go over a cellular modem.',
   h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status'],['wifi','Garden Wi-Fi','PointPerfect NTRIP'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['cell','Cellular modem','edge, theft alert','pu']]},
- farm:{t:'Tractor or field robot: auto-steer',d:'An HP GNSS receiver gets PointPerfect corrections over a cellular modem in the field and sends the corrected NMEA to the guidance tablet in the cab over BLE; '+
+ farm:{t:'Tractor or field robot: auto-steer',s:'Location',d:'An HP GNSS receiver gets PointPerfect corrections over a cellular modem in the field and sends the corrected NMEA to the guidance tablet in the cab over BLE; '+
   'the field log goes up over the farmyard Wi-Fi.',
   h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['ble','Cab tablet','BLE NUS'],['wifi','Farmyard Wi-Fi','log upload']]},
- tracker:{t:'Car, bike or pet tracker',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
+ tracker:{t:'Car, bike or pet tracker',s:'Location',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
   h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','Your server','TCP, NMEA lines'],['cell','Cellular modem','on the road','pu'],['gnss','GNSS receiver','position']]},
  home:{t:'Smart home sensor: MQTT',d:'A sensor on the home Wi-Fi publishes its state to Mosquitto in Home Assistant and takes commands back.',
   h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','MQTT broker','Home Assistant'],['imu','Sensor','IMU, door, machine'],['ble','Phone','BLE setup']]},
@@ -376,10 +395,14 @@ function events(){const es=new EventSource('/events');
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));
- const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status'};
- es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';ps.forEach(p=>{
-  const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|disabled|detached)$/.test(p)?'off':'on'),p)),k=CK[p.split(' ')[0]];
-  if(k){c.classList.add('ck');c.title='Run '+k;c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
+ es.addEventListener('gnss',e=>{const g=$('gc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('gnss.status')});
+ const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status'};
+ es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
+ if(ti>=0){const li=ps.findIndex(p=>p.startsWith('Local ')),oi=ps.findIndex(p=>p.startsWith('Loc '));
+  $('clock').textContent=(li>=0?ps[li].slice(6):ps[ti].slice(5))+' / '+ps[ti+1];$('loc').textContent=oi>=0?'Location: '+ps[oi].slice(4):'';
+  [oi,li].filter(i=>i>=0).sort((a,b)=>b-a).forEach(i=>ps.splice(i,1));ps.splice(ti,2)}ps.forEach(p=>{
+  const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|unknown|disabled|detached)$/.test(p)?'off':'on'),p)),k=CK[p.split(' ')[0]];
+  if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; * = current handle, not listening':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
   if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2]==='-'?[]:m[2].split(' ')});
   if(!sessionStorage.getItem('ucxs')&&!/^Wi-Fi -|no module/.test(raw)&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});

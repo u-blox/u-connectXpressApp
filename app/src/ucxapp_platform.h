@@ -69,6 +69,10 @@ bool ucxapp_platform_local_ip(char *out, size_t size);
 /** Release DTR briefly, then assert it again: a falling edge on the EVK's WAKE_UP pin. False if the port has no DTR. */
 bool ucxapp_platform_pulse_dtr(void *uartHandle);
 
+/** Stuck-module recovery: DTR low for holdMs, then 5 x (10 ms on, 10 ms off); DTR stays low. False if no DTR. */
+bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs);
+#define UCXAPP_DTR_HOLD_MS 1200
+
 /* Host TCP client (Windows, Linux, macOS; the browser build fails every call). Used for the phone remote control. */
 
 /** Connects to host (name or IPv4) within timeoutMs; returns the socket, or -1. */

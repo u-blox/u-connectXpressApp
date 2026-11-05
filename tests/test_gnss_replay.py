@@ -89,6 +89,11 @@ def test_replay_and_log_errors(app_exe, tmp_path, command, message):
     assert message.lower() in out.stdout.lower(), out.stdout
 
 
+def test_open_without_a_receiver_points_to_the_virtual_one(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "gnss.open COM254")
+    assert "ERROR: no GNSS receiver found (gnss.virtual starts a virtual one)" in out.stdout, out.stdout
+
+
 def test_replay_refuses_a_second_source(app_exe, tmp_path):
     (tmp_path / "track.nmea").write_text(_track(2), newline="")
     out = _run(app_exe, tmp_path, "gnss.replay track.nmea", "gnss.send $PUBX,00", "gnss.rate 5",

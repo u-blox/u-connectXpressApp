@@ -33,7 +33,7 @@ def test_page_is_a_complete_document():
 def test_page_is_ascii_and_fits_one_response():
     data = PAGE.encode("utf-8")
     assert data.isascii()
-    assert len(data) < 48000   # sent in place from flash (body_static); this caps the flash it takes
+    assert len(data) < 56000   # sent in place from flash (body_static); this caps the flash it takes
 
 
 def test_page_is_built_into_the_app():
@@ -171,7 +171,8 @@ class Mock(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             for name, data in (("out", '"ready\\n\\u001b[92mgreen\\u001b[0m\\n"'), ("evt", '"wifi:link up"'),
-                               ("state", '"Wi-Fi up | BLE -"')):
+                               ("state", '"Wi-Fi up | BLE - | Advertising on | Listening 2 | '
+                                          'Time 2030-01-02T03:04:05Z | ntp pool.ntp.org, 1 s ago"')):
                 self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
             self.wfile.flush()
             # the auto summary and the chip commands finish, other commands stay busy
@@ -222,7 +223,14 @@ def test_page_in_a_browser(server):
         assert "ready" in page.inner_text("#out")
         assert page.inner_text("#out .fg") == "green"
         assert "\x1b" not in page.inner_text("#out")
-        assert page.inner_text(".chip.on") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
+        assert page.inner_text(".chip.on >> nth=0") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
+        # advertising and listening sockets get their own chips; the clock and its source go to the footer
+        assert page.locator("#state .chip").all_inner_texts() == [
+            "Wi-Fi up", "BLE -", "Advertising on", "Listening 2"]
+        assert page.get_attribute("#state .chip >> text=Advertising on", "title") == "Run bt.adv"
+        assert page.get_attribute("#state .chip >> text=Listening 2", "title") == "Run sock.list"
+        assert "* = current handle, not listening" in page.get_attribute(".chip.off", "title")
+        assert page.inner_text("#clock") == "2030-01-02T03:04:05Z / ntp pool.ntp.org, 1 s ago"
         assert page.inner_text("#ev .e.wifi .x") == "link up"
         assert page.locator("#ev .e.wifi .t").count() == 1
         # a module that is up gets its summary once, and the version sits in the footer
@@ -230,8 +238,8 @@ def test_page_in_a_browser(server):
         assert "cmd=dev.summary&y=1" in server.posted[0] and "Module:" in page.inner_text("#out")
         page.wait_for_function("document.getElementById('ver').textContent === 'v3.5.0.261104'")
         # a status chip runs its status command
-        assert page.get_attribute(".chip.on", "title") == "Run wifi.status"
-        page.click(".chip.on")
+        assert page.get_attribute(".chip.on >> nth=0", "title") == "Run wifi.status"
+        page.click(".chip.on >> nth=0")
         page.wait_for_selector(".blk .badge.ok >> nth=1")
         assert server.posted[1].endswith("cmd=wifi.status")
         server.posted.clear()

@@ -122,6 +122,13 @@ bool ucxapp_platform_pulse_dtr(void *uartHandle)
     return false;
 }
 
+bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs)
+{
+    (void)uartHandle;
+    (void)holdMs;
+    return false;
+}
+
 uint32_t ucxapp_platform_tick_ms(void)
 {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);

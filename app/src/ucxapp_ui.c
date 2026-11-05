@@ -13,6 +13,8 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_port.h"
+#include "u_cx_bluetooth.h"
+#include "u_cx_socket.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -111,6 +113,9 @@ static char gCellText[96];
 static char gThreadRole[16];   /* empty: no Thread firmware */
 static volatile uint32_t gThreadVersion;
 static volatile uint32_t gThreadDirty;
+static char gRadioText[96];
+static char gClockText[192];
+static bool gRadioDirty = true;
 
 void ucxapp_ui_thread_changed(void)
 {
@@ -136,7 +141,7 @@ static void refreshDashCache(bool force)
 {
     static uint32_t seenWifi = 0xFFFFFFFFu;
     static const void *seenUcx;
-    static uint32_t wifiMs, cellMs, threadMs, seenThread;
+    static uint32_t wifiMs, cellMs, threadMs, seenThread, radioMs, clockMs;
     uint32_t now = ucxapp_platform_tick_ms();
     char text[96];
 
@@ -150,9 +155,44 @@ static void refreshDashCache(bool force)
             U_CX_MUTEX_LOCK(gLock);
             gWifiText[0] = '\0';
             gThreadRole[0] = '\0';
+            gRadioText[0] = '\0';
             U_CX_MUTEX_UNLOCK(gLock);
             gThreadVersion++;
         }
+    }
+    if (force || now - clockMs >= 1000u) {
+        char clock[192];
+        clockMs = now;
+        (void)ucxapp_time_summary(clock, sizeof(clock));
+        U_CX_MUTEX_LOCK(gLock);
+        snprintf(gClockText, sizeof(gClockText), "%s", clock);
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
+    if (gApp != NULL && gApp->ucx != NULL && (force || gRadioDirty || now - radioMs >= 10000u)) {
+        uCxBtGetAdvertiseInformation_t adv;
+        uCxSocketListStatus_t sock;
+        char listeners[40] = "";
+        size_t used = 0;
+        int32_t result = uCxBluetoothGetAdvertiseInformation(gApp->ucx, &adv);
+        radioMs = now;
+        gRadioDirty = false;
+        if (ucxapp_module_has_wifi(gApp) || ucxapp_module_has_thread(gApp)) {
+            uCxSocketListStatusBegin(gApp->ucx);
+            while (uCxSocketListStatusGetNext(gApp->ucx, &sock)) {
+                if (sock.protocol == U_SOCKET_PROTOCOL_TCP && sock.status == 1 && used + 12 < sizeof(listeners)) {
+                    used += (size_t)snprintf(listeners + used, sizeof(listeners) - used, "%s%d",
+                                             used == 0 ? "" : " ", (int)sock.socket_handle);
+                }
+            }
+            if (uCxEnd(gApp->ucx) != 0) {
+                snprintf(listeners, sizeof(listeners), "unknown");
+            }
+        }
+        U_CX_MUTEX_LOCK(gLock);
+        snprintf(gRadioText, sizeof(gRadioText), "Advertising %s | Listening %s",
+                 result != 0 ? "unknown" : adv.legacy_adv || adv.directed_adv ? "on" : "off",
+                 listeners[0] != '\0' ? listeners : "off");
+        U_CX_MUTEX_UNLOCK(gLock);
     }
     if (gApp != NULL && gApp->ucx != NULL &&
         (force || seenWifi != gWifiVersion || (gWifiUp > 0 && now - wifiMs > 30000u))) {
@@ -231,6 +271,17 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
         n += (size_t)snprintf(out + n, size - n, " | ");
         n = appendHandles(out, size, n, "Sockets", UCXAPP_HANDLE_SOCK);
     }
+    U_CX_MUTEX_LOCK(gLock);
+    const char *parts[] = { gRadioText, gClockText };
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        if (parts[i][0] != '\0' && n + strlen(parts[i]) + 4 < size) {
+            n += (size_t)snprintf(out + n, size - n, " | %s", parts[i]);
+            for (const char *part = parts[i]; *part != '\0'; part++) {
+                version = version * 31u + (uint8_t)*part;
+            }
+        }
+    }
+    U_CX_MUTEX_UNLOCK(gLock);
     size_t (*const kExtra[])(char *, size_t) = { ucxapp_gatt_summary, ucxapp_gnss_summary, ucxapp_imu_summary };
     for (size_t i = 0; i < sizeof(kExtra) / sizeof(kExtra[0]); i++) {
         char part[48];
@@ -327,6 +378,8 @@ static void workerLoop(void *arg)
             continue;
         }
         int rc = ucxapp_cmd_exec(gApp, line);
+        gRadioDirty = true;
+        refreshDashCache(false);
         U_CX_MUTEX_LOCK(gLock);
         gJobRunning = false;
         gDoneRc = rc;

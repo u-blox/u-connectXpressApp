@@ -162,6 +162,13 @@ bool ucxapp_platform_pulse_dtr(void *uartHandle)
     return false;
 }
 
+bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs)
+{
+    (void)uartHandle;
+    (void)holdMs;
+    return false;
+}
+
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
 {
     if (bufferSize > 0) {

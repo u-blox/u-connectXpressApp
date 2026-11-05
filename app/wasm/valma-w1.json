@@ -72,8 +72,30 @@
    "OK"
   ],
   "AT+UWSST=4": [
-   "+UWSST:4,-45",
-   "OK"
+   [
+    "+UWSST:4,-45",
+    "OK"
+   ],
+   [
+    "+UWSST:4,-47",
+    "OK"
+   ],
+   [
+    "+UWSST:4,-44",
+    "OK"
+   ],
+   [
+    "+UWSST:4,-49",
+    "OK"
+   ],
+   [
+    "+UWSST:4,-46",
+    "OK"
+   ],
+   [
+    "+UWSST:4,-43",
+    "OK"
+   ]
   ],
   "AT+UWSST=*": [
    "+UWSST:0,\"vucx-net\"",

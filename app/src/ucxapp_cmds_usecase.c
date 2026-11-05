@@ -157,6 +157,46 @@ static const ucRow_t kImplement[] = {
     { 0, "[limit]", "Decoding", "frames are raw (id, dlc, data); ISOBUS and J1939 decoding is in the tablet app", NULL },
 };
 
+static const ucRow_t kCondition[] = {
+    { 0, "[ok]", "Vibration", "an IMU on the motor housing at up to 200 Hz: imu.open, imu.rate 100", "imu.rate" },
+    { 0, "[ok]", "Baseline", "record the healthy motor first: imu.log baseline.bin", "imu.log" },
+    { 0, "[ok]", "Raw stream", "to the analysis PC or edge model: imu.bridge tcp 9000", "imu.bridge" },
+    { 'w', "[ok]", "Plant Wi-Fi", "Enterprise Wi-Fi with certificates: wifi.eap", "wifi.eap" },
+    { 0, "[ok]", "Alarms", "the host's verdict to the plant broker: mqtt.publish", "mqtt.publish" },
+    { 0, "[limit]", "Bearing faults", "200 Hz finds imbalance and misalignment; bearings need a kHz sensor on the host", NULL },
+    { 0, "[check]", "Hazardous area", "ATEX or IECEx approval stays with the device maker and the enclosure", NULL },
+};
+
+static const ucRow_t kAgv[] = {
+    { 'w', "[ok]", "Roaming", "between the hall's APs on one SSID: wifi.roaming on before joining", "wifi.roaming" },
+    { 'w', "[ok]", "Coverage", "drive the route and rate the signal: wifi.survey, wifi.rssi", "wifi.survey" },
+    { 0, "[ok]", "Latency", "round trip to the fleet manager while driving: perf.latency udp <host> <port>", "perf.latency" },
+    { 0, "[ok]", "Fleet link", "position and battery to the fleet manager: mqtt.publish", "mqtt.publish" },
+    { 0, "[ok]", "Service", "a technician's phone reads the robot over BLE: gatt.server.sps", "gatt.server.sps" },
+    { 0, "[check]", "Handover gap", "the gap while roaming depends on the APs; measure it with perf.latency on the route", NULL },
+    { 0, "[limit]", "Safety", "the emergency stop stays wired or on a certified safety radio, never on Wi-Fi", NULL },
+};
+
+static const ucRow_t kEol[] = {
+    { 0, "[ok]", "Identity", "serial number, model and firmware of each unit: dev.info", "dev.info" },
+    { 0, "[ok]", "Firmware", "the released firmware on every unit: fw.update <file>", "fw.update" },
+    { 0, "[ok]", "Settings", "the golden settings from a reference unit: cfg.load line.cfg", "cfg.load" },
+    { 0, "[ok]", "Verify", "cfg.diff fails the unit when a setting differs", "cfg.diff" },
+    { 0, "[ok]", "Radio check", "the unit hears the line's beacon and AP: bt.scan, wifi.scan", "bt.scan" },
+    { 0, "[ok]", "Report", "one file per serial number and a line in report.csv: prod.test", "prod.test" },
+    { 0, "[check]", "RF tests", "conducted RF and RED/FCC tests stay with the test house and the module approvals", NULL },
+};
+
+static const ucRow_t kBleGw[] = {
+    { 0, "[ok]", "Find sensors", "by name prefix: bt.filter 0 9 Sensor, bt.scan filter", "bt.filter" },
+    { 0, "[ok]", "Read", "connect and read the standard services: bt.connect, gatt.client.bas", "gatt.client.bas" },
+    { 0, "[ok]", "Beacons", "sensors that only advertise need no link: the values are in the scan", "bt.scan" },
+    { 'w', "[ok]", "Plant Wi-Fi", "station on the plant network: wifi.connect or wifi.eap", NULL },
+    { 0, "[ok]", "To MQTT", "each reading to the plant broker: mqtt.publish plant/hall2/sensor-17 21.5", "mqtt.publish" },
+    { 0, "[limit]", "Links", "3 BLE links at a time: poll more sensors in turns or use advertising sensors", NULL },
+    { 0, "[check]", "Range", "metal racks and machines cut the range: scan on site before placing the gateway", NULL },
+};
+
 static const ucRow_t kEdge[] = {
     { 0, "[ok]", "Training data", "record the motion for the model: imu.open, imu.log motion.bin", "imu.log" },
     { 0, "[ok]", "Live stream", "the IMU stream to a PC or notebook: imu.bridge tcp 9000", "imu.bridge" },
@@ -202,6 +242,48 @@ static const ucRow_t kGateway[] = {
     { 0, "[ok]", "To the cloud", "the host relays the readings: mqtt.publish site/sensor-1 21.5", "mqtt.publish" },
     { 0, "[check]", "Routing", "the module does not route IPv6 between Thread and Wi-Fi; the host relays", NULL },
     { 0, "[check]", "Module", "Wi-Fi and Thread on one module: ALMA-W1 with Thread firmware", NULL },
+};
+#endif
+
+#ifndef UCXAPP_LITE
+static const ucRow_t kSwarm[] = {
+    { 't', "[ok]", "Mesh transport", "start with 5-10 devices using one Thread dataset; inspect thread.neighbors", "thread.neighbors" },
+    { 't', "[ok]", "UDP exchange", "one bound UDP socket per node; exchange small timestamped position records", "sock.sendto" },
+    { 0, "[check]", "Nearest peers", "edge host selects a few fresh nearby peers, not every node; radio neighbours are not positions", NULL },
+    { 0, "[check]", "Neighbour DB", "edge-owned bounded table: node ID, frame, position, velocity, uncertainty, sequence, timestamp, expiry", NULL },
+    { 0, "[check]", "CS ranging", "validate Channel Sounding initiator, reflector, firmware and antenna support; RSSI is not distance", "bt.cs" },
+    { 0, "[check]", "Time basis", "shared time or measured clock offsets; reject replayed, duplicate and stale records", "app.time" },
+    { 0, "[limit]", "Edge ownership", "ALMA edge ML device fuses IMU, GNSS and other sensors; ucxapp demonstrates transport only", NULL },
+    { 0, "[check]", "Scale safely", "measure airtime and loss at 5, then 10 nodes before scaling; no flight-control guarantee", NULL },
+};
+
+static const ucRow_t kRecovery[] = {
+    { 't', "[ok]", "Link health", "watch neighbours and counters while a node is powered off and returns", "thread.counters" },
+    { 'g', "[check]", "GNSS health", "watch loss of fix and jamming/spoofing alarms; do not trust a flagged fix", "gnss.status" },
+    { 0, "[ok]", "IMU input", "stream host sensor data to the external edge estimator", "imu.bridge" },
+    { 0, "[check]", "Fallback", "edge estimator uses live peer positions and measured ranges; never substitute a peer's fix as its own", NULL },
+    { 0, "[check]", "Observability", "enough independent anchors and valid geometry; common GNSS jamming can affect all peers", NULL },
+    { 0, "[check]", "Confidence", "expire missing peers, grow uncertainty, flag estimated vs measured; stop claiming a fix when unobservable", NULL },
+    { 0, "[check]", "Rejoin", "fresh sequence/session on return; reset stale state and blend valid local sensors back in", NULL },
+    { 0, "[limit]", "Two recoveries", "Thread repairs connectivity; position recovery is a separate edge algorithm, not implemented here", NULL },
+};
+
+static const ucRow_t kHandover[] = {
+    { 'w', "[ok]", "Indoor scan", "Wi-Fi scan fingerprints; a location service needs its API key and coverage", "wifi.locate" },
+    { 0, "[check]", "Indoor ranging", "CS anchors and a surveyed coordinate frame need suitable ranging hardware", "bt.cs" },
+    { 'g', "[check]", "Outdoor fix", "activate the receiver and verify a fresh valid GNSS fix before switching", "gnss.open" },
+    { 0, "[check]", "Hysteresis", "edge host uses dwell time and confidence to avoid switching repeatedly at a doorway", NULL },
+    { 0, "[check]", "Same frame", "survey indoor anchors into the GNSS frame; retain source, age and uncertainty", NULL },
+    { 0, "[limit]", "Power policy", "receiver duty cycling and automatic source selection belong on the edge host", NULL },
+};
+
+static const ucRow_t kLivestock[] = {
+    { 'g', "[check]", "Field position", "GNSS on a cow or lamb tag; indoor barn scan uses the handover scenario", "gnss.open" },
+    { 0, "[ok]", "Geofence", "load a paddock polygon from KML; gnss.fence reports entering and leaving", "gnss.fence" },
+    { 0, "[ok]", "Find the tag", "after an area event, advertise its tag ID for a nearby phone or gateway", "bt.adv" },
+    { 0, "[check]", "Notify", "a cellular modem and SIM send the alert and position to the farm server", "cell.connect" },
+    { 0, "[check]", "Alert policy", "edge host applies accuracy margin, dwell time, event ID, rate limit and offline queue", NULL },
+    { 0, "[limit]", "Automation", "steps demonstrate components; automatic fence-to-BLE/cellular actions are not implemented", NULL },
 };
 #endif
 
@@ -299,11 +381,19 @@ static const ucCase_t kCases[] = {
     CASE("medical", "Medical device (IEC 62304): secure BLE, test evidence, fixed configuration", kMedical),
     CASE("site", "Construction tools: technician's phone, tool tracking, site Wi-Fi, depot updates", kSite),
     CASE("implement", "Farm implement (ISOBUS/CAN): machine data to the cab tablet and the cloud", kImplement),
+    CASE("condition", "Motor condition monitoring: vibration baseline, stream to analysis, alarms over MQTT", kCondition),
+    CASE("agv", "AGV or mobile robot: roaming between hall APs, latency to the fleet manager", kAgv),
+    CASE("eol", "End-of-line test: identity, golden settings, radio check, report per serial number", kEol),
+    CASE("blegw", "BLE sensor gateway: retrofit wireless sensors to the plant broker", kBleGw),
     CASE("edge", "Edge AI sensor (ALMA-W1): training data, sensors, results to the cloud", kEdge),
     CASE("mesh", "Thread sensor mesh: form a network, join nodes, battery nodes, self-healing", kMesh),
     CASE("border", "Home Thread network: join through a border router, SRP and DNS-SD", kBorder),
     CASE("building", "Building lights and sensors: one dataset per line, roles, health", kBuilding),
     CASE("gateway", "Thread to cloud gateway (ALMA-W1): sensors over Thread, MQTT over Wi-Fi", kGateway),
+    CASE("swarm", "Distributed location: 5-10 Thread nodes share nearest-neighbour observations", kSwarm),
+    CASE("recovery", "Location recovery: sensor outage, stale peers and node rejoin", kRecovery),
+    CASE("handover", "Indoor/outdoor location: Wi-Fi or CS anchors to GNSS", kHandover),
+    CASE("livestock", "Livestock tracking: paddock geofence, BLE finding and cellular alerts", kLivestock),
 #endif
     CASE("boat", "Boat or camper: GPS to the chart app on a tablet", kBoat),
     CASE("rtk", "Survey pole or rover: centimetre position with RTK", kRtk),
@@ -390,7 +480,7 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     static const struct {
         const char *name;
         size_t count;
-    } kSections[] = { { "Industry", 4 }, { "Edge AI", 1 }, { "Thread", 4 }, { "Everyday", 0 } };
+    } kSections[] = { { "Industry", 8 }, { "Edge AI", 1 }, { "Thread", 4 }, { "Location", 9 }, { "Everyday", 0 } };
 
     for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); s++) {
         size_t end = kSections[s].count != 0 ? first + kSections[s].count : CASE_COUNT;

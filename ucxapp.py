@@ -516,10 +516,10 @@ def detect(exe, ports=None, force=False):
     modules = ports or module_ports(app_output(exe, "--list-modules", timeout=30))
     print("NORA modules" + (" (--ports):" if ports else " (probing every port):" if force else ":"))
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=30), modules))
+        infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60), modules))
         if force and not ports:
             others = [n for n, _, role in serial_ports if role != "skip" and n not in modules]
-            for port, info in zip(others, pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=40),
+            for port, info in zip(others, pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60),
                                                    others), strict=True):
                 if re.search(r"\bNORA-[A-Z0-9]", info):
                     modules.append(port)
@@ -528,11 +528,16 @@ def detect(exe, ports=None, force=False):
         # Wi-Fi modules (NORA-W*) first, so UCX_PORT_A/B can run the Wi-Fi tests whatever order the OS lists them in
         pairs = sorted(zip(modules, infos, strict=True), key=lambda pi: "NORA-W" not in pi[1])
         modules, infos = [p for p, _ in pairs], [i for _, i in pairs]
-    env.update(port_env(modules))
+    answering = []
     for port, info in zip(modules, infos, strict=True):
         m = re.search(r"\b(NORA-[A-Z0-9]+[\w-]*)", info)
         v = re.search(r"Firmware Version:\s*(\S+)", info)
-        print(f"  {port:<14} {m.group(1) + (f' ({v.group(1)})' if v else '') if m else '(no answer to dev.info)'}")
+        if m or ports:
+            answering.append(port)
+        name = m.group(1) + (f" ({v.group(1)})" if v else "") if m else \
+            "(no answer to dev.info: not used by the tests, power-cycle it)"
+        print(f"  {port:<14} {name}")
+    env.update(port_env(answering))
     if not modules:
         print("  none")
 

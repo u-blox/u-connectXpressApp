@@ -30,6 +30,15 @@ def test_nora_profile_peer_keeps_its_own_services_first():
     assert any(line.endswith(",1812") for line in lines) and lines.count("OK") == 1
 
 
+def test_virtual_rssi_varies_within_a_realistic_range():
+    """wifi.rssi on the virtual module moves like a real link instead of repeating one value."""
+    module = Vucx("nora-w36.yaml")
+    values = [int(module._lookup(module.commands, "AT+UWSST=4")[0].split(",")[1]) for _ in range(12)]
+    assert len(set(values)) >= 4, values
+    assert all(-55 <= v <= -35 for v in values), values
+    assert module._lookup(module.commands, "AT+UWSST=0") == ['+UWSST:0,"vucx-net"', "OK"]
+
+
 def test_network_tcp_echo_and_close():
     net = Network({})
     assert net.handle("AT+USOCR=6", b"") == (["+USOCR:0", "OK"], [])

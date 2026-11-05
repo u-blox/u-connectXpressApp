@@ -1486,7 +1486,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
 #ifndef UCXAPP_LITE
     { "wifi.channels",   "[mixed|full]",        "Scan channels: mixed rescans the channels of the last scan (a full scan every 10th), full clears that and the module's channel list", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiChannels },
 #endif
-    { "wifi.connect",    "[ssid|number] [password]", "Connect with WPA2/WPA3 by SSID or scan number; no password: open network, or the saved profile's; '-' prompts for it; no argument: the best known network", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
+    { "wifi.connect",    "[ssid|number] [password]", "Connect by SSID or scan number (WPA2/WPA3); no password: open or saved; '-' prompts; no argument: best known network", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
 #ifndef UCXAPP_LITE
     { "wifi.eap",        "<ssid> <ca> <cert> <key> <identity> [1.2|1.3|any]", "WPA2/WPA3-Enterprise EAP-TLS with certificates on the module (cert.list)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiEap },
     { "wifi.peap",       "<ssid> <user> <password> <ca> [1.2|1.3|any]", "WPA2/WPA3-Enterprise PEAP (MSCHAPv2); the CA verifies the server; '-' prompts for the password", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPeap },
@@ -1503,7 +1503,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
     { "wifi.profile.auto", "",                   "Connect to the last used profile, else to the strongest known network in a scan", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
-    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); scan, connect and AP ask the first time and use 'world' (with a warning) until one is set; at the prompt a numbered list helps (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
+    { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); 'world' with a warning until set (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
     { "wifi.ap.enable",  "[ssid] [password=12345678] [channel=6]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },

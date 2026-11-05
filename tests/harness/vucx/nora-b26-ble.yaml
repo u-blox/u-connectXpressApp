@@ -1,0 +1,8 @@
+# NORA-B26 for the browser's "BLE" virtual module: the NORA-W36 Bluetooth LE answers (GATT, peer, Channel
+# Sounding); the model hides Wi-Fi and the missing +UTHE answer hides Thread.
+include: [nora-w36.yaml]
+identity:
+  manufacturer: u-blox
+  model: NORA-B26
+  version: 3.5.0-0
+  serial: "VUCX0123456789"

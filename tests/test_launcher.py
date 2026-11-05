@@ -127,3 +127,15 @@ def test_detect_force_probes_unnamed_ports(monkeypatch):
     assert env["UCX_PORT_A"] == "COM116"
     assert ("COM3", "--exec", "dev.info") not in asked
     assert ucxapp.detect("ucxapp.exe").get("UCX_PORT_A") is None
+
+
+def test_detect_drops_a_module_that_does_not_answer(monkeypatch, capsys):
+    """A listed NORA that is silent (asleep, hung) gets no UCX_PORT_*, so the tests do not abort on it."""
+    monkeypatch.setattr(ucxapp, "list_ports", lambda _exe: [])
+    monkeypatch.setattr(ucxapp, "module_ports", lambda _text: ["COM155", "COM13"])
+    monkeypatch.setattr(ucxapp, "app_output", lambda _exe, *args, timeout=30:
+                        "Model: NORA-W36\n" if args[:1] == ("COM13",) else "")
+    monkeypatch.setattr(ucxapp, "wifi_summary", lambda: [])
+    env = ucxapp.detect("ucxapp.exe")
+    assert env["UCX_PORT_A"] == "COM13" and "UCX_PORT_B" not in env
+    assert "COM155         (no answer to dev.info" in capsys.readouterr().out

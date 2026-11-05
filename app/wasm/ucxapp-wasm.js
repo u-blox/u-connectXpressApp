@@ -1,7 +1,6 @@
 /* u-connectXpressApp in the browser. The app runs as WebAssembly in this tab: it answers the page's /api calls
    and events here (no server), and reaches the NORA module over Web Serial (Chrome or Edge), or a virtual
-   NORA-W36 (vnora.json) or ALMA-W1 with Thread (valma-w1.json), from the vucx test profiles, when there is
-   no hardware. */
+   module from the vucx test profiles (VIRTUAL below) when there is no hardware. */
 (() => {
   'use strict';
   const realFetch = window.fetch.bind(window), RealEventSource = window.EventSource;
@@ -479,7 +478,7 @@
   function connected(yes) {
     document.getElementById('wsc').textContent = yes ? 'Disconnect module' : 'Connect module';
     document.getElementById('wsv').hidden = yes;
-    document.getElementById('wsvt').hidden = yes;
+    document.getElementById('wsvm').hidden = yes;
   }
 
   async function devConnect() {
@@ -618,15 +617,31 @@
       'desktop to connect a module, or try the virtual module.';
   }
 
+  /* [site file, radios for the label, matching modules for the tooltip]; the first is the default */
+  const VIRTUAL = [
+    ['valma-w1.json', 'Wi-Fi + BLE + Thread', 'ALMA-W1 with Thread firmware'],
+    ['vnora-w36.json', 'Wi-Fi + BLE', 'NORA-W36'],
+    ['vnora-b26-thread.json', 'BLE + Thread', 'NORA-B26 with Thread firmware'],
+    ['vnora-b26.json', 'BLE', 'NORA-B26'],
+  ];
+
   function addButtons() {
     const files = document.getElementById('files');
     if (!files) return;
     const reason = noSerialReason();
     addButton('wsc', 'Connect module', reason || 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);
-    addButton('wsv', 'Virtual module', 'No hardware: a simulated NORA-W36 with Wi-Fi, sockets and Bluetooth',
-      () => connectVirtual('vnora.json'));
-    addButton('wsvt', 'Virtual Thread module', 'No hardware: a simulated ALMA-W1 with Thread, Wi-Fi and Bluetooth',
-      () => connectVirtual('valma-w1.json'));
+    const pick = document.createElement('select');
+    pick.id = 'wsvm';
+    pick.title = VIRTUAL[0][2];
+    for (const [file, label, radios] of VIRTUAL) {
+      const o = new Option(label, file);
+      o.title = radios;
+      pick.add(o);
+    }
+    pick.onchange = () => { pick.title = VIRTUAL.find(v => v[0] === pick.value)[2]; };
+    addButton('wsv', 'Virtual module', 'No hardware: a simulated module with the radios picked next to it',
+      () => connectVirtual(pick.value));
+    files.parentNode.insertBefore(pick, files);
     if (reason) {
       const note = document.createElement('span');
       note.id = 'wsnote';

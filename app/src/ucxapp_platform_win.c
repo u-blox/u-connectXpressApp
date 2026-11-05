@@ -276,6 +276,21 @@ bool ucxapp_platform_pulse_dtr(void *uartHandle)
     return uPortUartSetDtr(uartHandle, true) == 0;
 }
 
+bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs)
+{
+    if (uPortUartSetDtr(uartHandle, false) != 0) {
+        return false;
+    }
+    Sleep(holdMs);
+    for (int i = 0; i < 5; i++) {
+        uPortUartSetDtr(uartHandle, true);
+        Sleep(10);
+        uPortUartSetDtr(uartHandle, false);
+        Sleep(10);
+    }
+    return true;
+}
+
 bool ucxapp_platform_location(double *lat, double *lon, double *alt)
 {
     static const char kCmd[] =

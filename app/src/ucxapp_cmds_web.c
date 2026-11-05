@@ -166,6 +166,7 @@ typedef struct {
     uint32_t logCur, evCur, doneSeen;
     uint32_t stateSeen;
     int32_t stateMs;
+    uint32_t gnssSeen;
 } viewer_t;
 
 /* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
@@ -203,6 +204,7 @@ static viewer_t *viewer(int i)
         v->evCur = ucxapp_ui_event_start();
         v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 });
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
+        v->gnssSeen = UINT32_MAX;
         v->stateMs = U_CX_PORT_GET_TIME_MS();
     }
     return v;
@@ -266,7 +268,7 @@ static void flushEvents(int first, int last)
 /* Sent to a page on change, when it connects and every 5 s. */
 static void flushState(int first, int last)
 {
-    char text[200], json[210];
+    char text[360], json[370];
     int32_t now = U_CX_PORT_GET_TIME_MS();
     uint32_t version = ucxapp_ui_state(text, sizeof(text));
 
@@ -277,6 +279,47 @@ static void flushState(int first, int last)
         if (v != NULL && (version != v->stateSeen || now - v->stateMs >= 5000) && sendTo(i, "state", json) > 0) {
             v->stateSeen = version;
             v->stateMs = now;
+        }
+    }
+}
+
+/* The live GNSS card (empty: hide it), rebuilt every 250 ms and sent to a page when it changed. */
+static void flushGnss(int first, int last)
+{
+    static char text[640], json[700];
+    static uint32_t hash;
+    static int32_t builtMs;
+    static bool built;
+    int32_t now = U_CX_PORT_GET_TIME_MS();
+
+    if (!built || now - builtMs >= 250) {
+        size_t n = 0;
+
+        built = true;
+        builtMs = now;
+        (void)ucxapp_gnss_card(text, sizeof(text));
+        hash = 2166136261u;
+        json[n++] = '"';
+        for (const char *p = text; *p != '\0' && n + 4 < sizeof(json); p++) {
+            hash = (hash ^ (uint8_t)*p) * 16777619u;
+            if (*p == '\n') {
+                json[n++] = '\\';
+                json[n++] = 'n';
+            } else if (*p == '"' || *p == '\\') {
+                json[n++] = '\\';
+                json[n++] = *p;
+            } else if ((unsigned char)*p >= 0x20) {
+                json[n++] = *p;
+            }
+        }
+        json[n++] = '"';
+        json[n] = '\0';
+    }
+    for (int i = first; i <= last; i++) {
+        viewer_t *v = viewer(i);
+
+        if (v != NULL && v->gnssSeen != hash && sendTo(i, "gnss", json) > 0) {
+            v->gnssSeen = hash;
         }
     }
 }
@@ -327,6 +370,7 @@ static void pumpLoop(void *arg)
         bool pending = flushOutput(0, LOCAL_SLOT - 1);
         flushEvents(0, LOCAL_SLOT - 1);
         flushState(0, LOCAL_SLOT - 1);
+        flushGnss(0, LOCAL_SLOT - 1);
         flushDone(0, LOCAL_SLOT - 1);
         if (U_CX_PORT_GET_TIME_MS() - lastKeepAlive > KEEPALIVE_MS) {
             uWebServerBroadcastSSEEvent(gServer, "ka", "");
@@ -1308,6 +1352,7 @@ const char *ucxapp_web_local_poll(void)
         flushOutput(LOCAL_SLOT, LOCAL_SLOT);
         flushEvents(LOCAL_SLOT, LOCAL_SLOT);
         flushState(LOCAL_SLOT, LOCAL_SLOT);
+        flushGnss(LOCAL_SLOT, LOCAL_SLOT);
         flushDone(LOCAL_SLOT, LOCAL_SLOT);
     }
     return gLocalEvents;

@@ -347,6 +347,7 @@ static int locate(ucxapp_t *app, const locService_t *s, const char *key)
     }
     ucxapp_print("Map: https://www.openstreetmap.org/?mlat=%.6f&mlon=%.6f#map=17/%.6f/%.6f\n", lat, lng, lat, lng);
     ucxapp_print("As a GNSS receiver for bridges and tests: gnss.virtual %.6f %.6f\n", lat, lng);
+    ucxapp_time_set_location(lat, lng, acc, "wifi");
     return UCXAPP_OK;
 }
 

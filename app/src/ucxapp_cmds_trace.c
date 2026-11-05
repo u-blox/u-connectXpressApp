@@ -123,7 +123,7 @@ static bool decodeUrc(const char *line, char *out, size_t size)
         char fallback[8];
         const char *name = names;
         if (nameLen == 0) {
-            snprintf(fallback, sizeof(fallback), "p%d", n);
+            snprintf(fallback, sizeof(fallback), "p%u", (unsigned)n % 1000u);
             name = fallback;
             nameLen = strlen(fallback);
         }
@@ -439,7 +439,7 @@ static int cmdTraceShow(ucxapp_t *app, int argc, char *argv[])
             bool fresh = nSlow < 5;
             int at = fresh ? nSlow++ : 4;
             if (fresh || d > slow[4].ms) {
-                snprintf(slow[at].cmd, sizeof(slow[at].cmd), "%s", cmd);
+                snprintf(slow[at].cmd, sizeof(slow[at].cmd), "%.*s", (int)sizeof(slow[at].cmd) - 1, cmd);
                 slow[at].ms = d;
                 for (int i = at; i > 0 && slow[i].ms > slow[i - 1].ms; i--) {
                     slow_t s = slow[i];

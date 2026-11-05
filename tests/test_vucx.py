@@ -641,7 +641,9 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
     assert out.returncode in (0, 1), out.stdout[-3000:]
 
 
-USE_CASES = ["boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote"]
+USE_CASES = ["iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw", "edge",
+             "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote",
+             "handover", "livestock"]
 
 
 @pytest.mark.parametrize("case", USE_CASES)
@@ -685,7 +687,8 @@ def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path)
 
 
 THREAD_CASES = {"mesh": "nora-b26-thread.yaml", "border": "nora-b26-thread.yaml",
-                "building": "nora-b26-thread.yaml", "gateway": "alma-w1-thread.yaml"}
+                "building": "nora-b26-thread.yaml", "gateway": "alma-w1-thread.yaml",
+                "swarm": "alma-w1-thread.yaml", "recovery": "alma-w1-thread.yaml"}
 
 
 @pytest.mark.parametrize("case", THREAD_CASES)

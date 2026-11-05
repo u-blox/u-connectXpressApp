@@ -37,8 +37,10 @@ def test_site_sources_are_ascii():
         f.read_bytes().decode("ascii")
 
 
-@pytest.mark.parametrize("profile, site_file", [("nora-w36.yaml", "vnora.json"),
-                                                ("alma-w1-thread.yaml", "valma-w1.json")])
+@pytest.mark.parametrize("profile, site_file", [("alma-w1-thread.yaml", "valma-w1.json"),
+                                                ("nora-w36.yaml", "vnora-w36.json"),
+                                                ("nora-b26-ble-thread.yaml", "vnora-b26-thread.json"),
+                                                ("nora-b26-ble.yaml", "vnora-b26.json")])
 def test_virtual_modules_are_the_vucx_profiles(profile, site_file):
     import json
 
@@ -106,22 +108,39 @@ def test_app_runs_in_the_browser(site):
         page.press("#cmd", "Tab")
         page.wait_for_function("document.getElementById('cmd').value === 'gnss.bridge ntrip '", timeout=10000)
         page.fill("#cmd", "")
+        # a GNSS receiver that sends gets a live card above the events; it goes away when the receiver closes
+        assert page.is_hidden("#gc")
+        run(page, "gnss.virtual 55.5 13.25 20")
+        page.wait_for_function("document.getElementById('gc').textContent.includes('POS   55.5000000 N  "
+                               "13.2500000 E  alt 20.0 m')", timeout=30000)
+        assert page.is_visible("#gc") and page.inner_text("#gc").startswith("FIX ")
+        run(page, "gnss.virtual off")
+        page.wait_for_selector("#gc", state="hidden", timeout=30000)
         # the module over (fake) Web Serial
         page.click("#wsc")
         page.wait_for_function("window.__tx.includes('AT')", timeout=30000)
-        page.wait_for_function("document.querySelectorAll('.blk .badge.ok, .blk .badge.bad').length >= 2",
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
                                timeout=60000)
         assert page.inner_text("#wsc") == "Disconnect module"
-        assert "connected to webserial" in page.inner_text("#out")
         # log timestamps come from a working clock (no negative fields)
         assert not re.search(r"\[[^\]]*-\d", page.inner_text("#out"))
         page.click("#wsc")
         page.wait_for_function("document.getElementById('wsc').textContent === 'Connect module'", timeout=30000)
-        # no hardware: the virtual NORA-W36 answers like the vucx profile
+        # no hardware: a virtual module per radio set, ALMA-W1 (BLE, Wi-Fi and Thread) by default
+        assert page.locator("#wsvm option").all_inner_texts() == [
+            "Wi-Fi + BLE + Thread", "Wi-Fi + BLE", "BLE + Thread", "BLE"]
+        assert page.input_value("#wsvm") == "valma-w1.json"
         page.click("#wsv")
         page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
         page.wait_for_function("document.getElementById('out').innerText.split('connected to webserial').length > 2",
                                timeout=60000)
+        # the app's own state: advertising and listening sockets as chips, its clock and source in the footer
+        page.wait_for_function("[...document.querySelectorAll('#state .chip')].some(c => c.textContent === "
+                               "'Advertising on')", timeout=30000)
+        assert "Listening off" in page.locator("#state .chip").all_inner_texts()
+        page.wait_for_function(r"/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ \/ \S/.test("
+                               "document.getElementById('clock').textContent)", timeout=30000)
+        assert page.inner_text("#loc") == "Location: unknown"
         run(page, "wifi.scan")
         page.wait_for_function(
             "document.getElementById('out').innerText.includes('no Wi-Fi regulatory domain chosen')", timeout=30000)
@@ -131,6 +150,16 @@ def test_app_runs_in_the_browser(site):
         run(page, "wifi.scan")
         page.wait_for_function("document.getElementById('out').innerText.split('vucx-net').length > 2", timeout=60000)
         assert page.inner_text("#out").count("no Wi-Fi regulatory domain chosen") == 1
+        page.click("#wsc")
+        page.wait_for_function("!document.getElementById('wsv').hidden", timeout=30000)
+        # the BLE-only module blocks Wi-Fi
+        page.select_option("#wsvm", "vnora-b26.json")
+        page.click("#wsv")
+        page.wait_for_function("document.getElementById('out').innerText.split('connected to webserial').length > 3",
+                               timeout=60000)
+        run(page, "wifi.status")
+        page.wait_for_function("document.getElementById('out').innerText.includes('wifi.status needs Wi-Fi')",
+                               timeout=30000)
         page.click("#wsc")
         page.wait_for_function("!document.getElementById('wsv').hidden", timeout=30000)
         browser.close()

@@ -572,6 +572,33 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
                      "wakes on UART)\n", pulsed ? " after a WAKE_UP pulse through DTR" : "");
         return UCXAPP_ERR_FAILED;
     }
+    if ((argc == 2 || argc == 3) && strcmp(argv[1], "recover") == 0) {
+        uint32_t holdMs = argc == 3 ? (uint32_t)strtoul(argv[2], NULL, 10) : UCXAPP_DTR_HOLD_MS;
+        if (holdMs == 0 || holdMs > 10000) {
+            return UCXAPP_ERR_USAGE;
+        }
+        ucxapp_events_clear(URC_FLAG_STARTUP);
+        if (!ucxapp_platform_recover_dtr(app->ucx->pAtClient->uartHandle, holdMs)) {
+            ucxapp_print("ERROR: this port has no DTR\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        uint32_t startMs = ucxapp_platform_tick_ms();
+        bool started = ucxapp_events_wait(URC_FLAG_STARTUP, 10);
+        uint32_t tookMs = ucxapp_platform_tick_ms() - startMs;
+        ucxapp_platform_pulse_dtr(app->ucx->pAtClient->uartHandle);
+        U_CX_PORT_SLEEP_MS(200);
+        uCxAtClientSetCommandTimeout(app->ucx->pAtClient, POWER_WAKE_TIMEOUT_MS, false);
+        bool answers = uCxSystemSetEchoOff(app->ucx) == 0;
+        uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON);
+        if (started) {
+            ucxapp_print("+STARTUP %u ms after the DTR sequence (low %u ms, 5 pulses)%s\n", (unsigned)tookMs,
+                         (unsigned)holdMs, answers ? "" : ", but no answer to ATE0");
+            return answers ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("ERROR: no +STARTUP within 10 s of the DTR sequence (%s); power-cycle the module\n",
+                     answers ? "it still answers, so it did not restart" : "no answer either");
+        return UCXAPP_ERR_FAILED;
+    }
     if (strcmp(argv[1], "deep") == 0 && argc <= 3) {
         static const char *const kWake[] = { "pin", "reset", "uart" };
         int mode = 0;
@@ -611,7 +638,7 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
     { "dev.crash", "", "Developer: last crash info in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
 #ifndef UCXAPP_LITE
-    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|deep [pin|reset|uart]]", "Power save level (NORA-W36, stored), light sleep keeping Bluetooth links (NORA-B26) and wake, or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
+    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|recover [hold_ms]|deep [pin|reset|uart]]", "Power save level (NORA-W36, stored), light sleep keeping Bluetooth links (NORA-B26) and wake, DTR recovery of a stuck module (DTR low 1200 ms, 5 pulses), or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
 #endif
 };
 

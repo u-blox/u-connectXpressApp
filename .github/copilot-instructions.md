@@ -22,7 +22,7 @@ Always use the `u-blox-docs` MCP server (`.mcp.json`) to look up u-connectXpress
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c`, `app/stm32_freertos/` and `app/zephyr/`.
 
-Customer-facing skills for each target are in `.github/skills/`; `ucx-matter` there covers how u-connectMatter (Matter over NORA-W36 / NORA-B26 / ALMA-W1) relates to ucxapp and u-connectClient. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux, every STM32 board on FreeRTOS and Zephyr, and the WebAssembly site; every part is required: `--everything` builds Zephyr when a west workspace is found and WebAssembly when emsdk is installed, and `release.py` refuses a tree that misses any of them).
+Customer-facing skills for each target are in `.github/skills/`; `ucx-matter` there covers how u-connectMatter (Matter over NORA-W36 / NORA-B26 / ALMA-W1) relates to ucxapp and u-connectClient. `ucx-nut` covers reproducing module/firmware bugs with NUT (`E:\u-blox\nut`): find them with ucxapp, hand them to R&D as a NUT test. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux, every STM32 board on FreeRTOS and Zephyr, and the WebAssembly site; every part is required: `--everything` builds Zephyr when a west workspace is found and WebAssembly when emsdk is installed, and `release.py` refuses a tree that misses any of them).
 
 ## Scope and priorities
 

@@ -73,6 +73,7 @@ cmake --build build/windows --config Release
 
 # Zephyr build (same boards, or --board all): west + an upstream workspace (default ZEPHYR_BASE: C:/zephyrproject/zephyr),
 # set up with: pip install west; west init C:\zephyrproject; cd C:\zephyrproject; west update; west sdk install
+# PyYAML needs its libyaml C loader (pip install --upgrade pyyaml), else the configure is about 6x slower
 .\ucxapp --stm32-zephyr --board h753 --build --flash --log
 ```
 

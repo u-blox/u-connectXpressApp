@@ -1257,7 +1257,18 @@ def zephyr_env():
         modules = hal.as_posix() if (hal / "zephyr" / "module.yml").is_file() else ""
     require("west", "Install west (pip install west) and a Zephyr workspace (west init C:\\zephyrproject)")
     print("Zephyr:", os.environ["ZEPHYR_BASE"])
+    if not yaml_has_libyaml():
+        print("Note: PyYAML has no libyaml C loader, the Zephyr configure runs about 6x slower; "
+              "fix: python -m pip install --upgrade pyyaml")
     return modules
+
+
+def yaml_has_libyaml():
+    try:
+        import yaml
+    except ImportError:
+        return True
+    return bool(getattr(yaml, "__with_libyaml__", False))
 
 
 def zephyr_board(key):

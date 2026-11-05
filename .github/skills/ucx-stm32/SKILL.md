@@ -23,6 +23,7 @@ On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--cle
   pip install west
   west init C:\zephyrproject; cd C:\zephyrproject; west update
   west sdk install
+  pip install --upgrade pyyaml   # needs the libyaml C loader, else the configure is about 6x slower
   ```
 - `ZEPHYR_BASE` defaults to `C:/zephyrproject/zephyr` (or `~/zephyrproject/zephyr`). An nRF Connect SDK under `C:/ncs` also works with [hal_stm32](https://github.com/zephyrproject-rtos/hal_stm32) in `C:\ncs\extra\hal_stm32`, but its `nrf` module warns that the SoC is not supported. `UCXAPP_ZEPHYR_MODULES` sets extra modules.
 - Output: `build/zephyr_<board>/zephyr/zephyr.bin` (single image, no sysbuild). Same boards, wiring and console as the FreeRTOS build (`app/zephyr/boards/<zephyr board>.overlay`; the F4 Discovery is `stm32f4_disco` in Zephyr). `<board>.conf` sets the heap per board; F103 and G071 build lite like FreeRTOS (no MQTT, net, time, cert, YMODEM).

@@ -35,10 +35,15 @@ def _run(exe, port, *commands, timeout=120, cwd=None):
         pytest.fail(f"no result from {port} after {timeout} s running {list(commands)}\n--- output so far ---\n"
                     f"{partial[-2000:]}", pytrace=False)
     if "does not answer AT commands" in out.stdout:
+        before = _LAST_REBOOT.get(port, "")
         pytest.exit(f"module on {port} does not answer AT commands: power-cycle it and run again\n"
-                    f"running {list(commands)}\n{out.stdout[-300:]}",
+                    f"running {list(commands)}\n{out.stdout[-300:]}"
+                    + (f"\n--- last dev.reboot on {port} ---\n{before[-1500:]}" if before else ""),
                     returncode=3)
     return out
+
+
+_LAST_REBOOT = {}
 
 
 @functools.lru_cache(maxsize=None)
@@ -60,11 +65,14 @@ def _has_thread(exe, port):
 
 
 def _reboot(exe, *ports):
-    """Reboots the modules in parallel; dev.reboot already waits for the startup event."""
-    procs = [subprocess.Popen(_args(exe, port, "dev.reboot"), stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL) for port in ports]
-    for proc in procs:
-        proc.wait(timeout=60)
+    """Reboots the modules in parallel; dev.reboot already waits for the startup event.
+
+    The output is kept so that a module that goes silent afterwards is reported with this step's trace."""
+    procs = [(port, subprocess.Popen(_args(exe, port, "dev.reboot"), stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
+                                     errors="replace")) for port in ports]
+    for port, proc in procs:
+        _LAST_REBOOT[port] = proc.communicate(timeout=60)[0] or ""
 
 
 def _start_server(exe, port):

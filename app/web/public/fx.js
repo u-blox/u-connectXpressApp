@@ -2,8 +2,8 @@
    every command still goes through the page script and the app. */
 (() => {
   'use strict';
-  /* on by default (Windows with animation effects off reports reduce-motion); the FX button turns it off */
-  const calm = localStorage.getItem('fxoff') === '1';
+  /* off by default (plain, like the app's own page); the FX button or a ?fx=1 link turns it on */
+  const calm = localStorage.getItem('fxoff') !== '0';
   const SVG = 'http://www.w3.org/2000/svg';
   const COLORS = ['#29b6f6', '#a07cff', '#66d17a', '#ffd54a', '#ff3b6b', '#4f8cff'];
   const make = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
@@ -40,24 +40,30 @@
     const g = cv.getContext('2d'), mouse = { x: -1e4, y: -1e4 };
     let pts = [], W = 0, H = 0, dpr = 1;
     const size = () => {
-      dpr = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+      dpr = 1; W = innerWidth; H = innerHeight;
       cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       const n = Math.min(110, Math.round(W * H / 16000));
-      pts = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H,
-        vx: (Math.random() - .5) * .35, vy: (Math.random() - .5) * .35, c: COLORS[Math.random() * COLORS.length | 0],
-        r: 1 + Math.random() * 1.6, ph: Math.random() * 6.28 }));
+      pts = Array.from({ length: n }, () => {
+        const a = Math.random() * 6.283, s = .25 + Math.random() * .45;
+        return { x: Math.random() * W, y: Math.random() * H, bx: Math.cos(a) * s, by: Math.sin(a) * s, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          c: COLORS[Math.random() * COLORS.length | 0], r: 1 + Math.random() * 1.6, ph: Math.random() * 6.28 };
+      });
     };
     addEventListener('resize', size); size();
     addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; }, { passive: true });
-    const LINK = 130;
+    const LINK = 130, LINK2 = LINK * LINK;
+    let prev = 0;
     const frame = t => {
+      /* steps of a 60 Hz frame, so the motion keeps its speed on 30 Hz and 144 Hz screens */
+      const k = prev ? Math.min((t - prev) / 16.7, 4) : 1; prev = t;
       if (!document.hidden) {
         g.clearRect(0, 0, W, H);
         for (const p of pts) {
           const dx = mouse.x - p.x, dy = mouse.y - p.y, d2 = dx * dx + dy * dy;
-          if (d2 < 40000) { p.vx += dx * 2e-5; p.vy += dy * 2e-5; }
-          p.vx *= .995; p.vy *= .995; p.x += p.vx; p.y += p.vy;
+          if (d2 < 40000) { p.vx += dx * 2e-5 * k; p.vy += dy * 2e-5 * k; }
+          const damp = 1 - Math.pow(.98, k);
+          p.vx += (p.bx - p.vx) * damp; p.vy += (p.by - p.vy) * damp; p.x += p.vx * k; p.y += p.vy * k;
           if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
           if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
         }
@@ -65,8 +71,10 @@
         for (let i = 0; i < pts.length; i++) {
           const a = pts[i];
           for (let j = i + 1; j < pts.length; j++) {
-            const b = pts[j], dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy);
-            if (d < LINK) { g.strokeStyle = a.c; g.globalAlpha = (1 - d / LINK) * .22; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+            const b = pts[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+            if (d2 >= LINK2) continue;
+            const d = Math.sqrt(d2);
+            g.strokeStyle = a.c; g.globalAlpha = (1 - d / LINK) * .22; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
           }
         }
         for (const p of pts) {

@@ -1,10 +1,10 @@
 /* Public site only (GitHub Pages, ucxapp --wasm): motion and glow on top of app/web/index.html.
    The page served from the app and the boards stays without this layer. */
-:root{--glass:#121a26b8;--glow:0 0 0 1px #29b6f655,0 0 24px #29b6f633}
+:root{--glass:#121a26e0;--glow:0 0 0 1px #29b6f655,0 0 24px #29b6f633}
 html{background:#070a10}
 body{position:relative;overflow-x:hidden}
 #fx-bg{position:fixed;inset:0;z-index:-1;pointer-events:none}
-body::before{content:'';position:fixed;inset:-20%;z-index:-2;pointer-events:none;filter:blur(60px);opacity:.55;
+body::before{content:'';position:fixed;inset:-20%;z-index:-2;pointer-events:none;opacity:.55;will-change:transform;
  background:radial-gradient(30% 35% at 20% 25%,#1565c0 0%,transparent 70%),radial-gradient(28% 30% at 80% 20%,#6a1b9a 0%,transparent 70%),
  radial-gradient(35% 30% at 60% 85%,#00838f 0%,transparent 70%),radial-gradient(20% 25% at 15% 80%,#b71c1c55 0%,transparent 70%);
  animation:fx-aurora 28s ease-in-out infinite alternate}
@@ -28,7 +28,7 @@ h1{background:linear-gradient(90deg,#fff 0%,#9be3ff 25%,#fff 50%,#c9b6ff 75%,#ff
 #vw{box-shadow:0 0 0 1px #ffffff08}#vw button{transition:background .3s,color .3s}#vw button.on{background:linear-gradient(135deg,#29b6f6,#4f8cff);box-shadow:0 0 18px #29b6f666}
 
 /* panes: glass, staggered entrance */
-#out,#ev,#side,.sc,#gc{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 30px #0006,inset 0 1px 0 #ffffff0a;transition:box-shadow .4s,border-color .4s}
+#out,#ev,#side,.sc,#gc{background:var(--glass);box-shadow:0 8px 30px #0006,inset 0 1px 0 #ffffff0a;transition:box-shadow .4s,border-color .4s}
 #out:hover,#ev:hover,#side:hover,.sc:hover{border-color:#2b3c55}
 
 /* use case and virtual module pickers: glowing gradient ring */

@@ -13,8 +13,8 @@ string(FIND "${page}" "<script>" at)
 set(inject "<script>if(!self.crossOriginIsolated&&navigator.serviceWorker)navigator.serviceWorker.register('coi-serviceworker.js').then(()=>{if(!navigator.serviceWorker.controller)location.reload()})</script>\n<script src=\"ucxapp.js\"></script><script src=\"ucxapp-wasm.js\"></script>\n")
 string(SUBSTRING "${page}" 0 ${at} head)
 string(SUBSTRING "${page}" ${at} -1 tail)
-# FX off (the FX button) drops the whole look before the first paint; ?fx=1 or ?fx=0 in a link sets it
-set(fx "<link id=\"fx-css\" rel=\"stylesheet\" href=\"fx.css\"><script>{const q=new URLSearchParams(location.search).get('fx');if(q==='1'||q==='0')localStorage.setItem('fxoff',q==='1'?'0':'1')}if(localStorage.getItem('fxoff')==='1')document.getElementById('fx-css').disabled=true</script></head>")
+# plain unless the FX button or a ?fx=1 link turned the look on (?fx=0 turns it off); decided before the first paint
+set(fx "<link id=\"fx-css\" rel=\"stylesheet\" href=\"fx.css\"><script>{const q=new URLSearchParams(location.search).get('fx');if(q==='1'||q==='0')localStorage.setItem('fxoff',q==='1'?'0':'1')}if(localStorage.getItem('fxoff')!=='0')document.getElementById('fx-css').disabled=true</script></head>")
 string(REPLACE "</head>" "${fx}" head "${head}")
 string(REPLACE "</head>" "${fx}" tail "${tail}")
 file(WRITE ${OUT} "${head}${inject}${tail}")

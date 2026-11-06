@@ -16,6 +16,7 @@
 
 #ifdef _WIN32
 #define strcasecmp _stricmp
+#define strncasecmp _strnicmp
 #else
 #include <strings.h>
 #endif
@@ -182,6 +183,30 @@ static void learnMaker(void)
         }
         gMaker[i] = '\0';
     }
+    /* a SARA-R5 says only "SARA-R510S-01B-00" to ATI: put the manufacturer in front for the vendor checks */
+    if (atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) == AT_OK) {
+        const char *p = resp;
+        for (;;) {
+            p += strspn(p, "\r\n");
+            size_t len = strcspn(p, "\r\n");
+            if (len == 0 || (len >= 2 && strncmp(p, "OK", 2) == 0)) {
+                break;
+            }
+            if (strncmp(p, "AT", 2) != 0) {   /* skip the echo */
+                char maker[32];
+                snprintf(maker, sizeof(maker), "%.*s", (int)len, p);
+                if (strstr(gMaker, maker) == NULL) {
+                    char both[sizeof(maker) + sizeof(gMaker) + 1];
+                    int n = snprintf(both, sizeof(both), "%s%s%s", maker, gMaker[0] ? " " : "", gMaker);
+                    size_t keep = n < 0 ? 0 : (size_t)n < sizeof(gMaker) ? (size_t)n : sizeof(gMaker) - 1;
+                    memcpy(gMaker, both, keep);
+                    gMaker[keep] = '\0';
+                }
+                break;
+            }
+            p += len;
+        }
+    }
 }
 
 static bool openPort(const char *port, int32_t baud)
@@ -248,6 +273,90 @@ static bool cellBusy(void)
 
 static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[]);
 
+/* XPLR-IOT-1: an FT4232 gives the NORA-B106 (Zephyr shell, interface A) and the SARA-R510S (interface B). The
+ * NORA-B106 drives the SARA power pin, so the SARA port stays silent until "modules SARAR5 power_on" is sent. */
+#define XPLR_SARA_BOOT_MS 15000
+
+static bool isFt4232(const ucxapp_serial_port_t *sp)
+{
+    return sp->vid == 0x0403 && sp->pid == 0x6011;
+}
+
+/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port. */
+static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count)
+{
+    const char *dev = ucxapp_device_port();
+
+    for (int i = 0; i < count; i++) {
+        const ucxapp_serial_port_t *sp = &ports[i];
+        if (!isFt4232(sp) || !sp->available || (dev != NULL && strcasecmp(dev, sp->name) == 0)) {
+            continue;
+        }
+        uPortUartHandle_t h = ucxapp_uart_open(sp->name, 115200);
+        if (h == NULL) {
+            continue;
+        }
+        char resp[256] = "";
+        size_t n = 0;
+        uint8_t scratch[64];
+        uint32_t start = ucxapp_platform_tick_ms();
+
+        (void)ucxapp_uart_write(h, (const uint8_t *)"\r", 1);
+        while (ucxapp_platform_tick_ms() - start < 400 && strstr(resp, "uart:~$") == NULL) {
+            int32_t got = ucxapp_uart_read(h, scratch, sizeof(scratch), 50);
+            for (int32_t k = 0; k < got; k++) {
+                if (n < sizeof(resp) - 1) {
+                    resp[n++] = (char)scratch[k];
+                } else {   /* keep the tail, where the prompt is */
+                    memmove(resp, resp + 1, n - 1);
+                    resp[n - 1] = (char)scratch[k];
+                }
+            }
+            resp[n] = '\0';
+        }
+        bool shell = strstr(resp, "uart:~$") != NULL;
+        if (shell) {
+            static const char kCmd[] = "modules SARAR5 power_on\r";
+            ucxapp_print("  %s: XPLR-IOT-1 shell, powering the SARA-R5 on\n", sp->name);
+            (void)ucxapp_uart_write(h, (const uint8_t *)kCmd, sizeof(kCmd) - 1);
+            while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
+                /* let the shell finish its reply */
+            }
+        }
+        ucxapp_uart_close(h);
+        if (shell) {
+            return sp->name;
+        }
+    }
+    return NULL;
+}
+
+/* After xplrPowerOn: waits for one of the silent FT4232 ports (or only "want") to answer AT and leaves it open. */
+static bool xplrOpenSara(const ucxapp_serial_port_t *ports, int count, const char *shell, const char *want)
+{
+    uint32_t start = ucxapp_platform_tick_ms();
+
+    while (ucxapp_platform_tick_ms() - start < XPLR_SARA_BOOT_MS) {
+        for (int i = 0; i < count; i++) {
+            const ucxapp_serial_port_t *sp = &ports[i];
+            if (want != NULL ? strcasecmp(sp->name, want) != 0
+                             : !isFt4232(sp) || !sp->available || strcasecmp(sp->name, shell) == 0) {
+                continue;
+            }
+            if (openPort(sp->name, 115200)) {
+                char resp[RESP_SIZE];
+                /* a NORA-W36 EVK is an FT4232 too: only a 3GPP modem identifies itself */
+                if (atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) == AT_OK) {
+                    return true;
+                }
+                closePort();
+            }
+        }
+        ucxapp_platform_sleep_ms(500);
+    }
+    return false;
+}
+
 /* ---- commands ---- */
 
 static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
@@ -256,6 +365,7 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
     bool onlyVirt = argc == 2 && ucxapp_vport_is(argv[1]);
     int count = onlyVirt ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
     int found = 0;
+    bool cellFound = false;
 
     if (argc > 2) {
         return UCXAPP_ERR_USAGE;
@@ -276,12 +386,22 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
         }
         for (size_t b = 0; b < sizeof(kBauds) / sizeof(kBauds[0]); b++) {
             if (openPort(sp->name, kBauds[b])) {
+                char resp[RESP_SIZE];
                 ucxapp_print("  %s%s%s%s: ", sp->name, sp->desc[0] ? " (" : "", sp->desc, sp->desc[0] ? ")" : "");
                 ucxapp_print("AT module at %d baud: %s\n", (int)kBauds[b], gMaker);
+                cellFound = cellFound || atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) == AT_OK;
                 closePort();
                 found++;
                 break;
             }
+        }
+    }
+    if (!cellFound && !onlyVirt) {
+        const char *shell = xplrPowerOn(ports, count);
+        if (shell != NULL && xplrOpenSara(ports, count, shell, argc == 2 ? argv[1] : NULL)) {
+            ucxapp_print("  %s: AT module at 115200 baud: %s\n", gPort, gMaker);
+            closePort();
+            found++;
         }
     }
     /* a virtual module gets the simulated SARA-R5 (virt:cell) */
@@ -361,12 +481,24 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             (void)openPort(UCXAPP_VPORT_CELL, baud);
         }
         if (!gOpen) {
+            const char *shell = xplrPowerOn(ports, count);
+            if (shell != NULL) {
+                (void)xplrOpenSara(ports, count, shell, NULL);
+            }
+        }
+        if (!gOpen) {
             ucxapp_print("ERROR: no cellular module found (cell.open <port>)\n");
             return UCXAPP_ERR_FAILED;
         }
     } else if (!openPort(argv[1], baud)) {
-        ucxapp_print("ERROR: no AT response on %s at %d baud\n", argv[1], (int)baud);
-        return UCXAPP_ERR_FAILED;
+        static ucxapp_serial_port_t ports[32];
+        int count = ucxapp_vport_is(argv[1]) ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
+        const char *shell = xplrPowerOn(ports, count);
+
+        if (shell == NULL || !xplrOpenSara(ports, count, shell, argv[1])) {
+            ucxapp_print("ERROR: no AT response on %s at %d baud\n", argv[1], (int)baud);
+            return UCXAPP_ERR_FAILED;
+        }
     }
     ucxapp_print("cellular module open on %s at %d baud: %s\n", gPort, (int)gBaud, gMaker);
     return UCXAPP_OK;
@@ -397,10 +529,89 @@ static const char *regText(int stat)
     }
 }
 
+/* Registration state from +CEREG (LTE), or +CREG when LTE is not registered; -1 when the modem does not say. */
+static int regState(void)
+{
+    static const char *const kCmd[] = { "AT+CEREG?", "AT+CREG?" };
+    static const char *const kTag[] = { "+CEREG:", "+CREG:" };
+    char resp[RESP_SIZE];
+    char v[160];
+    int state = -1;
+
+    for (int i = 0; i < 2 && state != 1 && state != 5; i++) {
+        if (atCmd(kCmd[i], resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, kTag[i], v, sizeof(v))) {
+            const char *comma = strchr(v, ',');
+            int stat = comma ? atoi(comma + 1) : atoi(v);
+            state = state < 0 || stat == 1 || stat == 5 || stat == 3 ? stat : state;
+        }
+    }
+    return state;
+}
+
+/* Network name from +COPS: <mode>[,<format>,"<oper>"[,<act>]]; false when not on a network. */
+static bool operatorName(const char *cops, char *out, size_t size)
+{
+    const char *q = strchr(cops, '"');
+    const char *e = q != NULL ? strchr(q + 1, '"') : NULL;
+
+    if (e == NULL || e == q + 1) {
+        return false;
+    }
+    snprintf(out, size, "%.*s", (int)(e - q - 1), q + 1);
+    return true;
+}
+
+/* First non-zero address of context 1: +CGPADDR: 1,"10.0.0.5" or 1,"0.0.0.0 <IPv6>" as a SARA-R5 gives it. */
+static bool pdpAddress(char *out, size_t size)
+{
+    char resp[RESP_SIZE];
+    char v[160];
+
+    out[0] = '\0';
+    if (atCmd("AT+CGPADDR=1", resp, sizeof(resp), 3000, 0) != AT_OK || !field(resp, "+CGPADDR:", v, sizeof(v))) {
+        return false;
+    }
+    for (const char *p = strchr(v, ','); p != NULL && *p != '\0';) {
+        p += strspn(p, ", \"");
+        size_t len = strcspn(p, ", \"");
+        if (len == 0) {
+            break;
+        }
+        if (strspn(p, "0.:") < len) {   /* 0.0.0.0 and :: are no address */
+            snprintf(out, size, "%.*s", (int)len, p);
+            return true;
+        }
+        p += len;
+    }
+    return false;
+}
+
+/* Why the network refused: +CEER: "EMM cause",15,"No suitable cells in tracking area" without the quotes. */
+static void printRejectCause(void)
+{
+    char resp[RESP_SIZE];
+    char v[160];
+
+    if (atCmd("AT+CEER", resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, "+CEER:", v, sizeof(v))) {
+        char clean[160];
+        size_t n = 0;
+        for (const char *p = v; *p != '\0' && n < sizeof(clean) - 1; p++) {
+            if (*p == ',') {
+                clean[n++] = ' ';
+            } else if (*p != '"') {
+                clean[n++] = *p;
+            }
+        }
+        clean[n] = '\0';
+        ucxapp_print("Reason:    %s\n", clean);
+    }
+}
+
 static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
 {
     char resp[RESP_SIZE];
     char v[160];
+    char name[64];
     (void)app;
     (void)argc;
     (void)argv;
@@ -427,24 +638,17 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("Signal:    unknown\n");
         }
     }
-    const char *regCmd[] = { "AT+CEREG?", "AT+CREG?" };
-    const char *regTag[] = { "+CEREG:", "+CREG:" };
-    for (int i = 0; i < 2; i++) {
-        if (atCmd(regCmd[i], resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, regTag[i], v, sizeof(v))) {
-            const char *comma = strchr(v, ',');
-            int stat = comma ? atoi(comma + 1) : atoi(v);
-            ucxapp_print("Network:   %s (%s)\n", regText(stat), i == 0 ? "LTE" : "2G/3G");
-            if (stat == 1 || stat == 5) {
-                break;
-            }
+    int stat = regState();
+    if (stat >= 0) {
+        ucxapp_print("Network:   %s\n", regText(stat));
+        if (stat == 3) {
+            printRejectCause();
         }
     }
     if (atCmd("AT+COPS?", resp, sizeof(resp), 3000, 0) == AT_OK && field(resp, "+COPS:", v, sizeof(v))) {
-        ucxapp_print("Operator:  %s\n", v);
+        ucxapp_print("Operator:  %s\n", operatorName(v, name, sizeof(name)) ? name : "none");
     }
-    if (atCmd("AT+CGPADDR=1", resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, "+CGPADDR:", v, sizeof(v))) {
-        ucxapp_print("IP:        %s\n", v);
-    }
+    ucxapp_print("IP:        %s\n", pdpAddress(v, sizeof(v)) ? v : "none");
     return UCXAPP_OK;
 }
 
@@ -465,7 +669,10 @@ static int cmdAt(ucxapp_t *app, int argc, char *argv[])
     for (int i = 1; i < argc && pos < sizeof(cmd) - 1; i++) {
         pos += (size_t)snprintf(cmd + pos, sizeof(cmd) - pos, "%s%s", i > 1 ? " " : "", argv[i]);
     }
-    int r = atCmd(cmd, resp, sizeof(resp), 10000, 0);
+    /* network selection, scan and attach may take up to 3 minutes (TS 27.007) */
+    bool slow = strncasecmp(cmd, "AT+COPS=", 8) == 0 || strncasecmp(cmd, "AT+CGATT=", 9) == 0 ||
+                strncasecmp(cmd, "AT+CGACT=", 9) == 0;
+    int r = atCmd(cmd, resp, sizeof(resp), slow ? 180000 : 10000, 0);
     printLines(resp, cmd);
     if (r == AT_TIMEOUT) {
         ucxapp_print("(no final response)\n");
@@ -537,17 +744,42 @@ static int cmdAttach(ucxapp_t *app, int argc, char *argv[])
         return r == AT_OK ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     (void)atCmd("AT+CFUN=1", resp, sizeof(resp), 15000, 0);
-    ucxapp_print("attaching (can take up to a minute)...\n");
-    if (atCmd("AT+CGATT=1", resp, sizeof(resp), 75000, 0) != AT_OK) {
+    ucxapp_print("attaching (can take a few minutes)...\n");
+    if (atCmd("AT+CGATT=1", resp, sizeof(resp), 180000, 0) != AT_OK) {
         ucxapp_print("ERROR: attach failed (check SIM, APN and signal with cell.status)\n");
         return UCXAPP_ERR_FAILED;
     }
-    (void)atCmd("AT+CGACT=1,1", resp, sizeof(resp), 30000, 0);
-    if (atCmd("AT+CGPADDR=1", resp, sizeof(resp), 3000, 0) == AT_OK && field(resp, "+CGPADDR:", v, sizeof(v))) {
-        ucxapp_print("attached, IP %s\n", v);
-    } else {
-        ucxapp_print("attached\n");
+    /* many modems (SARA-R5 among them) say OK at once and attach in the background */
+    uint32_t start = ucxapp_platform_tick_ms();
+    uint32_t shown = start;
+    int stat = -1;
+    bool attached = false;
+    while (!attached && ucxapp_platform_tick_ms() - start < 180000) {
+        attached = atCmd("AT+CGATT?", resp, sizeof(resp), 3000, 0) == AT_OK && field(resp, "+CGATT:", v, sizeof(v)) &&
+                   atoi(v) == 1;
+        if (!attached) {
+            stat = regState();
+            if (stat == 3) {
+                break;
+            }
+            if (ucxapp_platform_tick_ms() - shown >= 10000) {
+                shown = ucxapp_platform_tick_ms();
+                ucxapp_print("  %s (%u s)\n", regText(stat), (unsigned)((shown - start) / 1000));
+            }
+            ucxapp_platform_sleep_ms(1000);
+        }
     }
+    if (!attached) {
+        ucxapp_print("ERROR: not attached: %s\n", regText(stat));
+        printRejectCause();
+        return UCXAPP_ERR_FAILED;
+    }
+    (void)atCmd("AT+CGACT=1,1", resp, sizeof(resp), 180000, 0);   /* already active on modems that do it at attach */
+    if (!pdpAddress(v, sizeof(v))) {
+        ucxapp_print("ERROR: attached, but context 1 has no IP address (check the APN with cell.apn)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("attached, IP %s\n", v);
     return UCXAPP_OK;
 }
 
@@ -609,11 +841,9 @@ bool ucxapp_cell_dash(char *out, size_t size)
     }
     if (n >= 0 && (size_t)n < size && atCmd("AT+COPS?", resp, sizeof(resp), 3000, 0) == AT_OK &&
         field(resp, "+COPS:", v, sizeof(v))) {
-        char *q = strchr(v, '"');
-        char *e = q != NULL ? strchr(q + 1, '"') : NULL;
-        if (e != NULL) {
-            *e = '\0';
-            n += snprintf(out + n, size - (size_t)n, "  %s", q + 1);
+        char name[64];
+        if (operatorName(v, name, sizeof(name))) {
+            n += snprintf(out + n, size - (size_t)n, "  %s", name);
         }
     }
     if (n >= 0 && (size_t)n < size && atCmd("AT+CSQ", resp, sizeof(resp), 2000, 0) == AT_OK &&
@@ -905,7 +1135,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t kCmds[] = {
-    { "cell.detect", "[port]", "Find a cellular modem answering AT on the PC serial ports (a virtual module also offers virt:cell, a simulated SARA-R5)", 0, cmdDetect },
+    { "cell.detect", "[port]", "Find a cellular modem answering AT on the PC serial ports (powers on the SARA-R5 of an XPLR-IOT-1 through its NORA-B106 shell; a virtual module also offers virt:cell, a simulated SARA-R5)", 0, cmdDetect },
     { "cell.open", "[port] [baud=115200]", "Open a cellular modem on a PC serial port (finds it when omitted; virt:cell is the simulated one); ends a data link or cell bridge on it", 0, cmdOpen },
     { "cell.close", "", "Close the cellular modem", 0, cmdClose },
     { "cell.status", "", "SIM, signal, registration, operator and IP", 0, cmdStatus },

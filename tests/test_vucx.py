@@ -744,6 +744,49 @@ def test_cell_commands_on_a_virtual_modem(app_exe, nora):
     assert any(c.startswith("AT+CSQ") for c in modem.log), modem.log
 
 
+def test_cell_status_and_attach_on_a_denied_sara_r5(app_exe, nora):
+    from harness.vucx import Vucx
+
+    modem = Vucx("cell.yaml")
+    # a real SARA-R5 names only the model in ATI; this SIM is refused (XPLR-IOT-1 eSIM not activated)
+    modem.commands.update({
+        "ATI": ["SARA-R510S-01B-00", "OK"],
+        "AT+CEREG?": ["+CEREG: 0,3", "OK"],
+        "AT+CREG?": ["+CREG: 0,0", "OK"],
+        "AT+COPS?": ["+COPS: 0", "OK"],
+        "AT+CGATT?": ["+CGATT: 0", "OK"],
+        "AT+CEER": ['+CEER: "EMM cause",15,"No suitable cells in tracking area"', "OK"],
+        "AT+CGPADDR*": ['+CGPADDR: 1,"0.0.0.0 0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0"', "OK"],
+    })
+    port = modem.start()
+    try:
+        out = _shell(app_exe, nora.port, [f"cell.open {port}", "cell.status", "cell.attach on"], log=modem.log)
+    finally:
+        modem.stop()
+    assert "cellular module open on" in out.stdout and "u-blox SARA-R510S-01B-00" in out.stdout, out.stdout[-3000:]
+    assert re.search(r"^Network:\s+denied$", out.stdout, re.M), out.stdout[-3000:]
+    assert "EMM cause 15 No suitable cells in tracking area" in out.stdout, out.stdout[-3000:]
+    assert re.search(r"^Operator:\s+none$", out.stdout, re.M), out.stdout[-3000:]
+    assert re.search(r"^IP:\s+none$", out.stdout, re.M), out.stdout[-3000:]
+    assert "ERROR: not attached: denied" in out.stdout and "attached, IP" not in out.stdout, out.stdout[-3000:]
+
+
+def test_cell_status_shows_operator_and_ip_of_a_registered_modem(app_exe, nora):
+    from harness.vucx import Vucx
+
+    modem = Vucx("cell.yaml")
+    modem.commands["AT+CGPADDR*"] = ['+CGPADDR: 1,"0.0.0.0 32.1.13.184.0.0.0.0.0.0.0.0.0.0.0.1"', "OK"]
+    port = modem.start()
+    try:
+        out = _shell(app_exe, nora.port, [f"cell.open {port}", "cell.status", "cell.attach on"], log=modem.log)
+    finally:
+        modem.stop()
+    assert re.search(r"^Network:\s+registered \(home\)$", out.stdout, re.M), out.stdout[-3000:]
+    assert re.search(r"^Operator:\s+vucx telecom$", out.stdout, re.M), out.stdout[-3000:]
+    assert re.search(r"^IP:\s+32\.1\.13\.184\.0\.0\.0\.0\.0\.0\.0\.0\.0\.0\.0\.1$", out.stdout, re.M), out.stdout[-3000:]
+    assert "attached, IP 32.1.13.184" in out.stdout, out.stdout[-3000:]
+
+
 def test_can_bridge_cell_reconnects_a_dropped_link(app_exe, nora):
     from harness.vucx import Vucx
 

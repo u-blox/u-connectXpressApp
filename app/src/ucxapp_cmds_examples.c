@@ -937,7 +937,8 @@ static int cmdDemo(ucxapp_t *app, int argc, char *argv[])
 /* demo [all]: a short tour of the highlights (or every use case) on a virtual module. */
 static int cmdTour(ucxapp_t *app, int argc, char *argv[])
 {
-    static const char *const kTour[] = { "provision", "home", "boat", "fieldkit", "blegw", "remote" };
+    static const char *const kTour[] = { "provision", "home", "hotel", "boat", "fieldkit", "blegw", "notify",
+                                         "remote", "mesh", "border", "condition" };
 
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "all") != 0)) {
         return UCXAPP_ERR_USAGE;
@@ -946,8 +947,9 @@ static int cmdTour(ucxapp_t *app, int argc, char *argv[])
         return runCases(app, NULL, 0);
     }
     if (ucxapp_module_is_virtual(app)) {
-        ucxapp_print("u-connectXpress tour: Wi-Fi set up from a phone, MQTT, GNSS to a chart app, a Wi-Fi to LTE relay, "
-                     "a BLE sensor gateway and a BLE remote (demo all runs every use case)\n");
+        ucxapp_print("u-connectXpress tour: Wi-Fi (phone setup, MQTT, hotel portal), GNSS to a chart app, a Wi-Fi to LTE "
+                     "relay, BLE (sensor gateway, phone notifications, remote), a Thread mesh and border router, and an "
+                     "IMU vibration monitor (demo all runs every use case)\n");
     }
     return runCases(app, kTour, sizeof(kTour) / sizeof(kTour[0]));
 }

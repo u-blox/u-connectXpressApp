@@ -72,6 +72,8 @@ def test_public_look_is_only_on_the_site(tmp_path):
     assert html.index('href="fx.css"') < html.index("</head>")
     assert "if(localStorage.getItem('fxoff')!=='0')document.getElementById('fx-css').disabled=true" in html
     assert html.index("</script>", html.index("<script>\n")) < html.index('src="fx.js"') < html.index("</body>")
+    assert html.index('src="fx.js"') < html.index('src="guide.js"') < html.index("</body>")
+    assert "guide.js" not in page.read_text(encoding="ascii")
     assert "fx.css" not in page.read_text(encoding="ascii") and "fx.js" not in page.read_text(encoding="ascii")
     for f in (ROOT / "app" / "web" / "public").iterdir():
         f.read_bytes().decode("ascii")

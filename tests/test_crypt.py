@@ -30,7 +30,7 @@ def test_encrypt_round_trip(app_exe, tmp_path):
 
 
 def test_encrypt_is_standard_aes_gcm(app_exe, tmp_path):
-    pytest.importorskip("cryptography.hazmat.primitives.ciphers.aead")
+    pytest.importorskip("cryptography.hazmat.primitives.ciphers.aead", exc_type=ImportError)
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC

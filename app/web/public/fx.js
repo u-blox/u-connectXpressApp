@@ -183,7 +183,7 @@
     const m = document.createElement('div');
     m.id = 'fx-menu';
     m.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9998;background:#13263a;border:1px solid #ff6e59;border-radius:6px;padding:4px;font:13px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.5)`;
-    [['🎉 Party', () => party()], ['🐍 Snake', snake]].forEach(([t, f]) => {
+    [['\u{1F389} Party', () => party()], ['\u{1F40D} Snake', snake]].forEach(([t, f]) => {
       const b = document.createElement('div');
       b.textContent = t; b.style.cssText = 'padding:6px 14px;cursor:pointer;color:#fff;border-radius:4px';
       b.onmouseenter = () => { b.style.background = '#ff6e5944'; }; b.onmouseleave = () => { b.style.background = ''; };

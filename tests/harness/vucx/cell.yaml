@@ -32,6 +32,7 @@ commands:
   "AT+USOCR=*": ["+USOCR: 0", "OK"]
   "AT+USODL=*": ["CONNECT"]
 urcs:
-  "AT+UPING=*": ['+UUPING: 1,32,"example.com","93.184.216.34",55,20']
+  "AT+UPING=*": ['+UUPING: 1,32,"example.com","93.184.216.34",55,20', '+UUPING: 2,32,"example.com","93.184.216.34",55,22',
+                 '+UUPING: 3,32,"example.com","93.184.216.34",55,24', '+UUPING: 4,32,"example.com","93.184.216.34",55,26']
 data:                               # in transparent mode: an NTRIP caster on the far side
   "GET /*": "ICY 200 OK\r\n\r\n"

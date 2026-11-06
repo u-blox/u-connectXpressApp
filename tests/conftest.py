@@ -10,6 +10,8 @@ Environment (an empty value means "not attached", as set by `ucxapp --detect --t
 Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (NORA-B26).
   UCX_GNSS_PORT, UCX_GNSS_BAUD   GNSS receiver (default: what gnss.detect finds)
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
+  UCX_CELL_PORT, UCX_CELL_BAUD   cellular modem, e.g. the SARA-R5 of an XPLR-IOT-1 (default: what cell.detect finds)
+  UCX_CELL_ECHO "<host> <port>" of a public TCP echo server for the cellular bridges (default: tcpbin.com 4242)
   UCX_HID_PEER  serial console of a Linux BLE peer (the i.MX91 hub, root login) for the HID tests; not probed
   UCX_HID_PEER_BAUD, UCX_HID_PEER_USER   its baud rate (default 115200) and login (default root)
   UCX_XPLORER, UCX_XPLORER_TOKEN   u-connectXplorer Remote Control (ws://<host>:8765) and its token; not probed
@@ -27,7 +29,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = ROOT / "app" / "bin" / ("ucxapp.exe" if sys.platform == "win32" else "ucxapp")
-HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu")
+HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu", "cell")
+SOURCES_FOUND = ("gnss", "imu", "cell")
 
 # Wi-Fi scan, connect and AP refuse to run until a regulatory domain is chosen; the tests use the one allowed
 # everywhere unless UCX_REGDOMAIN picks another (a domain saved in storage/ucxapp.regdomain wins over both).
@@ -80,7 +83,7 @@ def _ports():
 
 @functools.lru_cache(maxsize=None)
 def _found(name):
-    """(port, baud, details) of the GNSS receiver or IMU, or None; details is empty when set by UCX_*."""
+    """(port, baud, details) of the GNSS receiver, IMU or cell modem, or None; details is empty when set by UCX_*."""
     key = f"UCX_{name.upper()}_PORT"
     if key in os.environ:
         port = os.environ[key]
@@ -88,7 +91,7 @@ def _found(name):
     sys.path.insert(0, str(ROOT))
     import ucxapp
 
-    return (ucxapp.find_gnss if name == "gnss" else ucxapp.find_imu)(_exe())
+    return {"gnss": ucxapp.find_gnss, "imu": ucxapp.find_imu, "cell": ucxapp.find_cell}[name](_exe())
 
 
 def _source(name):
@@ -148,6 +151,7 @@ def pytest_configure(config):
         "thread: every module the test uses needs Thread firmware (dev.caps)",
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
+        "cell: needs a cellular modem with a working SIM (UCX_CELL_PORT or cell.detect)",
         "hid_peer: needs a Linux BLE peer on its serial console (UCX_HID_PEER, e.g. the i.MX91 hub)",
         "xplorer: needs u-connectXplorer with Remote Control on (UCX_XPLORER)",
         "stress: long repeated runs; only with -m stress",
@@ -173,7 +177,7 @@ def _skip_reason(item, exe, hw):
         return "no NORA module found (set UCX_PORT_A)"
     if item.get_closest_marker("two_devices") and not hw["b"]:
         return "only one NORA module found (set UCX_PORT_B)"
-    for name in ("gnss", "imu"):
+    for name in SOURCES_FOUND:
         if item.get_closest_marker(name) and not hw[name]:
             return f"no {name.upper()} found (set UCX_{name.upper()}_PORT)"
     if item.get_closest_marker("hid_peer") and not os.environ.get("UCX_HID_PEER"):
@@ -203,10 +207,10 @@ def _skip_reason(item, exe, hw):
 def pytest_collection_modifyitems(config, items):
     exe = _exe()
     wanted = {m for item in items for m in HARDWARE_MARKERS if item.get_closest_marker(m)}
-    hw = {"a": None, "b": None, "gnss": None, "imu": None}
+    hw = {"a": None, "b": None, "gnss": None, "imu": None, "cell": None}
     if wanted and exe.is_file():
         hw["a"], hw["b"] = _ports()
-        for name in ("gnss", "imu"):
+        for name in SOURCES_FOUND:
             if name in wanted:
                 hw[name] = _source(name)
 
@@ -227,7 +231,8 @@ def pytest_collection_modifyitems(config, items):
         modules = ", ".join(pool.map(_describe, ports)) or "none"
     gnss = _found_text("gnss") if hw["gnss"] else "none"
     imu = _found_text("imu") if hw["imu"] else "none"
-    reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu}", bold=True)
+    cell = _found_text("cell") if hw["cell"] else "none"
+    reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu} | cell {cell}", bold=True)
     reporter.write_line(f"Starting {run} hardware test(s) using what was found")
     sys.path.insert(0, str(ROOT))
     import ucxapp
@@ -262,6 +267,11 @@ def gnss():
 @pytest.fixture(scope="session")
 def imu():
     return _source("imu")
+
+
+@pytest.fixture(scope="session")
+def cell():
+    return _source("cell")
 
 
 @pytest.fixture(scope="session")

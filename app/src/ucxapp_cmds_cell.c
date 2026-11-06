@@ -80,12 +80,14 @@ static int atCmdUntil(const char *cmd, char *resp, size_t size, int32_t timeoutM
         } else if (until != NULL) {
             int seen = 0;
             const char *last = NULL;
+            char error[32];
+            snprintf(error, sizeof(error), "%sER:", until);
             for (const char *p = strstr(resp, until); p != NULL; p = strstr(p + 1, until)) {
                 seen++;
                 last = p;
             }
-            if (seen >= untilCount && strstr(last, "\r\n") != NULL) {   /* the last line is complete too */
-                break;
+            if ((seen >= untilCount || strstr(resp, error) != NULL) && strstr(last, "\r\n") != NULL) {
+                break;   /* all replies, or the error URC (+UUPINGER:), and the last line is complete */
             }
         }
     }
@@ -276,6 +278,7 @@ static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[]);
 /* XPLR-IOT-1: an FT4232 gives the NORA-B106 (Zephyr shell, interface A) and the SARA-R510S (interface B). The
  * NORA-B106 drives the SARA power pin, so the SARA port stays silent until "modules SARAR5 power_on" is sent. */
 #define XPLR_SARA_BOOT_MS 15000
+#define XPLR_SARA_OFF_MS 5000   /* time for "modules SARAR5 power_off" to switch the SARA-R5 off */
 
 static bool isFt4232(const ucxapp_serial_port_t *sp)
 {
@@ -284,7 +287,10 @@ static bool isFt4232(const ucxapp_serial_port_t *sp)
 
 /* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port.
  * With "want", only when that port is an FT4232 port too (a SARA-R5 can be behind it). */
-static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, const char *want)
+/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port.
+ * With "want", only when that port is an FT4232 port too (a SARA-R5 can be behind it). "cycle" powers it off
+ * first, for a SARA-R5 that is on but no longer answers. */
+static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, const char *want, bool cycle)
 {
     const char *dev = ucxapp_device_port();
     bool candidate = want == NULL;
@@ -321,8 +327,18 @@ static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, con
         }
         bool shell = strstr(resp, "uart:~$") != NULL;
         if (shell) {
+            static const char kOff[] = "modules SARAR5 power_off\r";
             static const char kCmd[] = "modules SARAR5 power_on\r";
-            ucxapp_print("  %s: XPLR-IOT-1 shell, powering the SARA-R5 on\n", sp->name);
+            if (cycle) {
+                ucxapp_print("  %s: XPLR-IOT-1 shell, the SARA-R5 does not answer: power cycling it\n", sp->name);
+                (void)ucxapp_uart_write(h, (const uint8_t *)kOff, sizeof(kOff) - 1);
+                ucxapp_platform_sleep_ms(XPLR_SARA_OFF_MS);
+                while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
+                    /* let the shell finish its reply */
+                }
+            } else {
+                ucxapp_print("  %s: XPLR-IOT-1 shell, powering the SARA-R5 on\n", sp->name);
+            }
             (void)ucxapp_uart_write(h, (const uint8_t *)kCmd, sizeof(kCmd) - 1);
             while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
                 /* let the shell finish its reply */
@@ -360,6 +376,21 @@ static bool xplrOpenSara(const ucxapp_serial_port_t *ports, int count, const cha
         ucxapp_platform_sleep_ms(500);
     }
     return false;
+}
+
+/* XPLR-IOT-1: power the SARA-R5 on and open it; a SARA-R5 that stays silent (hung) is power cycled once. */
+static bool xplrBringUp(const ucxapp_serial_port_t *ports, int count, const char *want)
+{
+    const char *shell = xplrPowerOn(ports, count, want, false);
+
+    if (shell == NULL) {
+        return false;
+    }
+    if (xplrOpenSara(ports, count, shell, want)) {
+        return true;
+    }
+    shell = xplrPowerOn(ports, count, want, true);
+    return shell != NULL && xplrOpenSara(ports, count, shell, want);
 }
 
 /* ---- commands ---- */
@@ -402,8 +433,7 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
         }
     }
     if (!cellFound && !onlyVirt) {
-        const char *shell = xplrPowerOn(ports, count, argc == 2 ? argv[1] : NULL);
-        if (shell != NULL && xplrOpenSara(ports, count, shell, argc == 2 ? argv[1] : NULL)) {
+        if (xplrBringUp(ports, count, argc == 2 ? argv[1] : NULL)) {
             ucxapp_print("  %s: AT module at 115200 baud: %s\n", gPort, gMaker);
             closePort();
             found++;
@@ -418,6 +448,29 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("%d AT port(s) found\n", found);
     return found > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
+static bool escapeDataMode(const char *port, int32_t baud);
+
+/* A modem still in transparent mode after an app ended without cell.disconnect: escape and close its socket. */
+static bool openLeftLink(const char *port, int32_t baud)
+{
+    char resp[RESP_SIZE];
+
+    if (ucxapp_vport_is(port) || !escapeDataMode(port, baud) || !openPort(port, baud)) {
+        return false;
+    }
+    if (strstr(gMaker, "u-blox") != NULL) {
+        for (int sock = 0; sock < 7; sock++) {
+            char cmd[24];
+            snprintf(cmd, sizeof(cmd), "AT+USOCL=%d", sock);
+            (void)atCmd(cmd, resp, sizeof(resp), 3000, 0);
+        }
+    } else if (strstr(gMaker, "Quectel") != NULL) {
+        (void)atCmd("AT+QICLOSE=0", resp, sizeof(resp), 10000, 0);
+    }
+    ucxapp_print("note: %s was still a data link (an app ended without cell.disconnect); closed it\n", port);
+    return true;
 }
 
 static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
@@ -486,21 +539,17 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             (void)openPort(UCXAPP_VPORT_CELL, baud);
         }
         if (!gOpen) {
-            const char *shell = xplrPowerOn(ports, count, NULL);
-            if (shell != NULL) {
-                (void)xplrOpenSara(ports, count, shell, NULL);
-            }
+            (void)xplrBringUp(ports, count, NULL);
         }
         if (!gOpen) {
             ucxapp_print("ERROR: no cellular module found (cell.open <port>)\n");
             return UCXAPP_ERR_FAILED;
         }
-    } else if (!openPort(argv[1], baud)) {
+    } else if (!openPort(argv[1], baud) && !openLeftLink(argv[1], baud)) {
         static ucxapp_serial_port_t ports[32];
         int count = ucxapp_vport_is(argv[1]) ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
-        const char *shell = xplrPowerOn(ports, count, argv[1]);
 
-        if (shell == NULL || !xplrOpenSara(ports, count, shell, argv[1])) {
+        if (!xplrBringUp(ports, count, argv[1])) {
             ucxapp_print("ERROR: no AT response on %s at %d baud\n", argv[1], (int)baud);
             return UCXAPP_ERR_FAILED;
         }
@@ -1271,10 +1320,45 @@ static int cmdPing(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     /* 4 replies (u-blox), or 4 replies and the summary (Quectel) */
-    int r = atCmdUntil(cmd, resp, sizeof(resp), 15000, 12000, strstr(gMaker, "Quectel") != NULL ? "+QPING:" : "+UUPING",
-                       strstr(gMaker, "Quectel") != NULL ? 5 : 4);
+    bool quectel = strstr(gMaker, "Quectel") != NULL;
+    int r = atCmdUntil(cmd, resp, sizeof(resp), 40000, 35000, quectel ? "+QPING:" : "+UUPING", quectel ? 5 : 4);
     printLines(resp, cmd);
-    return r == AT_OK ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    if (r != AT_OK) {
+        ucxapp_print("ERROR: %s\n", r == AT_TIMEOUT ? "no answer from the modem" : "ping refused (cell.attach on first)");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (quectel) {
+        return strstr(resp, "+QPING: 0,") != NULL ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    }
+    /* +UUPING: <n>,<size>,"<name>","<ip>",<ttl>,<rtt ms or -1> ; +UUPINGER: <error> */
+    int sent = 0;
+    int got = 0;
+    int32_t total = 0;
+    for (const char *p = strstr(resp, "+UUPING:"); p != NULL; p = strstr(p + 1, "+UUPING:")) {
+        const char *last = p;
+        const char *eol = p + strcspn(p, "\r\n");
+        for (const char *c = strchr(p, ','); c != NULL && c < eol; c = strchr(c + 1, ',')) {
+            last = c;
+        }
+        int rtt = atoi(last + 1);
+        sent++;
+        if (rtt >= 0) {
+            got++;
+            total += rtt;
+        }
+    }
+    const char *err = strstr(resp, "+UUPINGER:");
+    if (err != NULL) {
+        ucxapp_print("ERROR: ping failed, +UUPINGER %d%s\n", atoi(err + 10),
+                     atoi(err + 10) == 17 ? " (no data context: cell.attach on)" : "");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (got == 0) {
+        ucxapp_print("ERROR: no reply from %s (%d sent; the host may not answer ping)\n", argv[1], sent);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%d sent, %d received, average %d ms\n", sent, got, (int)(total / got));
+    return UCXAPP_OK;
 }
 
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
@@ -1515,10 +1599,29 @@ bool ucxapp_cell_relink(void)
     return true;
 }
 
+/* Guard time, +++, guard time: takes a modem out of transparent mode (the socket stays open). */
+static bool escapeDataMode(const char *port, int32_t baud)
+{
+    uint8_t buf[32];
+
+    gUart = ucxapp_uart_open(port, baud);
+    if (gUart == NULL) {
+        return false;
+    }
+    U_CX_PORT_SLEEP_MS(1200);
+    (void)ucxapp_uart_write(gUart, (const uint8_t *)"+++", 3);
+    U_CX_PORT_SLEEP_MS(1200);
+    while (ucxapp_uart_read(gUart, buf, sizeof(buf), 50) > 0) {
+        /* drop the OK */
+    }
+    ucxapp_uart_close(gUart);
+    gUart = NULL;
+    return true;
+}
+
 /* cell.disconnect: guard time, +++, then close the socket. Stop any bridge using the link first. */
 static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
 {
-    uint8_t buf[32];
     (void)app;
     (void)argv;
 
@@ -1530,19 +1633,10 @@ static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     (void)ucxapp_stream_bridge_stop_port(gLinkPort);
-    gUart = ucxapp_uart_open(gLinkPort, gLinkBaud);
-    if (gUart == NULL) {
+    if (!escapeDataMode(gLinkPort, gLinkBaud)) {
         ucxapp_print("ERROR: cannot open %s\n", gLinkPort);
         return UCXAPP_ERR_FAILED;
     }
-    U_CX_PORT_SLEEP_MS(1200);
-    (void)ucxapp_uart_write(gUart, (const uint8_t *)"+++", 3);
-    U_CX_PORT_SLEEP_MS(1200);
-    while (ucxapp_uart_read(gUart, buf, sizeof(buf), 50) > 0) {
-        /* drop the OK */
-    }
-    ucxapp_uart_close(gUart);
-    gUart = NULL;
     gDataMode = false;
     if (!openPort(gLinkPort, gLinkBaud)) {
         ucxapp_print("ERROR: no AT response on %s after +++, use cell.open\n", gLinkPort);

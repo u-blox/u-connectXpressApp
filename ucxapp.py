@@ -507,6 +507,15 @@ def find_imu(exe):
     return (m.group(1), m.group(3), m.group(2)) if m else None
 
 
+def find_cell(exe):
+    """(port, baud, maker and model) of the cellular modem cell.detect reports first, or None.
+
+    cell.detect also powers on the SARA-R5 of an XPLR-IOT-1 through its NORA-B1 shell."""
+    out = app_output(Path(exe), "--exec", "cell.detect", timeout=240)
+    m = re.search(r"^\s*(COM\d+|/dev/[^\s:(]+)[^\n]*?: AT module at (\d+) baud: (.*)$", out, re.MULTILINE)
+    return (m.group(1), m.group(2), m.group(3).strip()) if m else None
+
+
 def detect(exe, ports=None, force=False):
     """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search.
 
@@ -558,6 +567,14 @@ def detect(exe, ports=None, force=False):
     if imu:
         env["UCX_IMU_PORT"], env["UCX_IMU_BAUD"] = imu[0], imu[1]
         print(f"  {imu[0]} {imu[2]} at {imu[1]} baud")
+    else:
+        print("  none")
+
+    print("Cellular (cell.detect):")
+    cell = find_cell(exe)
+    if cell:
+        env["UCX_CELL_PORT"], env["UCX_CELL_BAUD"] = cell[0], cell[1]
+        print(f"  {cell[0]} {cell[2]} at {cell[1]} baud")
     else:
         print("  none")
 
@@ -628,7 +645,7 @@ def coverage(pytest_args):
         old.unlink()
     if not (bd / "ucxapp").is_file():
         fail(f"instrumented exe not found: {bd / 'ucxapp'}")
-    absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT")}
+    absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT")}
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
     partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
@@ -1841,7 +1858,7 @@ def main(argv):
             if not args.test:
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.
-            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT"):
+            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT"):
                 found.setdefault(key, "")
         if not (args.detect or args.ports) and "hardware" not in " ".join(extra):
             # Plain --test is offline; hardware tests run only with --detect or --ports.

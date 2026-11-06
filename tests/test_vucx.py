@@ -744,6 +744,25 @@ def test_cell_commands_on_a_virtual_modem(app_exe, nora):
     assert any(c.startswith("AT+CSQ") for c in modem.log), modem.log
 
 
+def test_cell_ping_summary_and_failures(app_exe, nora):
+    from harness.vucx import Vucx
+
+    lost = [f'+UUPING: {i},32,"quiet.example","45.79.112.203",115,-1' for i in range(1, 5)]
+    for urc, want in ((None, r"^4 sent, 4 received, average 23 ms$"),
+                      (lost, r"^ERROR: no reply from quiet\.example \(4 sent; the host may not answer ping\)$"),
+                      (["+UUPINGER: 17"], r"^ERROR: ping failed, \+UUPINGER 17 \(no data context: cell\.attach on\)$")):
+        modem = Vucx("cell.yaml")
+        if urc is not None:
+            modem.urcs["AT+UPING=*"] = urc
+        port = modem.start()
+        try:
+            out = _shell(app_exe, nora.port, [f"cell.open {port}", "cell.ping quiet.example"], timeout=60)
+        finally:
+            modem.stop()
+        text = re.sub(r"^(ucxapp> )+", "", out.stdout, flags=re.M)
+        assert re.search(want, text, re.M), text[-2000:]
+
+
 def test_cell_status_and_attach_on_a_denied_sara_r5(app_exe, nora):
     from harness.vucx import Vucx
 

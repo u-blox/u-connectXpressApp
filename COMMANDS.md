@@ -611,7 +611,12 @@ Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Verified 
 `AT+CGMI` maker). `cell.at` is there for anything else.
 
 On an XPLR-IOT-1 the NORA-B106 powers the SARA-R5: when no modem answers, `cell.detect` and `cell.open` send
-`modules SARAR5 power_on` to its shell (FT4232 interface A) and wait for the SARA-R5 on interface B.
+`modules SARAR5 power_on` to its shell (FT4232 interface A) and wait for the SARA-R5 on interface B; if it still
+does not answer they power cycle it (`power_off`, 5 s, `power_on`). A port left in data mode by an earlier
+`cell.connect` is brought back with `+++` and its leftover sockets are closed.
+
+`.\ucxapp --detect` lists the modem and sets `UCX_CELL_PORT` and `UCX_CELL_BAUD` for the hardware tests in
+`tests/hardware/test_cell.py`; their echo server is `UCX_CELL_ECHO` (default `tcpbin.com 4242`, line based).
 
 | Command | Arguments | Description |
 |---|---|---|
@@ -629,7 +634,7 @@ On an XPLR-IOT-1 the NORA-B106 powers the SARA-R5: when no modem answers, `cell.
 | `cell.at` | `<command>` | Send a raw AT command (network selection, scan and attach wait up to 3 minutes) |
 | `cell.apn` | `[<apn> [ip\|ipv6\|ipv4v6]]` | Show or set the APN of context 1 |
 | `cell.attach` | `[on\|off]` | Attach and activate data, detach, or show the state. `on` waits until the modem is attached and has an address, and says why when the network refuses; on u-blox modules it also starts the internal IP stack (PSD profile 0 on context 1) that ping and sockets use |
-| `cell.ping` | `<host>` | Ping over the cellular link (Quectel and u-blox only) |
+| `cell.ping` | `<host>` | Ping over the cellular link (Quectel and u-blox only); prints the replies and `4 sent, 4 received, average 70 ms`, fails when none come back (`+UUPINGER 17`: `cell.attach on` first) |
 | `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off [n]\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (up to 4 at once; the last `off` returns to command mode) |
 | `cell.connect` | `<host> <port> [tcp\|udp]` | Open a transparent socket through the modem. Vendor paths: u-blox (default, `AT+USOCR`/`AT+USOCO`), Quectel (`AT+QIOPEN` access mode 2), SIMCom (`AT+CIPMODE=1`, `AT+CIPOPEN`), Telit (`AT#SGACT`, `AT#SD`), Nordic nRF91 (`AT#XSOCKET`, `AT#XCONNECT`). The modem's UART then carries the payload: bridge to it with `gnss.bridge cell` or `imu.bridge cell` |
 | `cell.disconnect` | | Stop the bridge using the link first; sends `+++` after the guard time and closes the socket |

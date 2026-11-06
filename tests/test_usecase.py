@@ -179,3 +179,16 @@ def test_page_does_not_remember_secrets():
     assert m
     for field in ("pass", "password", "token", "key"):
         assert re.search(m.group(1), field, re.I), field
+
+
+@pytest.mark.app
+def test_demo_needs_a_virtual_module(app_exe):
+    """demo and usecase.demo change the module's settings: they refuse to run without a virtual module."""
+    for cmd in ("demo", "demo all", "usecase.demo", "usecase.demo boat"):
+        out = _exec(app_exe, cmd)
+        assert out.returncode != 0 and "needs a virtual module" in out.stdout, (cmd, out.stdout)
+        assert "u-connectXpress tour" not in out.stdout, out.stdout
+    for bad in ("demo everything", "usecase.demo boat home"):
+        assert _exec(app_exe, bad).returncode != 0, bad
+    help_out = _exec(app_exe, "help").stdout
+    assert "demo" in help_out and "usecase.demo" in help_out

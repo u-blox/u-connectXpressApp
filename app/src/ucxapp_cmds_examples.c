@@ -3,6 +3,7 @@
 #include "ucxapp_xplorer.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Real scenarios per command group, shown by "<group>.example" or "examples <group>". Lines starting with '#' are notes. */
@@ -388,6 +389,9 @@ static const example_t kExamples[] = {
       "# the strongest one, hotter or colder after every scan; -40 dBm wins\napp.hunt\n"
       "# a named one, 30 scans\napp.hunt MyNetwork 30" },
 #endif
+    { "app", "Run the use cases on the Virtual module (web page) or vucx",
+      "# the tour, one use case, then all of them; watch and serve steps get 3 s each\n"
+      "demo\nusecase.demo boat\ndemo all" },
     { "file", "Look at local files",
       "file.list\nfile.view session.txt 20\nfile.hash sha256 session.txt" },
 #if !UCXAPP_HOST   /* file.recv and file.send need the board's own console */
@@ -684,7 +688,7 @@ bool ucxapp_example_get(size_t index, const char **group, const char **title, co
     return true;
 }
 
-static ucxapp_cmd_t gCmds[GROUP_MAX + 1];
+static ucxapp_cmd_t gCmds[GROUP_MAX + 4];
 static char gNames[GROUP_MAX][24];
 
 static bool hasGroup(const char *group);
@@ -723,6 +727,49 @@ static void printGroup(const char *group)
     }
 }
 
+/* While a demo runs, steps that watch or serve for a while get DEMO_STEP_S seconds: the argument at the command's
+   seconds position (counted after the command word; perf.throughput sps has it one earlier). */
+#define DEMO_STEP_S 3
+static bool gDemoFast;
+
+static void fastLine(char *line)
+{
+    static const struct {
+        const char *cmd;
+        int arg;
+    } kTimed[] = { { "gnss.watch", 1 },  { "cell.watch", 1 },    { "can.watch", 1 },       { "gatt.listen", 1 },
+                   { "wifi.survey", 1 }, { "sock.accept", 1 },   { "mqtt.read", 1 },       { "sock.echo", 3 },
+                   { "sock.recvfrom", 3 }, { "perf.phone", 2 },  { "perf.throughput", 4 }, { "bt.cs.range", 2 },
+                   { "gatt.server.sps", 1 }, { "gatt.server.wps", 1 }, { "gatt.server.hrs", 1 },
+                   { "gatt.server.ras", 1 } };
+    size_t wordLen = strcspn(line, " ");
+    int arg = 0;
+
+    for (size_t i = 0; i < sizeof(kTimed) / sizeof(kTimed[0]); i++) {
+        if (strlen(kTimed[i].cmd) == wordLen && strncmp(line, kTimed[i].cmd, wordLen) == 0) {
+            arg = kTimed[i].arg;
+        }
+    }
+    if (arg == 4 && strncmp(line + wordLen, " sps", 4) == 0) {
+        arg = 2;
+    }
+    char *p = line + wordLen;
+
+    for (int n = 0; arg > 0 && p != NULL && *p == ' ' && n < arg - 1; n++) {
+        p = strchr(p + 1, ' ');
+    }
+    if (arg == 0 || p == NULL || *p != ' ') {
+        return;
+    }
+    p++;
+    size_t len = strcspn(p, " ");
+
+    if (len > 0 && strspn(p, "0123456789") == len && atoi(p) > DEMO_STEP_S) {
+        memmove(p + 1, p + len, strlen(p + len) + 1);
+        p[0] = (char)('0' + DEMO_STEP_S);
+    }
+}
+
 /* Runs example number n of a group line by line; stops at the first error or at a dangerous command. */
 static int runExample(ucxapp_t *app, const char *group, int n)
 {
@@ -752,6 +799,9 @@ static int runExample(ucxapp_t *app, const char *group, int n)
 #if UCXAPP_HOST
             ucxapp_demo_line(app, line, sizeof(line));
 #endif
+            if (gDemoFast) {
+                fastLine(line);
+            }
             snprintf(word, sizeof(word), "%.*s", (int)strcspn(line, " "), line);
             c = ucxapp_cmd_find(word);
             /* on the Virtual module, commands that only change the module run: it is a simulation */
@@ -817,6 +867,91 @@ static int cmdExamples(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Runs every example of the uc-* groups whose id is in ids (all when ids is NULL), each on its own: a failed step only
+   fails that example. Steps that watch or serve for a while are cut to DEMO_STEP_S seconds. */
+static int runCases(ucxapp_t *app, const char *const *ids, size_t idCount)
+{
+    char failed[512] = "";
+    int ran = 0, ok = 0, cases = 0;
+
+    if (!ucxapp_module_is_virtual(app)) {
+        ucxapp_print("ERROR: the demo needs a virtual module: its steps change the module's settings "
+                     "(Virtual module on the web page, or python -m harness.vucx)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    gDemoFast = true;
+    for (size_t i = 0; i < EX_COUNT; i++) {
+        const char *g = kExamples[i].group;
+        bool seen = false, wanted = ids == NULL;
+        int count = 0;
+
+        if (strncmp(g, "uc-", 3) != 0) {
+            continue;
+        }
+        for (size_t k = 0; k < idCount; k++) {
+            wanted = wanted || strcmp(g + 3, ids[k]) == 0;
+        }
+        for (size_t k = 0; k < i; k++) {
+            seen = seen || strcmp(kExamples[k].group, g) == 0;
+        }
+        if (!wanted || seen) {
+            continue;
+        }
+        for (size_t k = i; k < EX_COUNT; k++) {
+            count += strcmp(kExamples[k].group, g) == 0;
+        }
+        cases++;
+        ucxapp_print("\n=== %s (%d) ===\n", g + 3, count);
+        for (int n = 1; n <= count; n++) {
+            ran++;
+            if (runExample(app, g, n) == UCXAPP_OK) {
+                ok++;
+            } else if (strlen(failed) + strlen(g) + 8 < sizeof(failed)) {
+                snprintf(failed + strlen(failed), sizeof(failed) - strlen(failed), " %s/%d", g + 3, n);
+            }
+        }
+    }
+    gDemoFast = false;
+    if (cases == 0) {
+        ucxapp_print("ERROR: no use case %s (see usecase.list)\n", idCount > 0 ? ids[0] : "");
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_print("\ndemo: %d use case%s, %d of %d examples ran to the end\n", cases, cases == 1 ? "" : "s", ok, ran);
+    if (failed[0] != '\0') {
+        ucxapp_print("stopped early:%s\n", failed);
+    }
+    return ok == ran ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
+/* usecase.demo [name]: every use case, or one. */
+static int cmdDemo(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *id = argc == 2 ? argv[1] : NULL;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    return runCases(app, id != NULL ? &id : NULL, id != NULL ? 1 : 0);
+}
+
+/* demo [all]: a short tour of the highlights (or every use case) on a virtual module. */
+static int cmdTour(ucxapp_t *app, int argc, char *argv[])
+{
+    static const char *const kTour[] = { "provision", "home", "boat", "fieldkit", "blegw", "remote" };
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "all") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        return runCases(app, NULL, 0);
+    }
+    if (ucxapp_module_is_virtual(app)) {
+        ucxapp_print("u-connectXpress tour: Wi-Fi set up from a phone, MQTT, GNSS to a chart app, a Wi-Fi to LTE relay, "
+                     "a BLE sensor gateway and a BLE remote (demo all runs every use case)\n");
+    }
+    return runCases(app, kTour, sizeof(kTour) / sizeof(kTour[0]));
+}
+
 static bool hasGroup(const char *group)
 {
     char prefix[24];
@@ -846,5 +981,9 @@ void ucxapp_register_examples_cmds(void)
         n++;
     }
     gCmds[n] = (ucxapp_cmd_t){ "examples", "[group] [number]", "List the groups with examples, show one group's examples, or run one", 0, cmdExamples };
-    (void)ucxapp_cmd_register(gCmds, n + 1);
+    gCmds[n + 1] = (ucxapp_cmd_t){ "usecase.demo", "[name]",
+                                   "Run every step of every use case (or one) on a virtual module and report each", 0, cmdDemo };
+    gCmds[n + 2] = (ucxapp_cmd_t){ "demo", "[all]",
+                                   "Show the module off: a tour of the highlight use cases on a virtual module (all: every one)", 0, cmdTour };
+    (void)ucxapp_cmd_register(gCmds, n + 3);
 }

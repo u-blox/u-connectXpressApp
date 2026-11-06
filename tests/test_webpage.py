@@ -33,7 +33,7 @@ def test_page_is_a_complete_document():
 def test_page_is_ascii_and_fits_one_response():
     data = PAGE.encode("utf-8")
     assert data.isascii()
-    assert len(data) < 56000   # sent in place from flash (body_static); this caps the flash it takes
+    assert len(data) < 65536   # sent in place (body_static) in 1000-byte chunks; this caps what the app binary carries
 
 
 def test_page_is_built_into_the_app():

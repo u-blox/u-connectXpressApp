@@ -87,7 +87,7 @@
   if (demo) {
     const b = document.createElement('button');
     b.id = 'guide';
-    b.textContent = '?';
+    b.textContent = '? Guide';
     b.title = 'Getting started: a short tour of this page';
     b.onclick = () => show(0);
     demo.before(b);

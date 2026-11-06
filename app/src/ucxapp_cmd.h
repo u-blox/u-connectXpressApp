@@ -277,8 +277,10 @@ void ucxapp_gatt_server_read(int32_t conn, int32_t handle);
 bool ucxapp_gatt_notify_nus(ucxapp_t *app, const uint8_t *data, size_t len);   /* Nordic UART TX on the newest connection */
 /* Defines a service with one notify (tx) and one write (rx) characteristic; once per module restart. */
 int ucxapp_gatt_server_custom(ucxapp_t *app, const uint8_t svc[16], const uint8_t rx[16], const uint8_t tx[16]);
-/* Port and baud of a cellular modem in transparent data mode (cell.connect); false when there is none. */
+/* Port and baud of a cellular modem in transparent data mode (cell.connect); false when there is none, or while
+   cell.bridge relays it (ucxapp_cell_relayed). */
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud);
+bool ucxapp_cell_relayed(void);
 /* cell.connect host port (TCP); UCXAPP_OK when the modem is in transparent data mode. */
 int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port);
 /* The data link dropped (the modem is back in command mode): open the same socket again; true when the link is up.

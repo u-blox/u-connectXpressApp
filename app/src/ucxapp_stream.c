@@ -1869,7 +1869,9 @@ static int bridgeCmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], 
         int32_t cbaud;
 
         if (!ucxapp_cell_data_link(cport, sizeof(cport), &cbaud)) {
-            ucxapp_print("ERROR: no cellular data link (use cell.connect first)\n");
+            ucxapp_print(ucxapp_cell_relayed()
+                             ? "ERROR: the cellular data link is relayed by cell.bridge (cell.bridge off first)\n"
+                             : "ERROR: no cellular data link (use cell.connect first)\n");
             return UCXAPP_ERR_FAILED;
         }
         return ucxapp_stream_bridge_uart(s, app, cport, cbaud) ? UCXAPP_OK : UCXAPP_ERR_FAILED;

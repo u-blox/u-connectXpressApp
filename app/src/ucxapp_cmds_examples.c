@@ -275,6 +275,10 @@ static const example_t kExamples[] = {
       "cell.open\ncell.profile global\ncell.rat ltem nbiot\ncell.operator scan\ncell.operator auto\ncell.attach on" },
     { "cell", "Modem AT console from a PC tool over TCP",
       "cell.open\ncell.bridge tcp 7000" },
+    { "cell", "Wi-Fi to cellular relay: a laptop on the module's access point reaches a server over LTE",
+      "wifi.ap.enable FieldKit FieldKit123\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\n"
+      "cell.bridge tcp 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status\n"
+      "cell.disconnect" },
 #endif
 #if UCXAPP_HOST || defined(UCXAPP_CAN_HW)
     { "can", "Loopback test",

@@ -168,3 +168,32 @@ def test_cell_at_console_over_a_tcp_bridge(app_exe, port_a, cell):
         shell.stop()
     assert b"OK" in got, f"{got!r}\n{text[-3000:]}"
     assert re.search(rb"u-blox|Quectel|SIMCOM|Telit|Nordic", got, re.I), got
+
+
+@pytest.mark.cell
+@pytest.mark.hardware
+@pytest.mark.wifi
+def test_cell_relays_a_wifi_client_to_the_internet(app_exe, port_a, cell):
+    """Wi-Fi to cellular relay: a PC socket to the NORA module's TCP server reaches the echo server over the modem."""
+    shell = _Shell(app_exe, port_a, _wifi_connect_command(), _open(cell), "cell.attach on", f"cell.connect {ECHO}",
+                   "cell.bridge tcp 2950")
+    try:
+        m = shell.wait(r"connect a TCP client to ([\d.]+):2950", 300)
+        shell.wait(r"relaying the data link to ", 20)
+        line = f"ucxapp relay {time.time():.0f}\n".encode()
+        got = b""
+        with socket.create_connection((m.group(1), 2950), timeout=20) as s:
+            time.sleep(1)
+            s.sendall(line)
+            deadline = time.time() + 30
+            while time.time() < deadline and line not in got:
+                try:
+                    got += s.recv(256)
+                except socket.timeout:
+                    break
+        text = shell.close("cell.bridge status", "cell.bridge off", "cell.status", "cell.disconnect")
+    finally:
+        shell.stop()
+    assert line in got, f"{got!r}\n{text[-3000:]}"
+    assert "the data link to " in text and "stays up" in text, text[-3000:]
+    assert "disconnected, command mode on" in text, text[-3000:]

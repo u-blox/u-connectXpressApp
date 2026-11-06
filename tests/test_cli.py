@@ -487,6 +487,31 @@ def test_cell_connect_needs_an_open_module(app_exe, tmp_path):
     assert "no cellular module open" in out.stdout
 
 
+def test_cell_bridge_relays_the_data_link(app_exe, tmp_path):
+    link = ["cell.open virt:cell", "cell.attach on", "cell.connect caster.local 2101"]
+    out = _run(app_exe, tmp_path, "COM255", *link, "cell.bridge uart virt:pc", "cell.bridge status", "cell.status",
+               "cell.bridge off", "cell.bridge status", "cell.disconnect", "cell.status")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert "cell bridge: virt:cell <-> virt:pc" in text and "relaying the data link to caster.local:2101" in text, text
+    assert "bridge 1: UART virt:pc" in text, text
+    assert "data link to caster.local:2101 now, relayed by cell.bridge" in text, text
+    assert "the data link to caster.local:2101 stays up (cell.disconnect ends it)" in text, text
+    assert "bridge: off" in text and "disconnected, command mode on virt:cell" in text, text
+    assert "Port:      virt:cell" in text, text
+    # the relay holds the link: another bridge or a second cell.connect is refused
+    for command in ("gnss.bridge cell", "cell.connect example.com 7"):
+        pre = ["gnss.virtual malmo"] if command.startswith("gnss") else []
+        out = _run(app_exe, tmp_path, "COM255", *link, "cell.bridge uart virt:pc", *pre, command)
+        assert out.returncode == 1, out.stdout
+        assert "the cellular data link is relayed by cell.bridge (cell.bridge off first)" in out.stdout, out.stdout
+    # cell.disconnect ends a running relay too, and cell.open takes the port back for AT commands
+    out = _run(app_exe, tmp_path, "COM255", *link, "cell.bridge uart virt:pc", "cell.disconnect", "cell.status")
+    assert out.returncode == 0 and "disconnected, command mode on virt:cell" in out.stdout, out.stdout
+    out = _run(app_exe, tmp_path, "COM255", *link, "cell.bridge uart virt:pc", "cell.open", "cell.status")
+    assert out.returncode == 0 and "ending the data link to caster.local:2101" in out.stdout, out.stdout
+
+
 @pytest.mark.parametrize("command", ["cell.connect", "cell.connect host", "cell.connect host 0", "cell.connect h 1 x"])
 def test_cell_connect_rejects_bad_arguments(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)

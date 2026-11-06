@@ -243,8 +243,10 @@ static void closePort(void)
     gMaker[0] = '\0';
 }
 
-/* While bridged the serial port belongs to a stream; the remote side gets the modem's AT console. */
+/* While bridged the serial port belongs to a stream; the remote side gets the modem's AT console, or with gRelay the
+ * payload of the cell.connect data link (a Wi-Fi client of the NORA module talks to the remote host over cellular). */
 static ucxapp_stream_t *gStream;
+static bool gRelay;
 
 /* Transparent data mode: the modem's UART carries the TCP/UDP payload, so any stream can bridge to that port. */
 static bool gDataMode;
@@ -262,8 +264,8 @@ static bool gRelinking;
 static bool cellBusy(void)
 {
     if (gDataMode) {
-        ucxapp_print("  %s: data link to %s:%d now (cell.disconnect or cell.open for AT commands)\n",
-                     gLinkPort, gLinkHost, (int)gLinkRemote);
+        ucxapp_print("  %s: data link to %s:%d now%s (cell.disconnect or cell.open for AT commands)\n",
+                     gLinkPort, gLinkHost, (int)gLinkRemote, gRelay ? ", relayed by cell.bridge" : "");
         return true;
     }
     if (gStream != NULL) {
@@ -670,6 +672,11 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     (void)argc;
     (void)argv;
 
+    if (!gOpen && (gDataMode || gStream != NULL)) {
+        ucxapp_print("cellular module busy, no AT commands:\n");
+        (void)cellBusy();
+        return UCXAPP_OK;
+    }
     if (!needOpen()) {
         return UCXAPP_ERR_FAILED;
     }
@@ -1361,10 +1368,18 @@ static int cmdPing(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+bool ucxapp_cell_relayed(void)
+{
+    return gRelay;
+}
+
 bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
 {
     if (!gDataMode) {
         return false;
+    }
+    if (gRelay) {
+        return false;   /* cell.bridge holds the link port */
     }
     snprintf(port, size, "%s", gLinkPort);
     *baud = gLinkBaud;
@@ -1382,7 +1397,7 @@ bool ucxapp_cell_dash(char *out, size_t size)
         return false;
     }
     if (gDataMode || gStream != NULL) {
-        snprintf(out, size, "%s on %s", gDataMode ? "data link" : "AT bridge", gPort);
+        snprintf(out, size, "%s on %s", gDataMode ? (gRelay ? "data link relayed" : "data link") : "AT bridge", gPort);
         return true;
     }
     if (atCmd("AT+CEREG?", resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, "+CEREG:", v, sizeof(v))) {
@@ -1429,7 +1444,8 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
         }
     }
     if (gDataMode) {
-        ucxapp_print("ERROR: already connected (cell.disconnect first)\n");
+        ucxapp_print(gRelay ? "ERROR: the cellular data link is relayed by cell.bridge (cell.bridge off first)\n"
+                            : "ERROR: already connected (cell.disconnect first)\n");
         return UCXAPP_ERR_FAILED;
     }
     if (!needOpen()) {
@@ -1632,6 +1648,11 @@ static int cmdDisconnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no cellular data link\n");
         return UCXAPP_ERR_FAILED;
     }
+    if (gRelay) {
+        ucxapp_stream_close(gStream);
+        gStream = NULL;
+        gRelay = false;
+    }
     (void)ucxapp_stream_bridge_stop_port(gLinkPort);
     if (!escapeDataMode(gLinkPort, gLinkBaud)) {
         ucxapp_print("ERROR: cannot open %s\n", gLinkPort);
@@ -1652,17 +1673,22 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     if (argc < 2 || argc > 6) {
         return UCXAPP_ERR_USAGE;
     }
-    if (gStream == NULL && !needOpen()) {
+    if (gStream == NULL && !gDataMode && !needOpen()) {
         return UCXAPP_ERR_FAILED;
     }
     if (gStream != NULL) {
         int r = ucxapp_stream_bridge_cmd(gStream, app, argc, argv, 2323);
-        if (!ucxapp_stream_bridge_active(gStream)) {   /* last bridge gone: back to command mode */
+        if (!ucxapp_stream_bridge_active(gStream)) {   /* last bridge gone: back to command mode, or the bare link */
             char port[32];
             int32_t baud = ucxapp_stream_baud(gStream);
             snprintf(port, sizeof(port), "%s", ucxapp_stream_port(gStream));
             ucxapp_stream_close(gStream);
             gStream = NULL;
+            if (gRelay) {
+                gRelay = false;
+                ucxapp_print("the data link to %s:%d stays up (cell.disconnect ends it)\n", gLinkHost, (int)gLinkRemote);
+                return r;
+            }
             if (!openPort(port, baud)) {
                 ucxapp_print("ERROR: no AT response on %s after the bridge, use cell.open\n", port);
                 return UCXAPP_ERR_FAILED;
@@ -1675,8 +1701,26 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_OK;
     }
     char port[32];
-    int32_t baud = gBaud;
+    int32_t baud = gDataMode ? gLinkBaud : gBaud;
     ucxapp_stream_cfg_t cfg = { "cell", NULL, NULL, 0, NULL, NULL };
+    if (gDataMode) {
+        /* relay: the far end of the bridge talks to the cell.connect host; the modem stays in data mode */
+        snprintf(port, sizeof(port), "%s", gLinkPort);
+        gStream = ucxapp_stream_open(port, baud, &cfg);
+        if (gStream == NULL) {
+            ucxapp_print("ERROR: cannot open %s (in use by another bridge, e.g. gnss.bridge cell?)\n", port);
+            return UCXAPP_ERR_FAILED;
+        }
+        int r = ucxapp_stream_bridge_cmd(gStream, app, argc, argv, 2323);
+        if (r != UCXAPP_OK || !ucxapp_stream_bridge_active(gStream)) {
+            ucxapp_stream_close(gStream);
+            gStream = NULL;
+        } else {
+            gRelay = true;   /* only now: the bridge asks ucxapp_cell_data_link while it starts */
+            ucxapp_print("relaying the data link to %s:%d\n", gLinkHost, (int)gLinkRemote);
+        }
+        return r;
+    }
     snprintf(port, sizeof(port), "%s", gPort);
     closePort();
     gStream = ucxapp_stream_open(port, baud, &cfg);
@@ -1712,7 +1756,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91) for gnss.bridge cell, imu.bridge cell, can.bridge cell", 0, cmdConnect },
     { "cell.disconnect", "", "Leave transparent mode and close the socket (stops the bridges that use the link)", 0, cmdDisconnect },
-    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once", 0, cmdBridge },
+    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once. After cell.connect it relays the data link instead: a Wi-Fi client of the NORA module (e.g. on its soft AP) talks to the cell.connect host; off leaves the link up", 0, cmdBridge },
 };
 
 void ucxapp_register_cell_cmds(void)

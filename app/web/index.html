@@ -63,9 +63,9 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--bd)}.frow span:first-child{flex:1;font-family:Consolas,monospace}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
-#ver{white-space:nowrap}#lv{display:flex;gap:.8rem;justify-content:flex-end;align-items:baseline}
+#ver{white-space:nowrap;font:12px Consolas,monospace;color:var(--mut);margin-left:-.3rem;align-self:center}#lv{display:flex;gap:.8rem;justify-content:flex-end;align-items:baseline}
 #meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.15rem;min-width:0;max-width:100%}
-#clock,#loc,#ver{font:12px Consolas,monospace;color:var(--mut);overflow-wrap:anywhere;text-align:right}
+#clock,#loc{font:12px Consolas,monospace;color:var(--mut);overflow-wrap:anywhere;text-align:right}
 #clock .t{color:var(--tx);font-size:13px;font-weight:600;margin-left:.4em}#clock .sep{display:none}
 .tag{display:inline-block;margin-left:.4rem;padding:0 .45em;border:1px solid var(--bd);border-radius:999px;font-size:11px;line-height:1.45;color:var(--mut);white-space:nowrap}
 .tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warm);border-color:var(--warm)}
@@ -82,7 +82,7 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="300">
 <text x="205" y="325" fill="#fff" textLength="190">u</text>
 <text x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
-<h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button></span>
+<h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button></span>
 <span id="state"></span><span id="busy"></span>
 <button id="files">Files</button><button id="clr">Clear</button></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
@@ -98,7 +98,7 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><pre id="cc" hidden title="Cellular modem, live (click: cell.status)"></pre><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
-<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
+<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><input type="file" id="up"><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
 <script>

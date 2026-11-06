@@ -684,7 +684,8 @@ static const char *const kCmdOrder[] = {
     "web.start", "web.status", "web.stop",
     "gnss.detect", "gnss.open", "gnss.status", "gnss.sats", "gnss.log", "gnss.bridge", "gnss.close",
     "imu.detect", "imu.open", "imu.status", "imu.log", "imu.bridge", "imu.close",
-    "cell.detect", "cell.open", "cell.status", "cell.connect", "cell.disconnect", "cell.ping",
+    "cell.detect", "cell.open", "cell.status", "cell.info", "cell.signal", "cell.operator", "cell.attach",
+    "cell.connect", "cell.disconnect", "cell.ping",
     "can.status", "can.cfg", "can.send", "can.recv", "can.bridge",
 };
 

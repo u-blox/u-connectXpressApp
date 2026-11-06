@@ -269,6 +269,10 @@ static const example_t kExamples[] = {
 #if UCXAPP_HOST
     { "cell", "Cellular data link",
       "cell.detect\ncell.open\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
+    { "cell", "Check the modem, SIM and signal without AT commands",
+      "cell.open\ncell.info\ncell.signal\ncell.operator\ncell.radio" },
+    { "cell", "u-blox: LTE-M first, then NB-IoT, global profile, then a network in range",
+      "cell.open\ncell.profile global\ncell.rat ltem nbiot\ncell.operator scan\ncell.operator auto\ncell.attach on" },
     { "cell", "Modem AT console from a PC tool over TCP",
       "cell.open\ncell.bridge tcp 7000" },
 #endif

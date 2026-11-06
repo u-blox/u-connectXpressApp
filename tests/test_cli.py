@@ -337,7 +337,8 @@ def test_gatt_listen_help_mentions_off(app_exe, tmp_path):
 
 @pytest.mark.parametrize("command", [
     "cell.close", "cell.status", "cell.at AT", "cell.apn", "cell.apn internet", "cell.attach", "cell.ping 8.8.8.8",
-    "cell.bridge tcp", "cell.bridge uart COM1",
+    "cell.bridge tcp", "cell.bridge uart COM1", "cell.info", "cell.signal", "cell.operator", "cell.operator scan",
+    "cell.radio", "cell.rat", "cell.profile", "cell.pin 1234",
 ])
 def test_cell_commands_need_an_open_module(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -519,6 +520,17 @@ def test_custom_ble_bridge_arguments(app_exe, tmp_path, command, expected):
     ("cell.at", "usage: cell.at"),
     ("cell.attach maybe", "usage: cell.attach"),
     ("cell.ping", "usage: cell.ping"),
+    ("cell.operator 12", "usage: cell.operator"),
+    ("cell.operator 24007x", "usage: cell.operator"),
+    ("cell.radio maybe", "usage: cell.radio"),
+    ("cell.rat 5g", "usage: cell.rat"),
+    ("cell.rat ltem nbiot 2g ltem", "usage: cell.rat"),
+    ("cell.profile nope", "usage: cell.profile"),
+    ("cell.profile 300", "usage: cell.profile"),
+    ("cell.pin 12", "usage: cell.pin"),
+    ("cell.pin abcd", "usage: cell.pin"),
+    ("cell.info x", "usage: cell.info"),
+    ("cell.signal x", "usage: cell.signal"),
 ])
 def test_cell_commands_reject_bad_arguments(app_exe, tmp_path, command, usage):
     out = _run(app_exe, tmp_path, "COM255", command)

@@ -195,6 +195,11 @@ static const struct {
     { "AT+CEREG?", "+CEREG: 0,1" },
     { "AT+CGREG?", "+CGREG: 0,1" },
     { "AT+COPS?", "+COPS: 0,0,\"vucx telecom\",7" },
+    { "AT+COPS=?", "+COPS: (2,\"vucx telecom\",\"vucx\",\"24099\",7),(1,\"Other net\",\"Other\",\"24001\",9),,(0-4),(0-2)" },
+    { "AT+CFUN?", "+CFUN: 1" },
+    { "AT+URAT?", "+URAT: 7,8" },
+    { "AT+UMNOPROF?", "+UMNOPROF: 90" },
+    { "AT+UPSND=0,8", "+UPSND: 0,8,1" },
 };
 
 static void say(vdev_t *d, const char *fmt, ...)

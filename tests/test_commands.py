@@ -24,6 +24,7 @@ NEW_COMMANDS = (
     "gnss.restart", "gnss.rate", "gnss.bridge",
     "cell.detect", "cell.open", "cell.close", "cell.status", "cell.at", "cell.apn", "cell.attach",
     "cell.ping", "cell.bridge", "cell.connect", "cell.disconnect",
+    "cell.info", "cell.signal", "cell.operator", "cell.radio", "cell.rat", "cell.profile", "cell.pin",
     "imu.detect", "imu.open", "imu.close", "imu.status", "imu.log", "imu.send", "imu.rate", "imu.bridge",
     "wifi.ap.enable", "wifi.ap.disable", "wifi.ap.status",
     "wifi.profile.add", "wifi.profile.list", "wifi.profile.remove", "wifi.profile.connect",

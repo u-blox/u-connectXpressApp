@@ -606,18 +606,29 @@ Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `ca
 ### Cellular modules
 
 Basic access to a cellular module on a PC serial port, using the generic 3GPP AT commands (TS 27.007) that
-Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Not verified on hardware yet; only
-`cell.ping` and `cell.connect` are vendor specific (picked from the module's ATI maker string). Everything else goes through `cell.at`.
+Quectel, SIMCom, u-blox, Telit, Sierra and Nordic nRF91 modules share. Verified on a SARA-R510S (XPLR-IOT-1);
+`cell.ping`, `cell.connect`, `cell.rat` and `cell.profile` are vendor specific (picked from the module's ATI and
+`AT+CGMI` maker). `cell.at` is there for anything else.
+
+On an XPLR-IOT-1 the NORA-B106 powers the SARA-R5: when no modem answers, `cell.detect` and `cell.open` send
+`modules SARAR5 power_on` to its shell (FT4232 interface A) and wait for the SARA-R5 on interface B.
 
 | Command | Arguments | Description |
 |---|---|---|
-| `cell.detect` | `[port]` | Find a module answering AT (115200, 9600, 921600, 460800 baud) |
+| `cell.detect` | `[port]` | Find a module answering AT (115200, 9600, 921600, 460800 baud); powers on the SARA-R5 of an XPLR-IOT-1 |
 | `cell.open` | `[port] [baud=115200]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI`. Already open: says so and succeeds |
 | `cell.close` |  | Close it |
-| `cell.status` |  | SIM, ICCID, signal in dBm, registration (LTE and 2G/3G), operator, IP |
-| `cell.at` | `<command>` | Send a raw AT command |
+| `cell.status` |  | SIM, ICCID, signal in dBm, registration, the reject cause when denied (`AT+CEER`), operator, IP |
+| `cell.info` |  | Maker, model, firmware, IMEI, IMSI and ICCID |
+| `cell.signal` |  | RSSI (`AT+CSQ`), RSRP and RSRQ (`AT+CESQ`) with a rating: excellent (-90 dBm and up), good (-105), fair (-115), poor |
+| `cell.operator` | `[scan\|auto\|<mccmnc>]` | Show the network, access technology and selection mode; `scan` lists the networks in range (`AT+COPS=?`, up to 3 minutes); `auto` or an MCC+MNC such as `24007` chooses one |
+| `cell.radio` | `[on\|off\|reboot]` | Show or switch the radio (`off` is airplane mode, `AT+CFUN=4`), or restart the modem and wait for it |
+| `cell.rat` | `[ltem] [nbiot] [2g]` | u-blox: show or set the radio access technologies in order of preference (`AT+URAT`, set with the radio off) |
+| `cell.profile` | `[<name>\|<n>]` | u-blox: show or set the MNO profile (`AT+UMNOPROF`): `global` (90), `europe` (100), `sim` (1, from the SIM), `vodafone`, `dt`, `at&t`, `verizon`, `telstra`, `t-mobile` or a number; the modem reboots |
+| `cell.pin` | `<pin>` | Unlock the SIM |
+| `cell.at` | `<command>` | Send a raw AT command (network selection, scan and attach wait up to 3 minutes) |
 | `cell.apn` | `[<apn> [ip\|ipv6\|ipv4v6]]` | Show or set the APN of context 1 |
-| `cell.attach` | `[on\|off]` | Attach and activate data, detach, or show the state |
+| `cell.attach` | `[on\|off]` | Attach and activate data, detach, or show the state. `on` waits until the modem is attached and has an address, and says why when the network refuses; on u-blox modules it also starts the internal IP stack (PSD profile 0 on context 1) that ping and sockets use |
 | `cell.ping` | `<host>` | Ping over the cellular link (Quectel and u-blox only) |
 | `cell.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|off [n]\|status>` | Give the modem's AT console to a peer, same modes as `gnss.bridge` (up to 4 at once; the last `off` returns to command mode) |
 | `cell.connect` | `<host> <port> [tcp\|udp]` | Open a transparent socket through the modem. Vendor paths: u-blox (default, `AT+USOCR`/`AT+USOCO`), Quectel (`AT+QIOPEN` access mode 2), SIMCom (`AT+CIPMODE=1`, `AT+CIPOPEN`), Telit (`AT#SGACT`, `AT#SD`), Nordic nRF91 (`AT#XSOCKET`, `AT#XCONNECT`). The modem's UART then carries the payload: bridge to it with `gnss.bridge cell` or `imu.bridge cell` |

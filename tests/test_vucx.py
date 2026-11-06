@@ -783,8 +783,60 @@ def test_cell_status_shows_operator_and_ip_of_a_registered_modem(app_exe, nora):
         modem.stop()
     assert re.search(r"^Network:\s+registered \(home\)$", out.stdout, re.M), out.stdout[-3000:]
     assert re.search(r"^Operator:\s+vucx telecom$", out.stdout, re.M), out.stdout[-3000:]
-    assert re.search(r"^IP:\s+32\.1\.13\.184\.0\.0\.0\.0\.0\.0\.0\.0\.0\.0\.0\.1$", out.stdout, re.M), out.stdout[-3000:]
+    assert re.search(r"^IP:\s+32\.1\.13\.184(\.0){11}\.1$", out.stdout, re.M), out.stdout[-3000:]
     assert "attached, IP 32.1.13.184" in out.stdout, out.stdout[-3000:]
+
+
+def test_cell_everyday_commands_on_a_virtual_sara_r5(app_exe, nora):
+    from harness.vucx import Vucx
+
+    modem = Vucx("cell.yaml")
+    port = modem.start()
+    try:
+        out = _shell(app_exe, nora.port, [
+            f"cell.open {port}", "cell.info", "cell.signal", "cell.operator", "cell.operator scan",
+            "cell.operator 24099", "cell.operator auto", "cell.radio", "cell.radio off", "cell.radio on",
+            "cell.radio reboot", "cell.rat", "cell.rat ltem nbiot", "cell.profile", "cell.profile europe",
+            "cell.pin 1234", "cell.attach on", "cell.attach off"], timeout=90, log=modem.log)
+    finally:
+        modem.stop()
+    text = re.sub(r"^(ucxapp> )+", "", out.stdout, flags=re.M)
+    assert re.search(r"^Model:\s+SARA-R510M8S$", text, re.M), text
+    assert re.search(r"^IMEI:\s+351234567890123$", text, re.M), text
+    assert re.search(r"^ICCID:\s+89460112345678901234$", text, re.M), text
+    assert re.search(r"^RSSI:\s+-73 dBm \(CSQ 20\)$", text, re.M), text
+    assert re.search(r"^RSRP:\s+-91 dBm \(good\)$", text, re.M) and re.search(r"^RSRQ:\s+-10\.0 dB$", text, re.M), text
+    assert re.search(r"^Operator:\s+vucx telecom$", text, re.M), text
+    assert re.search(r"^Selection:\s+automatic$", text, re.M), text
+    assert re.search(r"^\s+24099\s+vucx telecom\s+LTE/LTE-M\s+current$", text, re.M), text
+    assert re.search(r"^\s+24001\s+Other net\s+NB-IoT\s+available$", text, re.M) and "2 network(s) found" in text, text
+    assert "radio: on" in text and "radio off (airplane mode)" in text and "modem restarted" in text, text
+    assert re.search(r"^RAT:\s+ltem nbiot$", text, re.M) and "ltem nbiot (set; registering again)" in text, text
+    assert "MNO profile: 90 (global)" in text and "SIM already unlocked" in text, text
+    assert "attached, IP 10.0.0.5" in text and "detached" in text, text
+    log = modem.log
+    assert 'AT+COPS=1,2,"24099"' in log and "AT+COPS=0" in log and "AT+CFUN=4" in log and "AT+CFUN=16" in log, log
+    rat = log.index("AT+URAT=7,8")
+    assert log[rat - 1] == "AT+CFUN=0" and log[rat + 1] == "AT+CFUN=1", log
+    prof = log.index("AT+UMNOPROF=100")
+    assert log[prof - 1] == "AT+CFUN=0" and log[prof + 1] == "AT+CFUN=16", log
+    assert "AT+UPSD=0,100,1" in log and log.index("AT+UPSDA=0,3") > log.index("AT+UPSD=0,100,1"), log
+    assert "AT+UPSDA=0,4" in log, log
+    assert not any(c.startswith("AT+CPIN=") for c in log), log
+
+
+def test_cell_u_blox_commands_refuse_other_makers(app_exe, nora):
+    from harness.vucx import Vucx
+
+    modem = Vucx("cell.yaml")
+    modem.commands.update({"ATI": ["Quectel", "BG95-M3", "OK"], "AT+CGMI": ["Quectel", "OK"]})
+    port = modem.start()
+    try:
+        out = _shell(app_exe, nora.port, [f"cell.open {port}", "cell.rat ltem", "cell.profile global"], log=modem.log)
+    finally:
+        modem.stop()
+    assert out.stdout.count("ERROR: only for u-blox modules (this is 'Quectel')") == 2, out.stdout[-3000:]
+    assert not any(c.startswith(("AT+URAT", "AT+UMNOPROF", "AT+CFUN=0")) for c in modem.log), modem.log
 
 
 def test_can_bridge_cell_reconnects_a_dropped_link(app_exe, nora):

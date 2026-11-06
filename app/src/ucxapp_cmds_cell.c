@@ -282,12 +282,17 @@ static bool isFt4232(const ucxapp_serial_port_t *sp)
     return sp->vid == 0x0403 && sp->pid == 0x6011;
 }
 
-/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port. */
-static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count)
+/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port.
+ * With "want", only when that port is an FT4232 port too (a SARA-R5 can be behind it). */
+static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, const char *want)
 {
     const char *dev = ucxapp_device_port();
+    bool candidate = want == NULL;
 
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count && !candidate; i++) {
+        candidate = strcasecmp(ports[i].name, want) == 0 && isFt4232(&ports[i]);
+    }
+    for (int i = 0; i < count && candidate; i++) {
         const ucxapp_serial_port_t *sp = &ports[i];
         if (!isFt4232(sp) || !sp->available || (dev != NULL && strcasecmp(dev, sp->name) == 0)) {
             continue;
@@ -397,7 +402,7 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
         }
     }
     if (!cellFound && !onlyVirt) {
-        const char *shell = xplrPowerOn(ports, count);
+        const char *shell = xplrPowerOn(ports, count, argc == 2 ? argv[1] : NULL);
         if (shell != NULL && xplrOpenSara(ports, count, shell, argc == 2 ? argv[1] : NULL)) {
             ucxapp_print("  %s: AT module at 115200 baud: %s\n", gPort, gMaker);
             closePort();
@@ -481,7 +486,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             (void)openPort(UCXAPP_VPORT_CELL, baud);
         }
         if (!gOpen) {
-            const char *shell = xplrPowerOn(ports, count);
+            const char *shell = xplrPowerOn(ports, count, NULL);
             if (shell != NULL) {
                 (void)xplrOpenSara(ports, count, shell, NULL);
             }
@@ -493,7 +498,7 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
     } else if (!openPort(argv[1], baud)) {
         static ucxapp_serial_port_t ports[32];
         int count = ucxapp_vport_is(argv[1]) ? 0 : ucxapp_platform_list_serial_ports(ports, 32);
-        const char *shell = xplrPowerOn(ports, count);
+        const char *shell = xplrPowerOn(ports, count, argv[1]);
 
         if (shell == NULL || !xplrOpenSara(ports, count, shell, argv[1])) {
             ucxapp_print("ERROR: no AT response on %s at %d baud\n", argv[1], (int)baud);
@@ -738,6 +743,9 @@ static int cmdAttach(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     if (strcmp(argv[1], "off") == 0) {
+        if (strstr(gMaker, "u-blox") != NULL) {
+            (void)atCmd("AT+UPSDA=0,4", resp, sizeof(resp), 30000, 0);
+        }
         (void)atCmd("AT+CGACT=0,1", resp, sizeof(resp), 10000, 0);
         int r = atCmd("AT+CGATT=0", resp, sizeof(resp), 30000, 0);
         ucxapp_print(r == AT_OK ? "detached\n" : "ERROR: detach failed\n");
@@ -780,6 +788,464 @@ static int cmdAttach(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("attached, IP %s\n", v);
+    /* u-blox: ping and sockets use the internal IP stack, which runs on PSD profile 0 mapped to context 1 */
+    if (strstr(gMaker, "u-blox") != NULL &&
+        !(atCmd("AT+UPSND=0,8", resp, sizeof(resp), 3000, 0) == AT_OK && strstr(resp, "+UPSND: 0,8,1") != NULL)) {
+        char type[160] = "";
+        if (atCmd("AT+CGDCONT?", resp, sizeof(resp), 3000, 0) == AT_OK && field(resp, "+CGDCONT: 1,", type, sizeof(type))) {
+            (void)atCmd(strstr(type, "IPV4V6") != NULL ? "AT+UPSD=0,0,2" : strstr(type, "IPV6") != NULL ? "AT+UPSD=0,0,1"
+                                                                                                   : "AT+UPSD=0,0,0",
+                        resp, sizeof(resp), 3000, 0);
+        }
+        (void)atCmd("AT+UPSD=0,100,1", resp, sizeof(resp), 3000, 0);
+        if (atCmd("AT+UPSDA=0,3", resp, sizeof(resp), 180000, 0) != AT_OK) {
+            ucxapp_print("ERROR: the internal IP stack did not start (AT+UPSDA=0,3); ping and sockets will fail\n");
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    return UCXAPP_OK;
+}
+
+/* ---- everyday setup without AT commands ---- */
+
+static bool isUblox(void)
+{
+    if (strstr(gMaker, "u-blox") == NULL) {
+        ucxapp_print("ERROR: only for u-blox modules (this is '%s'); use cell.at\n", gMaker);
+        return false;
+    }
+    return true;
+}
+
+/* The reply line of a query, without the echo and without a "+XXX: " prefix. */
+static bool answer(const char *cmd, char *out, size_t size, int32_t timeoutMs)
+{
+    char resp[RESP_SIZE];
+
+    out[0] = '\0';
+    if (atCmd(cmd, resp, sizeof(resp), timeoutMs, 0) != AT_OK) {
+        return false;
+    }
+    for (const char *p = resp; *p != '\0';) {
+        p += strspn(p, "\r\n");
+        size_t len = strcspn(p, "\r\n");
+        if (len == 0) {
+            break;
+        }
+        if (strncmp(p, "OK", 2) != 0 && strncmp(p, "AT", 2) != 0) {
+            const char *colon = p[0] == '+' ? memchr(p, ':', len) : NULL;
+            if (colon != NULL) {
+                len -= (size_t)(colon + 1 - p);
+                p = colon + 1;
+                while (len > 0 && *p == ' ') {
+                    p++;
+                    len--;
+                }
+            }
+            snprintf(out, size, "%.*s", (int)len, p);
+            return true;
+        }
+        p += len;
+    }
+    return false;
+}
+
+/* After a modem reboot: waits until it answers AT again and turns the echo off. */
+static bool waitAt(uint32_t ms)
+{
+    char resp[RESP_SIZE];
+    uint32_t start = ucxapp_platform_tick_ms();
+
+    ucxapp_platform_sleep_ms(1000);
+    while (ucxapp_platform_tick_ms() - start < ms) {
+        if (atCmd("AT", resp, sizeof(resp), 500, 0) == AT_OK) {
+            (void)atCmd("ATE0", resp, sizeof(resp), 500, 0);
+            return true;
+        }
+        ucxapp_platform_sleep_ms(500);
+    }
+    ucxapp_print("ERROR: no answer from the modem %u s after the reboot\n", (unsigned)(ms / 1000));
+    return false;
+}
+
+/* u-blox: RAT and MNO profile changes need the modem off the network (AT+CFUN=0) */
+static bool radioOff(void)
+{
+    char resp[RESP_SIZE];
+
+    if (atCmd("AT+CFUN=0", resp, sizeof(resp), 30000, 0) != AT_OK) {
+        ucxapp_print("ERROR: the modem did not leave the network (AT+CFUN=0)\n");
+        return false;
+    }
+    return true;
+}
+
+static bool rebootModem(void)
+{
+    char resp[RESP_SIZE];
+
+    ucxapp_print("rebooting the modem...\n");
+    if (atCmd(strstr(gMaker, "u-blox") != NULL ? "AT+CFUN=16" : "AT+CFUN=1,1", resp, sizeof(resp), 15000, 0) != AT_OK) {
+        ucxapp_print("ERROR: reboot not accepted\n");
+        return false;
+    }
+    return waitAt(30000);
+}
+
+/* cell.info: who the modem and the SIM are. */
+static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
+{
+    static const struct {
+        const char *label;
+        const char *cmd;
+    } kRows[] = {
+        { "Maker:     ", "AT+CGMI" }, { "Model:     ", "AT+CGMM" }, { "Firmware:  ", "AT+CGMR" },
+        { "IMEI:      ", "AT+CGSN" }, { "IMSI:      ", "AT+CIMI" }, { "ICCID:     ", "AT+CCID" },
+    };
+    char v[160];
+    (void)app;
+    (void)argv;
+
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    for (size_t i = 0; i < sizeof(kRows) / sizeof(kRows[0]); i++) {
+        ucxapp_print("%s%s\n", kRows[i].label, answer(kRows[i].cmd, v, sizeof(v), 2000) ? v : "-");
+    }
+    return UCXAPP_OK;
+}
+
+/* cell.signal: RSSI from +CSQ, RSRP and RSRQ from +CESQ (TS 27.007). */
+static int cmdSignal(ucxapp_t *app, int argc, char *argv[])
+{
+    char v[160];
+    bool any = false;
+    (void)app;
+    (void)argv;
+
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (answer("AT+CSQ", v, sizeof(v), 2000)) {
+        int rssi = atoi(v);
+        if (rssi >= 0 && rssi < 99) {
+            ucxapp_print("RSSI:      %d dBm (CSQ %d)\n", -113 + 2 * rssi, rssi);
+            any = true;
+        }
+    }
+    if (answer("AT+CESQ", v, sizeof(v), 2000)) {
+        int f[6] = { 99, 99, 255, 255, 255, 255 };
+        const char *p = v;
+        for (int i = 0; i < 6 && p != NULL; i++) {
+            f[i] = atoi(p);
+            p = strchr(p, ',');
+            p = p != NULL ? p + 1 : NULL;
+        }
+        if (f[5] != 255) {
+            int rsrp = -141 + f[5];   /* 0: below -140 dBm, 97: -44 dBm and above */
+            ucxapp_print("RSRP:      %d dBm (%s)\n", rsrp,
+                         rsrp >= -90 ? "excellent" : rsrp >= -105 ? "good" : rsrp >= -115 ? "fair" : "poor");
+            any = true;
+        }
+        if (f[4] != 255) {
+            ucxapp_print("RSRQ:      %.1f dB\n", -20.0 + 0.5 * f[4]);   /* 0: below -19.5 dB, 34: -3 dB and above */
+        }
+    }
+    if (!any) {
+        ucxapp_print("no signal (not on a network yet; see cell.status)\n");
+    }
+    return UCXAPP_OK;
+}
+
+static const char *actText(int act)
+{
+    switch (act) {
+    case 0: return "GSM";
+    case 2: return "UMTS";
+    case 3: return "EDGE";
+    case 7: return "LTE/LTE-M";
+    case 8: return "EC-GSM";
+    case 9: return "NB-IoT";
+    default: return "?";
+    }
+}
+
+/* cell.operator [scan|auto|<mccmnc>]: show, list or choose the network. */
+static int cmdOperator(ucxapp_t *app, int argc, char *argv[])
+{
+    char resp[RESP_SIZE];
+    char v[160];
+    char name[64];
+    (void)app;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2 && strcasecmp(argv[1], "scan") != 0 && strcasecmp(argv[1], "auto") != 0 &&
+        (strlen(argv[1]) < 5 || strlen(argv[1]) > 6 || strspn(argv[1], "0123456789") != strlen(argv[1]))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (argc == 1) {
+        if (!answer("AT+COPS?", v, sizeof(v), 3000)) {
+            ucxapp_print("ERROR: no operator information\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        int mode = atoi(v);
+        const char *last = strrchr(v, ',');
+        bool named = operatorName(v, name, sizeof(name));
+        ucxapp_print("Operator:  %s\n", named ? name : "none");
+        if (named && last != NULL && strchr(last, '"') == NULL) {
+            ucxapp_print("Access:    %s\n", actText(atoi(last + 1)));
+        }
+        ucxapp_print("Selection: %s\n", mode == 0 ? "automatic" : mode == 1 ? "manual" : mode == 2 ? "off the network" : "?");
+        return UCXAPP_OK;
+    }
+    if (strcasecmp(argv[1], "scan") == 0) {
+        ucxapp_print("scanning (up to 3 minutes)...\n");
+        if (atCmd("AT+COPS=?", resp, sizeof(resp), 180000, 0) != AT_OK || !field(resp, "+COPS:", v, sizeof(v))) {
+            ucxapp_print("ERROR: scan failed (the modem may be busy registering; try cell.operator auto or later)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        /* (<stat>,"<long>","<short>","<numeric>"[,<act>]),... then the supported modes and formats */
+        static const char *const kStat[] = { "unknown", "available", "current", "forbidden" };
+        int count = 0;
+        for (const char *p = strchr(v, '('); p != NULL; p = strchr(p + 1, '(')) {
+            const char *end = strchr(p, ')');
+            char longName[40];
+            char numeric[12];
+            if (end == NULL || strchr(p, '"') == NULL || strchr(p, '"') > end) {
+                continue;
+            }
+            int stat = atoi(p + 1);
+            if (!operatorName(p, longName, sizeof(longName))) {
+                continue;
+            }
+            const char *q = p;
+            for (int i = 0; i < 5 && q != NULL && q < end; i++) {   /* the 3rd quoted string is the MCC/MNC */
+                q = strchr(q + 1, '"');
+            }
+            const char *qe = q != NULL ? strchr(q + 1, '"') : NULL;
+            snprintf(numeric, sizeof(numeric), "%.*s", q != NULL && qe != NULL && qe < end ? (int)(qe - q - 1) : 0,
+                     q != NULL ? q + 1 : "");
+            const char *act = memchr(qe != NULL ? qe : p, ',', (size_t)(end - (qe != NULL ? qe : p)));
+            ucxapp_print("  %-7s %-20s %-10s %s\n", numeric, longName, act != NULL ? actText(atoi(act + 1)) : "",
+                         stat >= 0 && stat <= 3 ? kStat[stat] : "?");
+            count++;
+            p = end;
+        }
+        ucxapp_print("%d network(s) found\n", count);
+        return UCXAPP_OK;
+    }
+    char cmd[40];
+    if (strcasecmp(argv[1], "auto") == 0) {
+        snprintf(cmd, sizeof(cmd), "AT+COPS=0");
+    } else {
+        snprintf(cmd, sizeof(cmd), "AT+COPS=1,2,\"%s\"", argv[1]);
+    }
+    ucxapp_print("registering (up to 3 minutes)...\n");
+    if (atCmd(cmd, resp, sizeof(resp), 180000, 0) != AT_OK) {
+        ucxapp_print("ERROR: the network did not accept the modem\n");
+        printRejectCause();
+        return UCXAPP_ERR_FAILED;
+    }
+    if (answer("AT+COPS?", v, sizeof(v), 3000) && operatorName(v, name, sizeof(name))) {
+        ucxapp_print("on %s\n", name);
+    } else {
+        ucxapp_print("selection set; registration continues in the background (cell.status)\n");
+    }
+    return UCXAPP_OK;
+}
+
+/* cell.radio [on|off|reboot]: full function, airplane mode (+CFUN=4) or a modem restart. */
+static int cmdRadio(ucxapp_t *app, int argc, char *argv[])
+{
+    char resp[RESP_SIZE];
+    char v[160];
+    (void)app;
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0 &&
+                     strcmp(argv[1], "reboot") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (argc == 1) {
+        if (!answer("AT+CFUN?", v, sizeof(v), 3000)) {
+            return UCXAPP_ERR_FAILED;
+        }
+        int fun = atoi(v);
+        ucxapp_print("radio: %s\n", fun == 1 ? "on" : fun == 4 ? "off (airplane mode)" : fun == 0 ? "off (minimum)" : v);
+        return UCXAPP_OK;
+    }
+    if (strcmp(argv[1], "reboot") == 0) {
+        if (!rebootModem()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("modem restarted\n");
+        return UCXAPP_OK;
+    }
+    bool on = strcmp(argv[1], "on") == 0;
+    if (atCmd(on ? "AT+CFUN=1" : "AT+CFUN=4", resp, sizeof(resp), 30000, 0) != AT_OK) {
+        ucxapp_print("ERROR: the modem refused\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print(on ? "radio on\n" : "radio off (airplane mode)\n");
+    return UCXAPP_OK;
+}
+
+/* cell.rat [ltem] [nbiot] [2g]: u-blox radio access technology, in order of preference (+URAT). */
+static int cmdRat(ucxapp_t *app, int argc, char *argv[])
+{
+    static const struct {
+        const char *name;
+        int urat;
+    } kRat[] = { { "2g", 9 }, { "ltem", 7 }, { "nbiot", 8 } };
+    char resp[RESP_SIZE];
+    char v[160];
+    char cmd[40] = "AT+URAT=";
+    (void)app;
+
+    if (argc > 4) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (int i = 1; i < argc; i++) {
+        size_t k = 0;
+        while (k < sizeof(kRat) / sizeof(kRat[0]) && strcasecmp(argv[i], kRat[k].name) != 0) {
+            k++;
+        }
+        if (k == sizeof(kRat) / sizeof(kRat[0])) {
+            return UCXAPP_ERR_USAGE;
+        }
+        size_t n = strlen(cmd);
+        snprintf(cmd + n, sizeof(cmd) - n, "%s%d", i > 1 ? "," : "", kRat[k].urat);
+    }
+    if (!needOpen() || !isUblox()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (argc > 1) {
+        if (!radioOff()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        bool ok = atCmd(cmd, resp, sizeof(resp), 5000, 0) == AT_OK;
+        (void)atCmd("AT+CFUN=1", resp, sizeof(resp), 30000, 0);
+        if (!ok) {
+            ucxapp_print("ERROR: the modem does not support that combination\n");
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    if (!answer("AT+URAT?", v, sizeof(v), 3000)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("RAT:      ");
+    for (const char *p = v; p != NULL; p = strchr(p, ',')) {
+        p += *p == ',' ? 1 : 0;
+        int urat = atoi(p);
+        const char *name = NULL;
+        for (size_t k = 0; k < sizeof(kRat) / sizeof(kRat[0]); k++) {
+            name = kRat[k].urat == urat ? kRat[k].name : name;
+        }
+        if (name != NULL) {
+            ucxapp_print(" %s", name);
+        } else {
+            ucxapp_print(" %d", urat);
+        }
+    }
+    ucxapp_print("%s\n", argc > 1 ? " (set; registering again)" : "");
+    return UCXAPP_OK;
+}
+
+/* cell.profile [global|europe|sim|<n>]: u-blox MNO profile (+UMNOPROF); a change reboots the modem. */
+static int cmdProfile(ucxapp_t *app, int argc, char *argv[])
+{
+    static const struct {
+        const char *name;
+        int id;
+    } kProf[] = { { "sim", 1 }, { "at&t", 2 }, { "verizon", 3 }, { "telstra", 4 }, { "t-mobile", 5 },
+                  { "vodafone", 19 }, { "dt", 31 }, { "global", 90 }, { "europe", 100 } };
+    char resp[RESP_SIZE];
+    char v[160];
+    int id = -1;
+    (void)app;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        for (size_t k = 0; k < sizeof(kProf) / sizeof(kProf[0]); k++) {
+            id = strcasecmp(argv[1], kProf[k].name) == 0 ? kProf[k].id : id;
+        }
+        int32_t n;
+        if (id < 0 && ucxapp_parse_int(argv[1], &n) && n >= 0 && n <= 255) {
+            id = (int)n;
+        }
+        if (id < 0) {
+            return UCXAPP_ERR_USAGE;
+        }
+    }
+    if (!needOpen() || !isUblox()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (id >= 0) {
+        char cmd[32];
+        snprintf(cmd, sizeof(cmd), "AT+UMNOPROF=%d", id);
+        if (!radioOff()) {
+            return UCXAPP_ERR_FAILED;
+        }
+        if (atCmd(cmd, resp, sizeof(resp), 10000, 0) != AT_OK) {
+            (void)atCmd("AT+CFUN=1", resp, sizeof(resp), 30000, 0);
+            ucxapp_print("ERROR: profile %d not accepted by this modem\n", id);
+            return UCXAPP_ERR_FAILED;
+        }
+        if (!rebootModem()) {
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    if (!answer("AT+UMNOPROF?", v, sizeof(v), 3000)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    int cur = atoi(v);
+    const char *name = "";
+    for (size_t k = 0; k < sizeof(kProf) / sizeof(kProf[0]); k++) {
+        name = kProf[k].id == cur ? kProf[k].name : name;
+    }
+    ucxapp_print("MNO profile: %d%s%s%s\n", cur, name[0] ? " (" : "", name, name[0] ? ")" : "");
+    return UCXAPP_OK;
+}
+
+/* cell.pin <pin>: unlock the SIM. */
+static int cmdPin(ucxapp_t *app, int argc, char *argv[])
+{
+    char resp[RESP_SIZE];
+    char cmd[32];
+    char v[160];
+    (void)app;
+
+    if (argc != 2 || strlen(argv[1]) < 4 || strlen(argv[1]) > 8 || strspn(argv[1], "0123456789") != strlen(argv[1])) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (answer("AT+CPIN?", v, sizeof(v), 3000) && strcmp(v, "READY") == 0) {
+        ucxapp_print("SIM already unlocked\n");
+        return UCXAPP_OK;
+    }
+    snprintf(cmd, sizeof(cmd), "AT+CPIN=\"%s\"", argv[1]);
+    if (atCmd(cmd, resp, sizeof(resp), 10000, 0) != AT_OK) {
+        ucxapp_print("ERROR: PIN not accepted (wrong PIN uses up one of the SIM's tries)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("SIM unlocked\n");
     return UCXAPP_OK;
 }
 
@@ -1139,6 +1605,13 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.open", "[port] [baud=115200]", "Open a cellular modem on a PC serial port (finds it when omitted; virt:cell is the simulated one); ends a data link or cell bridge on it", 0, cmdOpen },
     { "cell.close", "", "Close the cellular modem", 0, cmdClose },
     { "cell.status", "", "SIM, signal, registration, operator and IP", 0, cmdStatus },
+    { "cell.info", "", "Maker, model, firmware, IMEI, IMSI and ICCID", 0, cmdInfo },
+    { "cell.signal", "", "RSSI, RSRP and RSRQ with a quality rating", 0, cmdSignal },
+    { "cell.operator", "[scan|auto|<mccmnc>]", "Show the network, scan the networks in range, or choose one (auto, or MCC+MNC like 24007)", 0, cmdOperator },
+    { "cell.radio", "[on|off|reboot]", "Show or switch the radio (off is airplane mode) or restart the modem", 0, cmdRadio },
+    { "cell.rat", "[ltem] [nbiot] [2g]", "u-blox: show or set the radio access technologies, in order of preference", 0, cmdRat },
+    { "cell.profile", "[<name>|<n>]", "u-blox: show or set the MNO profile: global, europe, sim (from the SIM), vodafone, dt, at&t, verizon, telstra, t-mobile or a number (the modem reboots)", 0, cmdProfile },
+    { "cell.pin", "<pin>", "Unlock the SIM with its PIN", 0, cmdPin },
     { "cell.at", "<command>", "Send a raw AT command to the cellular modem", 0, cmdAt },
     { "cell.apn", "[<apn> [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },
     { "cell.attach", "[on|off]", "Attach and activate data (on), detach (off) or show the state", 0, cmdAttach },

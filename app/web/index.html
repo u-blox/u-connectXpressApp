@@ -354,7 +354,7 @@ const UC={
   h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['ble','Cab tablet','BLE NUS'],['wifi','Farmyard Wi-Fi','log upload']]},
  tracker:{t:'Car, bike or pet tracker',s:'Location',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
   h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','Your server','TCP, NMEA lines'],['cell','Cellular modem','on the road','pu'],['gnss','GNSS receiver','position']]},
- fieldkit:{t:'Field kit: Wi-Fi to LTE relay (new)',s:'Cellular',d:'No network on site: laptops and tablets join the module\'s own access point, and their connection to your server is relayed over a cellular modem, byte for byte. '+
+ fieldkit:{t:'Field kit: Wi-Fi to LTE relay',s:'Cellular',d:'No network on site: laptops and tablets join the module\'s own access point, and their connection to your server is relayed over a cellular modem, byte for byte. '+
   'One socket is relayed, not IP (no hotspot): the modem and the module each have their own IP stack.',
   h:['Field kit','modem + NORA-W36'],n:[['ap','Laptops (5)','module AP, TCP 7000'],['cell','Cellular modem','LTE-M, NB-IoT, LTE','pu'],['sock','Your server','cell.connect'],['ble','Phone','or BLE NUS']]},
  blecell:{t:'Phone or BLE device over LTE',s:'Cellular',d:'A phone app or BLE device talks Nordic UART to the module; the host relays it to your server over a cellular modem, with no Wi-Fi on site and no data plan on the phone.',

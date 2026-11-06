@@ -52,7 +52,7 @@ static const example_t kExamples[] = {
     { "gnss", "Replay a track without a receiver (recorded, or drawn on nmeagen.org)",
       "gnss.close\ngnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udp 192.168.1.10 10110" },
     { "gnss", "No receiver at hand: a virtual one at the PC's location (u-blox Malmo if unknown)",
-      "gnss.close\ngnss.virtual\ngnss.watch 5\ngnss.bridge tcp\n# or a fixed spot: gnss.virtual 55.6125 12.9925 10" },
+      "gnss.close\ngnss.virtual\ngnss.watch 5\ngnss.bridge tcp\n# or a fixed spot: gnss.virtual 55.61276 12.98625 10" },
     { "gnss", "u-center recording: log UBX, replay it, view the track in Google Earth",
       "gnss.open\ngnss.log drive.ubx ubx\n# ...drive...\ngnss.watch 5\ngnss.log off\ngnss.export drive.ubx drive.kml\ngnss.close\ngnss.replay drive.ubx 5" },
     { "gnss", "Geofence from Google My Maps (draw the area, Export to KML)",
@@ -271,6 +271,9 @@ static const example_t kExamples[] = {
       "cell.detect\ncell.open\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
     { "cell", "Check the modem, SIM and signal without AT commands",
       "cell.open\ncell.info\ncell.signal\ncell.operator\ncell.radio" },
+    { "cell", "Live card: network, signal, the data link and who uses it",
+      "cell.open\ncell.attach on\ncell.watch 5\ncell.connect myserver.example.com 5000\ngnss.bridge cell\ncell.watch 5\n"
+      "# the web page shows the same card under What's happening" },
     { "cell", "u-blox: LTE-M first, then NB-IoT, global profile, then a network in range",
       "cell.open\ncell.profile global\ncell.rat ltem nbiot\ncell.operator scan\ncell.operator auto\ncell.attach on" },
     { "cell", "Modem AT console from a PC tool over TCP",
@@ -377,6 +380,14 @@ static const example_t kExamples[] = {
     { "app", "Capture a session for a bug report",
       "app.log.level all\napp.log.save session.txt\n# ...reproduce...\napp.log.stop\n"
       "# the level is remembered: back to the default\napp.log.level warn" },
+#if UCXAPP_HOST
+    { "app", "Break time: snake eats data packets",
+      "# in the console or the TUI (arrows/WASD, p pause, q quit)\napp.snake\n"
+      "# or watch the app play\napp.snake demo 500" },
+    { "app", "Signal hunt: find an access point by walking with the module",
+      "# the strongest one, hotter or colder after every scan; -40 dBm wins\napp.hunt\n"
+      "# a named one, 30 scans\napp.hunt MyNetwork 30" },
+#endif
     { "file", "Look at local files",
       "file.list\nfile.view session.txt 20\nfile.hash sha256 session.txt" },
 #if !UCXAPP_HOST   /* file.recv and file.send need the board's own console */
@@ -539,7 +550,7 @@ static const example_t kExamples[] = {
       "# once the gateway connects, at AT+UBTPHYR=<handle> shows tx/rx PHY 4 (Coded)\n"
       "# edge host triggers this after a confirmed area event" },
     { "uc-livestock", "Notify the farm server (the tag position over cellular)",
-      "cell.open\ncell.attach on\ncell.connect farm.example.com 5000\n"
+      "gnss.bridge off\ncell.open\ncell.attach on\ncell.connect farm.example.com 5000\n"
       "gnss.bridge cell\ngnss.bridge status\ngnss.bridge off\ncell.disconnect" },
     /* Cellular use cases: one socket over the modem, relayed to Wi-Fi, BLE, CAN or GNSS. */
     { "uc-fieldkit", "Access point for the laptops (no site Wi-Fi: leave the station first)",
@@ -571,7 +582,7 @@ static const example_t kExamples[] = {
     { "uc-xplr", "Find the SARA-R5, check the SIM and the signal",
       "cell.open\ncell.info\ncell.signal\ncell.operator" },
     { "uc-xplr", "MAX-M10S position to your server over LTE",
-      "gnss.open\ngnss.status\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell\n"
+      "gnss.open\ngnss.bridge off\ngnss.status\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell\n"
       "gnss.bridge status" },
     { "uc-xplr", "Done: stop the bridge and the link",
       "gnss.bridge off\ncell.disconnect" },
@@ -584,7 +595,7 @@ static const example_t kExamples[] = {
     { "uc-boat", "Boat Wi-Fi for the tablets",
       "wifi.ap.enable BoatNet BoatPass123\nwifi.ap.status" },
     { "uc-boat", "NMEA to the chart app over TCP 10110",
-      "gnss.bridge tcp 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
+      "gnss.bridge off\ngnss.bridge tcp 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
     { "uc-boat", "NMEA to a phone over BLE as well",
       "gnss.bridge ble nus\n# connect a GNSS app to the Nordic UART service\ngnss.bridge status\n"
       "# bridge 1 is the TCP server, bridge 2 the BLE link; gnss.bridge off 2 stops only the phone" },
@@ -593,13 +604,13 @@ static const example_t kExamples[] = {
     { "uc-rtk", "Home Wi-Fi and the receiver",
       "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.status" },
     { "uc-rtk", "Corrections from a caster, position to the robot over BLE",
-      "gnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\ngnss.bridge status" },
+      "gnss.bridge off\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\ngnss.bridge status" },
     { "uc-rtk", "Watch for an RTK fixed solution",
       "gnss.watch 30" },
     { "uc-mower", "First setup from the owner's phone over BLE",
       "bt.defaults secure\nbt.pairing on\ngatt.server.wps 120\nwifi.status" },
     { "uc-mower", "PointPerfect over the garden Wi-Fi, position to the phone over BLE",
-      "gnss.open\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 NEAR-SPARTN ${NTRIP_USER} ${NTRIP_PASS} ble\n"
+      "gnss.open\ngnss.bridge off\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 NEAR-SPARTN ${NTRIP_USER} ${NTRIP_PASS} ble\n"
       "gnss.bridge status\ngnss.status" },
     { "uc-mower", "Edge of the garden: the same corrections over cellular",
       "gnss.bridge off\ncell.open\ncell.attach on\n"
@@ -614,7 +625,7 @@ static const example_t kExamples[] = {
     { "uc-farm", "HP receiver and the cellular modem in the field",
       "gnss.open\ngnss.status\ncell.open\ncell.attach on" },
     { "uc-farm", "PointPerfect over cellular, corrected NMEA to the cab tablet over BLE",
-      "gnss.bridge ntrip ppntrip.services.u-blox.com 2101 NEAR-SPARTN ${NTRIP_USER} ${NTRIP_PASS} ble cell\n"
+      "gnss.bridge off\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 NEAR-SPARTN ${NTRIP_USER} ${NTRIP_PASS} ble cell\n"
       "gnss.watch 3\ngnss.bridge status" },
     { "uc-farm", "Log the field",
       "gnss.log field.nmea nmea\n# ...drive the field...\ngnss.log off" },
@@ -622,7 +633,8 @@ static const example_t kExamples[] = {
       "gnss.bridge off\ncell.disconnect\nwifi.connect FarmYard MyPassword\n"
       "# tftp.put <pc> field.nmea, or ft.put <pc> field.nmea to a PC running ft.on rw" },
     { "uc-tracker", "Position to your server over Wi-Fi",
-      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge tcpc myserver.example.com 5000\ngnss.bridge status" },
+      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge off\ngnss.bridge tcpc myserver.example.com 5000\n"
+      "gnss.bridge status" },
     { "uc-tracker", "Position over cellular on the road",
       "gnss.bridge off\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell" },
     { "uc-home", "Join the home network",

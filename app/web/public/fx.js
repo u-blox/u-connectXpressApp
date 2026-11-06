@@ -33,29 +33,63 @@
     s.onclick = () => s.classList.add('gone');
   }
 
+  /* ---- idle: the endless motion stops after a while without input (no CPU while you read) and comes back with
+     the next move or key ---- */
+  const IDLE_MS = 15000;
+  let wake = () => {};
+  if (!calm) {
+    let last = performance.now();
+    const idle = on => {
+      document.body.classList.toggle('fx-idle', on);
+      const dg = document.getElementById('dg');
+      if (dg && dg.pauseAnimations) { if (on) dg.pauseAnimations(); else dg.unpauseAnimations(); }
+      if (!on) wake();
+    };
+    const input = () => { last = performance.now(); if (document.body.classList.contains('fx-idle')) idle(false); };
+    ['pointermove', 'pointerdown', 'keydown', 'wheel'].forEach(e => addEventListener(e, input, { passive: true, capture: true }));
+    setInterval(() => { if (performance.now() - last > IDLE_MS && !document.body.classList.contains('fx-idle')) idle(true); }, 1000);
+  }
+
   /* ---- background: drifting radio nodes that link up when close ---- */
   if (!calm) {
     const cv = make('canvas'); cv.id = 'fx-bg'; cv.setAttribute('aria-hidden', 'true');
     document.body.prepend(cv);
-    const g = cv.getContext('2d'), mouse = { x: -1e4, y: -1e4 };
-    let pts = [], W = 0, H = 0, dpr = 1;
+    /* a small drawing on a CPU canvas at half resolution: a GPU canvas costs far more per frame for so few lines */
+    const g = cv.getContext('2d', { willReadFrequently: true }), mouse = { x: -1e4, y: -1e4 };
+    let pts = [], W = 0, H = 0, dpr = .5;
     const size = () => {
-      dpr = 1; W = innerWidth; H = innerHeight;
-      cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+      W = innerWidth; H = innerHeight;
+      cv.width = Math.ceil(W * dpr); cv.height = Math.ceil(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const n = Math.min(110, Math.round(W * H / 16000));
+      const n = Math.min(80, Math.round(W * H / 22000));
       pts = Array.from({ length: n }, () => {
         const a = Math.random() * 6.283, s = .25 + Math.random() * .45;
         return { x: Math.random() * W, y: Math.random() * H, bx: Math.cos(a) * s, by: Math.sin(a) * s, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-          c: COLORS[Math.random() * COLORS.length | 0], r: 1 + Math.random() * 1.6, ph: Math.random() * 6.28 };
+          ci: Math.random() * COLORS.length | 0, r: 1 + Math.random() * 1.6, ph: Math.random() * 6.28 };
       });
     };
     addEventListener('resize', size); size();
     addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; }, { passive: true });
-    const LINK = 130, LINK2 = LINK * LINK;
-    let prev = 0;
+    const LINK = 130, LINK2 = LINK * LINK, LEVELS = 4;
+    /* links and dots are drawn in one path per color and alpha level: a few dozen draw calls a frame, not hundreds */
+    const paths = COLORS.map(() => Array.from({ length: LEVELS }, () => []));
+    const flush = (draw, alpha) => {
+      COLORS.forEach((c, ci) => paths[ci].forEach((list, li) => {
+        if (!list.length) return;
+        g.globalAlpha = alpha(li); g.beginPath();
+        for (let i = 0; i < list.length; i += 4) draw(list[i], list[i + 1], list[i + 2], list[i + 3]);
+        list.length = 0;
+        if (draw === dot) { g.fillStyle = c; g.fill(); } else { g.strokeStyle = c; g.stroke(); }
+      }));
+    };
+    const line = (x1, y1, x2, y2) => { g.moveTo(x1, y1); g.lineTo(x2, y2); };
+    const dot = (x, y, r) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, 6.283); };
+    let prev = 0, running = false;
     const frame = t => {
-      /* steps of a 60 Hz frame, so the motion keeps its speed on 30 Hz and 144 Hz screens */
+      if (document.body.classList.contains('fx-idle')) { running = false; prev = 0; return; }
+      requestAnimationFrame(frame);
+      /* 30 Hz is plenty for a slow drift and halves the cost; k scales the steps so the speed stays the same */
+      if (prev && t - prev < 30) return;
       const k = prev ? Math.min((t - prev) / 16.7, 4) : 1; prev = t;
       if (!document.hidden) {
         g.clearRect(0, 0, W, H);
@@ -67,25 +101,62 @@
           if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
           if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
         }
-        g.lineWidth = 1;
+        g.lineWidth = 1.5;
         for (let i = 0; i < pts.length; i++) {
           const a = pts[i];
           for (let j = i + 1; j < pts.length; j++) {
             const b = pts[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
             if (d2 >= LINK2) continue;
-            const d = Math.sqrt(d2);
-            g.strokeStyle = a.c; g.globalAlpha = (1 - d / LINK) * .22; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+            const li = Math.min(LEVELS - 1, (1 - Math.sqrt(d2) / LINK) * LEVELS | 0);
+            paths[a.ci][li].push(a.x, a.y, b.x, b.y);
           }
         }
+        flush(line, li => (li + .5) / LEVELS * .22);
         for (const p of pts) {
-          g.globalAlpha = .45 + .35 * Math.sin(t / 700 + p.ph); g.fillStyle = p.c;
-          g.beginPath(); g.arc(p.x, p.y, p.r, 0, 6.283); g.fill();
+          const li = Math.min(LEVELS - 1, (.5 + .5 * Math.sin(t / 700 + p.ph)) * LEVELS | 0);
+          paths[p.ci][li].push(p.x, p.y, p.r, 0);
         }
+        flush(dot, li => .45 + .35 * ((li + .5) / LEVELS * 2 - 1));
         g.globalAlpha = 1;
       }
-      requestAnimationFrame(frame);
     };
-    requestAnimationFrame(frame);
+    wake = () => { if (!running) { running = true; requestAnimationFrame(frame); } };
+    wake();
+  }
+  /* ---- party: type "ublox" outside a field, click the u-blox logo 5 times, or up up down down left right left right b a;
+     with FX off it turns FX on and parties after the reload ---- */
+  let party = () => { localStorage.setItem('fxoff', '0'); sessionStorage.setItem('fxparty', '1'); location.reload(); };
+  {
+    const codes = [['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'],
+                   ['u', 'b', 'l', 'o', 'x']];
+    const at = codes.map(() => 0);
+    addEventListener('keydown', e => {
+      if (e.key.length === 1 && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      codes.forEach((c, i) => {
+        at[i] = k === c[at[i]] ? at[i] + 1 : (k === c[0] ? 1 : 0);
+        if (at[i] === c.length) { at.fill(0); party(); }
+      });
+    }, true);
+    let clicks = [];
+    const logo = document.querySelector('svg.logo');
+    if (logo) logo.addEventListener('click', () => {
+      const t = performance.now();
+      clicks = clicks.filter(x => t - x < 2000); clicks.push(t);
+      if (clicks.length >= 5) { clicks = []; party(); }
+    });
+    const fx = document.getElementById('fx-tg');
+    if (fx) {
+      let hold = 0, held = false;
+      fx.title += ' (right-click or hold: party)';
+      fx.addEventListener('contextmenu', e => { e.preventDefault(); party(); });
+      fx.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        held = false; hold = setTimeout(() => { held = true; party(); }, 600);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(n => fx.addEventListener(n, () => clearTimeout(hold)));
+      fx.addEventListener('click', e => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    }
   }
   if (calm) return;
 
@@ -190,14 +261,9 @@
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   packets();
 
-  /* ---- up up down down left right left right b a ---- */
-  const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
-  let at = 0;
-  addEventListener('keydown', e => {
-    at = e.key === code[at] ? at + 1 : (e.key === code[0] ? 1 : 0);
-    if (at === code.length) {
-      at = 0; document.body.classList.toggle('fx-party');
-      const h = document.querySelector('h1'); if (h) for (let i = 0; i < 4; i++) setTimeout(() => sparks(h, 24, COLORS), i * 180);
-    }
-  });
+  party = () => {
+    document.body.classList.toggle('fx-party');
+    const h = document.querySelector('h1'); if (h) for (let i = 0; i < 4; i++) setTimeout(() => sparks(h, 24, COLORS), i * 180);
+  };
+  if (sessionStorage.getItem('fxparty')) { sessionStorage.removeItem('fxparty'); setTimeout(party, 600); }
 })();

@@ -538,6 +538,7 @@ int main(int argc, char *argv[])
     ucxapp_register_app_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_dash_cmds();
+    ucxapp_register_snake_cmds();
     ucxapp_register_usecase_cmds();
     ucxapp_register_session_cmds();
     ucxapp_register_ymodem_cmds();

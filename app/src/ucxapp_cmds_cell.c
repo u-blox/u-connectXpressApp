@@ -4,6 +4,7 @@
 
 #include "ucxapp_cmd.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,21 @@ static bool gOpen;
 static char gPort[32];
 static int32_t gBaud;
 static char gMaker[64];   /* first line of ATI, used to pick the vendor ping command */
+
+/* What the live card shows: read in command mode, kept while the port is a data link or bridged (no AT then). */
+static struct {
+    bool valid;
+    bool answered;
+    int reg;
+    int act;
+    int rssi;   /* dBm, 0: unknown */
+    int rsrp;   /* dBm, 0: unknown */
+    char maker[64];
+    char oper[40];
+    char ip[48];
+    uint32_t atMs;
+} gCard;
+static uint32_t gLinkSinceMs;
 
 enum { AT_OK = 0, AT_ERROR = 1, AT_TIMEOUT = -1 };
 
@@ -227,6 +243,9 @@ static bool openPort(const char *port, int32_t baud)
         return false;
     }
     (void)atCmd("ATE0", resp, sizeof(resp), 500, 0);
+    if (strcmp(gPort, port) != 0) {
+        memset(&gCard, 0, sizeof(gCard));   /* another modem: forget what the card showed */
+    }
     snprintf(gPort, sizeof(gPort), "%s", port);
     gBaud = baud;
     learnMaker();
@@ -258,7 +277,7 @@ static int gSock;
 static char gLinkHost[104];   /* what cell.connect opened, so a dropped link can be opened again */
 static int32_t gLinkRemote;
 static bool gLinkUdp;
-static bool gRelinking;
+static volatile bool gRelinking;
 
 /* The modem is busy as a data link or with its own bridge: say so instead of probing its port. */
 static bool cellBusy(void)
@@ -1434,42 +1453,230 @@ bool ucxapp_cell_data_link(char *port, size_t size, int32_t *baud)
     return true;
 }
 
+static bool cellCmdMode(void)
+{
+    return gOpen && !gDataMode && gStream == NULL && !gRelinking;
+}
+
+/* Reads registration, operator, signal and address when the modem is in command mode and the values are older than
+ * maxAgeMs. Runs on the worker (commands, dash cache) only. */
+static void cardRefresh(uint32_t maxAgeMs)
+{
+    char v[160];
+    uint32_t now = ucxapp_platform_tick_ms();
+
+    if (!cellCmdMode() || (gCard.valid && now - gCard.atMs < maxAgeMs)) {
+        return;
+    }
+    gCard.valid = true;
+    gCard.atMs = now;
+    gCard.answered = atCmd("AT", v, sizeof(v), 1000, 0) == AT_OK;
+    snprintf(gCard.maker, sizeof(gCard.maker), "%s", gMaker);
+    if (!gCard.answered) {
+        return;
+    }
+    gCard.reg = regState();
+    gCard.act = -1;
+    gCard.oper[0] = '\0';
+    if (answer("AT+COPS?", v, sizeof(v), 3000) && operatorName(v, gCard.oper, sizeof(gCard.oper))) {
+        const char *q = strrchr(v, '"');
+        if (q != NULL && q[1] == ',') {
+            gCard.act = atoi(q + 2);
+        }
+    }
+    gCard.rssi = 0;
+    if (answer("AT+CSQ", v, sizeof(v), 2000) && atoi(v) >= 0 && atoi(v) < 99) {
+        gCard.rssi = -113 + 2 * atoi(v);
+    }
+    gCard.rsrp = 0;
+    if (answer("AT+CESQ", v, sizeof(v), 2000)) {
+        const char *p = v;
+        for (int i = 0; i < 5 && p != NULL; i++) {
+            p = strchr(p, ',');
+            p = p != NULL ? p + 1 : NULL;
+        }
+        if (p != NULL && atoi(p) != 255) {
+            gCard.rsrp = -141 + atoi(p);
+        }
+    }
+    if (!pdpAddress(gCard.ip, sizeof(gCard.ip))) {
+        gCard.ip[0] = '\0';
+    }
+}
+
+static const char *rsrpText(int rsrp)
+{
+    return rsrp >= -90 ? "excellent" : rsrp >= -105 ? "good" : rsrp >= -115 ? "fair" : "poor";
+}
+
+static bool cellPresent(void)
+{
+    return gOpen || gDataMode || gStream != NULL;
+}
+
+static const char *cellPort(void)
+{
+    return gDataMode ? gLinkPort : gStream != NULL ? ucxapp_stream_port(gStream) : gPort;
+}
+
 bool ucxapp_cell_dash(char *out, size_t size)
 {
-    char resp[RESP_SIZE];
-    char v[160];
-    int n = 0;
-
     out[0] = '\0';
-    if (!gOpen) {
+    cardRefresh(10000);
+    if (!cellPresent()) {
         return false;
     }
-    if (gDataMode || gStream != NULL) {
-        snprintf(out, size, "%s on %s", gDataMode ? (gRelay ? "data link relayed" : "data link") : "AT bridge", gPort);
-        return true;
-    }
-    if (atCmd("AT+CEREG?", resp, sizeof(resp), 2000, 0) == AT_OK && field(resp, "+CEREG:", v, sizeof(v))) {
-        const char *comma = strchr(v, ',');
-        n = snprintf(out, size, "%s", regText(comma ? atoi(comma + 1) : atoi(v)));
-    }
-    if (n >= 0 && (size_t)n < size && atCmd("AT+COPS?", resp, sizeof(resp), 3000, 0) == AT_OK &&
-        field(resp, "+COPS:", v, sizeof(v))) {
-        char name[64];
-        if (operatorName(v, name, sizeof(name))) {
-            n += snprintf(out + n, size - (size_t)n, "  %s", name);
-        }
-    }
-    if (n >= 0 && (size_t)n < size && atCmd("AT+CSQ", resp, sizeof(resp), 2000, 0) == AT_OK &&
-        field(resp, "+CSQ:", v, sizeof(v))) {
-        int rssi = atoi(v);
-        if (rssi >= 0 && rssi < 99) {
-            (void)snprintf(out + n, size - (size_t)n, "  %d dBm", -113 + 2 * rssi);
-        }
-    }
-    if (out[0] == '\0') {
+    if (gDataMode) {
+        snprintf(out, size, "data link %s %s:%d%s", gLinkUdp ? "udp" : "tcp", gLinkHost, (int)gLinkRemote,
+                 gRelay ? " relayed" : "");
+    } else if (gStream != NULL) {
+        snprintf(out, size, "AT bridge on %s", cellPort());
+    } else if (!gCard.answered) {
         snprintf(out, size, "no answer on %s", gPort);
+    } else {
+        int n = snprintf(out, size, "%s", regText(gCard.reg));
+        if (n > 0 && (size_t)n < size && gCard.oper[0] != '\0') {
+            n += snprintf(out + n, size - (size_t)n, "  %s", gCard.oper);
+        }
+        if (n > 0 && (size_t)n < size && gCard.rssi != 0) {
+            (void)snprintf(out + n, size - (size_t)n, "  %d dBm", gCard.rssi);
+        }
     }
     return true;
+}
+
+size_t ucxapp_cell_summary(char *out, size_t size)
+{
+    int n;
+
+    if (size == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (!cellPresent()) {
+        return 0;
+    }
+    if (gDataMode) {
+        n = snprintf(out, size, "Cell link%s", gRelay ? " relayed" : "");
+    } else if (gStream != NULL) {
+        n = snprintf(out, size, "Cell AT bridge");
+    } else if (!gCard.valid || !gCard.answered) {
+        n = snprintf(out, size, "Cell unknown");
+    } else if (gCard.reg == 1 || gCard.reg == 5) {
+        const char *rat = gCard.act == 9 ? "NB-IoT" : gCard.act == 7 ? "LTE" : gCard.act >= 0 ? actText(gCard.act) : "up";
+        n = snprintf(out, size, "Cell %s%s", rat, gCard.reg == 5 ? " roaming" : "");
+        if (n > 0 && (size_t)n < size && gCard.rssi != 0) {
+            n += snprintf(out + n, size - (size_t)n, " %ddBm", gCard.rssi);
+        }
+    } else {
+        n = snprintf(out, size, "Cell %s", gCard.reg == 2 ? "searching" : gCard.reg == 3 ? "denied" : "down");
+    }
+    return n < 0 ? 0 : (size_t)n < size ? (size_t)n : size - 1;
+}
+
+/* Appends one formatted line; keeps out terminated when it runs out of room. */
+static size_t cardLine(char *out, size_t size, size_t n, const char *fmt, ...)
+{
+    va_list ap;
+    int w;
+
+    if (n + 1 >= size) {
+        return n;
+    }
+    va_start(ap, fmt);
+    w = vsnprintf(out + n, size - n, fmt, ap);
+    va_end(ap);
+    if (w < 0) {
+        out[n] = '\0';
+        return n;
+    }
+    return (size_t)w < size - n ? n + (size_t)w : size - 1;
+}
+
+bool ucxapp_cell_card(char *out, size_t size)
+{
+    uint32_t now = ucxapp_platform_tick_ms();
+    size_t n = 0;
+
+    if (size == 0) {
+        return false;
+    }
+    out[0] = '\0';
+    cardRefresh(10000);
+    if (!cellPresent()) {
+        return false;
+    }
+    n = cardLine(out, size, n, "MODEM %s on %s%s\n", gCard.maker[0] ? gCard.maker : gMaker[0] ? gMaker : "cellular modem",
+                 cellPort(), gDataMode ? ", data link" : gStream != NULL ? ", bridged" : "");
+    if (gCard.valid && gCard.answered) {
+        n = cardLine(out, size, n, "NET   %s%s%s%s%s\n", regText(gCard.reg), gCard.oper[0] ? "  " : "", gCard.oper,
+                     gCard.act >= 0 ? "  " : "", gCard.act >= 0 ? actText(gCard.act) : "");
+        if (gCard.rssi != 0 || gCard.rsrp != 0) {
+            char rssi[24] = "";
+            char rsrp[40] = "";
+            if (gCard.rssi != 0) {
+                snprintf(rssi, sizeof(rssi), "RSSI %d dBm", gCard.rssi);
+            }
+            if (gCard.rsrp != 0) {
+                snprintf(rsrp, sizeof(rsrp), "%sRSRP %d dBm (%s)", rssi[0] ? ", " : "", gCard.rsrp, rsrpText(gCard.rsrp));
+            }
+            n = cardLine(out, size, n, "SIG   %s%s\n", rssi, rsrp);
+        } else {
+            n = cardLine(out, size, n, "SIG   none\n");
+        }
+        n = cardLine(out, size, n, "IP    %s\n", gCard.ip[0] ? gCard.ip : "none");
+    } else if (cellCmdMode()) {
+        n = cardLine(out, size, n, "NET   no answer (cell.power on, cell.detect)\n");
+    }
+    if (gDataMode) {
+        n = cardLine(out, size, n, "LINK  %s %s:%d, up %u min%s\n", gLinkUdp ? "udp" : "tcp", gLinkHost, (int)gLinkRemote,
+                     (unsigned)((now - gLinkSinceMs) / 60000u), gRelay ? ", relayed by cell.bridge" : "");
+    } else if (gStream != NULL) {
+        n = cardLine(out, size, n, "LINK  none, the AT console is bridged (cell.bridge off)\n");
+    }
+    n += ucxapp_stream_cell_users(out + n, size - n);
+    if (gDataMode && !gRelay && strstr(out, "USER") == NULL) {
+        n = cardLine(out, size, n, "USER  none yet, e.g. gnss.bridge cell or imu.bridge cell\n");
+    }
+    if (gCard.valid && !cellCmdMode()) {
+        n = cardLine(out, size, n, "      (network values from %u s ago, no AT commands while the port carries data)\n",
+                     (unsigned)((now - gCard.atMs) / 1000u));
+    }
+    while (n > 0 && out[n - 1] == '\n') {
+        out[--n] = '\0';
+    }
+    return true;
+}
+
+/* cell.watch [seconds]: the live card once a second; any key stops it. */
+static int cmdWatch(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t seconds = 10;
+    char card[1024];
+    (void)app;
+
+    if (argc > 2 || (argc == 2 && (!ucxapp_parse_int(argv[1], &seconds) || seconds < 1 || seconds > 3600))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!cellPresent() && !needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    for (int32_t s = 0; s < seconds; s++) {
+        cardRefresh(5000);
+        (void)ucxapp_cell_card(card, sizeof(card));
+        ucxapp_print("%s\n\n", card);
+        if (s + 1 == seconds) {
+            break;
+        }
+        for (int t = 0; t < 20; t++) {
+            if (ucxapp_platform_key_pressed()) {
+                (void)ucxapp_platform_get_key();
+                return UCXAPP_OK;
+            }
+            ucxapp_platform_sleep_ms(50);
+        }
+    }
+    return UCXAPP_OK;
 }
 
 /* cell.connect <host> <port> [tcp|udp]: Quectel transparent socket (AT+QIOPEN, access mode 2). */
@@ -1498,6 +1705,9 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
     }
     if (!needOpen()) {
         return UCXAPP_ERR_FAILED;
+    }
+    if (!gRelinking) {
+        cardRefresh(0);   /* the live card keeps showing these while the port carries data */
     }
     if (strstr(gMaker, "Quectel") != NULL) {
         gVendor = VENDOR_QUECTEL;
@@ -1595,6 +1805,7 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
     closePort();
     gDataMode = true;
     if (!gRelinking) {
+        gLinkSinceMs = ucxapp_platform_tick_ms();
         ucxapp_print("connected to %s:%d; %s is now a data link, e.g. gnss.bridge cell\n", argv[1], (int)port, gLinkPort);
     }
     return UCXAPP_OK;
@@ -1645,21 +1856,23 @@ bool ucxapp_cell_relink(void)
     if (!gDataMode) {
         return false;
     }
+    gRelinking = true;   /* keeps the card refresh on the worker off the port meanwhile */
     if (!openPort(gLinkPort, gLinkBaud)) {
+        gRelinking = false;
         return false;   /* still in data mode, or the modem is gone: try again later */
     }
     gDataMode = false;
     closeLinkSocket();
     snprintf(host, sizeof(host), "%s", gLinkHost);
     snprintf(p, sizeof(p), "%d", (int)gLinkRemote);
-    gRelinking = true;
     r = cmdConnect(NULL, gLinkUdp ? 4 : 3, argv);
-    gRelinking = false;
     if (r != UCXAPP_OK) {
         closePort();
         gDataMode = true;   /* keep the link settings so the next try connects the same way */
+        gRelinking = false;
         return false;
     }
+    gRelinking = false;
     return true;
 }
 
@@ -1793,6 +2006,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.status", "", "SIM, signal, registration, operator and IP", 0, cmdStatus },
     { "cell.info", "", "Maker, model, firmware, IMEI, IMSI and ICCID", 0, cmdInfo },
     { "cell.signal", "", "RSSI, RSRP and RSRQ with a quality rating", 0, cmdSignal },
+    { "cell.watch", "[seconds=10]", "Live card once a second: network, signal, IP, the data link and the bridges using it (any key stops)", 0, cmdWatch },
     { "cell.operator", "[scan|auto|<mccmnc>]", "Show the network, scan the networks in range, or choose one (auto, or MCC+MNC like 24007)", 0, cmdOperator },
     { "cell.radio", "[on|off|reboot]", "Show or switch the radio (off is airplane mode) or restart the modem", 0, cmdRadio },
     { "cell.rat", "[ltem] [nbiot] [2g]", "u-blox: show or set the radio access technologies, in order of preference", 0, cmdRat },

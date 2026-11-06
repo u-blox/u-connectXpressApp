@@ -613,8 +613,8 @@
   function noSerialReason() {
     if (navigator.serial) return '';
     if (!window.isSecureContext) return 'Web Serial needs https or localhost.';
-    return 'This browser has no Web Serial (Firefox and Safari do not support it). Use Chrome or Edge on a ' +
-      'desktop to connect a module, or try the virtual module.';
+    return 'This browser has no Web Serial (Firefox, Safari and phones), so this is a virtual module. Use Chrome ' +
+      'or Edge on a desktop to connect a real one.';
   }
 
   /* [site file, radios for the label, matching modules for the tooltip]; the first is the default */
@@ -648,6 +648,7 @@
       note.textContent = reason;
       note.style.cssText = 'color:#b45309;font-size:12px;margin:0 6px';
       files.parentNode.insertBefore(note, files);
+      if (window.isSecureContext) connectVirtual(pick.value);   /* nothing else works here: start without a click */
     }
     if (navigator.serial) {
       navigator.serial.addEventListener('disconnect', e => { if (e.target === port) disconnect(); });

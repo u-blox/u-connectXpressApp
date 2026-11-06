@@ -246,10 +246,27 @@ def test_virtual_receiver_at_a_given_position_feeds_log_and_export(app_exe, tmp_
 def test_virtual_receiver_in_malmo_and_from_the_host(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.watch 2", "gnss.status", "gnss.close",
                "gnss.virtual", "gnss.close", timeout=90)
-    assert "Virtual receiver at 55.6125000, 12.9925000 (u-blox Malmo office)" in out.stdout, out.stdout
-    assert "Position:  55.6125000, 12.9925000" in out.stdout, out.stdout
+    assert "Virtual receiver at 55.6127600, 12.9862500 (u-blox Malmo office)" in out.stdout, out.stdout
+    assert "Position:  55.6127600, 12.9862500" in out.stdout, out.stdout
     assert "Asking the host for its location" in out.stdout, out.stdout
     assert out.stdout.count("Virtual receiver at") == 2, out.stdout
+
+
+def test_app_clock_follows_the_gnss_fix_unless_set_by_hand(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "app.time sync gnss")
+    assert out.returncode != 0 and "ERROR: no GNSS time (gnss.open" in out.stdout, out.stdout
+    out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.watch 2", "app.time",
+               "app.time sync gnss", "app.time set 2030-01-02T03:04:05", "app.time", timeout=90)
+    assert "source  gnss, " in out.stdout and " from gnss (clock was off by" in out.stdout, out.stdout
+    assert "source  manual" in out.stdout, out.stdout    # a time set by hand is kept while the fix goes on
+
+
+def test_app_clock_ignores_a_replayed_recording(app_exe, tmp_path):
+    (tmp_path / "old.nmea").write_text(_track(30))
+    out = _run(app_exe, tmp_path, "gnss.replay old.nmea", "gnss.watch 2", "app.time", "app.time sync gnss",
+               timeout=90)
+    assert "source  gnss" not in out.stdout and "2026-11-01T12:35" not in out.stdout, out.stdout
+    assert "ERROR: no GNSS time (gnss.open" in out.stdout, out.stdout
 
 
 def test_virtual_receiver_reports_jamming_and_spoofing(app_exe, tmp_path):

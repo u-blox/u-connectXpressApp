@@ -390,7 +390,7 @@
    "OK"
   ],
   "AT+UHTCGBB=* [page=locate]": [
-   "+UHTCGBB:0,0\u0001{\"location\":{\"lat\":55.6125,\"lng\":12.9925,\"accuracy\":25}}",
+   "+UHTCGBB:0,0\u0001{\"location\":{\"lat\":55.61276,\"lng\":12.98625,\"accuracy\":25}}",
    "OK"
   ],
   "AT+UHTCGBB=*": [

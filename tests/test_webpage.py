@@ -61,6 +61,13 @@ def test_script_listens_for_the_server_events():
         assert f'"{name}"' in source, name
 
 
+def test_cellular_card_and_status_chip():
+    """The live cellular card sits next to the GNSS one, and the Cell chip of the status bar runs cell.status."""
+    page = PAGE_FILE.read_text(encoding="utf-8")
+    assert '<pre id="gc" hidden' in page and '<pre id="cc" hidden' in page
+    assert "addEventListener('cell'" in SCRIPT and "Cell:'cell.status'" in SCRIPT
+
+
 W3C_NU = "https://validator.w3.org/nu/?out=json"
 
 
@@ -173,7 +180,8 @@ class Mock(BaseHTTPRequestHandler):
             self.end_headers()
             for name, data in (("out", '"ready\\n\\u001b[92mgreen\\u001b[0m\\n"'), ("evt", '"wifi:link up"'),
                                ("state", '"Wi-Fi up | BLE - | Advertising on | Listening 2 | '
-                                          'Time 2030-01-02T03:04:05Z | ntp pool.ntp.org, 1 s ago"')):
+                                          'Time 2030-01-02T03:04:05Z | ntp pool.ntp.org, 1 s ago | '
+                                          'Loc 55.61276, 12.98625 (gnss)"')):
                 self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
             self.wfile.flush()
             # the auto summary and the chip commands finish, other commands stay busy
@@ -231,7 +239,14 @@ def test_page_in_a_browser(server):
         assert page.get_attribute("#state .chip >> text=Advertising on", "title") == "Run bt.adv"
         assert page.get_attribute("#state .chip >> text=Listening 2", "title") == "Run sock.list"
         assert "* = current handle, not listening" in page.get_attribute(".chip.off", "title")
-        assert page.inner_text("#clock") == "2030-01-02T03:04:05Z / ntp pool.ntp.org, 1 s ago"
+        # the clock keeps its text, the source is a tag (green for a network or GNSS time), the place opens a map
+        assert page.text_content("#clock") == "2030-01-02T03:04:05Z / ntp pool.ntp.org"
+        assert page.get_attribute("#clock .tag", "title") == "Clock source: ntp pool.ntp.org, 1 s ago"
+        assert page.inner_text("#clock .t") == "03:04:05Z" and page.get_attribute("#clock .tag", "class") == "tag ok"
+        assert page.inner_text("#loc a") == "55.61276, 12.98625" and page.inner_text("#loc .tag") == "gnss"
+        assert page.get_attribute("#loc a", "href") == \
+            "https://www.google.com/maps/search/?api=1&query=55.61276%2C%2012.98625"
+        assert page.get_attribute("#loc a", "target") == "_blank"
         assert page.inner_text("#ev .e.wifi .x") == "link up"
         assert page.locator("#ev .e.wifi .t").count() == 1
         # a module that is up gets its summary once, and the version sits in the footer

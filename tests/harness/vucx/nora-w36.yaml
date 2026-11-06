@@ -107,7 +107,7 @@ commands:
     - "+UHTCGBB:0,0\x01\xB5\x62\x13\x40\x18\x00\x10\x00\x00\x80\xEA\x07\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xEE\x34"
     - "OK"
   "AT+UHTCGBB=* [page=locate]":
-    - "+UHTCGBB:0,0\x01{\"location\":{\"lat\":55.6125,\"lng\":12.9925,\"accuracy\":25}}"
+    - "+UHTCGBB:0,0\x01{\"location\":{\"lat\":55.61276,\"lng\":12.98625,\"accuracy\":25}}"
     - "OK"
   "AT+UHTCGBB=*": ["+UHTCGBB:0,0\x01<html>vucx</html>", "OK"]
   "AT+UHTCRPOB=*": ["+UHTCRPOB:0,64", "OK"]

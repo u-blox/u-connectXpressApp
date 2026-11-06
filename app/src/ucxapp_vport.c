@@ -315,8 +315,8 @@ static void rtcm1005(vdev_t *d)
 {
     static const double kA = 6378137.0;
     static const double kE2 = 6.69437999014e-3;
-    double lat = 55.6125 * VPI / 180.0;
-    double lon = 12.9925 * VPI / 180.0;
+    double lat = 55.61276 * VPI / 180.0;
+    double lon = 12.98625 * VPI / 180.0;
     double n = kA / sqrt(1.0 - kE2 * sin(lat) * sin(lat));
     double xyz[3] = { (n + 10.0) * cos(lat) * cos(lon), (n + 10.0) * cos(lat) * sin(lon),
                       (n * (1.0 - kE2) + 10.0) * sin(lat) };

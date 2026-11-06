@@ -43,6 +43,8 @@ static char gZoneName[48];
 static char gLocText[72];              /* last known place: "Malmo, Sweden (ip)", "55.60500, 13.00380 (wifi, 30 m)" */
 static char gRsp[HTTP_BUF + 1];        /* HTTP answer for sync http and geo */
 
+static void followGnss(void);
+
 typedef struct {
     char ip[48], country[40], city[40], zone[48], message[40];
     double lat, lon;
@@ -205,6 +207,7 @@ size_t ucxapp_time_summary(char *out, size_t size)
     char utc[32];
     int n;
 
+    followGnss();
     formatUtc(nowEpoch(), utc, sizeof(utc));
     if (gSource[0] != '\0') {
         n = snprintf(out, size, "Time %s | %s, %u s ago", utc, gSource,
@@ -319,18 +322,57 @@ static bool parseNtp(const uint8_t *p, size_t len, uint32_t rttMs, int64_t *t)
     return true;
 }
 
-static void apply(int64_t t, const char *source)
+static int64_t setClock(int64_t t, const char *source)
 {
     int64_t delta = t - nowEpoch();
-    char buf[32];
 
     if (!ucxapp_platform_clock_adjust(delta)) {
         gOffset += delta;
     }
     snprintf(gSource, sizeof(gSource), "%s", source);
     gSyncTick = ucxapp_platform_tick_ms();
+    return delta;
+}
+
+static void apply(int64_t t, const char *source)
+{
+    int64_t delta = setClock(t, source);
+    char buf[32];
+
     formatUtc(t, buf, sizeof(buf));
     ucxapp_print("time %s from %s (clock was off by %lld s)\n", buf, source, (long long)delta);
+}
+
+/* UTC of the open receiver's fix, moved on by the age of the sentence it came in. */
+static bool gnssTime(int64_t *t)
+{
+    int v[6];
+    uint32_t ageMs;
+
+    if (!ucxapp_gnss_utc(v, &ageMs) || v[0] < 2024 || !validDate(v[0], v[1], v[2], v[3], v[4], v[5])) {
+        return false;
+    }
+    *t = daysFromCivil(v[0], v[1], v[2]) * 86400 + v[3] * 3600 + v[4] * 60 + v[5] + (ageMs + 500u) / 1000u;
+    return true;
+}
+
+/* With a fix the clock follows the receiver (once a minute), unless it was set by hand. A second or less is
+   sentence latency, so only the source and its age are refreshed then. */
+static void followGnss(void)
+{
+    int64_t t;
+
+    if (strcmp(gSource, "manual") == 0 ||
+        (strcmp(gSource, "gnss") == 0 && ucxapp_platform_tick_ms() - gSyncTick < 60000u) || !gnssTime(&t)) {
+        return;
+    }
+    int64_t delta = t - nowEpoch();
+    if (delta >= -1 && delta <= 1) {
+        snprintf(gSource, sizeof(gSource), "gnss");
+        gSyncTick = ucxapp_platform_tick_ms();
+    } else {
+        (void)setClock(t, "gnss");
+    }
 }
 
 static bool syncNtp(uCxHandle_t *ucx, const char *host, int64_t *t)
@@ -490,6 +532,14 @@ static int cmdSyncOnce(ucxapp_t *app, int argc, char *argv[])
 
     if (argc > 4) {
         return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(how, "gnss") == 0 && host == NULL) {
+        if (!gnssTime(&t)) {
+            ucxapp_print("ERROR: no GNSS time (gnss.open, then wait for a fix: gnss.status)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        apply(t, "gnss");
+        return UCXAPP_OK;
     }
     if (app->ucx == NULL) {
         ucxapp_print("ERROR: not connected to a module\n");
@@ -695,6 +745,7 @@ static int cmdTime(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
+    followGnss();
     formatUtc(nowEpoch(), buf, sizeof(buf));
     ucxapp_print("time    %s\n", buf);
     if (gSource[0] == '\0') {
@@ -719,8 +770,8 @@ static int cmdTime(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gTimeCmds[] = {
-    { "app.time", "[sync [ntp|http|module] [host] | set <unix|YYYY-MM-DDTHH:MM:SS> | push | geo | zone [<+HH:MM>|off] | selftest]",
-      "App wall clock (UTC): sync from SNTP (default pool.ntp.org, HTTP Date as fallback), HTTP or the module, set by hand, or push it to the module (AT+USYTU); geo: public IP, place and time zone with daylight saving from ip-api.com",
+    { "app.time", "[sync [ntp|http|module|gnss] [host] | set <unix|YYYY-MM-DDTHH:MM:SS> | push | geo | zone [<+HH:MM>|off] | selftest]",
+      "App wall clock (UTC): sync from SNTP (default pool.ntp.org, HTTP Date as fallback), HTTP, the module or the GNSS receiver, set by hand, or push it to the module (AT+USYTU); with a GNSS fix the clock follows the receiver unless set by hand; geo: public IP, place and time zone with daylight saving from ip-api.com",
       0, cmdTime },
 };
 

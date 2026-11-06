@@ -110,6 +110,8 @@ uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t
 /* Filled by the worker between commands, so the UI thread never talks to the module. */
 static char gWifiText[96];
 static char gCellText[96];
+static char gCellCard[1024];
+static char gCellSummary[48];
 static char gThreadRole[16];   /* empty: no Thread firmware */
 static volatile uint32_t gThreadVersion;
 static volatile uint32_t gThreadDirty;
@@ -135,6 +137,14 @@ void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSiz
     snprintf(wifi, wifiSize, "%s", gWifiText);
     snprintf(cell, cellSize, "%s", gCellText);
     U_CX_MUTEX_UNLOCK(gLock);
+}
+
+bool ucxapp_ui_cell_card(char *out, size_t size)
+{
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(out, size, "%s", gCellCard);
+    U_CX_MUTEX_UNLOCK(gLock);
+    return out[0] != '\0';
 }
 
 static void refreshDashCache(bool force)
@@ -225,13 +235,19 @@ static void refreshDashCache(bool force)
         U_CX_MUTEX_UNLOCK(gLock);
     }
 #endif
-    if (force || now - cellMs > 10000u) {
+    if (force || now - cellMs >= 1000u) {   /* the card's traffic counters move; AT only every 10 s (cell.c) */
+        static char card[sizeof(gCellCard)];
+        char summary[sizeof(gCellSummary)];
         cellMs = now;
         if (!ucxapp_cell_dash(text, sizeof(text))) {
             text[0] = '\0';
         }
+        (void)ucxapp_cell_card(card, sizeof(card));
+        (void)ucxapp_cell_summary(summary, sizeof(summary));
         U_CX_MUTEX_LOCK(gLock);
         snprintf(gCellText, sizeof(gCellText), "%s", text);
+        snprintf(gCellCard, sizeof(gCellCard), "%s", card);
+        snprintf(gCellSummary, sizeof(gCellSummary), "%s", summary);
         U_CX_MUTEX_UNLOCK(gLock);
     }
 }
@@ -272,7 +288,7 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
         n = appendHandles(out, size, n, "Sockets", UCXAPP_HANDLE_SOCK);
     }
     U_CX_MUTEX_LOCK(gLock);
-    const char *parts[] = { gRadioText, gClockText };
+    const char *parts[] = { gRadioText, gCellSummary, gClockText };
     for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
         if (parts[i][0] != '\0' && n + strlen(parts[i]) + 4 < size) {
             n += (size_t)snprintf(out + n, size - n, " | %s", parts[i]);

@@ -73,6 +73,9 @@ void ucxapp_stream_bridge_status(ucxapp_stream_t *s, const char *indent);
 bool ucxapp_stream_bridge_active(const ucxapp_stream_t *s);
 /* Port of the open stream of this kind ("gnss", "imu", "cell"), or NULL. */
 const char *ucxapp_stream_open_port(const char *kind);
+/* One "USER ..." line per bridge that sends over the cellular data link and one "RELAY ..." line per bridge of the
+ * cell stream itself (traffic and reconnects); returns the length written. */
+size_t ucxapp_stream_cell_users(char *out, size_t size);
 
 /* Socket URCs for the TCP bridge (queue only); called from ucxapp_urc.c. */
 void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock);

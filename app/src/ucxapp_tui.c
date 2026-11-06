@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "ucxapp_platform.h"
+#include "ucxapp_cmd.h"
 #include "ucxapp_logcfg.h"
 #include "ucxapp_ui.h"
 #include "ucxapp_stream.h"
@@ -461,9 +462,15 @@ static bool refreshDash(void)
         dashArea(&n, true, "IMU", text, &changed);
     }
 
-    port = ucxapp_stream_open_port("cell");
-    snprintf(text, sizeof(text), "%s%s%s", cellText[0] ? cellText : "not open", port != NULL ? "\n" : "",
-             port != NULL ? port : "");
+    /* status, then the data link (or the IP address) from the cached card */
+    char card[1024];
+    const char *second = NULL;
+    if (ucxapp_ui_cell_card(card, sizeof(card))) {
+        second = strstr(card, "LINK  ");
+        second = second != NULL ? second : strstr(card, "IP    ");
+    }
+    snprintf(text, sizeof(text), "%s%s%.*s", cellText[0] ? cellText : "not open", second != NULL ? "\n" : "",
+             second != NULL ? (int)strcspn(second + 6, "\n") : 0, second != NULL ? second + 6 : "");
     dashArea(&n, cellText[0] != '\0', "CELL", text, &changed);
 
     if (n != gDashCount) {
@@ -971,6 +978,16 @@ static bool submitLine(void)
         gLog.total = 0;
         gLog.curLen = gLog.curCols = 0;
         setInput("");
+        return false;
+    }
+    if (strcmp(line, "app.snake") == 0) {   /* full screen here: the command runner has no keyboard */
+        char result[64];
+
+        setInput("");
+        snprintf(result, sizeof(result), "snake: score %d", ucxapp_snake_play());
+        fputs("\033[2J", stdout);
+        rowsInvalidate();
+        logLocal(result);
         return false;
     }
     snprintf(echo, sizeof(echo), "%s%s", ucxapp_at_mode_active() ? "AT> " : "> ", line);

@@ -352,10 +352,10 @@ static void demoTrack(void)
     }
     for (int i = 0; i < 60 && n < sizeof(text) - 200; i++) {
         char body[2][100];
-        double minLat = 36.75 + i * 0.0005;   /* 55 deg 36.75 min N, about 1 m a second */
+        double minLat = 36.7656 + i * 0.0005; /* 55 deg 36.77 min N, about 1 m a second */
 
-        snprintf(body[0], sizeof(body[0]), "GPRMC,1200%02d.00,A,55%08.5f,N,01259.55000,E,1.9,0.0,010125,,,A", i, minLat);
-        snprintf(body[1], sizeof(body[1]), "GPGGA,1200%02d.00,55%08.5f,N,01259.55000,E,1,10,0.8,10.0,M,0.0,M,,", i,
+        snprintf(body[0], sizeof(body[0]), "GPRMC,1200%02d.00,A,55%08.5f,N,01259.17500,E,1.9,0.0,010125,,,A", i, minLat);
+        snprintf(body[1], sizeof(body[1]), "GPGGA,1200%02d.00,55%08.5f,N,01259.17500,E,1,10,0.8,10.0,M,0.0,M,,", i,
                  minLat);
         for (int k = 0; k < 2; k++) {
             uint8_t x = 0;

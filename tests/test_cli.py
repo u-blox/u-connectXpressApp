@@ -512,6 +512,36 @@ def test_cell_bridge_relays_the_data_link(app_exe, tmp_path):
     assert out.returncode == 0 and "ending the data link to caster.local:2101" in out.stdout, out.stdout
 
 
+def test_cell_watch_shows_the_live_card(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "cell.watch 1")
+    assert out.returncode == 1 and "no cellular module open" in out.stdout, out.stdout
+    out = _run(app_exe, tmp_path, "COM255", "cell.watch 0")
+    assert out.returncode == 1 and "usage: cell.watch" in out.stdout, out.stdout
+    # command mode: network, signal and address read over AT
+    out = _run(app_exe, tmp_path, "COM255", "cell.open virt:cell", "cell.attach on", "cell.watch 1")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert "MODEM " in text and " on virt:cell" in text, text
+    assert re.search(r"NET   registered \(home\)", text), text
+    assert re.search(r"SIG   RSSI -\d+ dBm", text) and re.search(r"IP    \d+\.\d+\.\d+\.\d+", text), text
+    # data link: no AT, the link and the bridge using it with its traffic
+    link = ["cell.open virt:cell", "cell.attach on", "cell.connect caster.local 2101"]
+    out = _run(app_exe, tmp_path, "COM255", *link, "cell.watch 1", "gnss.virtual malmo", "gnss.bridge cell",
+               "cell.watch 1", "cell.disconnect")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert "MODEM " in text and "on virt:cell, data link" in text, text
+    assert "LINK  tcp caster.local:2101, up 0 min" in text, text
+    assert "USER  none yet, e.g. gnss.bridge cell" in text, text
+    assert re.search(r"USER  gnss\.bridge 1, \d+ B out, \d+ B in, 0 reconnect\(s\)", text), text
+    assert "network values from" in text and "no AT commands while the port carries data" in text, text
+    # relay: the cell stream's own bridge
+    out = _run(app_exe, tmp_path, "COM255", *link, "cell.bridge uart virt:pc", "cell.watch 1", "cell.disconnect")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert "relayed by cell.bridge" in text and re.search(r"RELAY cell\.bridge 1 UART, \d+ B to it", text), text
+
+
 @pytest.mark.parametrize("command", ["cell.connect", "cell.connect host", "cell.connect host 0", "cell.connect h 1 x"])
 def test_cell_connect_rejects_bad_arguments(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -819,3 +849,23 @@ def test_tls_bridges_and_sockets_need_their_device(app_exe, tmp_path, command, e
     out = _run_in(app_exe, tmp_path, command)
     assert out.returncode == 1
     assert expected in out.stdout
+
+
+def test_snake_demo_eats_packets_and_the_game_needs_a_terminal(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "app.snake demo 400")
+    text = out.stdout
+    assert out.returncode == 0, text
+    board = [line for line in text.splitlines() if line.startswith(("|", "+"))]
+    assert len(board) == 17 and all(len(line) == 62 for line in board), text
+    assert sum(line.count("@@") for line in board) == 1, text
+    m = re.search(r"Score (\d+), length (\d+) after (\d+) steps", text)
+    assert m and int(m.group(1)) >= 50 and int(m.group(2)) == 3 + int(m.group(1)) // 10, text
+    again = _run(app_exe, tmp_path, "COM255", "app.snake demo 400")
+    assert re.search(r"Score \d+, length \d+ after \d+ steps.*", again.stdout).group(0) == m.group(0), again.stdout
+    other = _run(app_exe, tmp_path, "COM255", "app.snake demo 400 7")
+    assert "Score " in other.stdout and board != [ln for ln in other.stdout.splitlines() if ln.startswith(("|", "+"))]
+    for bad in ("app.snake demo 0", "app.snake demo 5 0", "app.snake fly"):
+        out = _run(app_exe, tmp_path, "COM255", bad)
+        assert out.returncode == 1 and "usage: app.snake" in out.stdout, (bad, out.stdout)
+    out = _run(app_exe, tmp_path, "COM255", "app.snake")
+    assert out.returncode == 1 and "needs an interactive terminal" in out.stdout, out.stdout

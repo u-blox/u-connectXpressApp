@@ -199,6 +199,9 @@ void ucxapp_register_bridge_cmds(void);  /* bridge.list, bridge.off over all sou
 void ucxapp_register_hw_cmds(void);      /* hw.* GPIO/I2C/SPI/ADC/PWM/CAN (ucxapp_cmds_hw.c) */
 void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
 void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
+void ucxapp_register_snake_cmds(void);   /* app.snake, app.hunt (ucxapp_cmds_snake.c, host only) */
+/* Plays snake full screen on a terminal already in raw mode; returns the score. */
+int ucxapp_snake_play(void);
 void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_utils.c) */
 
 /* Built-in zip extraction (stored and deflate); prints each file. */
@@ -294,11 +297,17 @@ size_t ucxapp_gatt_summary(char *out, size_t size);
 size_t ucxapp_gnss_summary(char *out, size_t size);
 /* The current 2D or 3D fix of the open receiver; false without one. */
 bool ucxapp_gnss_position(double *lat, double *lon);
+/* UTC date and time (year, month, day, hour, min, sec) of the current fix and its age; false without a fresh fix or
+   while a recording is replayed. */
+bool ucxapp_gnss_utc(int ymdhms[6], uint32_t *ageMs);
 size_t ucxapp_imu_summary(char *out, size_t size);
 /* One dash line body; false when that device is not open. */
 bool ucxapp_gnss_dash(char *out, size_t size);
 bool ucxapp_gnss_card(char *out, size_t size);
 bool ucxapp_cell_dash(char *out, size_t size);
+/* Cellular live card (modem, network, signal, IP, data link and its users); false when no modem is open. */
+bool ucxapp_cell_card(char *out, size_t size);
+size_t ucxapp_cell_summary(char *out, size_t size);
 bool ucxapp_imu_dash(char *out, size_t size);
 
 /* QR rendering (ucxapp_cmds_qr.c): any text, or a Wi-Fi join payload (security WPA, WEP or nopass). */

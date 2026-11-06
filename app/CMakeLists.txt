@@ -160,6 +160,7 @@ if(NOT WIN32)
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
     src/ucxapp_cmds_dash.c
+    src/ucxapp_cmds_snake.c
     src/ucxapp_cmds_hid.c
     src/ucxapp_cmds_examples.c
     src/ucxapp_demo.c
@@ -326,6 +327,7 @@ add_executable(ucxapp
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c
   src/ucxapp_cmds_dash.c
+  src/ucxapp_cmds_snake.c
   src/ucxapp_cmds_hid.c
   src/ucxapp_cmds_examples.c
   src/ucxapp_demo.c

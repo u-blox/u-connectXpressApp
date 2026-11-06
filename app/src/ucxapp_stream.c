@@ -1622,6 +1622,47 @@ const char *ucxapp_stream_open_port(const char *kind)
     return port[0] != '\0' ? port : NULL;
 }
 
+size_t ucxapp_stream_cell_users(char *out, size_t size)
+{
+    static const char *const kName[] = { "off", "TCP", "UDP", "BLE", "UART", "BLE SPS", "MQTT" };
+    size_t n = 0;
+
+    if (size == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    regLock();
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        const ucxapp_stream_t *s = gStreams[i];
+        bool relay = s != NULL && s->cfg.kind != NULL && strcmp(s->cfg.kind, "cell") == 0;
+        for (int j = 0; s != NULL && j < MAX_BRIDGES && n + 1 < size; j++) {
+            const bridge_t *b = s->br[j];
+            int w;
+            if (b == NULL || (!relay && !b->cellLink)) {
+                continue;
+            }
+            if (relay) {
+                w = snprintf(out + n, size - n, "RELAY cell.bridge %d %s%s%s, %u B to it, %u B back\n", j + 1,
+                             b->bridge == BR_TCP && b->connectHost[0] ? "TCP client " : kName[b->bridge],
+                             b->bridge == BR_TCP && b->connectHost[0] ? b->connectHost : "",
+                             b->bridge == BR_TCP && !b->connectHost[0] ? (b->nClients > 0 ? " (client on)" : " (no client)")
+                                                                      : "",
+                             (unsigned)b->sent, (unsigned)b->received);
+            } else {
+                w = snprintf(out + n, size - n, "USER  %s.bridge %d%s, %u B out, %u B in, %u reconnect(s)%s\n",
+                             s->cfg.kind != NULL ? s->cfg.kind : "?", j + 1, b->ntrip ? " NTRIP" : "", (unsigned)b->sent,
+                             (unsigned)b->received, (unsigned)b->relinks, b->out == NULL ? ", reconnecting" : "");
+            }
+            if (w < 0) {
+                break;
+            }
+            n += (size_t)w < size - n ? (size_t)w : size - n - 1;
+        }
+    }
+    regUnlock();
+    return n;
+}
+
 static int cmdBridgeList(ucxapp_t *app, int argc, char *argv[])
 {
     ucxapp_stream_t *s[MAX_STREAMS];

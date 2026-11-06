@@ -166,7 +166,7 @@ typedef struct {
     uint32_t logCur, evCur, doneSeen;
     uint32_t stateSeen;
     int32_t stateMs;
-    uint32_t gnssSeen;
+    uint32_t cardSeen[2];   /* hash of the GNSS and cellular cards the page has */
 } viewer_t;
 
 /* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
@@ -204,7 +204,8 @@ static viewer_t *viewer(int i)
         v->evCur = ucxapp_ui_event_start();
         v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 });
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
-        v->gnssSeen = UINT32_MAX;
+        v->cardSeen[0] = UINT32_MAX;
+        v->cardSeen[1] = UINT32_MAX;
         v->stateMs = U_CX_PORT_GET_TIME_MS();
     }
     return v;
@@ -283,45 +284,64 @@ static void flushState(int first, int last)
     }
 }
 
-/* The live GNSS card (empty: hide it), rebuilt every 250 ms and sent to a page when it changed. */
-static void flushGnss(int first, int last)
+/* A live card (empty: hide it), rebuilt every 250 ms and sent to a page when it changed. */
+typedef struct {
+    const char *event;
+    bool (*get)(char *out, size_t size);
+    int slot;   /* in viewer_t.cardSeen */
+    char text[1024];
+    char json[1200];
+    uint32_t hash;
+    int32_t builtMs;
+    bool built;
+} card_t;
+
+static void flushCard(card_t *c, int first, int last)
 {
-    static char text[640], json[700];
-    static uint32_t hash;
-    static int32_t builtMs;
-    static bool built;
     int32_t now = U_CX_PORT_GET_TIME_MS();
 
-    if (!built || now - builtMs >= 250) {
+    if (!c->built || now - c->builtMs >= 250) {
         size_t n = 0;
 
-        built = true;
-        builtMs = now;
-        (void)ucxapp_gnss_card(text, sizeof(text));
-        hash = 2166136261u;
-        json[n++] = '"';
-        for (const char *p = text; *p != '\0' && n + 4 < sizeof(json); p++) {
-            hash = (hash ^ (uint8_t)*p) * 16777619u;
+        c->built = true;
+        c->builtMs = now;
+        if (!c->get(c->text, sizeof(c->text))) {
+            c->text[0] = '\0';
+        }
+        c->hash = 2166136261u;
+        c->json[n++] = '"';
+        for (const char *p = c->text; *p != '\0' && n + 4 < sizeof(c->json); p++) {
+            c->hash = (c->hash ^ (uint8_t)*p) * 16777619u;
             if (*p == '\n') {
-                json[n++] = '\\';
-                json[n++] = 'n';
+                c->json[n++] = '\\';
+                c->json[n++] = 'n';
             } else if (*p == '"' || *p == '\\') {
-                json[n++] = '\\';
-                json[n++] = *p;
+                c->json[n++] = '\\';
+                c->json[n++] = *p;
             } else if ((unsigned char)*p >= 0x20) {
-                json[n++] = *p;
+                c->json[n++] = *p;
             }
         }
-        json[n++] = '"';
-        json[n] = '\0';
+        c->json[n++] = '"';
+        c->json[n] = '\0';
     }
     for (int i = first; i <= last; i++) {
         viewer_t *v = viewer(i);
 
-        if (v != NULL && v->gnssSeen != hash && sendTo(i, "gnss", json) > 0) {
-            v->gnssSeen = hash;
+        if (v != NULL && v->cardSeen[c->slot] != c->hash && sendTo(i, c->event, c->json) > 0) {
+            v->cardSeen[c->slot] = c->hash;
         }
     }
+}
+
+/* The GNSS and cellular cards (the cellular one from the worker's cache: the modem is never asked from here). */
+static void flushCards(int first, int last)
+{
+    static card_t gnss = { .event = "gnss", .get = ucxapp_gnss_card, .slot = 0 };
+    static card_t cell = { .event = "cell", .get = ucxapp_ui_cell_card, .slot = 1 };
+
+    flushCard(&gnss, first, last);
+    flushCard(&cell, first, last);
 }
 
 static void flushDone(int first, int last)
@@ -370,7 +390,7 @@ static void pumpLoop(void *arg)
         bool pending = flushOutput(0, LOCAL_SLOT - 1);
         flushEvents(0, LOCAL_SLOT - 1);
         flushState(0, LOCAL_SLOT - 1);
-        flushGnss(0, LOCAL_SLOT - 1);
+        flushCards(0, LOCAL_SLOT - 1);
         flushDone(0, LOCAL_SLOT - 1);
         if (U_CX_PORT_GET_TIME_MS() - lastKeepAlive > KEEPALIVE_MS) {
             uWebServerBroadcastSSEEvent(gServer, "ka", "");
@@ -1352,7 +1372,7 @@ const char *ucxapp_web_local_poll(void)
         flushOutput(LOCAL_SLOT, LOCAL_SLOT);
         flushEvents(LOCAL_SLOT, LOCAL_SLOT);
         flushState(LOCAL_SLOT, LOCAL_SLOT);
-        flushGnss(LOCAL_SLOT, LOCAL_SLOT);
+        flushCards(LOCAL_SLOT, LOCAL_SLOT);
         flushDone(LOCAL_SLOT, LOCAL_SLOT);
     }
     return gLocalEvents;

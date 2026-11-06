@@ -1108,8 +1108,8 @@ static bool replayWrite(void *ctx, const uint8_t *data, size_t n)
 
 /* ---- Virtual receiver: a fixed position (the host's location, or u-blox Malmo) as a normal NMEA stream ---- */
 
-#define MALMO_LAT 55.6125   /* u-blox AB, Malmo office */
-#define MALMO_LON 12.9925
+#define MALMO_LAT 55.61276   /* u-blox AB, Malmo office */
+#define MALMO_LON 12.98625
 #define MALMO_ALT 10.0
 
 typedef struct {
@@ -1476,6 +1476,30 @@ bool ucxapp_gnss_position(double *lat, double *lon)
          ucxapp_platform_tick_ms() - gP.st.lastMs <= 3000u;
     *lat = gP.st.lat;
     *lon = gP.st.lon;
+    ucxapp_stream_unlock(s);
+    return ok;
+}
+
+bool ucxapp_gnss_utc(int ymdhms[6], uint32_t *ageMs)
+{
+    ucxapp_stream_t *s = gStream;
+    bool ok;
+
+    /* a replay plays back old time stamps; virt:gnss stamps the host clock, which is harmless */
+    if (s == NULL || strcmp(ucxapp_stream_port(s), "virt:replay") == 0) {
+        return false;
+    }
+    ucxapp_stream_lock(s);
+    uint32_t now = ucxapp_platform_tick_ms();
+    ok = gP.st.hasDate && gP.st.hasTime && (gP.st.fixType & 3) >= 2 && gP.st.lastMs != 0 &&
+         now - gP.st.lastMs <= 3000u;
+    ymdhms[0] = gP.st.year;
+    ymdhms[1] = gP.st.month;
+    ymdhms[2] = gP.st.day;
+    ymdhms[3] = gP.st.hour;
+    ymdhms[4] = gP.st.min;
+    ymdhms[5] = gP.st.sec;
+    *ageMs = now - gP.st.lastMs;
     ucxapp_stream_unlock(s);
     return ok;
 }

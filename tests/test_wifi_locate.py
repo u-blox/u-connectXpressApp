@@ -12,7 +12,7 @@ from test_vucx import _run
 pytestmark = pytest.mark.app
 
 STORE = "ucxapp.wifiloc"
-GOOGLE_ANSWER = '{\n  "location": {\n    "lat": 55.6125,\n    "lng": 12.9925\n  },\n  "accuracy": 24.5\n}'
+GOOGLE_ANSWER = '{\n  "location": {\n    "lat": 55.61276,\n    "lng": 12.98625\n  },\n  "accuracy": 24.5\n}'
 HERE_ANSWER = '{"location":{"lat":52.22296709,"lng":-0.07337817,"accuracy":152}}'
 GOOGLE_403 = ('{"error":{"code":403,"message":"API key not valid. Please pass a valid API key.",'
               '"status":"PERMISSION_DENIED"}}')
@@ -104,9 +104,9 @@ def test_google_position_from_scan(app_exe, tmp_path):
         module.stop()
     assert out.returncode == 0, out.stdout
     assert "Asking google with 2 access points..." in out.stdout, out.stdout
-    assert "Position: 55.612500, 12.992500 +/- 24 m (google, 2 access points)" in out.stdout, out.stdout
-    assert "https://www.openstreetmap.org/?mlat=55.612500&mlon=12.992500" in out.stdout, out.stdout
-    assert "gnss.virtual 55.612500 12.992500" in out.stdout, out.stdout
+    assert "Position: 55.612760, 12.986250 +/- 24 m (google, 2 access points)" in out.stdout, out.stdout
+    assert "https://www.openstreetmap.org/?mlat=55.612760&mlon=12.986250" in out.stdout, out.stdout
+    assert "gnss.virtual 55.612760 12.986250" in out.stdout, out.stdout
     assert _posted(module) == {"considerIp": False, "wifiAccessPoints": [
         {"macAddress": "AA:BB:CC:DD:EE:F0", "signalStrength": -45, "channel": 6},
         {"macAddress": "AA:BB:CC:DD:EE:F1", "signalStrength": -80, "channel": 36}]}
@@ -140,7 +140,7 @@ def test_google_compatible_services(app_exe, tmp_path, service, host, path):
         out = _run(app_exe, module.port, f"wifi.locate {service} ck", cwd=tmp_path)
     finally:
         module.stop()
-    assert f"Position: 55.612500, 12.992500 +/- 24 m ({service}, 2 access points)" in out.stdout, out.stdout
+    assert f"Position: 55.612760, 12.986250 +/- 24 m ({service}, 2 access points)" in out.stdout, out.stdout
     assert "wifiAccessPoints" in _posted(module)
     assert any(host in c for c in module.log), module.log
     assert any(c.startswith("AT+UHTCRP=") and path in c for c in module.log), module.log

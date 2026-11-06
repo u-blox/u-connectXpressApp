@@ -18,7 +18,7 @@ main{display:grid;grid-template-columns:19rem 3fr 2fr;gap:.7rem;padding:.7rem;he
 body.uc main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.uc #pu{grid-row:span 2}body.uc #pc,body:not(.uc) #pu{display:none}
 .pane{display:flex;flex-direction:column;min-height:0}.pane h2{margin:0 0 .35rem;color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}
 #out,#ev,#side,.sc{flex:1;overflow:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.6rem}
-#gc{flex:none;margin:0 0 .4rem;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.5rem .6rem;overflow-x:auto;cursor:pointer}
+#gc,#cc{flex:none;margin:0 0 .4rem;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.5rem .6rem;overflow-x:auto;cursor:pointer}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
 .badge,.v{font:700 .66rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:.05rem .4rem;border:1px solid currentColor;border-radius:4px;color:var(--warm)}.badge.ok,.v.ok{color:var(--ok)}.badge.bad,.v.gap{color:var(--err)}
@@ -50,7 +50,7 @@ details.sub{margin-left:.6rem;border-left:2px solid var(--bd);padding-left:.4rem
 .c input,.c select{flex:1 1 6rem;min-width:0;padding:.3rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.c input[type=checkbox]{flex:0 0 auto;margin:0}.c>button{padding:.25rem .7rem;margin-left:auto}.c select.h{border-color:#2d4a6a}.c input:autofill{-webkit-text-fill-color:var(--tx);box-shadow:0 0 0 9em var(--bg2) inset}
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px;overflow-wrap:anywhere}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
-.uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}#ucs{float:right;margin-left:.5rem;-webkit-appearance:none;appearance:none;padding:.45rem 2.1rem .45rem .95rem;font:inherit;font-weight:700;color:var(--tx);cursor:pointer;border:1px solid var(--ac);border-radius:999px;background:var(--bg2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2329b6f6' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right .85rem center/.7rem}#ucs:hover,#ucs:focus{outline:none;box-shadow:0 0 0 3px #29b6f633}#ucs option{background:var(--bg2);color:var(--tx);font-weight:600}
+.uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}#ucs{float:right;margin-left:.5rem;padding:.45rem 2.1rem .45rem .95rem}#wsvm{padding:.4rem 2rem .4rem .9rem;margin:0 .3rem}#ucs,#wsvm{-webkit-appearance:none;appearance:none;font:inherit;font-weight:700;color:var(--tx);cursor:pointer;border:1px solid var(--ac);border-radius:999px;background:var(--bg2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2329b6f6' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right .85rem center/.7rem}#ucs:hover,#ucs:focus,#wsvm:hover,#wsvm:focus{outline:none;box-shadow:0 0 0 3px #29b6f633}#ucs option,#wsvm option{background:var(--bg2);color:var(--tx);font-weight:600}
 #dg{width:100%;max-height:15rem}#dg rect{fill:var(--bg2);stroke:var(--bd);stroke-width:2;transition:stroke .4s,fill .4s}#dg .on rect{stroke:var(--k);fill:#122033}
 #dg text{fill:var(--tx);font:700 14px 'Segoe UI',sans-serif;text-anchor:middle}#dg text+text{fill:var(--mut);font-weight:400;font-size:11px}
 #dg line{stroke:var(--bd);stroke-width:2.5;stroke-dasharray:7 7}#dg line.on{stroke:var(--k);animation:fl .9s linear infinite}@keyframes fl{to{stroke-dashoffset:-14}}
@@ -63,9 +63,13 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--bd)}.frow span:first-child{flex:1;font-family:Consolas,monospace}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
-#ver{white-space:nowrap}#lv{display:flex;gap:.8rem;justify-content:flex-end}
-#meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
+#ver{white-space:nowrap}#lv{display:flex;gap:.8rem;justify-content:flex-end;align-items:baseline}
+#meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.15rem;min-width:0;max-width:100%}
 #clock,#loc,#ver{font:12px Consolas,monospace;color:var(--mut);overflow-wrap:anywhere;text-align:right}
+#clock .t{color:var(--tx);font-size:13px;font-weight:600;margin-left:.4em}#clock .sep{display:none}
+.tag{display:inline-block;margin-left:.4rem;padding:0 .45em;border:1px solid var(--bd);border-radius:999px;font-size:11px;line-height:1.45;color:var(--mut);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warm);border-color:var(--warm)}
+#loc a{color:var(--ac);text-decoration:none}#loc a:hover{text-decoration:underline}#loc a::before{content:'\2316  '}
 @media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;overflow-x:auto;flex-wrap:nowrap}
  #busy{margin-left:0}#keys,#vw,#ver{display:none}
  #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1;padding:.4rem .2rem}#tabs button.on{background:var(--ac);border-color:var(--ac);color:#04121c}
@@ -91,7 +95,7 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <div class="r"><button id="fitb">Run fit check</button><input id="mb" placeholder="Mbit/s" title="Measured rate, e.g. from net.iperf; shows the 900 MB download time"></div></div></div>
 <div class="cards" id="steps"></div></div></div>
 <div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
-<div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><div id="ev"></div></div></main>
+<div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><pre id="cc" hidden title="Cellular modem, live (click: cell.status)"></pre><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
@@ -399,16 +403,28 @@ function view(v){document.body.classList.toggle('uc',!!v);localStorage.setItem('
 document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset.v));
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
+/* footer: the clock (time bright, date dim, source as a tag) and the place as a Google Maps link */
+let metaC='',metaL=null;
+function meta(clk,src,loc){if(metaC!==clk+src){metaC=clk+src;const c=$('clock'),m=clk.match(/^(\d{4}-\d\d-\d\d)([T ])(.*)$/);c.textContent='';
+  if(m)c.append(el('span','d',m[1]),el('span','sep',m[2]),el('span','t',m[3]));else c.append(el('span','t',clk));
+  const tg=el('span','tag'+(/^(gnss|ntp)/.test(src)?' ok':/^unsynced/.test(src)?' warn':''),src.split(',')[0]);tg.title='Clock source: '+src;
+  c.append(el('span','sep',' / '),tg)}
+ if(metaL===loc)return;metaL=loc;const l=$('loc');l.textContent='';if(!loc)return;
+ const p=loc.match(/^(.*?)(?: \(([^)]*)\))?$/),place=p[1];l.append(el('span','lb','Location: '));
+ if(place==='unknown'){l.append(place);return}
+ const a=el('a','',place);a.href='https://www.google.com/maps/search/?api=1&query='+enc(place);a.target='_blank';a.rel='noopener';
+ a.title='Open in Google Maps';l.append(a);if(p[2])l.append(el('span','tag'+(/^gnss/.test(p[2])?' ok':''),p[2]))}
 function events(){const es=new EventSource('/events');
  es.onopen=()=>{st.textContent='live';st.className='ok';lit('hub',1)};
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));
  es.addEventListener('gnss',e=>{const g=$('gc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('gnss.status')});
- const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status'};
+ es.addEventListener('cell',e=>{const g=$('cc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('cell.status')});
+ const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
  es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
  if(ti>=0){const li=ps.findIndex(p=>p.startsWith('Local ')),oi=ps.findIndex(p=>p.startsWith('Loc '));
-  $('clock').textContent=(li>=0?ps[li].slice(6):ps[ti].slice(5))+' / '+ps[ti+1];$('loc').textContent=oi>=0?'Location: '+ps[oi].slice(4):'';
+  meta((li>=0?ps[li].slice(6):ps[ti].slice(5)),ps[ti+1],oi>=0?ps[oi].slice(4):'');
   [oi,li].filter(i=>i>=0).sort((a,b)=>b-a).forEach(i=>ps.splice(i,1));ps.splice(ti,2)}ps.forEach(p=>{
   const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|unknown|disabled|detached)$/.test(p)?'off':'on'),p)),k=CK[p.split(' ')[0]];
   if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; * = current handle, not listening':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);

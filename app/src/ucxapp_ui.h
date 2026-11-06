@@ -55,6 +55,8 @@ uint32_t ucxapp_ui_prompt_get(char *text, size_t textSize, char *prefill, size_t
                               size_t cancelSize);
 /* Wi-Fi ("ssid  rssi  ch\nip") and cellular status cached by the command worker; empty when unknown. */
 void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSize);
+/* Cellular live card cached by the command worker (see ucxapp_cell_card); false when no modem is open. */
+bool ucxapp_ui_cell_card(char *out, size_t size);
 void ucxapp_ui_wifi_set(bool up);   /* URC context safe */
 void ucxapp_ui_thread_changed(void);   /* URC context safe: re-read the Thread role */
 void ucxapp_ui_thread_text(char *out, size_t size);   /* role, "off", or empty without Thread firmware */

@@ -112,6 +112,20 @@ def test_use_case_check_and_steps(app_exe, uc):
 
 
 @pytest.mark.app
+@pytest.mark.parametrize("uc", USE_CASES)
+def test_first_gnss_bridge_step_stops_bridges_left_by_another_use_case(app_exe, uc):
+    """The page runs use cases one after another on the same app: a step that starts the first GNSS bridge of a use
+    case stops the ones an earlier use case left running, or the new bridge refuses (BLE or NTRIP already running)."""
+    out = _exec(app_exe, f"examples uc-{uc}").stdout
+    for step in re.split(r"^ *\d+\. ", out, flags=re.M)[1:]:
+        cmds = re.findall(r"^    > (gnss\.bridge(?: \S+)?)", step, re.M)
+        starts = [i for i, c in enumerate(cmds) if c not in ("gnss.bridge", "gnss.bridge off", "gnss.bridge status")]
+        if starts:
+            assert "gnss.bridge off" in cmds[:starts[0]], f"uc-{uc}:\n{step}"
+            return
+
+
+@pytest.mark.app
 def test_use_case_check_tool_and_bad_names(app_exe):
     assert "900 MB/30 min" in _exec(app_exe, "usecase.check tool").stdout
     bad = _exec(app_exe, "usecase.check bogus")

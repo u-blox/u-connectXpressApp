@@ -2,7 +2,9 @@
 over Web Serial. The serial port here is a fake that answers every AT command with OK."""
 
 import re
+import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -116,6 +118,74 @@ def test_fx_off_has_no_colors(site):
         assert not page.evaluate("document.getElementById('fx-css').disabled")
         assert page.evaluate("localStorage.getItem('fxoff')") == "0"
         browser.close()
+
+
+FX_COST_TAG = "--ucx-fx-cost"   # marks the browser process whose CPU the FX test sums
+
+
+def _fx_cost(page, browser_pid, seconds=4.0):
+    """CPU of the whole browser (every process, so paint, raster and GPU too) in % of one core while the page
+    sits idle."""
+    psutil = pytest.importorskip("psutil")
+    procs = [psutil.Process(browser_pid)] + psutil.Process(browser_pid).children(recursive=True)
+
+    def cpu():
+        total = 0.0
+        for pr in procs:
+            try:
+                t = pr.cpu_times()
+                total += t.user + t.system
+            except psutil.NoSuchProcess:
+                pass
+        return total
+
+    t0, c0 = time.monotonic(), cpu()
+    page.wait_for_timeout(seconds * 1000)
+    return (cpu() - c0) / (time.monotonic() - t0) * 100
+
+
+def test_fx_is_light(site):
+    """FX on the site was too heavy (a full core at 1080p): it stays within a budget while you use the page and
+    costs nothing extra once you leave it alone."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    psutil = pytest.importorskip("psutil")
+    with sync_api.sync_playwright() as p:
+        try:
+            # the GPU when there is one, like a desktop browser; without one Chromium renders in software
+            gpu_args = ["--enable-gpu", "--ignore-gpu-blocklist"]
+            if sys.platform == "win32":
+                gpu_args.append("--use-angle=d3d11")
+            browser = p.chromium.launch(args=[FX_COST_TAG] + gpu_args)
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        pid = next(pr.pid for pr in psutil.process_iter(["cmdline"])
+                   if FX_COST_TAG in (pr.info["cmdline"] or []) and "--type=" not in " ".join(pr.info["cmdline"]))
+        page = browser.new_page(viewport={"width": 1920, "height": 1080})
+        page.add_init_script(FAKE_SERIAL)
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        cost = {}
+        for fx in ("0", "1"):
+            page.goto(f"{site}?fx={fx}")
+            page.wait_for_selector("#st.ok", timeout=30000)
+            page.mouse.move(400, 300)
+            page.wait_for_timeout(2500)   # splash and entrance animations are over
+            cost[fx] = _fx_cost(page, pid)
+        gpu = page.evaluate("(() => { const g = document.createElement('canvas').getContext('webgl'); "
+                            "const e = g && g.getExtension('WEBGL_debug_renderer_info'); "
+                            "return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : ''; })()")
+        if gpu and not re.search(r"SwiftShader|llvmpipe|Basic Render", gpu):
+            assert cost["1"] - cost["0"] < 50, f"FX on costs {cost['1']:.0f}% of a core, off {cost['0']:.0f}% ({gpu})"
+        # left alone, the endless motion stops: as light as the plain page
+        page.wait_for_selector("body.fx-idle", timeout=20000)
+        page.wait_for_timeout(500)
+        idle = _fx_cost(page, pid)
+        assert idle - cost["0"] < 10, f"idle FX costs {idle:.0f}% of a core, off {cost['0']:.0f}%"
+        # and the next move brings it back
+        page.mouse.move(600, 400)
+        page.wait_for_selector("body:not(.fx-idle)", timeout=2000)
+        browser.close()
+    assert not js_errors, js_errors
 
 
 def test_app_runs_in_the_browser(site):
@@ -235,5 +305,27 @@ def test_last_port_is_reopened_until_disconnected(site):
         page.wait_for_selector("#st.ok", timeout=30000)
         page.wait_for_timeout(500)
         assert page.inner_text("#wsc") == "Connect module"
+        browser.close()
+    assert not js_errors, js_errors
+
+
+def test_no_web_serial_starts_the_virtual_module(site):
+    """Firefox, Safari and phones have no Web Serial: the site opens on the default virtual module by itself."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script("delete Navigator.prototype.serial")
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(site)
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                               timeout=60000)
+        assert "virtual module" in page.inner_text("#wsnote")
+        assert page.input_value("#wsvm") == "valma-w1.json"
         browser.close()
     assert not js_errors, js_errors

@@ -126,16 +126,87 @@
   /* ---- party: type "ublox" outside a field, click the u-blox logo 5 times, or up up down down left right left right b a;
      with FX off it turns FX on and parties after the reload ---- */
   let party = () => { localStorage.setItem('fxoff', '0'); sessionStorage.setItem('fxparty', '1'); location.reload(); };
+  /* ---- snake: the app.snake game on a canvas; arrows/WASD steer, p pause, Esc quits ---- */
+  const snake = () => {
+    if (document.getElementById('fx-snake')) return;
+    const W = 30, H = 15, S = 20;
+    const box = document.createElement('div');
+    box.id = 'fx-snake';
+    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font:14px monospace';
+    const info = document.createElement('div'); info.style.margin = '8px';
+    const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+    cv.style.cssText = 'background:#0b1a2a;border:2px solid #ff6e59;border-radius:6px;max-width:95vw';
+    const help = document.createElement('div'); help.style.margin = '8px';
+    help.textContent = 'arrows/WASD steer, p pause, Esc quit, Enter restart (tap the sides on touch)';
+    box.append(info, cv, help); document.body.append(box);
+    const g = cv.getContext('2d');
+    let body, dir, next, food, score, over, paused, timer;
+    const place = () => { do { food = [Math.random() * W | 0, Math.random() * H | 0]; } while (body.some(p => p[0] === food[0] && p[1] === food[1])); };
+    const start = () => { body = [[5, 7], [4, 7], [3, 7]]; dir = next = [1, 0]; score = 0; over = paused = false; place(); };
+    const draw = () => {
+      g.fillStyle = '#0b1a2a'; g.fillRect(0, 0, cv.width, cv.height);
+      g.fillStyle = '#ffc107'; g.fillRect(food[0] * S + 4, food[1] * S + 4, S - 8, S - 8);
+      body.forEach((p, i) => { g.fillStyle = i ? '#2ec4b6' : '#ff6e59'; g.fillRect(p[0] * S + 1, p[1] * S + 1, S - 2, S - 2); });
+      info.textContent = over ? `Game over: score ${score}, length ${body.length} (Enter restarts)` : `Score ${score}  length ${body.length}${paused ? '  paused' : ''}`;
+    };
+    const step = () => {
+      if (over || paused) return;
+      dir = next;
+      const h = [body[0][0] + dir[0], body[0][1] + dir[1]];
+      if (h[0] < 0 || h[1] < 0 || h[0] >= W || h[1] >= H || body.some(p => p[0] === h[0] && p[1] === h[1])) { over = true; draw(); return; }
+      body.unshift(h);
+      if (h[0] === food[0] && h[1] === food[1]) { score += 10; place(); } else body.pop();
+      draw();
+    };
+    const turn = d => { if (d[0] !== -dir[0] || d[1] !== -dir[1]) next = d; };
+    const keys = { arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1], arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0] };
+    const quit = () => { clearInterval(timer); removeEventListener('keydown', key, true); box.remove(); };
+    const key = e => {
+      const k = e.key.toLowerCase();
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (k === 'escape' || k === 'q') quit();
+      else if (k === 'p') { paused = !paused; draw(); }
+      else if (k === 'enter' && over) { start(); draw(); }
+      else if (keys[k]) turn(keys[k]);
+    };
+    cv.addEventListener('pointerdown', e => {
+      const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+      if (over) { start(); draw(); } else turn(Math.abs(x) > Math.abs(y) ? [Math.sign(x), 0] : [0, Math.sign(y)]);
+    });
+    box.addEventListener('click', e => { if (e.target === box) quit(); });
+    addEventListener('keydown', key, true);
+    start(); draw(); timer = setInterval(step, 120);
+  };
+  window.ucxSnake = snake;
+  const menu = (x, y) => {
+    document.getElementById('fx-menu')?.remove();
+    const m = document.createElement('div');
+    m.id = 'fx-menu';
+    m.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9998;background:#13263a;border:1px solid #ff6e59;border-radius:6px;padding:4px;font:13px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.5)`;
+    [['🎉 Party', () => party()], ['🐍 Snake', snake]].forEach(([t, f]) => {
+      const b = document.createElement('div');
+      b.textContent = t; b.style.cssText = 'padding:6px 14px;cursor:pointer;color:#fff;border-radius:4px';
+      b.onmouseenter = () => { b.style.background = '#ff6e5944'; }; b.onmouseleave = () => { b.style.background = ''; };
+      b.onclick = () => { m.remove(); f(); };
+      m.append(b);
+    });
+    document.body.append(m);
+    const fb = document.getElementById('fx-tg').getBoundingClientRect();
+    if (!x && !y) { x = fb.left; y = fb.bottom + 4; }
+    m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 4)) + 'px';
+    setTimeout(() => addEventListener('pointerdown', function off(e) { if (!m.contains(e.target)) { m.remove(); removeEventListener('pointerdown', off, true); } }, true));
+  };
   {
     const codes = [['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'],
-                   ['u', 'b', 'l', 'o', 'x']];
+                   ['u', 'b', 'l', 'o', 'x'], ['s', 'n', 'a', 'k', 'e']];
     const at = codes.map(() => 0);
     addEventListener('keydown', e => {
       if (e.key.length === 1 && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       codes.forEach((c, i) => {
         at[i] = k === c[at[i]] ? at[i] + 1 : (k === c[0] ? 1 : 0);
-        if (at[i] === c.length) { at.fill(0); party(); }
+        if (at[i] === c.length) { at.fill(0); if (i === 2) snake(); else party(); }
       });
     }, true);
     let clicks = [];
@@ -148,11 +219,11 @@
     const fx = document.getElementById('fx-tg');
     if (fx) {
       let hold = 0, held = false;
-      fx.title += ' (right-click or hold: party)';
-      fx.addEventListener('contextmenu', e => { e.preventDefault(); party(); });
+      fx.title += ' (right-click or hold: party, snake)';
+      fx.addEventListener('contextmenu', e => { e.preventDefault(); menu(e.clientX, e.clientY); });
       fx.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
-        held = false; hold = setTimeout(() => { held = true; party(); }, 600);
+        held = false; hold = setTimeout(() => { held = true; menu(e.clientX, e.clientY); }, 600);
       });
       ['pointerup', 'pointerleave', 'pointercancel'].forEach(n => fx.addEventListener(n, () => clearTimeout(hold)));
       fx.addEventListener('click', e => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);

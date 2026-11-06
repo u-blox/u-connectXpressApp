@@ -29,9 +29,22 @@
       { status, headers: { 'Content-Type': M.UTF8ToString(M._ucxapp_web_local_type()) || 'text/plain' } });
   }
 
-  window.fetch = (input, init) => {
+  /* demo and usecase.demo need a virtual module: drop the real one and connect the picked virtual one first */
+  async function demoNeedsVirtual(u) {
+    if (u.pathname !== '/api/exec' || !/^\s*(demo|usecase\.demo)(\s|$)/.test(u.searchParams.get('cmd') || '')) return;
+    if (!virt) {
+      await disconnect();
+      const pick = document.getElementById('wsvm');
+      await connectVirtual(pick ? pick.value : VIRTUAL[0][0], true);
+    }
+    for (let i = 0; M._ucxapp_web_local_busy() && i < 300; i++) await new Promise(r => setTimeout(r, 100));
+  }
+
+  window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
-    if (!new URL(url, location.href).pathname.startsWith('/api/')) return realFetch(input, init);
+    const u = new URL(url, location.href);
+    if (!u.pathname.startsWith('/api/')) return realFetch(input, init);
+    await demoNeedsVirtual(u);
     return local(((init && init.method) || 'GET').toUpperCase(), url, init && init.body);
   };
 
@@ -481,12 +494,13 @@
     document.getElementById('wsvm').hidden = yes;
   }
 
-  async function devConnect() {
+  async function devConnect(quiet) {
     const mine = port || virt;
     connected(true);
     await closing;
     if ((port || virt) !== mine) return;   /* closed again while the previous close finished */
     M._ucxapp_webserial_ready(1);
+    if (quiet) return exec('dev.connect webserial');   /* the caller's own command is about to run */
     const cmd = document.getElementById('cmd'), run = document.getElementById('run');
     if (cmd && run) { cmd.value = 'dev.connect webserial'; run.click(); } else exec('dev.connect webserial');
   }
@@ -518,7 +532,7 @@
     await closing;
   }
 
-  async function connectVirtual(file) {
+  async function connectVirtual(file, quiet) {
     await ready;
     try {
       const r = await realFetch(file);
@@ -528,7 +542,7 @@
       alert('Could not load the virtual module: ' + e.message);
       return;
     }
-    devConnect();
+    await devConnect(quiet);
   }
 
   async function openPort(p) {

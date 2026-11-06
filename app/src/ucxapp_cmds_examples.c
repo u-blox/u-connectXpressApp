@@ -276,9 +276,13 @@ static const example_t kExamples[] = {
     { "cell", "Modem AT console from a PC tool over TCP",
       "cell.open\ncell.bridge tcp 7000" },
     { "cell", "Wi-Fi to cellular relay: a laptop on the module's access point reaches a server over LTE",
-      "wifi.ap.enable FieldKit FieldKit123\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\n"
+      "wifi.disconnect\nwifi.ap.enable FieldKit FieldKit123\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\n"
       "cell.bridge tcp 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status\n"
       "cell.disconnect" },
+    { "cell", "XPLR-IOT-1: update the SARA-R5 firmware with EasyFlash, then restore the settings",
+      "cell.power on\n# EasyFlash: SARA-R5, the port shown, 3000000 baud or slower, the .dof file\ncell.power cycle\n"
+      "cell.open\ncell.at AT+UFACTORY=0,2\ncell.power cycle\ncell.open\ncell.info\ncell.profile global\n"
+      "cell.rat ltem nbiot\ncell.attach on" },
 #endif
 #if UCXAPP_HOST || defined(UCXAPP_CAN_HW)
     { "can", "Loopback test",
@@ -537,6 +541,43 @@ static const example_t kExamples[] = {
     { "uc-livestock", "Notify the farm server (the tag position over cellular)",
       "cell.open\ncell.attach on\ncell.connect farm.example.com 5000\n"
       "gnss.bridge cell\ngnss.bridge status\ngnss.bridge off\ncell.disconnect" },
+    /* Cellular use cases: one socket over the modem, relayed to Wi-Fi, BLE, CAN or GNSS. */
+    { "uc-fieldkit", "Access point for the laptops (no site Wi-Fi: leave the station first)",
+      "wifi.disconnect\nwifi.ap.enable FieldKit FieldKit123\nwifi.ap.status" },
+    { "uc-fieldkit", "Modem online, then your server",
+      "cell.open\ncell.attach on\ncell.signal\ncell.connect myserver.example.com 5000" },
+    { "uc-fieldkit", "Relay: a laptop on FieldKit talks to the server over LTE",
+      "cell.bridge tcp 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status" },
+    { "uc-fieldkit", "Done: stop the relay and the link",
+      "cell.bridge off\ncell.disconnect" },
+    { "uc-fieldkit", "Or: the modem's AT console for the laptop (no cell.connect)",
+      "cell.bridge tcp 7000\n# the laptop connects to <ap-ip>:7000 and types AT commands\ncell.bridge off\n"
+      "wifi.ap.disable" },
+    { "uc-blecell", "Modem online, then your server",
+      "cell.open\ncell.attach on\ncell.connect myserver.example.com 5000" },
+    { "uc-blecell", "Relay a phone on Nordic UART to the server",
+      "cell.bridge ble nus\n# the phone app connects to Nordic UART; its lines go to the server and back\n"
+      "cell.bridge status" },
+    { "uc-blecell", "Done: stop the relay and the link",
+      "cell.bridge off\ncell.disconnect" },
+    { "uc-vehicle", "CAN bus (Linux with a CANable: can.open can0 first)",
+      "can.cfg 500000\ncan.status" },
+    { "uc-vehicle", "Modem online and the coverage here",
+      "cell.open\ncell.attach on\ncell.signal\ncell.operator" },
+    { "uc-vehicle", "Frames to your server over LTE",
+      "cell.connect logger.example.com 7001\ncan.bridge cell\ncan.bridge status" },
+    { "uc-vehicle", "Done: stop the bridge and the link",
+      "can.bridge off\ncell.disconnect" },
+    { "uc-xplr", "Find the SARA-R5, check the SIM and the signal",
+      "cell.open\ncell.info\ncell.signal\ncell.operator" },
+    { "uc-xplr", "MAX-M10S position to your server over LTE",
+      "gnss.open\ngnss.status\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.bridge cell\n"
+      "gnss.bridge status" },
+    { "uc-xplr", "Done: stop the bridge and the link",
+      "gnss.bridge off\ncell.disconnect" },
+    { "uc-xplr", "Modem firmware (steps in cell.example)",
+      "# cell.power on, then EasyFlash on the SARA port; cell.power cycle\n"
+      "# cell.at AT+UFACTORY=0,2 and cell.power cycle restore the settings\ncell.open\ncell.info" },
     /* Everyday use cases (usecase.check <name>); run with examples uc-<name> <number>. */
     { "uc-boat", "Receiver check and fix",
       "gnss.open\ngnss.watch 10" },

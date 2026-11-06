@@ -287,12 +287,12 @@ static bool isFt4232(const ucxapp_serial_port_t *sp)
     return sp->vid == 0x0403 && sp->pid == 0x6011;
 }
 
-/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port.
- * With "want", only when that port is an FT4232 port too (a SARA-R5 can be behind it). */
-/* Powers the SARA-R5 on when an XPLR-IOT-1 shell answers on one of the FT4232 ports; returns that shell port.
- * With "want", only when that port is an FT4232 port too (a SARA-R5 can be behind it). "cycle" powers it off
- * first, for a SARA-R5 that is on but no longer answers. */
-static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, const char *want, bool cycle)
+enum { XPLR_ON, XPLR_OFF, XPLR_CYCLE };
+
+/* Switches the SARA-R5 on, off or off and on (for one that is on but no longer answers) when an XPLR-IOT-1 shell
+ * answers on one of the FT4232 ports; returns that shell port. With "want", only when that port is an FT4232 port
+ * too (a SARA-R5 can be behind it). */
+static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, const char *want, int mode)
 {
     const char *dev = ucxapp_device_port();
     bool candidate = want == NULL;
@@ -331,8 +331,9 @@ static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, con
         if (shell) {
             static const char kOff[] = "modules SARAR5 power_off\r";
             static const char kCmd[] = "modules SARAR5 power_on\r";
-            if (cycle) {
-                ucxapp_print("  %s: XPLR-IOT-1 shell, the SARA-R5 does not answer: power cycling it\n", sp->name);
+            if (mode != XPLR_ON) {
+                ucxapp_print(mode == XPLR_OFF ? "  %s: XPLR-IOT-1 shell, powering the SARA-R5 off\n"
+                                              : "  %s: XPLR-IOT-1 shell, power cycling the SARA-R5\n", sp->name);
                 (void)ucxapp_uart_write(h, (const uint8_t *)kOff, sizeof(kOff) - 1);
                 ucxapp_platform_sleep_ms(XPLR_SARA_OFF_MS);
                 while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
@@ -341,9 +342,11 @@ static const char *xplrPowerOn(const ucxapp_serial_port_t *ports, int count, con
             } else {
                 ucxapp_print("  %s: XPLR-IOT-1 shell, powering the SARA-R5 on\n", sp->name);
             }
-            (void)ucxapp_uart_write(h, (const uint8_t *)kCmd, sizeof(kCmd) - 1);
-            while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
-                /* let the shell finish its reply */
+            if (mode != XPLR_OFF) {
+                (void)ucxapp_uart_write(h, (const uint8_t *)kCmd, sizeof(kCmd) - 1);
+                while (ucxapp_uart_read(h, scratch, sizeof(scratch), 300) > 0) {
+                    /* let the shell finish its reply */
+                }
             }
         }
         ucxapp_uart_close(h);
@@ -368,8 +371,8 @@ static bool xplrOpenSara(const ucxapp_serial_port_t *ports, int count, const cha
             }
             if (openPort(sp->name, 115200)) {
                 char resp[RESP_SIZE];
-                /* a NORA-W36 EVK is an FT4232 too: only a 3GPP modem identifies itself */
-                if (atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) == AT_OK) {
+                /* a NORA-W36 EVK is an FT4232 too and answers AT+CGMI: only a 3GPP modem has AT+CFUN */
+                if (atCmd("AT+CFUN?", resp, sizeof(resp), 1000, 0) == AT_OK) {
                     return true;
                 }
                 closePort();
@@ -383,7 +386,7 @@ static bool xplrOpenSara(const ucxapp_serial_port_t *ports, int count, const cha
 /* XPLR-IOT-1: power the SARA-R5 on and open it; a SARA-R5 that stays silent (hung) is power cycled once. */
 static bool xplrBringUp(const ucxapp_serial_port_t *ports, int count, const char *want)
 {
-    const char *shell = xplrPowerOn(ports, count, want, false);
+    const char *shell = xplrPowerOn(ports, count, want, XPLR_ON);
 
     if (shell == NULL) {
         return false;
@@ -391,8 +394,53 @@ static bool xplrBringUp(const ucxapp_serial_port_t *ports, int count, const char
     if (xplrOpenSara(ports, count, shell, want)) {
         return true;
     }
-    shell = xplrPowerOn(ports, count, want, true);
+    ucxapp_print("  the SARA-R5 does not answer\n");
+    shell = xplrPowerOn(ports, count, want, XPLR_CYCLE);
     return shell != NULL && xplrOpenSara(ports, count, shell, want);
+}
+
+/* cell.power: the XPLR-IOT-1 SARA-R5 power, e.g. on for EasyFlash on its port and a cycle after an update. */
+static int cmdPower(ucxapp_t *app, int argc, char *argv[])
+{
+    static ucxapp_serial_port_t ports[32];
+    static const char *const kModes[] = { "on", "off", "cycle" };
+    int mode = -1;
+    char port[32] = "";
+
+    (void)app;
+    for (int i = 0; argc == 2 && i < 3; i++) {
+        mode = strcasecmp(argv[1], kModes[i]) == 0 ? i : mode;
+    }
+    if (mode < 0) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gDataMode || gStream != NULL) {
+        ucxapp_print("ERROR: the cellular module is in use:\n");
+        (void)cellBusy();
+        return UCXAPP_ERR_FAILED;
+    }
+    if (gOpen) {
+        snprintf(port, sizeof(port), "%s", gPort);
+        closePort();
+    }
+    int count = ucxapp_platform_list_serial_ports(ports, 32);
+    const char *shell = xplrPowerOn(ports, count, NULL, mode);
+    if (shell == NULL) {
+        ucxapp_print("ERROR: no XPLR-IOT-1 shell (uart:~$) on an FT4232 port; cell.power is for its SARA-R5\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (mode == XPLR_OFF) {
+        ucxapp_print("SARA-R5 off%s%s%s\n", port[0] ? " (" : "", port, port[0] ? " closed)" : "");
+        return UCXAPP_OK;
+    }
+    if (!xplrOpenSara(ports, count, shell, port[0] ? port : NULL)) {
+        ucxapp_print("ERROR: the SARA-R5 does not answer after power %s (try cell.power cycle)\n", kModes[mode]);
+        return UCXAPP_ERR_FAILED;
+    }
+    snprintf(port, sizeof(port), "%s", gPort);
+    closePort();
+    ucxapp_print("SARA-R5 on, answering on %s (free for EasyFlash; cell.open %s for AT commands)\n", port, port);
+    return UCXAPP_OK;
 }
 
 /* ---- commands ---- */
@@ -1750,6 +1798,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.rat", "[ltem] [nbiot] [2g]", "u-blox: show or set the radio access technologies, in order of preference", 0, cmdRat },
     { "cell.profile", "[<name>|<n>]", "u-blox: show or set the MNO profile: global, europe, sim (from the SIM), vodafone, dt, at&t, verizon, telstra, t-mobile or a number (the modem reboots)", 0, cmdProfile },
     { "cell.pin", "<pin>", "Unlock the SIM with its PIN", 0, cmdPin },
+    { "cell.power", "on|off|cycle", "XPLR-IOT-1: switch the SARA-R5 on, off or off and on through the NORA-B106 shell (on leaves its port free, e.g. for EasyFlash; cycle after a firmware update or when it hangs)", 0, cmdPower },
     { "cell.at", "<command>", "Send a raw AT command to the cellular modem", 0, cmdAt },
     { "cell.apn", "[<apn> [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },
     { "cell.attach", "[on|off]", "Attach and activate data (on), detach (off) or show the state", 0, cmdAttach },

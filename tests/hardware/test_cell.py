@@ -197,3 +197,14 @@ def test_cell_relays_a_wifi_client_to_the_internet(app_exe, port_a, cell):
     assert line in got, f"{got!r}\n{text[-3000:]}"
     assert "the data link to " in text and "stays up" in text, text[-3000:]
     assert "disconnected, command mode on" in text, text[-3000:]
+
+@pytest.mark.cell
+def test_cell_power_cycles_the_sara_r5_of_an_xplr_iot_1(app_exe, cell):
+    """cell.power through the NORA-B106 shell; last, since the modem registers again afterwards."""
+    args = [str(app_exe), "--exec", "cell.power cycle", "--exec", "cell.power on"]
+    out = subprocess.run(args, capture_output=True, text=True, timeout=120, errors="replace", stdin=subprocess.DEVNULL)
+    if "no XPLR-IOT-1 shell" in out.stdout:
+        pytest.skip("the modem is not on an XPLR-IOT-1")
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.count(f"SARA-R5 on, answering on {cell[0]} ") == 2, out.stdout
+    assert "power cycling the SARA-R5" in out.stdout, out.stdout

@@ -526,6 +526,13 @@ def test_bridge_over_cell_needs_a_data_link(app_exe, tmp_path):
         assert "no cellular data link" in out.stdout
 
 
+def test_cell_power_refuses_a_busy_modem(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "cell.open virt:cell", "cell.attach on", "cell.connect caster.local 2101",
+               "cell.power cycle")
+    assert out.returncode == 1, out.stdout
+    assert "ERROR: the cellular module is in use:" in out.stdout and "data link to caster.local:2101" in out.stdout
+
+
 @pytest.mark.parametrize("command, expected", [
     ("hw.bridge ble custom 6E400001-B5A3-F393-E0A9-E50E24DCCA9E", "no module connected"),
     ("hw.bridge ble custom 6E400001B5A3F393E0A9E50E24DCCA9E", "no module connected"),
@@ -540,6 +547,8 @@ def test_custom_ble_bridge_arguments(app_exe, tmp_path, command, expected):
 
 
 @pytest.mark.parametrize("command, usage", [
+    ("cell.power", "usage: cell.power"),
+    ("cell.power sleep", "usage: cell.power"),
     ("cell.open COM254 115200 x", "usage: cell.open"),
     ("cell.open COM254 x", "usage: cell.open"),
     ("cell.at", "usage: cell.at"),

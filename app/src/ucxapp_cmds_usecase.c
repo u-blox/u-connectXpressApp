@@ -92,10 +92,10 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Use cases by section (industry, edge AI, Thread, everyday). Row kinds: 'w' needs Wi-Fi on the module, 't' Thread
-   firmware on the module, 'g' a GNSS receiver,
+/* Use cases by section (industry, edge AI, Thread, location, cellular, everyday). Row kinds: 'w' needs Wi-Fi on the
+   module, 't' Thread firmware on the module, 'g' a GNSS receiver,
    anything else is fixed. A row with a command is a gap when that command is not in this build. Names stay under
-   15 characters. The industry, edge AI and Thread cases are not in lite builds. */
+   15 characters. The industry, edge AI, Thread and cellular cases are not in lite builds. */
 typedef struct {
     char kind;
     const char *verdict;
@@ -335,6 +335,51 @@ static const ucRow_t kTracker[] = {
     { 0, "[limit]", "Power", "dev.power save 1 idles the module; the host and receiver still run all the time", "dev.power" },
 };
 
+#ifndef UCXAPP_LITE
+static const ucRow_t kFieldKit[] = {
+    { 'w', "[ok]", "Soft AP", "laptops and tablets join the module's own network: wifi.ap.enable (WPA2, max 5)", NULL },
+    { 0, "[check]", "Cellular", "a modem with a SIM and a data plan: cell.open, cell.attach on", "cell.attach" },
+    { 0, "[ok]", "Server", "one TCP or UDP socket over LTE: cell.connect <host> <port>", "cell.connect" },
+    { 0, "[ok]", "Relay", "a laptop on the AP connects to <ap-ip>:7000, byte for byte to the server: cell.bridge tcp 7000",
+      "cell.bridge" },
+    { 0, "[ok]", "Phone, serial", "or relay a phone (cell.bridge ble nus) or a machine's port (cell.bridge uart <port>)",
+      "cell.bridge" },
+    { 0, "[ok]", "Modem console", "without cell.connect the same bridge gives the laptop the modem's AT console", "cell.bridge" },
+    { 0, "[limit]", "Not a hotspot", "one socket is relayed, not IP: no web browsing or NAT, the two stacks are separate", NULL },
+};
+
+static const ucRow_t kBleCell[] = {
+    { 0, "[ok]", "BLE link", "a phone app or BLE device on Nordic UART or u-blox SPS: cell.bridge ble nus", "cell.bridge" },
+    { 0, "[check]", "Cellular", "a modem with a SIM and a data plan: cell.open, cell.attach on", "cell.attach" },
+    { 0, "[ok]", "Server", "cell.connect <host> <port>; the phone's lines go to it and the replies come back", "cell.connect" },
+    { 0, "[ok]", "No Wi-Fi", "works where there is no Wi-Fi and the phone has no data plan or roaming", NULL },
+    { 0, "[check]", "Phone app", "a UART terminal app (nRF Connect, Serial Bluetooth Terminal) or your own app", NULL },
+    { 0, "[limit]", "Links", "one BLE peer and one server socket on the modem", NULL },
+};
+
+static const ucRow_t kVehicle[] = {
+    { 0, "[check]", "CAN interface", "Linux with SocketCAN (a CANable: can.open can0); Windows has an emulated loopback",
+      "can.open" },
+    { 0, "[check]", "Cellular", "a modem with a SIM and a data plan: cell.open, cell.attach on", "cell.attach" },
+    { 0, "[ok]", "To your server", "17-byte binary records, up to 32 per write: cell.connect, then can.bridge cell",
+      "can.bridge" },
+    { 0, "[ok]", "Dead zones", "the data link reopens with backoff from 1 s up to 30 s; can.bridge status counts it",
+      "can.bridge" },
+    { 0, "[ok]", "Coverage", "signal and network along the route: cell.signal, cell.operator", "cell.signal" },
+    { 0, "[limit]", "One cell link", "the modem carries one socket: CAN frames or GNSS positions, not both", NULL },
+};
+
+static const ucRow_t kXplr[] = {
+    { 0, "[ok]", "SARA-R5", "LTE-M and NB-IoT: cell.open finds it and powers it through the NORA-B106 shell", "cell.open" },
+    { 'g', "[check]", "MAX-M10S", "the kit's GNSS on its own port: gnss.open finds port and baud", "gnss.open" },
+    { 0, "[ok]", "Position", "to your server over LTE: cell.connect <host> <port>, then gnss.bridge cell", "gnss.bridge" },
+    { 0, "[ok]", "Power", "switch or reset the SARA-R5 without the button: cell.power on|off|cycle", "cell.power" },
+    { 0, "[ok]", "Firmware", "cell.power on, EasyFlash on the SARA port, then cell.at AT+UFACTORY=0,2", "cell.power" },
+    { 0, "[check]", "Wi-Fi relay", "this app drives NORA-W36 and NORA-B26, not the NINA-W156: add a NORA-W36 for fieldkit",
+      NULL },
+};
+#endif
+
 static const ucRow_t kHome[] = {
     { 'w', "[ok]", "Home Wi-Fi", "station on the home network: wifi.connect, wifi.profile.add for next time", NULL },
     { 0, "[ok]", "MQTT", "publish and subscribe to a local broker (Mosquitto in Home Assistant)", "mqtt.connect" },
@@ -401,6 +446,12 @@ static const ucCase_t kCases[] = {
     CASE("mower", "Robotic lawn mower: owner's phone, HP GNSS with PointPerfect, cellular theft alert", kMower),
     CASE("farm", "Tractor or field robot: auto-steer with PointPerfect over cellular", kFarm),
     CASE("tracker", "Car, bike or pet tracker: position to your server", kTracker),
+#ifndef UCXAPP_LITE
+    CASE("fieldkit", "Field kit: laptops on the module's Wi-Fi reach your server over LTE", kFieldKit),
+    CASE("blecell", "Phone or BLE device to your server over LTE, no Wi-Fi on site", kBleCell),
+    CASE("vehicle", "Vehicle or machine: CAN data to your server over LTE", kVehicle),
+    CASE("xplr", "XPLR-IOT-1 kit: SARA-R5 and MAX-M10S, position over LTE, modem firmware", kXplr),
+#endif
     CASE("home", "Smart home sensor: MQTT to Home Assistant", kHome),
     CASE("provision", "New smart device: Wi-Fi set up from a phone over BLE", kProvision),
     CASE("hotel", "Hotel or cafe Wi-Fi with a login page", kHotel),
@@ -481,7 +532,8 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
     static const struct {
         const char *name;
         size_t count;
-    } kSections[] = { { "Industry", 8 }, { "Edge AI", 1 }, { "Thread", 4 }, { "Location", 9 }, { "Everyday", 0 } };
+    } kSections[] = { { "Industry", 8 }, { "Edge AI", 1 }, { "Thread", 4 }, { "Location", 9 }, { "Cellular", 4 },
+                    { "Everyday", 0 } };
 
     for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); s++) {
         size_t end = kSections[s].count != 0 ? first + kSections[s].count : CASE_COUNT;

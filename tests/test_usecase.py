@@ -65,11 +65,13 @@ def test_use_case_list_and_examples(app_exe):
 USE_CASES = ("iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw", "edge", "mesh",
              "border", "building", "gateway",
              "swarm", "recovery", "handover", "livestock", "boat", "rtk", "mower", "farm", "tracker",
+             "fieldkit", "blecell", "vehicle", "xplr",
              "home", "provision", "hotel", "notify", "remote")
 SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw"),
             "Edge AI": ("edge",),
             "Thread": ("mesh", "border", "building", "gateway"),
             "Location": ("swarm", "recovery", "handover", "livestock", "boat", "rtk", "mower", "farm", "tracker"),
+            "Cellular": ("fieldkit", "blecell", "vehicle", "xplr"),
             "Everyday": ("home", "provision", "hotel", "notify", "remote")}
 
 
@@ -125,6 +127,28 @@ def test_use_case_steps_stop_at_the_first_error(app_exe):
     out = _exec(app_exe, "examples uc-home 2")
     assert "Running uc-home example 2" in out.stdout and "> mqtt.connect" in out.stdout
     assert out.returncode != 0 and "stopped:" in out.stdout and "> mqtt.publish" not in out.stdout
+
+
+@pytest.mark.app
+def test_fieldkit_says_it_relays_a_socket_not_ip(app_exe):
+    out = _exec(app_exe, "usecase.check fieldkit").stdout
+    verdict, text = _row(out, "Not a hotspot")
+    assert verdict == "limit" and "one socket is relayed, not IP" in text, out
+    assert _row(out, "Relay")[1].endswith("cell.bridge tcp 7000"), out
+
+
+@pytest.mark.app
+def test_vehicle_steps_run_on_the_virtual_modem(app_exe, tmp_path):
+    """Every uc-vehicle step (emulated CAN, virt:cell modem) runs without a module or a pty."""
+    args = [str(app_exe), "COM255", "--exec", "cell.open virt:cell"]
+    for n in range(1, 5):
+        args += ["--exec", f"examples uc-vehicle {n}"]
+    out = subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace",
+                         stdin=subprocess.DEVNULL, cwd=tmp_path).stdout
+    assert out.count("Running uc-vehicle example") == 4, out
+    bad = [line for line in out.splitlines() if line.startswith(("stopped", "ERROR:")) and "COM255" not in line]
+    assert not bad, out
+    assert "can bridge: virt:can <-> virt:cell" in out and "disconnected, command mode on virt:cell" in out, out
 
 
 def test_page_has_toolbox_and_use_case_views():

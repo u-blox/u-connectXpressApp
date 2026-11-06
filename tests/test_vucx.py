@@ -643,7 +643,7 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
 
 USE_CASES = ["iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw", "edge",
              "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote",
-             "handover", "livestock"]
+             "handover", "livestock", "fieldkit", "blecell", "vehicle", "xplr"]
 
 
 @pytest.mark.parametrize("case", USE_CASES)

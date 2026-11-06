@@ -66,6 +66,7 @@ Pick a goal, run the recipe, read the verdict. No radio background needed.
 | Send sensor readings to the cloud and get commands back | `ucxapp --script examples/use-cases/sensor-to-cloud.ucx` | A proven MQTT round trip through a public broker |
 | Show live data in a phone app, with no app of my own | `ucxapp --script examples/use-cases/phone-heart-rate.ucx` | The module acts as a standard heart rate sensor that nRF Connect and fitness apps read |
 | Replace a serial cable with Bluetooth LE | `ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
+| **New:** give laptops on a site without Wi-Fi a link to your server over LTE | `ucxapp --exec "usecase.check fieldkit" --exec "examples uc-fieldkit"` | The module's own access point, relayed socket by socket through a cellular modem (`cell.bridge`). More cellular ideas in `usecase.list`: a phone or BLE device over LTE, CAN data over LTE, the XPLR-IOT-1 kit |
 | Something does not work | `ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
 
 ## Wow in one line

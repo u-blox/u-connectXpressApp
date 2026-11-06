@@ -61,7 +61,9 @@ details.sub{margin-left:.6rem;border-left:2px solid var(--bd);padding-left:.4rem
 dialog{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;min-width:24rem;max-width:90vw;box-shadow:0 12px 40px #0008}
 dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem 0}
 .frow{display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--bd)}.frow span:first-child{flex:1;font-family:Consolas,monospace}
-#upl{padding:.4rem .8rem;background:var(--ac);color:#04121c;font-weight:600;border-radius:8px;cursor:pointer;white-space:nowrap}#upl:hover{filter:brightness(1.1)}#upn{flex:1;color:var(--mu,#8b98ad);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#upl{padding:.4rem .8rem;background:var(--ac);color:#04121c;font-weight:600;border-radius:8px;cursor:pointer;margin-right:auto}
+#qd{max-width:28rem}#qi{width:100%;margin-bottom:.8rem}.qb{display:flex;gap:.4rem;justify-content:flex-end}#qy{background:var(--ac);color:#04121c}
+input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-color:#33415a transparent}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
 #ver{white-space:nowrap;font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--mut);margin-left:-.35rem;align-self:center;padding:.05rem .4rem;border:1px solid var(--bd,#2a3a4d);border-radius:999px}#lv{display:flex;gap:.8rem;justify-content:flex-end;align-items:baseline}
@@ -85,7 +87,7 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <text x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
 <h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button></span>
 <span id="state"></span><span id="busy"></span>
-<button id="files">Files</button><button id="clr">Clear</button></header>
+<button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><button id="files">Files</button><button id="clr">Clear</button></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
 <main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands"><div id="rc"></div>
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
@@ -101,7 +103,8 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
-<div class="frow"><label id="upl" title="Upload a file to the app's file store"><input type="file" id="up" hidden>&#x2B06; Upload file&hellip;</label><span id="upn"></span><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
+<div class="frow"><label id="upl" title="Upload a file to the app's file store"><input type="file" id="up" hidden>&#x2B06; Upload file&hellip;</label><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
+<dialog id="qd"><form method="dialog"><p id="qt"></p><input id="qi" hidden autocomplete="off"><div class="qb"><button value="" id="qn">Cancel</button><button value="ok" id="qy">OK</button></div></form></dialog>
 <script>
 const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),hint=$('hint'),
  T=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('t')||sessionStorage.getItem('t')||'',
@@ -160,7 +163,7 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  free=null;const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
  try{const r=await api(u,{method:'POST'});
-  if(r.status===428){b.remove();cur=null;setBusy('');if(confirm('Run "'+sh+'"? It changes or deletes data on the device.'))run(c,a,raw,1);return}
+  if(r.status===428){b.remove();cur=null;setBusy('');ask('Run "'+sh+'"? It changes or deletes data on the device.',{cancel:1,ok:'Run'}).then(y=>{if(y)run(c,a,raw,1)});return}
   if(r.status===409)fail('busy: another command is running');else if(!r.ok)fail('error '+r.status)}
  catch(x){fail('send failed')}}
 function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
@@ -302,6 +305,10 @@ $('up').onchange=async()=>{const f=$('up').files[0];if(!f)return;const buf=new U
   if(!r.ok){$('fst').textContent='upload failed: '+r.status;return}o+=UP_CHUNK;$('fst').textContent=f.name+': '+size(Math.min(o,buf.length))+' of '+size(buf.length)}
  while(o<buf.length);$('up').value='';listFiles()};
 $('files').onclick=()=>{$('fst').textContent='';$('fd').showModal();listFiles()};
+$('demo').onclick=()=>{cmd.value='demo';$('run').click()};
+function ask(t,o={}){const d=$('qd'),i=$('qi');$('qt').textContent=t;i.hidden=!o.input;i.value='';$('qn').hidden=!(o.cancel||o.input);$('qy').textContent=o.ok||'OK';
+ d.returnValue='';d.showModal();(o.input?i:$('qy')).focus();return new Promise(r=>d.onclose=()=>{const y=d.returnValue==='ok';r(o.input?(y?i.value:null):y)})}
+window.ucxAsk=ask;
 $('fref').onclick=listFiles;$('fclose').onclick=()=>$('fd').close();
 
 /* ---- use cases: t title, s section, d text, h hub, n [key,label,sub,colour]; lit keys: hub wifi ap ble sock ---- */
@@ -433,7 +440,7 @@ function events(){const es=new EventSource('/events');
   if(!sessionStorage.getItem('ucxs')&&!/^Wi-Fi -|no module/.test(raw)&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});
  es.addEventListener('done',e=>finish(+e.data))}
-api('/api/groups').then(r=>{if(r.status===403){const t=prompt('Access token (printed by web.start)');
+api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access token (printed by web.start)',{input:1});
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
  api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v}).catch(()=>{});
  let mh=0,hh=0,sec='';const side=$('grp');

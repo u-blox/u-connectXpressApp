@@ -539,7 +539,7 @@
       const t = await r.json();
       virt = Object.assign(t, { state_set: t.state, state: {}, turn: {}, buf: new Uint8Array(0), net: t.sockets, socks: {} });
     } catch (e) {
-      alert('Could not load the virtual module: ' + e.message);
+      (window.ucxAsk || alert)('Could not load the virtual module: ' + e.message);
       return;
     }
     await devConnect(quiet);
@@ -599,7 +599,7 @@
   async function connect() {
     if (port || virt) return disconnect(true);
     if (!navigator.serial) {
-      alert(noSerialReason());
+      (window.ucxAsk || alert)(noSerialReason());
       return;
     }
     await ready;
@@ -609,7 +609,7 @@
       await openPort(p);
     } catch (e) {
       port = null;
-      if (e.name !== 'NotFoundError') alert('Could not open the port: ' + e.message);
+      if (e.name !== 'NotFoundError') (window.ucxAsk || alert)('Could not open the port: ' + e.message);
     }
   }
 

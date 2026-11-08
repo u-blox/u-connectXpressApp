@@ -22,6 +22,7 @@ def test_manual_is_embedded_from_commands_md():
     assert cmake.count("src/ucxapp_cmds_manual.c") == 2
 
 
+@pytest.mark.app
 def test_manual_lists_the_sections(app_exe):
     rc, out = run(app_exe, "manual")
     assert rc == 0
@@ -30,6 +31,7 @@ def test_manual_lists_the_sections(app_exe):
     assert "One-shot" not in out   # '#' lines inside code blocks are not headings
 
 
+@pytest.mark.app
 @pytest.mark.parametrize("topic", ["wifi.ap.enable", "WI-FI", "wifi.ap"])
 def test_manual_shows_the_wifi_section_for_a_topic_or_command(app_exe, topic):
     rc, out = run(app_exe, f"manual {topic}")
@@ -40,6 +42,7 @@ def test_manual_shows_the_wifi_section_for_a_topic_or_command(app_exe, topic):
     assert "`" not in out and "**" not in out                      # markdown markup is stripped
 
 
+@pytest.mark.app
 def test_manual_tables_keep_escaped_pipes_in_one_cell(app_exe):
     rc, out = run(app_exe, "manual cell.bridge")
     assert rc == 0
@@ -47,12 +50,14 @@ def test_manual_tables_keep_escaped_pipes_in_one_cell(app_exe):
     assert "tcp [port]|tcpc <host> <port>|udp" in row and "\\|" not in row
 
 
+@pytest.mark.app
 def test_manual_code_blocks_are_indented(app_exe):
     rc, out = run(app_exe, "manual wifi")
     assert rc == 0
     assert '    ucxapp COM13 --exec "wifi.connect MySsid MyPassword"' in out
 
 
+@pytest.mark.app
 def test_manual_all_prints_every_section(app_exe):
     rc, out = run(app_exe, "manual all")
     assert rc == 0
@@ -60,17 +65,20 @@ def test_manual_all_prints_every_section(app_exe):
         assert heading in out
 
 
+@pytest.mark.app
 def test_manual_unknown_topic_fails_with_a_hint(app_exe):
     rc, out = run(app_exe, "manual nosuchtopicxyz")
     assert rc == 1
     assert "manual.search nosuchtopicxyz" in out
 
 
+@pytest.mark.app
 def test_manual_rejects_extra_arguments(app_exe):
     rc, _ = run(app_exe, "manual wifi extra")
     assert rc != 0
 
 
+@pytest.mark.app
 def test_manual_search_groups_hits_by_section(app_exe):
     rc, out = run(app_exe, "manual.search hotspot")
     expected = sum("hotspot" in line.lower() for line in MANUAL.splitlines() if not line.startswith("#"))
@@ -81,17 +89,20 @@ def test_manual_search_groups_hits_by_section(app_exe):
     assert out.count("\n  ") >= 1
 
 
+@pytest.mark.app
 def test_manual_search_finds_the_ap_commands(app_exe):
     rc, out = run(app_exe, "manual.search wifi.ap.status")
     assert rc == 0
     assert "Wi-Fi:" in out and "Show AP parameters" in out
 
 
+@pytest.mark.app
 def test_manual_search_without_a_match_fails(app_exe):
     rc, out = run(app_exe, "manual.search zzqqxxnotthere")
     assert rc == 1 and "No match" in out
 
 
+@pytest.mark.app
 def test_manual_search_needs_one_word(app_exe):
     rc, _ = run(app_exe, "manual.search")
     assert rc != 0

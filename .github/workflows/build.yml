@@ -45,7 +45,7 @@ jobs:
           cmake --build build-cov --target ucxapp --parallel
       - name: Run the offline app tests and report C coverage (as .\ucxapp --coverage)
         env:
-          UCX_APP_EXE: ${{ github.workspace }}/app/bin/ucxapp
+          UCX_APP_EXE: ${{ github.workspace }}/build-cov/ucxapp
           UCX_PORT_A: ""
           UCX_PORT_B: ""
           UCX_GNSS_PORT: ""

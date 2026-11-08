@@ -98,7 +98,10 @@ def test_web_server_sources_are_present():
 
 def test_web_server_reads_up_to_2048_bytes():
     text = (SRC / "u_webserver.c").read_text(encoding="utf-8")
-    assert text.count("rx_space > 2048") == 2
+    header = (SRC / "u_webserver.h").read_text(encoding="utf-8")
+    assert re.search(r"#define U_WEBSERVER_MAX_REQUEST_SIZE\s+2048\b", header)
+    # Each read takes what the module has, bounded only by the 2048-byte request buffer.
+    assert text.count("rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;") >= 2
     assert "rx_space > 1000" not in text
 
 

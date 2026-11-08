@@ -153,8 +153,8 @@ static const example_t kExamples[] = {
     { "mdns", "Be found as a name on the LAN: ping nora.local from any PC",
       "wifi.connect MySsid MyPassword\nmdns.on nora\nmdns.status" },
     { "mdns", "Advertise the web UI as a DNS-SD service with TXT records",
-      "web.stop\nweb.start 80\nmdns.on nora\nmdns.add _http._tcp 80 \"NORA-W36 dashboard\" path=/ fw=3.5.0\n"
-      "# on a PC: dns-sd -B _http._tcp  or  avahi-browse -t _http._tcp" },
+      "web.stop\nweb.start\nmdns.on nora\nmdns.add _https._tcp 443 \"NORA-W36 dashboard\" path=/ fw=3.5.0\n"
+      "# on a PC: dns-sd -B _https._tcp  or  avahi-browse -t _https._tcp" },
     { "mdns", "Matter commissionable node advertisement (what a Matter controller browses for)",
       "mdns.on\nmdns.add _matterc._udp 5540 A1B2C3D4E5F60718 VP=65521+32769 D=3840 CM=1 DT=257 DN=Light\n"
       "mdns.status\n# change a record later, then stop advertising\nmdns.txt 0 CM 0\nmdns.remove all" },
@@ -244,11 +244,11 @@ static const example_t kExamples[] = {
     { "hid", "Read a BLE keyboard or mouse (HID host)",
       "bt.scan\nbt.connect 1\nhid.client 0\n# keys, mouse moves and media keys are printed\nhid.client off" },
 
-    { "web", "Web UI from the module",
-      "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start 80 mytoken\nweb.status\n"
-      "# browse to http://<module-ip>/?token=mytoken" },
-    { "web", "HTTPS web UI",
-      "utils.tls.server.create web 192.168.1.50\n# a running server keeps its settings\nweb.stop\nweb.start 443 mytoken https web" },
+    { "web", "Web UI from the module over HTTPS (the first start makes its certificate)",
+      "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start 443 mytoken\nweb.status\n"
+      "# browse to https://<module-ip>/#t=mytoken; trust the local CA once (utils.tls.pem ca) to skip the warning" },
+    { "web", "Plain HTTP web UI (trusted networks only)",
+      "web.stop\nweb.start 80 mytoken http" },
 
     { "fw", "Update to the newest firmware",
       "dev.info\nfw.update\ndev.info" },
@@ -417,7 +417,7 @@ static const example_t kExamples[] = {
       "wifi.ap.enable Tool17 Tool17Pass\nwifi.ap.status" },
 #if UCXAPP_HOST
     { "usecase", "HTTPS monitoring page for the laptops",
-      "# web.start 443 <token> https  (from the shell or --exec, not from this page)\nweb.status" },
+      "# web.start 443 <token>  (from the shell or --exec, not from this page)\nweb.status" },
 #endif
     { "usecase", "Throughput for the history download",
       "net.iperf server tcp\n# on a laptop: iperf -c <tool-ip> -t 10\n# iperf measures the radio; the download also crosses the UART\nnet.iperf stop" },

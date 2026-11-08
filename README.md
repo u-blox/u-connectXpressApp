@@ -114,7 +114,7 @@ The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Up
 
 ## Secure by default
 
-Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key), the web UI needs a random 128-bit token (`web.start https` for untrusted networks), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
+Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key), the web UI needs a random 128-bit token (served over HTTPS by default with a certificate from a local CA; `web.start http` for plain HTTP), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
 
 mbedTLS is only built into the host targets (Windows, Linux, browser), for `tls.*`, `utils.cert.*`, `utils.encrypt` and the sealed passwords. The STM32 builds (FreeRTOS and Zephyr) leave it out: the module does TLS itself and `cert.*` only uploads files to it. On STM32, saved Wi-Fi passwords are only obfuscated (XOR), not encrypted, so turn on read-out protection (RDP level 1) on boards that keep real credentials.
 

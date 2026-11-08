@@ -62,7 +62,7 @@ static int cmdTool(ucxapp_t *app, int argc, char *argv[])
         row("[ok]", "Roaming", "the tool moves between factory APs (same SSID): wifi.roaming on before joining");
     }
     row("[ok]", "Protocols", "the host runs them over module sockets (sock.*) or MQTT (mqtt.*)");
-    row("[limit]", "HTTPS, 5 PCs", "TLS ends on the host (web.start 443 <token> https); 6 module sockets, the listener takes 2");
+    row("[limit]", "HTTPS, 5 PCs", "TLS ends on the host (web.start, HTTPS by default); 6 module sockets, the listener takes 2");
     if (measured > 0) {
         char line[96];
 

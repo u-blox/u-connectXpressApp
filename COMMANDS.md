@@ -19,7 +19,7 @@ ucxapp dev.info
 ```
 
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
-- Add `--web` to use only the web UI: Wi-Fi from the saved profiles unless already connected, then `web.start` (unless an `--exec` started it, e.g. `--exec "web.start 443 https" --web`), until q, Esc or Ctrl+C.
+- Add `--web` to use only the web UI: Wi-Fi from the saved profiles unless already connected, then `web.start` (unless an `--exec` started it, e.g. `--exec "web.start 443" --web`), until q, Esc or Ctrl+C.
 
 - Without a port argument, `--exec` and `--shell` use the saved port from the ini file.
 - `--offline` skips the module auto-detection, for commands that need no device (`tls.*`, `help`).
@@ -535,7 +535,7 @@ ucxapp COM13 --exec "utils.cert.info device.p12 MyPassword" --exec "cert.import 
 #### App TLS (HTTPS and TLS bridges)
 
 The module's TLS only covers outgoing connections, so the app terminates TLS itself (mbedTLS) for
-`web.start https` and `*.bridge tls`. The `tls.*` commands keep a small local CA and certificates in the
+`web.start` (HTTPS by default) and `*.bridge tls`. The `tls.*` commands keep a small local CA and certificates in the
 app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No device is needed.
 
 | Command | Arguments | Description |
@@ -808,7 +808,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `app.time` | `[sync [ntp\|http\|module\|gnss] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| geo \| zone [<+HH:MM>\|off] \| selftest]` | App wall clock in UTC with its source and age, the local time when a zone is set, and the place (GNSS fix, else the last `wifi.locate` or `geo` answer, else unknown). `geo` asks `ip-api.com` (plain HTTP over the module) for the public IP, the city and the time zone with its current UTC offset, daylight saving included; later `sync`s refresh it. `zone` sets a fixed offset by hand (no daylight saving) or `off`. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`; `sync gnss` takes the UTC of the open receiver's fix. With a fresh GNSS fix the clock follows the receiver by itself (checked once a minute, source `gnss`) unless it was `set` by hand; a replayed recording is never used. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |
 | `app.sbom` | | Software bill of materials: build target and compiler, AT API variant, then each component with version (u-connectClient with its commit, mbedTLS and TF-PSA-Crypto on Windows/Linux/browser, FreeRTOS or Zephyr on STM32), licence and source |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
-| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS). Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
+| `web.start` | `[port] [token] [http\|https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi) over HTTPS on port 443; prints `https://<ip>:<port>/#t=<token>` (random 12-digit hex token unless one is given; the page asks for it when it is missing or wrong). The first start (or a new module address) makes certificate `tls-web` for the module's IP, signed by the local CA `tls-ca` (created when missing; trust it once with `utils.tls.pem ca`). `https <cert>` uses `tls-<cert>` instead; `http` serves plain HTTP on port 80. Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 | `web.export` | `<dir>` | Write the page's JSON (`groups.json`, `commands-<group>.json`, `examples-<group>.json`) for a preview or a static demo; `.\ucxapp --web-preview` uses it to serve the page on the PC |

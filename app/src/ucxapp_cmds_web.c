@@ -1141,24 +1141,31 @@ static void webStop(void)
 
 static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
 {
-    int32_t port = DEFAULT_PORT;
+    int32_t port = -1;
     char ssid[64], ip[48], err[160] = "";
     const char *cert = NULL;
+    bool plain = false, autoCert = true;
     ucxapp_tls_server_t *tls = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "https") == 0) {
-            if (argc - i > 2) {
+        if (strcmp(argv[i], "http") == 0 || strcmp(argv[i], "https") == 0) {
+            plain = argv[i][4] == '\0';
+            if (argc - i > (plain ? 1 : 2)) {
                 return UCXAPP_ERR_USAGE;
             }
-            cert = i + 1 < argc ? argv[i + 1] : "server";
-            port = 443;
+            if (!plain && i + 1 < argc) {
+                cert = argv[i + 1];
+                autoCert = false;
+            }
             argc = i;
             break;
         }
     }
     if (argc > 3 || (argc > 1 && (!ucxapp_parse_int(argv[1], &port) || port < 1 || port > 65535))) {
         return UCXAPP_ERR_USAGE;
+    }
+    if (port < 0) {
+        port = plain ? DEFAULT_PORT : 443;
     }
     if (gServer != NULL) {
         ucxapp_print("already running; web.stop first\n");
@@ -1167,6 +1174,17 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (!ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip)) || ip[0] == '\0') {
         ucxapp_print("ERROR: connect Wi-Fi first (wifi.connect)\n");
         return UCXAPP_ERR_FAILED;
+    }
+    if (!plain && autoCert) {
+        bool created = false;
+        if (!ucxapp_tls_web_cert(ip, &created, err, sizeof(err))) {
+            ucxapp_print("ERROR: TLS certificate for %s: %s (or web.start http)\n", ip, err);
+            return UCXAPP_ERR_FAILED;
+        }
+        if (created) {
+            ucxapp_print("created certificate tls-web for %s, signed by the local CA (tls-ca)\n", ip);
+        }
+        cert = UCXAPP_TLS_WEB_NAME;
     }
     if (cert != NULL) {
         tls = ucxapp_tls_server_new(cert, false, err, sizeof(err));
@@ -1238,7 +1256,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (gHttps) {
         ucxapp_print("trust tls-ca.crt in the browser (utils.tls.pem ca) to avoid the certificate warning\n");
     } else {
-        ucxapp_print("note: plain HTTP: anyone on this network can read the page and the link token; use web.start https on networks you do not trust\n");
+        ucxapp_print("note: plain HTTP: anyone on this network can read the page and the link token; leave out http to serve HTTPS\n");
     }
     return UCXAPP_OK;
 }
@@ -1333,7 +1351,7 @@ static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWebCmds[] = {
     { "web.export", "<dir>",          "Write the page's command lists and examples as JSON files (preview, static demo)", 0, cmdWebExport },
-    { "web.start",  "[port] [token] [https [cert]]", "Serve the web UI from the module (needs Wi-Fi); port 80, or 443 with https", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
+    { "web.start",  "[port] [token] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Web server state",                                             0, cmdWebStatus },
 };

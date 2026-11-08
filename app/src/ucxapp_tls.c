@@ -340,6 +340,30 @@ out:
     return ok;
 }
 
+bool ucxapp_tls_web_cert(const char *ip, bool *created, char *err, size_t errLen)
+{
+    mbedtls_x509_crt crt;
+    char subject[128] = "", want[80], file[96];
+    const char *sans[1] = { ip };
+
+    *created = false;
+    mbedtls_x509_crt_init(&crt);
+    if (loadPair(UCXAPP_TLS_WEB_NAME, &crt, NULL, NULL, 0)) {
+        (void)mbedtls_x509_dn_gets(subject, sizeof(subject), &crt.subject);
+    }
+    mbedtls_x509_crt_free(&crt);
+    snprintf(want, sizeof(want), "CN=%s,", ip);
+    if (strncmp(subject, want, strlen(want)) == 0) {
+        return true;
+    }
+    ucxapp_tls_cert_file(UCXAPP_TLS_CA_NAME, file, sizeof(file));
+    if (!ucxapp_store_exists(file) && !ucxapp_tls_create_ca(NULL, false, err, errLen)) {
+        return false;
+    }
+    *created = ucxapp_tls_create_cert(UCXAPP_TLS_WEB_NAME, false, sans, 1, err, errLen);
+    return *created;
+}
+
 bool ucxapp_tls_describe(const char *name, char *out, size_t outLen)
 {
     mbedtls_x509_crt crt;

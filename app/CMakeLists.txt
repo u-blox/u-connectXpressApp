@@ -10,6 +10,14 @@ if(UCX_MODULE MATCHES "^NORA-(W36X|B26X)$")
 endif()
 include(../u-connectClient/u-connectClient.cmake)
 
+# The platform serial port is renamed to uPortSerial* so ucxapp_port_tcp.c can add "tcp:HOST:PORT" in front of it.
+function(ucxapp_wrap_serial src)
+  set_property(SOURCE ${src} APPEND PROPERTY COMPILE_DEFINITIONS
+    uPortUartOpen=uPortSerialOpen uPortUartClose=uPortSerialClose uPortUartWrite=uPortSerialWrite
+    uPortUartRead=uPortSerialRead uPortUartWaitForData=uPortSerialWaitForData uPortUartWake=uPortSerialWake
+    uPortUartSetDtr=uPortSerialSetDtr)
+endfunction()
+
 # ============================================================================
 # Auto-versioning: Use timestamp-based build number
 # ============================================================================
@@ -184,6 +192,7 @@ if(NOT WIN32)
     $<IF:$<BOOL:${EMSCRIPTEN}>,wasm/u_port_posix_wasm.c,../u-connectClient/ports/os/u_port_posix.c>
 
     $<IF:$<BOOL:${EMSCRIPTEN}>,wasm/u_port_uart_webserial.c,../u-connectClient/ports/uart/u_port_uart_linux.c>
+    $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:src/ucxapp_port_tcp.c>
 
     ${U_CONNECT_CLIENT_UCX_API_SRC}
 
@@ -192,6 +201,9 @@ if(NOT WIN32)
   )
 
   target_compile_options(ucxapp PRIVATE -Wall -Wextra)
+  if(NOT EMSCRIPTEN)
+    ucxapp_wrap_serial(../u-connectClient/ports/uart/u_port_uart_linux.c)
+  endif()
 
   option(UCXAPP_COVERAGE "Instrument ucxapp with gcov" OFF)
   if(UCXAPP_COVERAGE)
@@ -349,6 +361,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_usecase.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
+  src/ucxapp_port_tcp.c
   ucxapp.rc
   third-party/qrcodegen/qrcodegen.c
   ${U_CONNECT_CLIENT_UCX_API_SRC}
@@ -356,6 +369,7 @@ add_executable(ucxapp
 )
 
 target_compile_options(ucxapp PRIVATE /W4 /FS /wd4200)
+ucxapp_wrap_serial(${PORT_UART_SRC})
 
 target_compile_definitions(ucxapp PRIVATE
   U_PORT_WINDOWS
@@ -383,7 +397,7 @@ target_include_directories(ucxapp PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ucxapp PRIVATE setupapi psapi ${UCXAPP_MBEDTLS_LIBS})
+target_link_libraries(ucxapp PRIVATE setupapi psapi ws2_32 ${UCXAPP_MBEDTLS_LIBS})
 
 # Set different output names for Debug and Release builds
 set_target_properties(ucxapp PROPERTIES

@@ -4,6 +4,7 @@ and STM32.
 
   ucxapp                                    build if needed and start the app (this OS)
   ucxapp COM13 --exec "dev.info"
+  ucxapp --virtual nora-b26                 no hardware: the app on a simulated module (nora-w36, nora-b26, ...)
   ucxapp --linux                            Linux build; on Windows it runs inside WSL
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
@@ -150,6 +151,8 @@ def parse(argv):
     g = p.add_argument_group("run")
     g.add_argument("--signed", action="store_true", help="run app/release/ucxapp-signed.exe")
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
+    g.add_argument("--virtual", nargs="?", const="nora-w36", choices=sorted(VIRTUAL), metavar="MODULE",
+                   help="run on a simulated module, no hardware: " + ", ".join(sorted(VIRTUAL)) + " (default nora-w36)")
     g = p.add_argument_group("tools")
     g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers, IMUs, modems and PPK2")
     g.add_argument("--detect-force", action="store_true",
@@ -441,7 +444,40 @@ def host(args, extra):
     if (args.build or args.clean or args.rebuild or args.all or args.sign) and not args.run:
         return 0
     exe = pick_exe(args)
-    return run_app(exe, [*extra, "--exec", "hid.setup", "--shell"] if args.hid else extra)
+    extra = [*extra, "--exec", "hid.setup", "--shell"] if args.hid else extra
+    if args.virtual:
+        # the tests point at the exe they built (e.g. the coverage build)
+        return run_virtual(Path(os.environ.get("UCX_APP_EXE") or exe), args.virtual, extra)
+    return run_app(exe, extra)
+
+
+# The browser's virtual modules (app/wasm/v*.json) and the vucx profile each is made from.
+VIRTUAL = {"nora-w36": "nora-w36.yaml", "nora-b26": "nora-b26-ble.yaml",
+           "nora-b26-thread": "nora-b26-ble-thread.yaml", "alma-w1": "alma-w1-thread.yaml"}
+
+
+def run_virtual(exe, name, app_args):
+    """Starts the vucx simulator of `name` on a free TCP port and the app on it (tcp:127.0.0.1:PORT)."""
+    try:
+        import yaml  # noqa: F401  (vucx reads its profiles with it)
+    except ImportError:
+        fail(f"--virtual needs PyYAML: {sys.executable} -m pip install pyyaml")
+    sim = subprocess.Popen([sys.executable, "-m", "harness.vucx", "--tcp", "0", VIRTUAL[name]], cwd=ROOT / "tests",
+                           stdout=subprocess.PIPE, text=True)
+    try:
+        port = (sim.stdout.readline() or "").strip()
+        if not port.startswith("tcp:"):
+            fail(f"the {name} simulator did not start")
+        print(f"Simulated {name} on {port}", flush=True)
+        old = signal.signal(signal.SIGINT, signal.SIG_IGN)   # the app handles Ctrl-C itself
+        try:
+            print("Starting", exe.relative_to(ROOT), port, *app_args, flush=True)
+            return subprocess.call([str(exe), port, *app_args], cwd=ROOT)
+        finally:
+            signal.signal(signal.SIGINT, old)
+    finally:
+        sim.terminate()
+        sim.wait(timeout=5)
 
 
 # ---- Hardware detection ----

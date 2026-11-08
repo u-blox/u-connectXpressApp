@@ -1,4 +1,4 @@
-"""vucx: a virtual u-connectXpress module on a pseudo terminal (Linux/WSL).
+"""vucx: a virtual u-connectXpress module on a pseudo terminal (Linux/WSL) or a TCP port (any OS).
 
 Empty by default: it only answers the AT setup commands. A YAML profile decides what else it can do:
 
@@ -44,6 +44,8 @@ Only lines starting with AT are commands; anything else (data mode, a bridged st
       "GET /*": "ICY 200 OK\\r\\n\\r\\n"   # an NTRIP caster behind a modem in transparent mode
 
 Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the port to open)
+On any OS over TCP: python -m harness.vucx --tcp [PORT] nora-b26-ble.yaml  (prints tcp:127.0.0.1:PORT; the launcher's
+`ucxapp --virtual nora-b26` does this and starts the app on it)
 As JSON for the browser's virtual modules: python -m harness.vucx --json alma-w1-thread.yaml > app/wasm/valma-w1.json
 (also nora-w36 > vnora-w36, nora-b26-ble-thread > vnora-b26-thread, nora-b26-ble > vnora-b26)
 """
@@ -499,7 +501,19 @@ class Vucx:
         self._turn = {}
         self._urc_sent = {}
         self._fd = None
+        self._conn = None   # the app's TCP connection in start_tcp() mode
+        self._listen = None
+        self._thread = None
         self._stop = threading.Event()
+
+    def _write(self, data):
+        if self._listen is not None:
+            conn = self._conn
+            if conn is None:
+                raise OSError("no client")
+            conn.sendall(data)
+        else:
+            os.write(self._fd, data)
 
     def _ft_ble(self, cmd):
         """A write to the peer's ft CTRL/DATA characteristic: the replies come back as notifications."""
@@ -551,7 +565,7 @@ class Vucx:
             out += b"\r\n" + text.encode()
             if soh:
                 out += b"\x01" + len(data).to_bytes(2, "big") + data
-        os.write(self._fd, out + b"\r\n")
+        self._write(out + b"\r\n")
 
     def handle(self, cmd, data=b""):
         cmd = cmd[3:] if cmd.startswith("+++") else cmd   # the escape from data mode has no line end
@@ -561,7 +575,7 @@ class Vucx:
         if not cmd[:2].upper() == "AT":
             reply = next((v for k, v in self.data.items() if fnmatch.fnmatchcase(cmd, k)), None)
             if reply is not None:
-                os.write(self._fd, reply.encode())
+                self._write(reply.encode())
             return
         answer = self._cert(cmd, data) or self._ft_ble(cmd) or (self.net.handle(cmd, data) if self.net else None)
         if answer is None:
@@ -587,7 +601,7 @@ class Vucx:
     def _send_quiet(self, lines):
         try:
             self._send(lines)
-        except OSError:   # stop() closed the pty first
+        except OSError:   # stop() closed the pty first, or the TCP client left
             pass
 
     def start(self):
@@ -613,28 +627,74 @@ class Vucx:
                 buf += os.read(self._fd, 4096)
             except (OSError, ValueError):   # stop() closed the pty
                 return
-            while True:
-                cr, soh = buf.find(b"\r"), buf.find(b"\x01")
-                data = b""
-                if soh >= 0 and (cr < 0 or soh < cr):
-                    end = soh + 3 + int.from_bytes(buf[soh + 1:soh + 3], "big")
-                    if len(buf) < soh + 3 or len(buf) < end:
-                        break
-                    line, data, buf = buf[:soh], buf[soh + 3:end], buf[end:]   # binary data follows the command
-                elif cr >= 0:
-                    line, buf = buf[:cr], buf[cr + 1:]
-                else:
+            buf = self._feed(buf)
+
+    def start_tcp(self, port=0, host="127.0.0.1"):
+        """Serves the module on a TCP port instead of a pty (any OS); returns "tcp:HOST:PORT" for the app, which
+        opens that name like a serial port. One client at a time; a new one may connect after the last left."""
+        import socket
+
+        self._listen = socket.create_server((host, port))
+        self._listen.settimeout(0.1)
+        self.port = f"tcp:{host}:{self._listen.getsockname()[1]}"
+        self._thread = threading.Thread(target=self._serve_tcp, daemon=True)
+        self._thread.start()
+        return self.port
+
+    def _serve_tcp(self):
+        import socket
+
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._listen.accept()
+            except socket.timeout:
+                continue
+            except OSError:   # stop() closed the listener
+                return
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            conn.settimeout(0.1)
+            self._conn, buf = conn, b""
+            while not self._stop.is_set():
+                try:
+                    chunk = conn.recv(4096)
+                except socket.timeout:
+                    continue
+                except OSError:
                     break
-                line = line.strip(b"\n").decode(errors="replace").strip()
-                if line:
-                    self.handle(line, data)
+                if not chunk:
+                    break
+                buf = self._feed(buf + chunk)
+            self._conn = None
+            conn.close()
+
+    def _feed(self, buf):
+        """Handles every complete command in buf; returns the rest."""
+        while True:
+            cr, soh = buf.find(b"\r"), buf.find(b"\x01")
+            data = b""
+            if soh >= 0 and (cr < 0 or soh < cr):
+                end = soh + 3 + int.from_bytes(buf[soh + 1:soh + 3], "big")
+                if len(buf) < soh + 3 or len(buf) < end:
+                    break
+                line, data, buf = buf[:soh], buf[soh + 3:end], buf[end:]   # binary data follows the command
+            elif cr >= 0:
+                line, buf = buf[:cr], buf[cr + 1:]
+            else:
+                break
+            line = line.strip(b"\n").decode(errors="replace").strip()
+            if line:
+                self.handle(line, data)
+        return buf
 
     def stop(self):
         """Stops the thread before closing the pty: a closed fd number is reused by the next open(), and a thread
         still in select/read/write would then read or write that file (a test's saved file read back empty)."""
         self._stop.set()
         self._thread.join(timeout=5)
-        for fd in (self._fd, self._slave):
+        for s in (getattr(self, "_listen", None), getattr(self, "_conn", None)):
+            if s is not None:
+                s.close()
+        for fd in (self._fd, getattr(self, "_slave", None)) if self._fd is not None else ():
             try:
                 os.close(fd)
             except OSError:
@@ -690,8 +750,14 @@ def main():
     if sys.argv[1:2] == ["--json"]:
         print(json.dumps(browser_table(sys.argv[2]), indent=1))
         return
-    v = Vucx(sys.argv[1] if len(sys.argv) > 1 else None)
-    print(v.start(), flush=True)
+    args = sys.argv[1:]
+    tcp = None
+    if "--tcp" in args:   # --tcp [PORT]: serve on 127.0.0.1 (any OS) instead of a pty
+        i = args.index("--tcp")
+        tcp = int(args.pop(i + 1)) if i + 1 < len(args) and args[i + 1].isdigit() else 0
+        args.pop(i)
+    v = Vucx(args[0] if args else None)
+    print(v.start_tcp(tcp) if tcp is not None else v.start(), flush=True)
     try:
         while True:
             time.sleep(1)

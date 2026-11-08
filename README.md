@@ -2,7 +2,7 @@
 
 **Your u-connectXpress module, live in seconds. Plug in, type a command, see it work, then automate exactly that.**
 
-**[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial (Firefox, Safari and phones: Virtual module only). No EVK? Click **Virtual module** and pick Wi-Fi + BLE + Thread, Wi-Fi + BLE, BLE + Thread or BLE only. Install it from the address bar to use it offline.
+**[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial (Firefox, Safari and phones: Virtual module only). No EVK? Click **Virtual module** and pick Wi-Fi + BLE + Thread, Wi-Fi + BLE, BLE + Thread or BLE only. Install it from the address bar to use it offline. The same simulated modules run in the native app too, on Windows and Linux: `.\ucxapp --virtual nora-b26` (or `nora-w36`, `nora-b26-thread`, `alma-w1`; needs `pip install pyyaml`).
 
 ```powershell
 ucxapp wifi.connect MySsid MyPassword

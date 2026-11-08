@@ -398,7 +398,7 @@ static bool looksLikePort(const char *name)
         }
         return *d == '\0';
     }
-    return strncmp(name, "/dev/", 5) == 0;
+    return strncmp(name, "/dev/", 5) == 0 || strncmp(name, "tcp:", 4) == 0;   /* tcp: a simulated module (vucx) */
 }
 
 static bool isPort(const char *name)

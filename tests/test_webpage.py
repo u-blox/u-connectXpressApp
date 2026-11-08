@@ -61,6 +61,14 @@ def test_script_listens_for_the_server_events():
         assert f'"{name}"' in source, name
 
 
+def test_ppk_measure_output_is_drawn_as_a_chart():
+    """ppk.measure's Chart: line (min,avg,max uA per slot) becomes an SVG band, average line and hover readout."""
+    assert "if(!rc&&/^ppk\\.measure/.test(b.cmd))ppkChart(b)" in SCRIPT
+    assert "function ppkChart(b)" in SCRIPT and "/^Chart:\\s+([\\d.]+) s uA avg ([-\\d.]+)" in SCRIPT
+    for cls in ('class="pb"', 'class="pa"', 'class="pm"', "onpointermove"):
+        assert cls in SCRIPT, cls
+
+
 def test_connections_view_zooms_pans_and_drags():
     """The Connections graph zooms (buttons, wheel, pinch), pans and lets nodes be dragged; reset restores both."""
     page = PAGE_FILE.read_text(encoding="utf-8")

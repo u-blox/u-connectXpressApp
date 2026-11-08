@@ -11,6 +11,7 @@ Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (N
   UCX_GNSS_PORT, UCX_GNSS_BAUD   GNSS receiver (default: what gnss.detect finds)
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
   UCX_CELL_PORT, UCX_CELL_BAUD   cellular modem, e.g. the SARA-R5 of an XPLR-IOT-1 (default: what cell.detect finds)
+  UCX_PPK_PORT  Nordic Power Profiler Kit II, its first USB port (default: what ppk.detect finds)
   UCX_CELL_ECHO "<host> <port>" of a public TCP echo server for the cellular bridges (default: tcpbin.com 4242)
   UCX_HID_PEER  serial console of a Linux BLE peer (the i.MX91 hub, root login) for the HID tests; not probed
   UCX_HID_PEER_BAUD, UCX_HID_PEER_USER   its baud rate (default 115200) and login (default root)
@@ -29,8 +30,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = ROOT / "app" / "bin" / ("ucxapp.exe" if sys.platform == "win32" else "ucxapp")
-HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu", "cell")
-SOURCES_FOUND = ("gnss", "imu", "cell")
+HARDWARE_MARKERS = ("hardware", "two_devices", "gnss", "imu", "cell", "ppk")
+SOURCES_FOUND = ("gnss", "imu", "cell", "ppk")
 
 # Wi-Fi scan, connect and AP refuse to run until a regulatory domain is chosen; the tests use the one allowed
 # everywhere unless UCX_REGDOMAIN picks another (a domain saved in storage/ucxapp.regdomain wins over both).
@@ -91,7 +92,8 @@ def _found(name):
     sys.path.insert(0, str(ROOT))
     import ucxapp
 
-    return {"gnss": ucxapp.find_gnss, "imu": ucxapp.find_imu, "cell": ucxapp.find_cell}[name](_exe())
+    return {"gnss": ucxapp.find_gnss, "imu": ucxapp.find_imu, "cell": ucxapp.find_cell,
+            "ppk": ucxapp.find_ppk}[name](_exe())
 
 
 def _source(name):
@@ -152,6 +154,7 @@ def pytest_configure(config):
         "gnss: needs a GNSS receiver (UCX_GNSS_PORT or gnss.detect)",
         "imu: needs an IMU (UCX_IMU_PORT or imu.detect)",
         "cell: needs a cellular modem with a working SIM (UCX_CELL_PORT or cell.detect)",
+        "ppk: needs a Nordic Power Profiler Kit II (UCX_PPK_PORT or ppk.detect)",
         "hid_peer: needs a Linux BLE peer on its serial console (UCX_HID_PEER, e.g. the i.MX91 hub)",
         "xplorer: needs u-connectXplorer with Remote Control on (UCX_XPLORER)",
         "stress: long repeated runs; only with -m stress",
@@ -207,7 +210,7 @@ def _skip_reason(item, exe, hw):
 def pytest_collection_modifyitems(config, items):
     exe = _exe()
     wanted = {m for item in items for m in HARDWARE_MARKERS if item.get_closest_marker(m)}
-    hw = {"a": None, "b": None, "gnss": None, "imu": None, "cell": None}
+    hw = {"a": None, "b": None, "gnss": None, "imu": None, "cell": None, "ppk": None}
     if wanted and exe.is_file():
         hw["a"], hw["b"] = _ports()
         for name in SOURCES_FOUND:
@@ -232,7 +235,8 @@ def pytest_collection_modifyitems(config, items):
     gnss = _found_text("gnss") if hw["gnss"] else "none"
     imu = _found_text("imu") if hw["imu"] else "none"
     cell = _found_text("cell") if hw["cell"] else "none"
-    reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu} | cell {cell}", bold=True)
+    ppk = hw["ppk"][0] if hw["ppk"] else "none"
+    reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu} | cell {cell} | PPK2 {ppk}", bold=True)
     reporter.write_line(f"Starting {run} hardware test(s) using what was found")
     sys.path.insert(0, str(ROOT))
     import ucxapp
@@ -272,6 +276,11 @@ def imu():
 @pytest.fixture(scope="session")
 def cell():
     return _source("cell")
+
+
+@pytest.fixture(scope="session")
+def ppk():
+    return _source("ppk")
 
 
 @pytest.fixture(scope="session")

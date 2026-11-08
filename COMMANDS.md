@@ -596,6 +596,29 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `imu.rate` | `<hz=10>` | WitMotion output rate (0.2 to 200 Hz) |
 | `imu.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off [n]\|status>` | Two-way bridges of the IMU stream, same modes as `gnss.bridge` (up to 4 at once) |
 
+### Power Profiler Kit II (PC only)
+
+Measures the module's current with a Nordic Power Profiler Kit II (PPK2, USB 1915:C00A) on its USB data port, using the PPK2's serial protocol directly (100 kS/s, 200 nA to 1 A over five ranges, with the factory calibration read from the kit). `ppk.open` starts safely as an ampere meter with DUT power off. The other detectors skip PPK2 ports. `virt:ppk` simulates one: 2 mA with 60 mA bursts.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `ppk.detect` | `[port]` | Find PPK2s (every 1915:C00A port is asked for its metadata) |
+| `ppk.open` | `[port]` | Open a PPK2, detected when omitted; ampere meter, DUT power off |
+| `ppk.close` | | Close the PPK2; the DUT power stays as it was |
+| `ppk.status` | | Mode, VDD, DUT power and the calibration per range |
+| `ppk.mode` | `<amp\|source>` | Ampere meter (DUT on its own supply) or source meter (the PPK2 powers the DUT) |
+| `ppk.vdd` | `<mV>` | Supply voltage, 800 to 5000 mV; the output in source mode, and used for the calibration in both |
+| `ppk.power` | `<on\|off>` | DUT power switch (source mode needs `ppk.vdd` first) |
+| `ppk.measure` | `[ms=1000] [file.csv]` | Average, min/max, charge and energy over a window (up to 600 s); the CSV has every sample (`t_us,current_uA,range,logic`). The `Chart:` line holds min, average and max in uA for 200 time slots; the web page draws it as a chart with a hover readout |
+| `ppk.meta` | | The raw metadata the PPK2 reports |
+
+```text
+# Module on its own 3.3 V supply through the PPK2's VIN/VOUT
+ppk.open
+ppk.vdd 3300
+ppk.measure 5000 idle.csv
+```
+
 ### Bridges
 
 Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `can.bridge`, `hw.bridge`), up to 4 per source, and they all run at the same time.

@@ -166,6 +166,7 @@ if(NOT WIN32)
     src/ucxapp_corr.c
     src/ucxapp_cmds_gnss.c
     src/ucxapp_cmds_imu.c
+    src/ucxapp_cmds_ppk.c
     src/ucxapp_cmds_hw.c
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
@@ -335,6 +336,7 @@ add_executable(ucxapp
   src/ucxapp_corr.c
   src/ucxapp_cmds_gnss.c
   src/ucxapp_cmds_imu.c
+  src/ucxapp_cmds_ppk.c
   src/ucxapp_cmds_hw.c
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c

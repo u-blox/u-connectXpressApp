@@ -32,7 +32,7 @@ Customer-facing skills for each target are in `.github/skills/`; `ucx-matter` th
 
 ## Use the same scripts every time
 
-- Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. Modules on boards whose USB name does not say NORA (plain FTDI) need `--detect-force`, which asks every other port for its model. `--detect --test tests/hardware` runs the hardware tests (split per area: device, wifi, net, ble, thread, bridges) on what it found.
+- Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, cellular modem, Nordic Power Profiler Kit II (`ppk.*`, PPK2 ports are never probed by the other detectors), and the `UCX_*` test variables. Modules on boards whose USB name does not say NORA (plain FTDI) need `--detect-force`, which asks every other port for its model. `--detect --test tests/hardware` runs the hardware tests (split per area: device, wifi, net, ble, thread, bridges) on what it found.
 - Do not write one-off probe, port-scan or test scripts (no temporary `.ps1`/`.py` files, no ad-hoc loops over COM ports). If the launcher, the app detectors (`gnss.detect`, `imu.detect`, `cell.detect`, `--list-modules`, `--list-ports`) or the tests miss something, improve them and add a test in `tests/`.
 - New launcher features go into `ucxapp.py`, never into the `.cmd` callers.
 - Do not create or run VS Code tasks (`tasks.json`) to run commands; run them in the terminal.

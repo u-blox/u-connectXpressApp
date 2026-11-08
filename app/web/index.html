@@ -56,6 +56,9 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
 #pl{position:relative}#atlog{position:absolute;right:1.4rem;bottom:.6rem;font:700 .7rem system-ui;letter-spacing:.06em;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--mut);cursor:pointer;opacity:.85}#atlog:hover{opacity:1}#atlog.on{color:var(--ok);border-color:var(--ok)}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
+.ppkc{margin:.4rem 0;max-width:46rem}.ppkc svg{width:100%;height:auto;display:block;background:rgba(127,127,127,.06);border-radius:6px}
+.ppkc text{font-size:11px;fill:currentColor;opacity:.7}.ppkc .pg{stroke:currentColor;opacity:.12}.ppkc .pb{fill:var(--ac);opacity:.25}
+.ppkc .pa{fill:none;stroke:var(--ac);stroke-width:1.6}.ppkc .px{stroke:currentColor;opacity:.5}.ppkc .pm{stroke:#f5a623;stroke-dasharray:4 3}.ppkc .pmt{fill:#f5a623;opacity:1}.ppkc .pt{font-size:.85em;opacity:.8;min-height:1.3em}
 .badge,.v{font:700 .66rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:.05rem .4rem;border:1px solid currentColor;border-radius:4px;color:var(--warm)}.badge.ok,.v.ok{color:var(--ok)}.badge.bad,.v.gap{color:var(--err)}
 .note{color:var(--mut);font-style:italic}.scan{cursor:pointer}.scan:hover{background:#1b2a44}
 .fk{color:#6b7a90}.fr{color:#ff6b6b}.fg{color:var(--ok)}.fy{color:var(--warm)}.fb{color:var(--ble)}.fm{color:var(--pu)}.fc{color:var(--ac)}.fw{color:#fff}.bo{font-weight:700}
@@ -224,7 +227,30 @@ function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  if(/^Where are you located\?/m.test(b.body.textContent))regLinks(b);
  if(!rc&&/^Examples for /m.test(b.body.textContent))exLinks(b);
  if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
- if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b)}
+ if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b);
+ if(!rc&&/^ppk\.measure/.test(b.cmd))ppkChart(b)}
+
+/* ---- ppk.measure: the "Chart:" line (min,avg,max uA per slot) drawn as a band with the average on top ---- */
+function ppkChart(b){const m=/^Chart:\s+([\d.]+) s uA avg ([-\d.]+)((?: [-\d.]+,[-\d.]+,[-\d.]+)+)\s*$/m.exec(b.body.textContent);if(!m)return;
+ const secs=+m[1],P=m[3].trim().split(' ').map(t=>t.split(',').map(Number)),n=P.length;
+ {let on=0;for(const x of [...b.body.childNodes]){if(x.nodeType!==3){if(on)x.remove();continue}let t=x.textContent;
+  if(!on){const i=t.search(/(^|\n)Chart:/);if(i<0)continue;on=1;const s=i+(t[i]==='\n'?1:0);x.textContent=t.slice(0,s);t=t.slice(s);if(on){const j=t.indexOf('\n');if(j>=0){x.textContent+=t.slice(j+1);on=0}}continue}
+  const j=t.indexOf('\n');if(j<0){x.remove();continue}x.textContent=t.slice(j+1);on=0}}
+ const W=600,H=220,L=58,R=8,T=10,B=26,lo=Math.min(0,...P.map(p=>p[0])),hi=Math.max(...P.map(p=>p[2]))*1.08||1;
+ const fmt=u=>Math.abs(u)>=1e6?(u/1e6).toFixed(2)+' A':Math.abs(u)>=1e3?(u/1e3).toFixed(Math.abs(u)>=1e4?1:2)+' mA':u.toFixed(1)+' \u00b5A';
+ const X=i=>L+(n>1?i/(n-1):0)*(W-L-R),Y=u=>T+(1-(u-lo)/(hi-lo))*(H-T-B);
+ let band='M'+P.map((p,i)=>X(i).toFixed(1)+','+Y(p[2]).toFixed(1)).join('L');
+ for(let i=n-1;i>=0;i--)band+='L'+X(i).toFixed(1)+','+Y(P[i][0]).toFixed(1);
+ const mean=+m[2],avg='M'+P.map((p,i)=>X(i).toFixed(1)+','+Y(p[1]).toFixed(1)).join('L');
+ let g='';for(let k=0;k<=4;k++){const u=lo+(hi-lo)*k/4,y=Y(u).toFixed(1);g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" class="pg"/><text x="${L-4}" y="${+y+4}" text-anchor="end">${fmt(u)}</text>`}
+ for(let k=0;k<=5;k++){const x=(L+(W-L-R)*k/5).toFixed(1);g+=`<text x="${x}" y="${H-8}" text-anchor="middle">${(secs*k/5*1000).toFixed(0)} ms</text>`}
+ const box=el('div','ppkc');box.innerHTML=`<svg viewBox="0 0 ${W} ${H}">${g}<path d="${band}Z" class="pb"/><path d="${avg}" class="pa"/><line x1="${L}" x2="${W-R}" y1="${Y(mean)}" y2="${Y(mean)}" class="pm"/><text x="${W-R-2}" y="${Y(mean)-4}" text-anchor="end" class="pmt">avg ${fmt(mean)}</text><line class="px" y1="${T}" y2="${H-B}" visibility="hidden"/></svg><div class="pt"></div>`;
+ const sv=box.firstChild,tip=box.lastChild,cx=sv.querySelector('.px');
+ sv.onpointermove=e=>{const r=sv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,i=Math.max(0,Math.min(n-1,Math.round((x-L)/(W-L-R)*(n-1))));
+  cx.setAttribute('x1',X(i));cx.setAttribute('x2',X(i));cx.setAttribute('visibility','visible');
+  tip.textContent=`${(secs*i/Math.max(1,n-1)*1000).toFixed(1)} ms   avg ${fmt(P[i][1])}   min ${fmt(P[i][0])}   max ${fmt(P[i][2])}`};
+ sv.onpointerleave=()=>{cx.setAttribute('visibility','hidden');tip.textContent='hover for the current at a point in time'};
+ sv.onpointerleave();b.body.appendChild(box)}
 
 /* ---- command line: history, Tab completion, usage hint ---- */
 let ht=0;

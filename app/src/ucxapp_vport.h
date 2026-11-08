@@ -14,6 +14,7 @@
 #define UCXAPP_VPORT_IMU  "virt:imu"
 #define UCXAPP_VPORT_CELL "virt:cell"
 #define UCXAPP_VPORT_PC   "virt:pc"
+#define UCXAPP_VPORT_PPK  "virt:ppk"
 
 /* True for a simulated serial device name (not for virtual streams such as "virt:gnss"). */
 bool ucxapp_vport_is(const char *port);

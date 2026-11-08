@@ -397,6 +397,91 @@ static void cellTick(vdev_t *d, uint32_t now)
     }
 }
 
+/* ---- Nordic PPK2: metadata on 0x19, samples while measuring (0x06 .. 0x07) ---- */
+
+/* The simulated module: 2 mA idle with a 60 mA radio burst for 5 ms of every 100 ms. Range 2 (R 10 ohm) holds
+ * the idle current, range 3 (R 1 ohm) the burst; with GS 0, GI 1, UG 1 and no offsets, I = adc * 4 * 1.8 / 163840 / R. */
+#define PPK_RATE_HZ  100000u
+#define PPK_BATCH_MS 5u
+
+static struct {
+    bool measuring;
+    uint32_t next;      /* ms of the next batch */
+    uint32_t sample;    /* sample counter, sets the burst phase */
+    size_t nCmd;
+    uint8_t cmd[3];
+} gPpkSim;
+
+static const char kPpkMeta[] =
+    "Calibrated: 0\nR0: 1000.0\nR1: 100.0\nR2: 10.0\nR3: 1.0\nR4: 0.05\n"
+    "GS0: 0\nGS1: 0\nGS2: 0\nGS3: 0\nGS4: 0\nGI0: 1\nGI1: 1\nGI2: 1\nGI3: 1\nGI4: 1\n"
+    "O0: 0\nO1: 0\nO2: 0\nO3: 0\nO4: 0\nUG0: 1\nUG1: 1\nUG2: 1\nUG3: 1\nUG4: 1\n"
+    "HW: 9173\nmode: 2\nIA: 56\nEND\n";
+
+static void ppkReset(vdev_t *d, uint32_t now)
+{
+    (void)d;
+    memset(&gPpkSim, 0, sizeof(gPpkSim));
+    gPpkSim.next = now;
+}
+
+static void ppkTick(vdev_t *d, uint32_t now)
+{
+    if (!gPpkSim.measuring) {
+        return;
+    }
+    if ((int32_t)(now - gPpkSim.next) > 200) {
+        gPpkSim.next = now;   /* not read for a while: the real one would have overrun too */
+    }
+    while ((int32_t)(now - gPpkSim.next) >= 0) {
+        for (uint32_t i = 0; i < PPK_RATE_HZ / 1000u * PPK_BATCH_MS; i++, gPpkSim.sample++) {
+            bool burst = gPpkSim.sample % 10000u < 500u;
+            double r = burst ? 1.0 : 10.0;
+            double amps = burst ? 0.060 : 0.002;
+            uint32_t adc = (uint32_t)(amps * r * 163840.0 / 1.8 / 4.0 + 0.5);
+            uint32_t raw = (adc & 0x3FFFu) | ((burst ? 3u : 2u) << 14) | ((burst ? 0x01u : 0x00u) << 24);
+            uint8_t b[4] = { (uint8_t)raw, (uint8_t)(raw >> 8), (uint8_t)(raw >> 16), (uint8_t)(raw >> 24) };
+            put(d, b, sizeof(b));
+        }
+        gPpkSim.next += PPK_BATCH_MS;
+    }
+}
+
+static void ppkInput(vdev_t *d, const uint8_t *data, size_t len, uint32_t now)
+{
+    for (size_t i = 0; i < len; i++) {
+        uint8_t b = data[i];
+        if (gPpkSim.nCmd > 0) {
+            /* argument bytes of a two or three byte command are taken as they come */
+            gPpkSim.cmd[gPpkSim.nCmd++] = b;
+            if ((gPpkSim.cmd[0] == 0x0D && gPpkSim.nCmd == 3) || (gPpkSim.cmd[0] != 0x0D && gPpkSim.nCmd == 2)) {
+                gPpkSim.nCmd = 0;
+            }
+            continue;
+        }
+        switch (b) {
+        case 0x19:
+            put(d, kPpkMeta, sizeof(kPpkMeta) - 1);
+            break;
+        case 0x06:
+            gPpkSim.measuring = true;
+            gPpkSim.next = now;
+            break;
+        case 0x07:
+            gPpkSim.measuring = false;
+            break;
+        case 0x0C:
+        case 0x0D:
+        case 0x11:
+            gPpkSim.cmd[0] = b;
+            gPpkSim.nCmd = 1;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 /* ---- Port functions ---- */
 
 /* virt:pc: a PC tool (u-center, a terminal) on the far end of a null-modem pair; it takes whatever it is sent. */
@@ -418,6 +503,7 @@ static vdev_t gDevs[] = {
     { UCXAPP_VPORT_IMU, "WitMotion IMU (virtual)", imuReset, imuInput, imuTick, false, { 0 }, 0, 0 },
     { UCXAPP_VPORT_CELL, "u-blox SARA-R510M8S cellular modem (virtual)", cellReset, cellInput, cellTick, false, { 0 }, 0, 0 },
     { UCXAPP_VPORT_PC, "PC tool on a null-modem pair (virtual)", pcReset, pcInput, pcReset, false, { 0 }, 0, 0 },
+    { UCXAPP_VPORT_PPK, "Nordic Power Profiler Kit II (virtual)", ppkReset, ppkInput, ppkTick, false, { 0 }, 0, 0 },
 };
 
 static vdev_t *find(const char *port)

@@ -198,6 +198,9 @@ void ucxapp_register_imu_cmds(void);     /* imu.* (ucxapp_cmds_imu.c) */
 void ucxapp_register_bridge_cmds(void);  /* bridge.list, bridge.off over all sources (ucxapp_stream.c) */
 void ucxapp_register_hw_cmds(void);      /* hw.* GPIO/I2C/SPI/ADC/PWM/CAN (ucxapp_cmds_hw.c) */
 void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
+void ucxapp_register_ppk_cmds(void);     /* ppk.* (ucxapp_cmds_ppk.c), PC builds only */
+/* True for a Nordic PPK2 port: other detectors must not send it bytes (each byte is an opcode). */
+bool ucxapp_port_is_ppk(const ucxapp_serial_port_t *sp);
 void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
 void ucxapp_register_conn_cmds(void);    /* conn.status (ucxapp_cmds_conn.c, host only) */
 /* Size of a conn snapshot: every link as one short line (see ucxapp_cmds_conn.c). */

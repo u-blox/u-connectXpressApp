@@ -88,6 +88,12 @@ static const example_t kExamples[] = {
       "imu.open\nimu.bridge ble nus" },
     { "imu", "Record a session",
       "imu.open\nimu.log motion.bin\n# ...move...\nimu.log off" },
+
+    { "ppk", "Idle current of a module on its own supply",
+      "ppk.detect\nppk.open\nppk.vdd 3300\nppk.measure 5000 idle.csv" },
+    { "ppk", "Power the module from the PPK2 and measure a scan",
+      "ppk.open\nppk.mode source\nppk.vdd 3300\nppk.power on\n# open the module, then start a scan and measure:\n"
+      "ppk.measure 10000\nppk.power off" },
 #endif
 
     { "wifi", "Join a network and check it (choose your country's regulatory domain once first)",

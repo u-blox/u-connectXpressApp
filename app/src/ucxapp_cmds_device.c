@@ -658,11 +658,18 @@ int ucxapp_find_modules(char names[][UCXAPP_PLATFORM_PORT_NAME_LEN], int maxName
     return found;
 }
 
+/* Nordic PPK2 (USB 1915:C00A): it takes every byte as an opcode ('\r' sets its regulator), so no detector may probe
+ * it; ppk.* finds it by these IDs. */
+bool ucxapp_port_is_ppk(const ucxapp_serial_port_t *sp)
+{
+    return (sp->vid == 0x1915 && sp->pid == 0xC00A) || strstr(sp->desc, "PPK2") != NULL;
+}
+
 bool ucxapp_port_skip(const ucxapp_serial_port_t *sp)
 {
     static const char *const kSkip[] = { "Virtual", "Bluetooth", "Management", "SOL", "NORA-" };
 
-    if (!sp->available || sp->label[0] != '\0') {
+    if (!sp->available || sp->label[0] != '\0' || ucxapp_port_is_ppk(sp)) {
         return true;
     }
     for (size_t i = 0; i < sizeof(kSkip) / sizeof(kSkip[0]); i++) {

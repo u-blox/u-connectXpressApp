@@ -9,7 +9,7 @@ and STM32.
   ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
   ucxapp --publish-web "new look"          build and test the browser site, commit app/web + app/wasm, push (Pages)
-  ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
+  ucxapp --detect                           find NORA modules, GNSS receivers, IMUs, modems and PPK2
   ucxapp --detect --test tests/hardware   hardware tests on what was found
   ucxapp --detect --detect-force          also ask every other port for a NORA model (boards with plain FTDI names)
   ucxapp --ports COM13,COM24 --test tests/hardware   tests on these modules (A, B, ...), no probing
@@ -68,6 +68,7 @@ MEMORY_DOC = ROOT / "docs" / "STM32_MEMORY.md"
 
 UBLOX_VID = 0x1546
 FTDI_VID = 0x0403
+PPK_VID, PPK_PID = 0x1915, 0xC00A   # Nordic Power Profiler Kit II
 FTDI_PIDS = {0x6010, 0x6011, 0x6014, 0x601C, 0x6015}
 UBLOX_GNSS_PIDS = {0x01A4, 0x01A5, 0x01A6, 0x01A7, 0x01A8, 0x01A9}
 GNSS_DESC = re.compile(r"gnss|gps|\b(?:zed|neo|max|lea|evk)-[a-z]?\d", re.IGNORECASE)
@@ -150,7 +151,7 @@ def parse(argv):
     g.add_argument("--signed", action="store_true", help="run app/release/ucxapp-signed.exe")
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
     g = p.add_argument_group("tools")
-    g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers and IMUs")
+    g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers, IMUs, modems and PPK2")
     g.add_argument("--detect-force", action="store_true",
                    help="--detect that also asks every other serial port for its model (AT+GMM), for modules on "
                         "boards whose USB name does not say NORA (about 25 s)")
@@ -447,6 +448,8 @@ def host(args, extra):
 
 def classify(vid, pid, desc):
     d = desc.lower()
+    if (vid == PPK_VID and pid == PPK_PID) or "ppk2" in d:
+        return "PPK2"
     if "stlink" in d or "st-link" in d:
         return "STM32 console"
     if "bluetooth" in d or "active management" in d:
@@ -516,6 +519,13 @@ def find_cell(exe):
     return (m.group(1), m.group(2), m.group(3).strip()) if m else None
 
 
+def find_ppk(exe):
+    """(port, "", details) of the first Nordic Power Profiler Kit II ppk.detect reports, or None (no baud: USB)."""
+    out = app_output(Path(exe), "--exec", "ppk.detect", timeout=60)
+    m = re.search(r"^\s*(COM\d+|/dev/[^\s:(]+)[^\n]*?: (Power Profiler Kit II[^\n]*)$", out, re.MULTILINE)
+    return (m.group(1), "", m.group(2).strip()) if m else None
+
+
 def detect(exe, ports=None, force=False):
     """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search.
 
@@ -531,7 +541,7 @@ def detect(exe, ports=None, force=False):
     with concurrent.futures.ThreadPoolExecutor() as pool:
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60), modules))
         if force and not ports:
-            others = [n for n, _, role in serial_ports if role != "skip" and n not in modules]
+            others = [n for n, _, role in serial_ports if role not in ("skip", "PPK2") and n not in modules]
             for port, info in zip(others, pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60),
                                                    others), strict=True):
                 if re.search(r"\bNORA-[A-Z0-9]", info):
@@ -575,6 +585,14 @@ def detect(exe, ports=None, force=False):
     if cell:
         env["UCX_CELL_PORT"], env["UCX_CELL_BAUD"] = cell[0], cell[1]
         print(f"  {cell[0]} {cell[2]} at {cell[1]} baud")
+    else:
+        print("  none")
+
+    print("Power Profiler Kit II (ppk.detect):")
+    ppk = find_ppk(exe)
+    if ppk:
+        env["UCX_PPK_PORT"] = ppk[0]
+        print(f"  {ppk[0]} {ppk[2]}")
     else:
         print("  none")
 
@@ -645,7 +663,8 @@ def coverage(pytest_args):
         old.unlink()
     if not (bd / "ucxapp").is_file():
         fail(f"instrumented exe not found: {bd / 'ucxapp'}")
-    absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT")}
+    absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT",
+                              "UCX_PPK_PORT")}
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
     partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
@@ -1864,7 +1883,7 @@ def main(argv):
             if not args.test:
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.
-            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT"):
+            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT", "UCX_PPK_PORT"):
                 found.setdefault(key, "")
         if not (args.detect or args.ports) and "hardware" not in " ".join(extra):
             # Plain --test is offline; hardware tests run only with --detect or --ports.

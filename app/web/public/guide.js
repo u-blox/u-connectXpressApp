@@ -52,7 +52,7 @@
   function show(i) {
     at = i;
     unlight();
-    const [sel, title, text] = STEPS[i];
+    const [sel, title, text] = STEPS[i], offer = !i || i === STEPS.length - 1;
     const found = sel ? [...document.querySelectorAll(sel)].filter(e => e.offsetParent) : [];
     if (!box) {
       box = document.createElement('div');
@@ -61,7 +61,7 @@
       document.body.appendChild(box);
     }
     box.innerHTML = '<h3></h3><p></p><div class="gd-r"><span class="gd-n"></span><button class="gd-x">Skip</button>' +
-      (i ? '<button class="gd-b">Back</button>' : '<button class="gd-demo gd-go">Run the demo</button>') +
+      (i ? '<button class="gd-b">Back</button>' : '') + (offer ? '<button class="gd-demo gd-go">Run the demo</button>' : '') +
       '<button class="gd-go gd-nx"></button></div>';
     box.querySelector('h3').textContent = title;
     box.querySelector('p').textContent = text;
@@ -70,11 +70,11 @@
     box.querySelector('.gd-x').onclick = close;
     if (i) box.querySelector('.gd-b').onclick = () => show(i - 1);
     box.querySelector('.gd-nx').onclick = () => (i === STEPS.length - 1 ? close() : show(i + 1));
-    if (!i) box.querySelector('.gd-demo').onclick = runDemo;
+    if (offer) box.querySelector('.gd-demo').onclick = runDemo;
     found.forEach(e => { e.classList.add('gd-on'); lit.push(e); });
     if (found[0]) found[0].scrollIntoView({ block: 'nearest' });
     place(found[0]);
-    box.querySelector(i ? '.gd-nx' : '.gd-demo').focus();
+    box.querySelector(offer ? '.gd-demo' : '.gd-nx').focus();
   }
 
   function close() {

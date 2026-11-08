@@ -36,7 +36,7 @@ def _serve(app_exe, tmp_path, requests, wait_s=20):
         proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
                                 cwd=tmp_path)
-        proc.stdin.write(f"web.start 8080 {TOKEN}\n")
+        proc.stdin.write(f"web.start 8080 {TOKEN} http\n")
         proc.stdin.flush()
         net = module.net
         end = time.monotonic() + wait_s
@@ -69,7 +69,7 @@ def test_web_routes_answer_with_and_without_the_token(app_exe, tmp_path):
             _get("/api/version", token=False, extra="X-Token: wrong\r\n")]
     out, replies = _serve(app_exe, tmp_path, reqs)
     assert "Web server" in out or "web" in out.lower(), out
-    assert "note: plain HTTP" in out and "web.start https" in out, out
+    assert "note: plain HTTP" in out and "leave out http" in out, out
     status = [r.split("\r\n", 1)[0] for r in replies]
     assert status[0].startswith("HTTP/1.1 200"), replies[0][:300]
     assert "<html" in replies[0].lower() or "<!doctype" in replies[0].lower(), replies[0][:300]

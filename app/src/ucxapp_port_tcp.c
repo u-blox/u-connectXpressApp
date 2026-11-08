@@ -37,6 +37,7 @@ int32_t uPortSerialSetDtr(uPortUartHandle_t handle, bool asserted);
 
 typedef struct {
     sock_t s;
+    volatile bool wake;
 } tcpPort_t;
 
 /* The serial handles are opaque, so ours are told apart by address, never by reading through a handle. */
@@ -108,16 +109,29 @@ static uPortUartHandle_t tcpOpen(const char *spec)
     return NULL;
 }
 
-/* 1 when the socket has data, 0 on timeout, -1 on error; timeoutMs < 0 waits for ever. */
+/* 1 when the socket has data, 0 on timeout or wake, -1 on error; timeoutMs < 0 waits for ever. Waits in
+ * 20 ms slices because closing a socket does not end a select() on Linux, so uPortUartWake sets a flag. */
 static int tcpWait(tcpPort_t *t, int32_t timeoutMs)
 {
-    fd_set set;
-    struct timeval tv = { timeoutMs / 1000, (timeoutMs % 1000) * 1000 };
+    for (int32_t left = timeoutMs;;) {
+        int32_t slice = left < 0 || left > 20 ? 20 : left;
+        struct timeval tv = { 0, slice * 1000 };
+        fd_set set;
 
-    FD_ZERO(&set);
-    FD_SET(t->s, &set);
-    int n = select((int)t->s + 1, &set, NULL, NULL, timeoutMs < 0 ? NULL : &tv);
-    return n > 0 ? 1 : n == 0 ? 0 : -1;
+        if (t->wake) {
+            t->wake = false;
+            return 0;
+        }
+        FD_ZERO(&set);
+        FD_SET(t->s, &set);
+        int n = select((int)t->s + 1, &set, NULL, NULL, &tv);
+        if (n != 0) {
+            return n > 0 ? 1 : -1;
+        }
+        if (left >= 0 && (left -= slice) <= 0) {
+            return 0;
+        }
+    }
 }
 
 uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool useFlowControl)
@@ -187,8 +201,12 @@ int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
 
 void uPortUartWake(uPortUartHandle_t handle)
 {
-    if (tcp(handle) == NULL) {
+    tcpPort_t *t = tcp(handle);
+
+    if (t == NULL) {
         uPortSerialWake(handle);
+    } else {
+        t->wake = true;
     }
 }
 

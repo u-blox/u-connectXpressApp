@@ -332,7 +332,7 @@ def test_conn_status_table_lists_every_link(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123",
                "sock.open tcp", "sock.connect 0 example.com 80", "conn.status", "conn.status raw")
     assert out.returncode == 0, out.stdout
-    assert f"module on {wifi_module.port}" in out.stdout, out.stdout
+    assert re.search(rf"^module\s+NORA-W36 \S+ on {re.escape(wifi_module.port)}, up ", out.stdout, re.M), out.stdout
     assert "  wifi    vucx-net" in out.stdout and "  sock 0  tcp conn" in out.stdout, out.stdout
 
 

@@ -317,6 +317,11 @@ class Network:
     def __init__(self, cfg, ft=None):
         self.servers = {int(k): v for k, v in (cfg.get("servers") or {}).items()}
         self.accept = {int(p) for p in cfg.get("accept") or []}
+        # listening port -> requests; each is a client that connects, sends it and keeps what comes back in replies
+        self.requests = {int(k): list(v) for k, v in (cfg.get("requests") or {}).items()}
+        self.replies = []
+        self.udp_replies = None        # what the module sent the scripted UDP client (port 50000)
+        self.followups = []
         self.ft = ft or FtServer()
         self.socks = {}
         self.sps = {}   # SPS connection -> bytes echoed back, not read yet
@@ -327,6 +332,9 @@ class Network:
         return n
 
     def _serve(self, s, data, ip="192.168.1.10", port=None):
+        if "reply" in s:               # a scripted client of one of our listeners
+            s["reply"] += data
+            return
         kind = self.servers.get(s["port"], "echo")
         port = port or s["port"]
         if kind == "ntrip" and s["state"] == 0:
@@ -378,10 +386,21 @@ class Network:
         if m and int(m[1]) in self.socks:
             s = self.socks[int(m[1])]
             self._serve(s, data)
+            if "reply" in s and self._complete(s["reply"]):   # the client has its answer and hangs up
+                del self.socks[int(m[1])]
+                nxt = self._next_client(0.05)
+                close = f"+UESOCL:{m[1]}"
+                return ([f"+USOWB:{m[1]},{len(data)}", "OK"],
+                        {**nxt, "lines": [close] + nxt["lines"]} if nxt else [close])
             return [f"+USOWB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
         m = re.fullmatch(r"AT\+USOSTB=(\d+),([\d.]+),(\d+),?", cmd)
         if m and int(m[1]) in self.socks:
             s = self.socks[int(m[1])]
+            if int(m[3]) == 50000 and self.udp_replies is not None:   # to the scripted UDP client
+                self.udp_replies.append(bytes(data))
+                if self.followups:     # its next datagram goes back to the socket that wrote
+                    s["rx"].append(("192.168.1.10", 50000, self.followups.pop(0)))
+                return [f"+USOSTB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
             self._serve({**s, "port": int(m[3])}, data, m[2], int(m[3]))
             return [f"+USOSTB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
         m = re.fullmatch(r"AT\+USOR(F?)B=(\d+),(\d+)", cmd)
@@ -395,11 +414,24 @@ class Network:
             return [(text, chunk), "OK"], []
         m = re.fullmatch(r"AT\+USOCL=(\d+)", cmd)
         if m:
-            return (["OK"], []) if self.socks.pop(int(m[1]), None) else (["ERROR"], [])
+            s = self.socks.pop(int(m[1]), None)
+            if s is None:
+                return ["ERROR"], []
+            return ["OK"], self._next_client(0.05) if "reply" in s else []
         m = re.fullmatch(r"AT\+USO[BL]=(\d+)(?:,(\d+))?", cmd)
         if m and int(m[1]) in self.socks:
-            port = int(m[2] or 0)
+            port = int(m[2] or 0) or (self.socks[int(m[1])]["port"] if cmd.startswith("AT+USOL") else 0)
             self.socks[int(m[1])].update(port=port, status=3 if cmd.startswith("AT+USOL") else 1)
+            if cmd.startswith("AT+USOL") and port in self.requests:
+                self.pending = [(req, m[1]) for req in self.requests[port]]
+                return ["OK"], self._next_client(0.3)
+            if cmd.startswith("AT+USOB") and self.socks[int(m[1])]["proto"] == 17 and port in self.requests:
+                first, *self.followups = [r.encode() if isinstance(r, str) else bytes(r)
+                                          for r in self.requests[port]]
+                self.udp_replies = []
+                self.replies.append(self.udp_replies)
+                self.socks[int(m[1])]["rx"] = [("192.168.1.10", 50000, first)]
+                return ["OK"], {"after": 0.3, "lines": self._avail(m[1])}
             if cmd.startswith("AT+USOL") and port in self.accept:
                 return ["OK"], [f"+UESOIC:{self._new(6, port)},192.168.1.10,{m[1]}"]
             if cmd.startswith("AT+USOB") and self.socks[int(m[1])]["proto"] == 17 and port in self.accept:
@@ -423,6 +455,24 @@ class Network:
             self.sps[int(m[1])] = buf[int(m[2]):]
             return [(f"+USPSRB:{m[1]}", buf[:int(m[2])]), "OK"], []
         return None
+
+    @staticmethod
+    def _complete(reply):
+        head, sep, body = bytes(reply).partition(b"\r\n\r\n")
+        m = re.search(rb"(?im)^content-length:\s*(\d+)", head)
+        return bool(sep) and m is not None and len(body) >= int(m[1])
+
+    def _next_client(self, after):
+        """The next scripted client of a listener: it connects and sends its request a little later."""
+        if not getattr(self, "pending", None):
+            return []
+        req, listener = self.pending.pop(0)
+        n = self._new(6)
+        req = req.encode() if isinstance(req, str) else bytes(req)
+        self.socks[n].update(rx=[("192.168.1.10", 50000, req)], reply=bytearray())
+        self.replies.append(self.socks[n]["reply"])
+        # the firmware's order (see ucxapp_urc.c): listening socket first, the new one last
+        return {"after": after, "lines": [f"+UESOIC:{listener},192.168.1.10,{n}", f"+UESODA:{n},{len(req)}"]}
 
     def _avail(self, n):
         rx = self.socks[int(n)]["rx"]

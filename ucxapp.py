@@ -619,7 +619,7 @@ def pytest_python():
         fail(f"pytest missing for {sys.executable}: {sys.executable} -m pip install -r tests/requirements.txt")
     if not py.exists():
         check([sys.executable, "-m", "venv", venv], "venv (sudo apt install python3-venv)")
-    if subprocess.call([py, "-c", "import pytest, yaml"], stderr=subprocess.DEVNULL) != 0:
+    if subprocess.call([py, "-c", "import pytest, yaml, xdist"], stderr=subprocess.DEVNULL) != 0:
         check([py, "-m", "pip", "install", "-q", "-r", ROOT / "tests" / "requirements.txt"], "pytest install")
     return str(py)
 
@@ -649,6 +649,10 @@ def coverage(pytest_args):
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
     partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
+    py = pytest_python()
+    # Workers for ~60% of the cores: every test also runs the app and the virtual devices, more workers only contend.
+    if "-n" not in pytest_args and subprocess.call([py, "-c", "import xdist"], stderr=subprocess.DEVNULL) == 0:
+        pytest_args = [*pytest_args, "-n", str(max(2, (os.cpu_count() or 4) * 3 // 5))]
     env = {**absent, "UCX_APP_EXE": str(bd / "ucxapp"), "PYTHONUNBUFFERED": "1"}
     rc = run_tests(pytest_args, env)
 
@@ -1813,6 +1817,8 @@ def main(argv):
             host_build(["Debug" if args.debug else "Release"])
         return web_preview(exe, args.web_preview)
     if args.script:
+        if os.environ.get("UCX_APP_EXE"):   # the tests point at the exe they built (e.g. the coverage build)
+            return run_script(Path(os.environ["UCX_APP_EXE"]), args.script, extra, args.junit)
         exe = host_exe(args.debug)
         if stale(exe):
             host_build(["Debug" if args.debug else "Release"])

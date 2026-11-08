@@ -20,7 +20,7 @@ Always use `--detect` (or `gnss.detect`, `imu.detect`, `--list-modules`, `--list
 - Script: `ucxapp COM13 --exec "dev.info" --exec "wifi.scan"` (exit code 1 on first failure).
 - Firmware update: `--exec "fw.flash <file>"`.
 - Type `help` in the shell for all commands; see `COMMANDS.md`. `examples` lists worked examples, `<group>.example` (e.g. `gnss.example`, `wifi.example`) shows one group.
-- `.\ucxapp --coverage` runs the offline app tests on a gcov build in WSL and writes line coverage to `build/coverage.txt`.
+- `.\ucxapp --coverage` runs the offline app tests on a gcov build in WSL, in parallel (pytest-xdist), and writes line coverage to `build/coverage.txt`.
 
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.mcp.json`).

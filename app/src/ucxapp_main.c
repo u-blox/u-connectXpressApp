@@ -538,6 +538,7 @@ int main(int argc, char *argv[])
     ucxapp_register_app_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_dash_cmds();
+    ucxapp_register_conn_cmds();
     ucxapp_register_snake_cmds();
     ucxapp_register_usecase_cmds();
     ucxapp_register_session_cmds();
@@ -552,6 +553,7 @@ int main(int argc, char *argv[])
     ucxapp_register_ft_cmds();
     ucxapp_register_xplorer_cmds();
     ucxapp_register_web_cmds();
+    ucxapp_register_manual_cmds();
     ucxapp_register_bridge_cmds();
     ucxapp_register_gnss_cmds();
     ucxapp_register_imu_cmds();

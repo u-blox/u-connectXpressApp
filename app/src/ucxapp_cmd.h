@@ -199,6 +199,11 @@ void ucxapp_register_bridge_cmds(void);  /* bridge.list, bridge.off over all sou
 void ucxapp_register_hw_cmds(void);      /* hw.* GPIO/I2C/SPI/ADC/PWM/CAN (ucxapp_cmds_hw.c) */
 void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
 void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
+void ucxapp_register_conn_cmds(void);    /* conn.status (ucxapp_cmds_conn.c, host only) */
+/* Size of a conn snapshot: every link as one short line (see ucxapp_cmds_conn.c). */
+#define UCXAPP_CONN_SNAPSHOT 1536
+/* The module's links as '|' separated lines for the web Connections view; talks to the module. */
+size_t ucxapp_conn_snapshot(ucxapp_t *app, char *out, size_t size);
 void ucxapp_register_snake_cmds(void);   /* app.snake, app.hunt (ucxapp_cmds_snake.c, host only) */
 /* Plays snake full screen on a terminal already in raw mode; returns the score. */
 int ucxapp_snake_play(void);
@@ -208,6 +213,9 @@ void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_
 bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
+void ucxapp_register_manual_cmds(void);  /* manual, manual.search (ucxapp_cmds_manual.c, host only) */
+/* COMMANDS.md as embedded at build time (served at /api/manual). */
+const char *ucxapp_manual_text(void);
 /* Browser build: the page calls the web routes in the same tab and polls the events (ucxapp_cmds_web.c). */
 bool ucxapp_web_local_begin(ucxapp_t *app);
 bool ucxapp_web_running(void);
@@ -305,6 +313,8 @@ size_t ucxapp_imu_summary(char *out, size_t size);
 bool ucxapp_gnss_dash(char *out, size_t size);
 bool ucxapp_gnss_card(char *out, size_t size);
 bool ucxapp_cell_dash(char *out, size_t size);
+/* Port of the open cellular modem (or of its data link), NULL when none is open. */
+const char *ucxapp_cell_port(void);
 /* Cellular live card (modem, network, signal, IP, data link and its users); false when no modem is open. */
 bool ucxapp_cell_card(char *out, size_t size);
 size_t ucxapp_cell_summary(char *out, size_t size);
@@ -317,6 +327,8 @@ bool ucxapp_qr_print_wifi(const char *ssid, const char *password, const char *se
 /* Bluetooth security (ucxapp_cmds_bt.c): URC sinks that reply themselves, and the Just Works defaults. */
 void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status);
 void ucxapp_bt_cs_distance(int32_t conn, int32_t mm);
+/* The newest Channel Sounding distance of conn and how old it is; false if none was reported. */
+bool ucxapp_bt_cs_last(int32_t conn, int32_t *mm, uint32_t *ageMs);
 void ucxapp_bt_cs_pct(int32_t conn, int32_t antenna, int32_t channels);
 void ucxapp_bt_user_confirmation(uCxHandle_t *ucx, const uBtLeAddress_t *addr, int32_t value);
 void ucxapp_bt_passkey_display(const uBtLeAddress_t *addr, int32_t passkey);

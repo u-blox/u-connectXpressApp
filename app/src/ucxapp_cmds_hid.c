@@ -313,7 +313,7 @@ static bool subscribed(int report, int boot)
 }
 
 /* Waits for the host to subscribe; boot is the matching boot input or -1. */
-static bool reportsEnabled(int report, int boot)
+static bool reportsEnabled(ucxapp_t *app, int report, int boot)
 {
     if (!gDefined) {
         ucxapp_print("ERROR: HID not set up (run hid.setup)\n");
@@ -325,7 +325,7 @@ static bool reportsEnabled(int report, int boot)
         for (int i = 0; i < 120 && !subscribed(report, boot); i++) {
             U_CX_PORT_SLEEP_MS(500);
             /* A bonded host reconnects without rewriting its CCCDs, so no URC reports the subscription. */
-            if (gConn >= 0 && ++connectedTicks >= 10) {
+            if (gConn >= 0 && (++connectedTicks >= 10 || ucxapp_module_is_virtual(app))) {
                 ucxapp_print("host connected without a subscribe event; sending anyway\n");
                 gIn[report].on = true;
                 break;
@@ -393,7 +393,7 @@ static int cmdHidMouse(ucxapp_t *app, int argc, char *argv[])
         (argc == 4 && !ucxapp_parse_int(argv[3], &wheel)) || abs(dx) > 10000 || abs(dy) > 10000 || abs(wheel) > 127) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!reportsEnabled(IN_MOUSE, IN_BOOT_MOUSE)) {
+    if (!reportsEnabled(app, IN_MOUSE, IN_BOOT_MOUSE)) {
         return UCXAPP_ERR_FAILED;
     }
     int w = wheel;
@@ -431,7 +431,7 @@ static int cmdHidClick(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_USAGE;
         }
     }
-    if (!reportsEnabled(IN_MOUSE, IN_BOOT_MOUSE)) {
+    if (!reportsEnabled(app, IN_MOUSE, IN_BOOT_MOUSE)) {
         return UCXAPP_ERR_FAILED;
     }
     for (int i = 0; i < clicks; i++) {
@@ -483,7 +483,7 @@ static int cmdHidMedia(ucxapp_t *app, int argc, char *argv[])
     if (usage == 0) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!reportsEnabled(IN_MEDIA, -1)) {
+    if (!reportsEnabled(app, IN_MEDIA, -1)) {
         return UCXAPP_ERR_FAILED;
     }
     uint8_t down[2] = { (uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8) };
@@ -534,7 +534,7 @@ static int cmdHidKey(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_USAGE;
         }
     }
-    if (!reportsEnabled(IN_KBD, IN_BOOT_KBD) || !sendKey(app, mod, code)) {
+    if (!reportsEnabled(app, IN_KBD, IN_BOOT_KBD) || !sendKey(app, mod, code)) {
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("key sent\n");
@@ -566,7 +566,7 @@ static int cmdHidText(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
     }
-    if (!reportsEnabled(IN_KBD, IN_BOOT_KBD)) {
+    if (!reportsEnabled(app, IN_KBD, IN_BOOT_KBD)) {
         return UCXAPP_ERR_FAILED;
     }
     for (size_t i = 0; i < pos; i++) {

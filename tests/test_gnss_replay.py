@@ -271,7 +271,7 @@ def test_app_clock_ignores_a_replayed_recording(app_exe, tmp_path):
 
 def test_virtual_receiver_reports_jamming_and_spoofing(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.cfg msg mon-rf 1", "gnss.cfg msg sec-sig 1",
-               "gnss.status", "gnss.watch 30", "gnss.status", "gnss.close", timeout=90)
+               "gnss.status", "gnss.watch 9", "gnss.status", "gnss.close", timeout=60)
     assert "Security:  jamming none, spoofing none" in out.stdout, out.stdout
     assert "JAM: interference detected (CW indicator 170/255)" in out.stdout, out.stdout
     assert "ALERT jamming interference detected, spoofing none, antenna OK" in out.stdout, out.stdout

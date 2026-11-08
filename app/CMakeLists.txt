@@ -59,6 +59,15 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_favicon.h COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg)
 
+# The command manual (manual, /api/manual): COMMANDS.md as a NUL-terminated byte array
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/../COMMANDS.md _ucx_man HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _ucx_man "${_ucx_man}")
+string(REGEX REPLACE "(0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,)" "\\1\n" _ucx_man "${_ucx_man}")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_manual_text.h.tmp
+  "/* Generated from COMMANDS.md by CMake; do not edit. */\nstatic const unsigned char kManualBytes[] = {\n${_ucx_man}0x00\n};\n#define kManual ((const char *)kManualBytes)\n")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_manual_text.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_manual_text.h COPYONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../COMMANDS.md)
+
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -95,6 +104,7 @@ if(NOT WIN32)
     src/ucxapp_ui.c
     src/ucxapp_tui.c
     src/ucxapp_cmds_web.c
+    src/ucxapp_cmds_manual.c
     src/u_webserver.c
 
     src/ucxapp_io.c
@@ -160,6 +170,7 @@ if(NOT WIN32)
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
     src/ucxapp_cmds_dash.c
+    src/ucxapp_cmds_conn.c
     src/ucxapp_cmds_snake.c
     src/ucxapp_cmds_hid.c
     src/ucxapp_cmds_examples.c
@@ -273,6 +284,7 @@ add_executable(ucxapp
   src/ucxapp_ui.c
   src/ucxapp_tui.c
   src/ucxapp_cmds_web.c
+    src/ucxapp_cmds_manual.c
   src/u_webserver.c
   src/ucxapp_io.c
   src/ucxapp_io_stdio.c
@@ -327,6 +339,7 @@ add_executable(ucxapp
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c
   src/ucxapp_cmds_dash.c
+  src/ucxapp_cmds_conn.c
   src/ucxapp_cmds_snake.c
   src/ucxapp_cmds_hid.c
   src/ucxapp_cmds_examples.c

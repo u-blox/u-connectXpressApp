@@ -40,15 +40,21 @@ jobs:
           python-version: "3.12"
       - name: Build instrumented ucxapp
         run: |
-          python -m pip install pytest gcovr cryptography
-          cmake -S app -B build-cov -DUCXAPP_COVERAGE=ON
-          cmake --build build-cov
-      - name: Run CLI tests and report C coverage
+          python -m pip install pytest pytest-xdist pyyaml gcovr cryptography
+          cmake -S app -B build-cov -DCMAKE_BUILD_TYPE=Debug -DUCXAPP_COVERAGE=ON
+          cmake --build build-cov --target ucxapp --parallel
+      - name: Run the offline app tests and report C coverage (as .\ucxapp --coverage)
         env:
           UCX_APP_EXE: ${{ github.workspace }}/app/bin/ucxapp
+          UCX_PORT_A: ""
+          UCX_PORT_B: ""
+          UCX_GNSS_PORT: ""
+          UCX_IMU_PORT: ""
+          UCX_CELL_PORT: ""
+          PYTHONUNBUFFERED: "1"
         run: |
-          python -m pytest tests/test_cli.py tests/test_certfile.py
-          gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml
+          python -m pytest tests -m app -p no:cacheprovider -n auto
+          gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml --fail-under-line 74
       - uses: actions/upload-artifact@v5
         with:
           name: c-coverage

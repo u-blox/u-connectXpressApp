@@ -118,6 +118,20 @@ static volatile uint32_t gThreadDirty;
 static char gRadioText[96];
 static char gClockText[192];
 static bool gRadioDirty = true;
+static char gConnText[UCXAPP_CONN_SNAPSHOT];
+static volatile uint32_t gConnWantMs;
+static volatile bool gConnWanted;
+
+/* A page shows the Connections view: keep the snapshot fresh for a few seconds. */
+size_t ucxapp_ui_conn_text(char *out, size_t size)
+{
+    gConnWantMs = ucxapp_platform_tick_ms();
+    gConnWanted = true;
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(out, size, "%s", gConnText);
+    U_CX_MUTEX_UNLOCK(gLock);
+    return strlen(out);
+}
 
 void ucxapp_ui_thread_changed(void)
 {
@@ -151,7 +165,7 @@ static void refreshDashCache(bool force)
 {
     static uint32_t seenWifi = 0xFFFFFFFFu;
     static const void *seenUcx;
-    static uint32_t wifiMs, cellMs, threadMs, seenThread, radioMs, clockMs;
+    static uint32_t wifiMs, cellMs, threadMs, seenThread, radioMs, clockMs, connMs;
     uint32_t now = ucxapp_platform_tick_ms();
     char text[96];
 
@@ -235,6 +249,17 @@ static void refreshDashCache(bool force)
         U_CX_MUTEX_UNLOCK(gLock);
     }
 #endif
+    if (gConnWanted && now - gConnWantMs > 5000u) {
+        gConnWanted = false;   /* nobody looks: stop asking the module */
+    }
+    if (gConnWanted && (force || now - connMs >= 1000u)) {
+        static char snap[sizeof(gConnText)];
+        connMs = now;
+        (void)ucxapp_conn_snapshot(gApp, snap, sizeof(snap));
+        U_CX_MUTEX_LOCK(gLock);
+        snprintf(gConnText, sizeof(gConnText), "%s", snap);
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
     if (force || now - cellMs >= 1000u) {   /* the card's traffic counters move; AT only every 10 s (cell.c) */
         static char card[sizeof(gCellCard)];
         char summary[sizeof(gCellSummary)];
@@ -513,6 +538,7 @@ static const groupInfo_t kModuleGroups[] = {
 static const groupInfo_t kHostGroups[] = {
     { "app",     "App",         "This app: status card, log, version, memory, licences, wall clock, examples" },
     { "usecase", "App",         "Use cases: fit check against the module limits and ready-made steps" },
+    { "conn",    "App",         "Every live link: Wi-Fi, BLE (with CS distance), Thread, sockets, GNSS and cellular" },
     { "session", "App",         "Record the commands typed to a .ucx script and replay it" },
     { "prod",    "App",         "Production test with per-unit reports" },
     { "file",    "App",         "Files in the app store on this PC or board" },

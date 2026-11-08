@@ -81,6 +81,30 @@ def test_access_point_enable_status_disable(app_exe, port_a):
     assert "0 station(s)" in out.stdout, out.stdout
 
 
+@pytest.mark.two_devices
+def test_station_joins_the_access_point_of_the_other_module(app_exe, port_a, port_b):
+    ssid, password = "ucxtest-ap2", "ap-pass-123"
+    try:
+        for port in (port_a, port_b):
+            assert _run(app_exe, port, "dev.reboot").returncode == 0
+        time.sleep(1)
+        out = _run(app_exe, port_a, f"wifi.ap.enable {ssid} {password} 6", "wifi.ap.status")
+        assert out.returncode == 0, out.stdout
+        ap_ip = re.search(r"^ip=(\S+)", out.stdout, re.M)
+        assert ap_ip, out.stdout
+        ap_ip = ap_ip.group(1)
+        out = _run(app_exe, port_b, f"wifi.connect {ssid} {password}", "wifi.status", timeout=60)
+        assert out.returncode == 0, out.stdout
+        assert "wifi: connected" in out.stdout, out.stdout
+        _assert_ping(_run(app_exe, port_b, f"net.ping {ap_ip} 4"), ap_ip)
+        out = _run(app_exe, port_a, "wifi.ap.status")
+        assert re.search(r"^station [0-9A-F:]{17}$", out.stdout, re.M), out.stdout
+        assert "1 station(s)" in out.stdout, out.stdout
+    finally:
+        for port in (port_a, port_b):
+            _run(app_exe, port, "dev.reboot")
+
+
 @pytest.mark.hardware
 def test_network_commands_over_wifi(app_exe, port_a):
     out = _run(app_exe, port_a, _wifi_connect_command(), "wifi.status", "net.dns example.com",

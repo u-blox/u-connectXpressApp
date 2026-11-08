@@ -1519,6 +1519,11 @@ static const char *cellPort(void)
     return gDataMode ? gLinkPort : gStream != NULL ? ucxapp_stream_port(gStream) : gPort;
 }
 
+const char *ucxapp_cell_port(void)
+{
+    return cellPresent() ? cellPort() : NULL;
+}
+
 bool ucxapp_cell_dash(char *out, size_t size)
 {
     out[0] = '\0';

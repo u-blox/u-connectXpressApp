@@ -321,6 +321,21 @@ def test_wifi_connect_status_disconnect(app_exe, wifi_module):
     assert "192.168.1.50" in out.stdout, out.stdout + str(wifi_module.log)
 
 
+def test_conn_status_shows_the_wifi_link(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123", "conn.status raw")
+    lines = [s for s in out.stdout.splitlines() if s.startswith(("m|", "w|"))]
+    assert any(s.startswith("m|") for s in lines), out.stdout
+    assert any(s.startswith("w|vucx-net|") and "192.168.1.50" in s for s in lines), out.stdout
+
+
+def test_conn_status_table_lists_every_link(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123",
+               "sock.open tcp", "sock.connect 0 example.com 80", "conn.status", "conn.status raw")
+    assert out.returncode == 0, out.stdout
+    assert f"module on {wifi_module.port}" in out.stdout, out.stdout
+    assert "  wifi    vucx-net" in out.stdout and "  sock 0  tcp conn" in out.stdout, out.stdout
+
+
 def test_wifi_status_after_disconnect_says_not_connected(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.connect vucx-net secret123", "wifi.disconnect", "wifi.status")
     assert "wifi: disconnected" in out.stdout, out.stdout
@@ -355,6 +370,34 @@ def test_socket_open_connect_list_close(app_exe, wifi_module):
     assert any(c.startswith("AT+USOC=") for c in log), log
     assert any(c.startswith("AT+USOCL=") for c in log), log
     assert out.returncode == 0, out.stdout + str(log)
+
+
+def test_wifi_ap_enable_status_disable_on_the_virtual_module(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap secret123 11",
+               "wifi.ap.status", "wifi.ap.disable")
+    assert out.returncode == 0, out.stdout + str(wifi_module.log)
+    assert "Access point enabled: ssid='vucxap' channel=11 WPA2" in out.stdout, out.stdout
+    assert "ssid=vucxap channel=6" in out.stdout, out.stdout
+    assert "ip=192.168.0.1" in out.stdout and "subnet=255.255.255.0" in out.stdout, out.stdout
+    assert "station AA:BB:CC:DD:EE:01" in out.stdout and "1 station(s)" in out.stdout, out.stdout
+    assert "Access point disabled" in out.stdout, out.stdout
+    assert any(c.startswith("AT+UWAPA") for c in wifi_module.log), wifi_module.log
+    assert any(c.startswith("AT+UWAPD") for c in wifi_module.log), wifi_module.log
+
+
+def test_wifi_ap_refuses_a_short_password_before_touching_the_module(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap short")
+    assert out.returncode == 1, out.stdout
+    assert "password must be at least 8 characters" in out.stdout, out.stdout
+    assert not any(c.startswith("AT+UWAP") for c in wifi_module.log), wifi_module.log
+
+
+@pytest.mark.parametrize("channel", ["0", "14", "six"])
+def test_wifi_ap_rejects_a_bad_channel(app_exe, wifi_module, channel):
+    out = _run(app_exe, wifi_module.port, f"wifi.ap.enable vucxap secret123 {channel}")
+    assert out.returncode != 0, out.stdout
+    assert "wifi.ap.enable" in out.stdout, out.stdout   # usage
+    assert not any(c.startswith("AT+UWAPA") for c in wifi_module.log), wifi_module.log
 
 
 def test_net_dns_resolves(app_exe, wifi_module):

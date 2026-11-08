@@ -119,6 +119,19 @@ def test_dash_without_devices(app_exe, tmp_path):
     assert "not connected" in out.stdout
 
 
+def test_conn_status_without_module_shows_host_links(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "cell.open virt:cell", "cell.attach on", "conn.status",
+               "conn.status raw")
+    assert out.returncode == 0, out.stdout
+    assert "c|virt:cell|" in out.stdout, out.stdout
+    assert "\nm|" not in out.stdout and "\nw|" not in out.stdout, out.stdout
+
+
+def test_conn_status_rejects_bad_arguments(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "conn.status now")
+    assert out.returncode == 1 and "usage:" in out.stdout, out.stdout
+
+
 @pytest.mark.parametrize("command", ["dash now", "dash watch 0", "dash watch 1 2", "gnss.watch 0"])
 def test_dash_and_gnss_watch_reject_bad_arguments(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)

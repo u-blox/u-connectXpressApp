@@ -42,6 +42,10 @@ commands:
     - "+UWAPNST:1,255.255.255.0"
     - "OK"
   "AT+UWAPCS?": ["+UWAPCS:AABBCCDDEE01", "OK"]
+  "AT+UWAPCP=*": ["OK"]
+  "AT+UWAPSW=*": ["OK"]
+  "AT+UWAPA": ["OK"]
+  "AT+UWAPD": ["OK"]
   "AT+UWSNST?":
     - "+UWSNST:0,192.168.1.50"
     - "+UWSNST:1,255.255.255.0"
@@ -72,3 +76,5 @@ urcs:
   "AT+UWSC=*": ["+UEWLU:0,AABBCCDDEEF0,6", "+UEWSNU"]
   "AT+UWSDC": ["+UEWLD:0,0"]
   "AT+USOC=*": ["+UESOC:0"]
+  "AT+UWAPA": ["+UEWAPU", "+UEWAPNU"]
+  "AT+UWAPD": ["+UEWAPD"]

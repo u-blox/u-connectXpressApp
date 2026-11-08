@@ -31,20 +31,23 @@ class Tui:
                                      close_fds=True)
         os.close(slave)
         self.out = b""
-        self.pump(2.0)
+        self.pump(5.0, until="text UI")
+        self.pump(0.2)
 
-    def pump(self, seconds):
+    def pump(self, seconds, until=None):
         import select
 
         end = time.monotonic() + seconds
         while time.monotonic() < end:
+            if until and until.encode() in self.out:
+                return
             if select.select([self.master], [], [], 0.05)[0]:
                 try:
                     self.out += os.read(self.master, 65536)
                 except OSError:
                     return
 
-    def keys(self, *keys, gap=0.12):
+    def keys(self, *keys, gap=0.06):
         for k in keys:
             os.write(self.master, k.encode())
             self.pump(gap)
@@ -77,7 +80,7 @@ def test_tui_list_navigation_and_commands(app_exe, tmp_path):
     t.keys(ESC)
     t.type("help wifi")
     t.keys(ENTER)
-    t.pump(1.0)
+    t.pump(5.0, until="wifi.scan")
     t.keys(ESC)
     t.type("app.ver")
     t.keys(TAB, ENTER)
@@ -106,7 +109,7 @@ def test_tui_tab_completes_keywords_and_lists(app_exe, tmp_path):
     t.keys(TAB)
     t.type("w")
     t.keys(TAB, ENTER)               # app.log.level warn
-    t.pump(1.0)
+    t.pump(5.0, until="app.log.level warn")
     t.type("gnss.bridge ")
     t.keys(TAB, TAB)                 # the second Tab lists the keywords
     t.keys(*([BS] * len("gnss.bridge ")))
@@ -128,7 +131,7 @@ def test_tui_with_a_module_shows_the_dashboard(app_exe, tmp_path):
         t = Tui(app_exe, module.start(), tmp_path)
         t.type("dev.info")
         t.keys(ENTER)
-        t.pump(2.5)          # the dashboard refreshes every second
+        t.pump(5.0, until="NORA-W36")
         t.keys(ESC)
         t.type("at")
         t.keys(ENTER)
@@ -155,7 +158,8 @@ def test_tui_status_row_shows_the_thread_role_and_the_summary(app_exe, tmp_path)
     module = Vucx(profile)
     try:
         t = Tui(app_exe, module.start(), tmp_path)
-        t.pump(2.5)
+        t.pump(15, until="THRD leader")
+        t.pump(0.3)
         rc, out = t.quit()
     finally:
         module.stop()

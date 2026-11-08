@@ -110,7 +110,7 @@ python -m pip install pytest ruff
 .\ucxapp --coverage
 ```
 
-CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
+CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push, and the offline app tests on a gcov build (job `c-coverage`, parallel with pytest-xdist; fails below 74% line coverage of `app/src`).
 
 **Coverage goal: 100% of `app/src`** (currently 49.3%, see `build/coverage.txt`). Stability comes before new features: every change should raise coverage or keep it level, and new code ships with tests that cover it. Lowest files first: `ucxapp_urc.c`, `ucxapp_events.c`, `ucxapp_adv.c`, `ucxapp_ui.c` and `u_webserver.c` (0%), then gatt, hid, bt, net, sock, fw, device, cert, mqtt, web and tui. Reach module-only code offline through recorded AT and URC traffic, malformed input and the `tests/test_stress.py` style. Code that only real hardware can reach is covered by `tests/hardware`. Stress tests (`-m stress`) check that nothing leaks (sockets, links, memory) after long runs. The soak test (`-m soak`, `tests/hardware/test_soak.py`) keeps one module on Wi-Fi for `UCX_SOAK_HOURS` (default 1; run 24 before a release), checks uptime, gateway ping, sockets and links every `UCX_SOAK_INTERVAL_S` (default 600) and writes `build/soak.csv`.
 

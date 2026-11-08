@@ -500,6 +500,18 @@ static void routeFavicon(const uHttpRequest_t *req, uHttpResponse_t *resp, void 
     resp->body_static = true;
 }
 
+static void routeManual(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    const char *text = ucxapp_manual_text();
+    (void)req;
+    (void)user;
+    resp->status_code = 200;
+    snprintf(resp->content_type, sizeof(resp->content_type), "text/markdown; charset=utf-8");
+    resp->body = text;
+    resp->body_length = (int32_t)strlen(text);
+    resp->body_static = true;
+}
+
 static void routeEvents(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
     (void)user;
@@ -868,6 +880,24 @@ static void routeComplete(const uHttpRequest_t *req, uHttpResponse_t *resp, void
     uWebServerSendJSON(resp, gBuf);
 }
 
+/* /api/conn: {"t":"snapshot lines"} for the Connections view; asking keeps the worker refreshing it. */
+static void routeConn(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    static char text[UCXAPP_CONN_SNAPSHOT];
+    size_t n = 0;
+
+    (void)user;
+    if (!tokenOk(req)) {
+        uWebServerSendError(resp, 403, "token required");
+        return;
+    }
+    (void)ucxapp_ui_conn_text(text, sizeof(text));
+    n += (size_t)snprintf(gBuf + n, API_BUF - n, "{\"t\":\"");
+    jsonStr(gBuf, &n, text);
+    snprintf(gBuf + n, API_BUF - n, "\"}");
+    uWebServerSendJSON(resp, gBuf);
+}
+
 /* /api/examples?g=group */
 static void routeExamples(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
@@ -1070,6 +1100,8 @@ static const struct {
     { U_HTTP_METHOD_GET,  "/api/find",     routeFind },
     { U_HTTP_METHOD_GET,  "/api/complete", routeComplete },
     { U_HTTP_METHOD_GET,  "/api/examples", routeExamples },
+    { U_HTTP_METHOD_GET,  "/api/conn",     routeConn },
+    { U_HTTP_METHOD_GET,  "/api/manual",   routeManual },
     { U_HTTP_METHOD_GET,  "/api/files",    routeFiles },
     { U_HTTP_METHOD_GET,  "/api/file",     routeFile },
     { U_HTTP_METHOD_POST, "/api/upload",   routeUpload },

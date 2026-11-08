@@ -1475,6 +1475,7 @@ static int cmdBtCs(ucxapp_t *app, int argc, char *argv[])
 static struct {
     int32_t conn[CS_RING];
     int32_t mm[CS_RING];
+    uint32_t ms[CS_RING];
     uint32_t head;
     uint32_t pctCount;
 } gCs;
@@ -1484,8 +1485,26 @@ void ucxapp_bt_cs_distance(int32_t conn, int32_t mm)
     ucxapp_events_lock();
     gCs.conn[gCs.head % CS_RING] = conn;
     gCs.mm[gCs.head % CS_RING] = mm;
+    gCs.ms[gCs.head % CS_RING] = ucxapp_platform_tick_ms();
     gCs.head++;
     ucxapp_events_unlock();
+}
+
+bool ucxapp_bt_cs_last(int32_t conn, int32_t *mm, uint32_t *ageMs)
+{
+    bool found = false;
+
+    ucxapp_events_lock();
+    for (uint32_t i = 0; i < CS_RING && i < gCs.head && !found; i++) {
+        uint32_t k = (gCs.head - 1 - i) % CS_RING;
+        if (gCs.conn[k] == conn) {
+            *mm = gCs.mm[k];
+            *ageMs = ucxapp_platform_tick_ms() - gCs.ms[k];
+            found = true;
+        }
+    }
+    ucxapp_events_unlock();
+    return found;
 }
 
 void ucxapp_bt_cs_pct(int32_t conn, int32_t antenna, int32_t channels)

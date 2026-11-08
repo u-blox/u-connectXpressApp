@@ -1165,13 +1165,13 @@ static void virtCfg(virt_t *v, const uint8_t *f, size_t len)
     }
 }
 
-/* UBX-MON-RF and UBX-SEC-SIG (version 2) into out (room for 48 bytes) when turned on. A 60 s cycle from the moment
-   they were turned on: interference with a strong CW jammer from 3 to 13 s, spoofing indicated from 20 to 26 s. */
+/* UBX-MON-RF and UBX-SEC-SIG (version 2) into out (room for 48 bytes) when turned on. A 10 s cycle from the moment
+   they were turned on: interference with a strong CW jammer from 1 to 3 s, spoofing indicated from 4 to 6 s. */
 static size_t virtSecurity(uint8_t *out, const virt_t *v, uint32_t now)
 {
-    uint32_t phase = ((now - v->secSince) / 1000u) % 60u;
-    uint8_t jam = phase >= 3 && phase < 13 ? 2 : 1;
-    uint8_t spoof = phase >= 20 && phase < 26 ? 2 : 1;
+    uint32_t phase = ((now - v->secSince) / 1000u) % 10u;
+    uint8_t jam = phase >= 1 && phase < 3 ? 2 : 1;
+    uint8_t spoof = phase >= 4 && phase < 6 ? 2 : 1;
     uint8_t pl[4 + 24] = { 0 };
     size_t n = 0;
 

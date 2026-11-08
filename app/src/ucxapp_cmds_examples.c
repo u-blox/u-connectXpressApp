@@ -268,6 +268,8 @@ static const example_t kExamples[] = {
       "dev.power deep\n# the module starts as after a reset" },
 
 #if UCXAPP_HOST
+    { "conn", "Every link at a glance (the web page's Connections view shows the same, animated)",
+      "conn.status\n# the lines the web view reads\nconn.status raw" },
     { "cell", "Cellular data link",
       "cell.detect\ncell.open\ncell.apn internet\ncell.attach on\ncell.status\ncell.ping u-blox.com" },
     { "cell", "Check the modem, SIM and signal without AT commands",
@@ -727,12 +729,14 @@ static void printGroup(const char *group)
     }
 }
 
-/* While a demo runs, steps that watch or serve for a while get DEMO_STEP_S seconds: the argument at the command's
+/* While a demo runs, steps that watch or serve for a while get DEMO_STEP_S seconds (VIRTUAL_STEP_S on a virtual
+   module outside a demo: nobody watches): the argument at the command's
    seconds position (counted after the command word; perf.throughput sps has it one earlier). */
 #define DEMO_STEP_S 3
+#define VIRTUAL_STEP_S 1
 static bool gDemoFast;
 
-static void fastLine(char *line)
+static void fastLine(char *line, int cap)
 {
     static const struct {
         const char *cmd;
@@ -741,7 +745,7 @@ static void fastLine(char *line)
                    { "wifi.survey", 1 }, { "sock.accept", 1 },   { "mqtt.read", 1 },       { "sock.echo", 3 },
                    { "sock.recvfrom", 3 }, { "perf.phone", 2 },  { "perf.throughput", 4 }, { "bt.cs.range", 2 },
                    { "gatt.server.sps", 1 }, { "gatt.server.wps", 1 }, { "gatt.server.hrs", 1 },
-                   { "gatt.server.ras", 1 } };
+                   { "gatt.server.ras", 1 }, { "wifi.rssi", 1 }, { "perf.latency", 4 } };
     size_t wordLen = strcspn(line, " ");
     int arg = 0;
 
@@ -750,7 +754,7 @@ static void fastLine(char *line)
             arg = kTimed[i].arg;
         }
     }
-    if (arg == 4 && strncmp(line + wordLen, " sps", 4) == 0) {
+    if (arg == 4 && strncmp(line, "perf.throughput sps", 19) == 0) {
         arg = 2;
     }
     char *p = line + wordLen;
@@ -764,9 +768,9 @@ static void fastLine(char *line)
     p++;
     size_t len = strcspn(p, " ");
 
-    if (len > 0 && strspn(p, "0123456789") == len && atoi(p) > DEMO_STEP_S) {
+    if (len > 0 && strspn(p, "0123456789") == len && atoi(p) > cap) {
         memmove(p + 1, p + len, strlen(p + len) + 1);
-        p[0] = (char)('0' + DEMO_STEP_S);
+        p[0] = (char)('0' + cap);
     }
 }
 
@@ -799,8 +803,9 @@ static int runExample(ucxapp_t *app, const char *group, int n)
 #if UCXAPP_HOST
             ucxapp_demo_line(app, line, sizeof(line));
 #endif
-            if (gDemoFast) {
-                fastLine(line);
+            /* a simulation has nothing to wait for: timed steps are cut short there too */
+            if (gDemoFast || ucxapp_module_is_virtual(app)) {
+                fastLine(line, gDemoFast ? DEMO_STEP_S : VIRTUAL_STEP_S);
             }
             snprintf(word, sizeof(word), "%.*s", (int)strcspn(line, " "), line);
             c = ucxapp_cmd_find(word);

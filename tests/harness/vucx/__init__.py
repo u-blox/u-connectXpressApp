@@ -505,15 +505,21 @@ class Vucx:
         self._listen = None
         self._thread = None
         self._stop = threading.Event()
+        self._wlock = threading.Lock()
 
     def _write(self, data):
-        if self._listen is not None:
-            conn = self._conn
-            if conn is None:
-                raise OSError("no client")
-            conn.sendall(data)
-        else:
-            os.write(self._fd, data)
+        # Timer threads send delayed URCs while the reader answers commands: one lock keeps each send whole,
+        # and a pty may take a large write in parts.
+        with self._wlock:
+            if self._listen is not None:
+                conn = self._conn
+                if conn is None:
+                    raise OSError("no client")
+                conn.sendall(data)
+                return
+            view = memoryview(data)
+            while view:
+                view = view[os.write(self._fd, view):]
 
     def _ft_ble(self, cmd):
         """A write to the peer's ft CTRL/DATA characteristic: the replies come back as notifications."""

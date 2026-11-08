@@ -443,11 +443,12 @@ def host(args, extra):
         sign(args.sign)
     if (args.build or args.clean or args.rebuild or args.all or args.sign) and not args.run:
         return 0
+    if args.virtual and os.environ.get("UCX_APP_EXE"):   # the tests' own exe: never rebuild app/bin under them
+        return run_virtual(Path(os.environ["UCX_APP_EXE"]), args.virtual, extra)
     exe = pick_exe(args)
     extra = [*extra, "--exec", "hid.setup", "--shell"] if args.hid else extra
     if args.virtual:
-        # the tests point at the exe they built (e.g. the coverage build)
-        return run_virtual(Path(os.environ.get("UCX_APP_EXE") or exe), args.virtual, extra)
+        return run_virtual(exe, args.virtual, extra)
     return run_app(exe, extra)
 
 
@@ -1867,6 +1868,8 @@ def main(argv):
     if args.publish_web is not None:
         return publish_web(args.publish_web)
     if args.web_preview is not None:
+        if os.environ.get("UCX_APP_EXE"):
+            return web_preview(Path(os.environ["UCX_APP_EXE"]), args.web_preview)
         exe = host_exe(args.debug)
         if stale(exe):
             host_build(["Debug" if args.debug else "Release"])

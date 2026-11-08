@@ -33,7 +33,9 @@
 #define OUT_CHUNK_ESC  380      /* escaped bytes per SSE event; the engine caps an event at 512 */
 #define KEEPALIVE_MS   15000
 #define MAX_JOB        256
+#ifndef DL_CHUNK
 #define DL_CHUNK       16384    /* download slice; the page asks again until a shorter slice arrives */
+#endif
 #define FILE_NAME_MAX  64
 #define COOKIE         "ucxt"
 
@@ -490,7 +492,15 @@ static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
      * and every API call checks it. */
     (void)req;
     (void)user;
+#ifdef kPageBytes_GZIP   /* boards keep the page gzip-compressed in flash */
+    resp->status_code = 200;
+    snprintf(resp->content_type, sizeof(resp->content_type), "text/html");
+    snprintf(resp->custom_headers, sizeof(resp->custom_headers), "Content-Encoding: gzip\r\n");
+    resp->body = (const char *)kPageBytes;
+    resp->body_length = (int32_t)sizeof(kPageBytes);
+#else
     uWebServerSendHTML(resp, kPage);
+#endif
     resp->body_static = true;
 }
 
@@ -590,7 +600,9 @@ static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
 
 /* ---- generated command list for the page ------------------------------------- */
 
-#define API_BUF    65536
+#ifndef API_BUF
+#define API_BUF    65536   /* the boards set less: their command list is shorter */
+#endif
 #define API_MARGIN 8192   /* the largest command entry (gnss.bridge with all its forms) */
 #define MAX_HITS   60
 
@@ -635,13 +647,15 @@ static void appendFields(size_t *pn, const ucxapp_ui_field_t *fields, int nf)
 
 static void appendCmd(size_t *pn, bool *first, const ucxapp_cmd_t *c)
 {
-    static ucxapp_ui_variant_t forms[UCXAPP_UI_MAX_VARIANTS];
-    int nv = ucxapp_ui_parse_variants(c->usage, forms, UCXAPP_UI_MAX_VARIANTS);
+    /* 48 KB of parse space: on the heap only while one entry is written, so the boards keep it out of static RAM. */
+    ucxapp_ui_variant_t *forms = malloc(sizeof(*forms) * UCXAPP_UI_MAX_VARIANTS);
     size_t n = *pn;
 
-    if (strncmp(c->name, "web.", 4) == 0 || n + API_MARGIN >= API_BUF) {
+    if (forms == NULL || strncmp(c->name, "web.", 4) == 0 || n + API_MARGIN >= API_BUF) {
+        free(forms);
         return;
     }
+    int nv = ucxapp_ui_parse_variants(c->usage, forms, UCXAPP_UI_MAX_VARIANTS);
     gBuf[n++] = *first ? ' ' : ',';
     *first = false;
     n += (size_t)snprintf(gBuf + n, API_BUF - n, "{\"n\":\"");
@@ -670,6 +684,7 @@ static void appendCmd(size_t *pn, bool *first, const ucxapp_cmd_t *c)
     }
     gBuf[n++] = '}';
     *pn = n;
+    free(forms);
 }
 
 static bool hasExamples(const char *group)
@@ -1167,6 +1182,15 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (port < 0) {
         port = plain ? DEFAULT_PORT : 443;
     }
+#ifdef UCXAPP_WEB_HTTPS_ONLY
+    if (plain) {   /* the boards serve the page, tokens and keys over TLS only */
+        ucxapp_print("ERROR: this board serves the web UI over https only\n");
+        return UCXAPP_ERR_FAILED;
+    }
+#define WEB_HTTP_HINT ""
+#else
+#define WEB_HTTP_HINT " (or web.start http)"
+#endif
     if (gServer != NULL) {
         ucxapp_print("already running; web.stop first\n");
         return UCXAPP_ERR_FAILED;
@@ -1178,7 +1202,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (!plain && autoCert) {
         bool created = false;
         if (!ucxapp_tls_web_cert(ip, &created, err, sizeof(err))) {
-            ucxapp_print("ERROR: TLS certificate for %s: %s (or web.start http)\n", ip, err);
+            ucxapp_print("ERROR: TLS certificate for %s: %s" WEB_HTTP_HINT "\n", ip, err);
             return UCXAPP_ERR_FAILED;
         }
         if (created) {

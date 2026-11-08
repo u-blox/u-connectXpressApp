@@ -4,9 +4,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef UCXAPP_WEB   /* boards with the HTTPS web UI build ucxapp_cmds_web.c and ucxapp_ui.c */
 void ucxapp_web_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
 void ucxapp_web_on_data(int32_t sock, int32_t bytes) { (void)sock; (void)bytes; }
 void ucxapp_web_on_closed(int32_t sock) { (void)sock; }
+#else
+/* The web UI's cellular card and About text on the boards (no cellular modem driver, no TUI). */
+bool ucxapp_cell_dash(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return false; }
+bool ucxapp_cell_card(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return false; }
+size_t ucxapp_cell_summary(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return 0; }
+const char *ucxapp_version_text(void) { return "u-connectXpressApp (built " __DATE__ " " __TIME__ ")"; }
+/* The Connections view (ucxapp_cmds_conn.c): the module is on the board's UART, no GNSS or modem bridges. */
+const char *ucxapp_device_port(void) { return "UART"; }
+const char *ucxapp_stream_open_port(const char *kind) { (void)kind; return NULL; }
+const char *ucxapp_cell_port(void) { return NULL; }
+bool ucxapp_gnss_dash(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return false; }
+#endif
 #ifndef UCXAPP_CAN_HW   /* boards with CAN take these for can.bridge (ucxapp_cmds_can.c) */
 void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
 void ucxapp_stream_on_closed(int32_t sock) { (void)sock; }
@@ -29,12 +42,14 @@ bool ucxapp_gnss_position(double *lat, double *lon) { (void)lat; (void)lon; retu
 bool ucxapp_gnss_utc(int ymdhms[6], uint32_t *ageMs) { (void)ymdhms; (void)ageMs; return false; }
 bool ucxapp_gnss_card(char *out, size_t size) { if (size > 0) { out[0] = '\0'; } return false; }
 size_t ucxapp_imu_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
+#ifndef UCXAPP_WEB
 void ucxapp_ui_event(const char *text) { (void)text; }
 void ucxapp_ui_wifi_set(bool up) { (void)up; }
 #ifndef UCXAPP_LITE
 void ucxapp_ui_thread_changed(void) { }
 #endif
 void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel) { (void)text; (void)prefill; (void)cancel; }
+#endif
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     (void)conn; (void)handle; (void)data; (void)len;

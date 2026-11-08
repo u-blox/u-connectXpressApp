@@ -102,19 +102,19 @@ The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Up
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 2.3 MB | - | - | 8.9 MB | - | - |
 | `linux` | Linux x64 | 2.3 MB | - | - | 2.8 MB | - | - |
-| `h753` | NUCLEO-H753ZI | 524 KB | 2048 KB | 26% | 309 KB | 512 KB | 61% |
-| `f767` | NUCLEO-F767ZI | 513 KB | 2048 KB | 25% | 323 KB | 368 KB | 88% |
-| `f439` | NUCLEO-F439ZI | 516 KB | 2048 KB | 25% | 127 KB | 192 KB | 66% |
-| `f407` | STM32F4DISCOVERY | 514 KB | 1024 KB | 50% | 104 KB | 128 KB | 81% |
-| `f401` | NUCLEO-F401RE | 486 KB | 512 KB | 95% | 83 KB | 96 KB | 87% |
-| `f446` | NUCLEO-F446RE | 498 KB | 512 KB | 97% | 103 KB | 128 KB | 81% |
+| `h753` | NUCLEO-H753ZI | 811 KB | 2048 KB | 40% | 404 KB | 512 KB | 79% |
+| `f767` | NUCLEO-F767ZI | 800 KB | 2048 KB | 39% | 334 KB | 368 KB | 91% |
+| `f439` | NUCLEO-F439ZI | 517 KB | 2048 KB | 25% | 127 KB | 192 KB | 66% |
+| `f407` | STM32F4DISCOVERY | 515 KB | 1024 KB | 50% | 104 KB | 128 KB | 82% |
+| `f401` | NUCLEO-F401RE | 487 KB | 512 KB | 95% | 83 KB | 96 KB | 87% |
+| `f446` | NUCLEO-F446RE | 499 KB | 512 KB | 98% | 103 KB | 128 KB | 81% |
 | `f103` | NUCLEO-F103RB | 127 KB | 128 KB | 100% | 15 KB | 20 KB | 79% |
 | `g071` | NUCLEO-G071RB | 127 KB | 128 KB | 100% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
 ## Secure by default
 
-Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key), the web UI needs a random 128-bit token (served over HTTPS by default with a certificate from a local CA; `web.start http` for plain HTTP), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
+Saved Wi-Fi passwords are sealed with AES-256-GCM (per-install key), the web UI needs a random 128-bit token (served over HTTPS by default with a certificate from a local CA; `web.start http` for plain HTTP), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. Keys and tokens come from the OS random generator or, on the STM32 boards, the hardware TRNG with no weak fallback ([docs/SECURITY.md](docs/SECURITY.md)). The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
 
 mbedTLS is only built into the host targets (Windows, Linux, browser), for `tls.*`, `utils.cert.*`, `utils.encrypt` and the sealed passwords. The STM32 builds (FreeRTOS and Zephyr) leave it out: the module does TLS itself and `cert.*` only uploads files to it. On STM32, saved Wi-Fi passwords are only obfuscated (XOR), not encrypted, so turn on read-out protection (RDP level 1) on boards that keep real credentials.
 

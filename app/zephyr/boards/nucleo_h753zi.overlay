@@ -3,6 +3,11 @@
  * The shell stays on the ST-Link virtual COM port (USART3, zephyr,console). */
 
 / {
+	chosen {
+		/* Hardware TRNG: the only entropy source of the HTTPS web UI (ucxapp_rng_zephyr.c). */
+		zephyr,entropy = &rng;
+	};
+
 	aliases {
 		ucxapp-module = &usart1;
 	};
@@ -12,5 +17,9 @@
 	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
 	pinctrl-names = "default";
 	current-speed = <115200>;
+	status = "okay";
+};
+
+&rng {
 	status = "okay";
 };

@@ -1,5 +1,5 @@
 /* conn: the module's live links (Wi-Fi station and access point, BLE with Channel Sounding distance, Thread and
- * sockets) as a table, and as compact lines for the web Connections view (host only).
+ * sockets) as a table, and as compact lines for the web Connections view (host and the STM32 web boards).
  *
  * Snapshot lines, fields split by '|' (text fields never hold '|' or a newline):
  *   m|port|model|firmware|uptime_s|exact|bt_addr   module; exact 0 when no +STARTUP was seen since connect

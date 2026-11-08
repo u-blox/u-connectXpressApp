@@ -375,6 +375,11 @@ static void appTask(void *arg)
 #ifdef UCXAPP_CAN_HW
     ucxapp_register_can_cmds();
 #endif
+#ifdef UCXAPP_WEB
+    ucxapp_register_web_cmds();
+    ucxapp_register_manual_cmds();
+    ucxapp_register_conn_cmds();
+#endif
 #ifndef UCXAPP_LITE
     ucxapp_register_examples_cmds();
 #endif

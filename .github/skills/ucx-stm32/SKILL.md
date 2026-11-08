@@ -72,6 +72,11 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - `bridge [baud]` makes the board a transparent console-to-module bridge (AT debugging, XMODEM updates). Press Ctrl-] with 1 s of silence before and after to return to the shell.
 - Command list: `COMMANDS.md`.
 
+## Web UI over HTTPS (H753, F767)
+- NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) build the web UI with mbedTLS: `wifi.connect <ssid> <pw>`, then `web.start` prints `https://<module-ip>/#t=<token>`. Plain `http` is refused.
+- The first start makes `tls-ca` and `tls-web` on the board (littlefs on FreeRTOS, RAM on Zephyr, so a new CA after each reset); accept the browser's certificate warning once per CA.
+- Keys and the token come only from the RNG peripheral (TRNG); if it fails, `web.start` fails. See `docs/SECURITY.md`. Other boards have no web UI (RAM or no RNG).
+
 ## Low power (host MCU)
 - FreeRTOS: a `sleep` task at idle priority (listed by `sys.tasks`) stops the core with WFI until the next interrupt, and the shell polls the console every 10 ms once it has been quiet for 200 ms. Interrupts wake the core at once, so AT and bridge latency are unchanged.
 - Zephyr: the idle thread does the same with WFI on a tickless kernel. STOP modes (`CONFIG_PM`) stay off because the UARTs would drop bytes at 115200 while the clocks restart.

@@ -563,7 +563,7 @@ static bool saveProfiles(const profile_t *list, int count)
 /* Boards without UCXAPP_CRYPTO only obfuscate: say so where the password is saved, not just in the README. */
 static void warnWeakStore(const char *password)
 {
-#ifdef UCXAPP_CRYPTO
+#if defined(UCXAPP_CRYPTO) || defined(UCXAPP_LITE)   /* lite (128 KB flash): documented in docs/SECURITY.md */
     (void)password;
 #else
     if (password != NULL && password[0] != '\0') {

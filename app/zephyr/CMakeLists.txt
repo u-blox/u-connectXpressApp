@@ -73,6 +73,30 @@ if(BOARD MATCHES "^(nucleo_f401re|nucleo_f446re|stm32f4_disco)$")
     target_compile_definitions(app PRIVATE HTTP_MAX_URL=512 REQ_BODY_SIZE=2048
         UCXAPP_RX_BUFFER_SIZE=4096 UCXAPP_CONSOLE_RX_SIZE=1024 LISTED_MAX=32)
 endif()
+# The H753 and F767 serve the web UI over HTTPS only, as in the FreeRTOS build (keys from the RNG peripheral
+# through zephyr,entropy; see docs/SECURITY.md).
+if(BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi)$")
+    include(${REPO_ROOT}/app/mbedtls_embedded.cmake)
+    include(${REPO_ROOT}/app/embed.cmake)
+    set(_webgen ${CMAKE_CURRENT_BINARY_DIR}/gen)
+    file(MAKE_DIRECTORY ${_webgen})
+    ucxapp_embed(${REPO_ROOT}/app/web/index.html ${_webgen}/ucxapp_webpage.h kPageBytes GZIP)
+    ucxapp_embed(${REPO_ROOT}/app/web/icon.svg ${_webgen}/ucxapp_favicon.h kFavicon)
+    ucxapp_embed(${REPO_ROOT}/COMMANDS.md ${_webgen}/ucxapp_manual_text.h kManualBytes NUL)
+    target_sources(app PRIVATE
+        ${APP_SRC}/ucxapp_cmds_web.c
+        ${APP_SRC}/ucxapp_ui.c
+        ${APP_SRC}/u_webserver.c
+        ${APP_SRC}/ucxapp_tls.c
+        ${APP_SRC}/ucxapp_cmds_manual.c
+        ${APP_SRC}/ucxapp_cmds_conn.c
+        ucxapp_thread_zephyr.c
+        ucxapp_rng_zephyr.c
+        ${UCXAPP_MBEDTLS_SOURCES})
+    target_include_directories(app PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})
+    target_compile_definitions(app PRIVATE UCXAPP_WEB UCXAPP_WEB_HTTPS_ONLY ${UCXAPP_MBEDTLS_DEFINES}
+        "kManual=((const char *)kManualBytes)" API_BUF=32768 DL_CHUNK=4096)
+endif()
 
 target_include_directories(app PRIVATE ${APP_SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(app PRIVATE -Wall -Wextra)

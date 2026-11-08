@@ -97,6 +97,30 @@ if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc|nu
     list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_can.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_can_stm32.c)
     set(UCXAPP_CAN_HW ON)
 endif()
+# Boards with a hardware TRNG and RAM to spare serve the web UI over HTTPS only (mbedTLS, keys from the RNG
+# peripheral; see docs/SECURITY.md). The F439/F407 (128-192 KB RAM) cannot hold the page buffers and a TLS
+# session next to the app, the F401 has no RNG, the F446 and the lite boards lack the RAM.
+if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi)$")
+    set(UCXAPP_WEB ON)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../mbedtls_embedded.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../embed.cmake)
+    set(_webgen ${CMAKE_CURRENT_BINARY_DIR}/gen)
+    file(MAKE_DIRECTORY ${_webgen})
+    ucxapp_embed(${CMAKE_CURRENT_SOURCE_DIR}/../web/index.html ${_webgen}/ucxapp_webpage.h kPageBytes GZIP)
+    ucxapp_embed(${CMAKE_CURRENT_SOURCE_DIR}/../web/icon.svg ${_webgen}/ucxapp_favicon.h kFavicon)
+    ucxapp_embed(${CMAKE_CURRENT_SOURCE_DIR}/../../COMMANDS.md ${_webgen}/ucxapp_manual_text.h kManualBytes NUL)
+    list(APPEND UCXAPP_STM32_SOURCES
+        ${APP_SRC}/ucxapp_cmds_web.c
+        ${APP_SRC}/ucxapp_ui.c
+        ${APP_SRC}/u_webserver.c
+        ${APP_SRC}/ucxapp_tls.c
+        ${APP_SRC}/ucxapp_cmds_manual.c
+        ${APP_SRC}/ucxapp_cmds_conn.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_thread_freertos.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_rng_stm32.c
+        ${UCXAPP_MBEDTLS_SOURCES}
+    )
+endif()
 
 string(TOLOWER "${STM32_BOARD}" _board)
 set(UCXAPP_STM32_NAME "ucxapp_${_board}")
@@ -122,6 +146,11 @@ target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE LFS_THREADSAFE LFS_N
 if(UCXAPP_CAN_HW)
     target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_CAN_HW)
 endif()
+if(UCXAPP_WEB)
+    target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_WEB UCXAPP_WEB_HTTPS_ONLY ${UCXAPP_MBEDTLS_DEFINES}
+        "kManual=((const char *)kManualBytes)" API_BUF=32768 DL_CHUNK=4096)
+endif()
 # The command layer needs more heap than the examples (32 KB default); the F439ZI and F407VG have little RAM.
 if(UCXAPP_LITE)
     if(STM32_BOARD STREQUAL "nucleo_g071rb")
@@ -139,6 +168,12 @@ elseif(STM32_BOARD STREQUAL "nucleo_f439zi" OR STM32_BOARD STREQUAL "f407_disc" 
     set(UCXAPP_HEAP_SIZE 49152)
 else()
     set(UCXAPP_HEAP_SIZE 163840)
+endif()
+# The F767's 368 KB main RAM also holds the web UI and the newlib heap that mbedTLS allocates from (one TLS
+# session is about 35 KB); the FreeRTOS heap only holds task stacks (app 24 KB, two web threads 24 KB) and
+# RTOS objects.
+if(UCXAPP_WEB AND STM32_BOARD STREQUAL "nucleo_f767zi")
+    set(UCXAPP_HEAP_SIZE 81920)
 endif()
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE}
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h")

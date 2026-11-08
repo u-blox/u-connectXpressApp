@@ -37,11 +37,29 @@ EVIDENCE = {
     "Robust against malformed input (EN 18031 RLM; CRA I(2)(h)(i))": [
         "test_certfile.py::test_bad_input",
         "test_crypt.py::test_decrypt_bad_input_and_usage"],
+    "Keys and tokens from a true random source, no weak fallback (EN 18031 CCK; CRA I(2)(e))": [
+        "test_cra.py::test_boards_take_entropy_only_from_the_hardware_trng"],
 }
 
 
 def _functions(path):
     return {n.name for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"))) if isinstance(n, ast.FunctionDef)}
+
+
+def test_boards_take_entropy_only_from_the_hardware_trng():
+    app = TESTS.parent / "app"
+    cfg = (app / "mbedtls_embedded_crypto.h").read_text(encoding="utf-8")
+    assert "#undef MBEDTLS_PSA_BUILTIN_GET_ENTROPY" in cfg and "#define MBEDTLS_PSA_DRIVER_GET_ENTROPY" in cfg
+    for drv in (app / "stm32_freertos" / "ucxapp_rng_stm32.c", app / "zephyr" / "ucxapp_rng_zephyr.c"):
+        src = drv.read_text(encoding="utf-8")
+        assert "mbedtls_platform_get_entropy" in src and "PSA_ERROR_INSUFFICIENT_ENTROPY" in src, drv.name
+        assert not re.search(r"\b(rand|srand|HAL_GetTick|xTaskGetTickCount|k_cycle_get_32)\s*\(",
+                             src.split("mbedtls_ms_time")[0]), f"{drv.name}: entropy must not use a weak source"
+    for overlay in ("nucleo_h753zi", "nucleo_f767zi"):
+        assert "zephyr,entropy = &rng" in (app / "zephyr" / "boards" / f"{overlay}.overlay").read_text()
+    doc = (TESTS.parent / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    for platform in ("Windows", "Linux", "WebAssembly", "STM32 FreeRTOS", "STM32 Zephyr", "Boards without TLS"):
+        assert platform in doc, platform
 
 
 @pytest.mark.parametrize("item", EVIDENCE)

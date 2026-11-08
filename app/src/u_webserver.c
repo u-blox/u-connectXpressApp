@@ -246,7 +246,7 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
     // Build headers
     char content_length_header[64] = "";
     if (!is_sse) {
-        snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d\r\n", body_len);
+        snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d\r\n", (int)body_len);
     }
     
     int32_t written = snprintf(buffer, buffer_size,
@@ -256,7 +256,7 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
         "Connection: %s\r\n"
         "%s"  // Custom headers
         "\r\n",
-        response->status_code, status_text,
+        (int)response->status_code, status_text,
         response->content_type[0] ? response->content_type : "text/plain",
         content_length_header,
         connection_header,
@@ -463,7 +463,7 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     }
 
     U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Response: %d %s (%d bytes) socket=%d",
-                  response.status_code, response.content_type, (int)response_len, (int)client->socket);
+                  (int)response.status_code, response.content_type, (int)response_len, (int)client->socket);
 
     if (response_len <= 0) {
         // Nothing to send (build_response failed or empty body) \u2014 drop response,
@@ -1051,7 +1051,7 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
             const char *line_end = strchr(line_start, '\n');
             int32_t line_len = line_end ? (int32_t)(line_end - line_start) : (int32_t)strlen(line_start);
             
-            len += snprintf(event_buffer + len, cap - (size_t)len, "data: %.*s\n", line_len, line_start);
+            len += snprintf(event_buffer + len, cap - (size_t)len, "data: %.*s\n", (int)line_len, line_start);
             
             if (!line_end) break;
             line_start = line_end + 1;

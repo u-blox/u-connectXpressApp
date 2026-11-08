@@ -560,6 +560,18 @@ static bool saveProfiles(const profile_t *list, int count)
     return ok;
 }
 
+/* Boards without UCXAPP_CRYPTO only obfuscate: say so where the password is saved, not just in the README. */
+static void warnWeakStore(const char *password)
+{
+#ifdef UCXAPP_CRYPTO
+    (void)password;
+#else
+    if (password != NULL && password[0] != '\0') {
+        ucxapp_print("note: the password is only obfuscated on this target, not encrypted; anyone with the board can read it\n");
+    }
+#endif
+}
+
 static int findProfile(const profile_t *list, int count, const char *name)
 {
     for (int i = 0; i < count; i++) {
@@ -941,6 +953,7 @@ static int cmdWifiConnect(ucxapp_t *app, int argc, char *argv[])
             if (saveProfiles(list, count)) {
                 ucxapp_store_save(LAST_FILE, list[idx].name, strlen(list[idx].name));
                 ucxapp_print("saved as profile '%s'\n", list[idx].name);
+                warnWeakStore(list[idx].password);
             }
         }
         return rc;
@@ -987,6 +1000,7 @@ static int cmdProfileAdd(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("profile '%s' saved (ssid '%s')\n", argv[1], argv[2]);
+    warnWeakStore(password);
     return UCXAPP_OK;
 }
 

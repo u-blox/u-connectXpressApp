@@ -1237,6 +1237,8 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("web server on %s: %s://%s:%d/#t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
     if (gHttps) {
         ucxapp_print("trust tls-ca.crt in the browser (utils.tls.pem ca) to avoid the certificate warning\n");
+    } else {
+        ucxapp_print("note: plain HTTP: anyone on this network can read the page and the link token; use web.start https on networks you do not trust\n");
     }
     return UCXAPP_OK;
 }

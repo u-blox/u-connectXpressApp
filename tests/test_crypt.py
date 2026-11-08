@@ -87,6 +87,7 @@ def test_encrypt_empty_file(app_exe, tmp_path):
 def test_wifi_passwords_are_sealed_with_the_install_key(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "wifi.profile.add home ubx s3cret!", "wifi.profile.add cafe CafeNet")
     assert out.returncode == 0, out.stdout
+    assert "only obfuscated" not in out.stdout     # boards without UCXAPP_CRYPTO print this note instead
     storage = tmp_path / "storage"
     lines = dict(line.split("\t", 1) for line in (storage / "ucxapp.wifi").read_text().splitlines())
     assert lines["home"].startswith("ubx\ta1:")

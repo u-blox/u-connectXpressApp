@@ -2,7 +2,7 @@
 
 **Your u-connectXpress module, live in seconds. Plug in, type a command, see it work, then automate exactly that.**
 
-**[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial. No EVK? Click **Virtual module**.
+**[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial (Firefox, Safari and phones: Virtual module only). No EVK? Click **Virtual module** and pick Wi-Fi + BLE + Thread, Wi-Fi + BLE, BLE + Thread or BLE only. Install it from the address bar to use it offline.
 
 ```powershell
 ucxapp wifi.connect MySsid MyPassword
@@ -86,10 +86,8 @@ Every command, with arguments: [COMMANDS.md](COMMANDS.md), or `help` in the shel
 ## Quick start from source
 
 ```powershell
-git clone https://github.com/u-blox/u-connectXpressApp.git
+git clone --recurse-submodules https://github.com/u-blox/u-connectXpressApp.git
 cd u-connectXpressApp
-git submodule update --init u-connectClient
-git submodule update --init --recursive third-party/mbedtls
 .\ucxapp             # builds on first run, then starts the shell
 ```
 

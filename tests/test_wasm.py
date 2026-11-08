@@ -130,7 +130,7 @@ def test_fx_off_has_no_colors(site):
         page.add_init_script(FAKE_SERIAL)
         # a first visit (nothing stored) is plain
         page.goto(site)
-        page.wait_for_selector("#fx-tg")
+        page.wait_for_selector("#fx-tg", state="attached")  # it sits in the closed overflow menu
         assert page.evaluate("document.getElementById('fx-css').disabled")
         assert "gradient" not in page.eval_on_selector("#ucs", "e => getComputedStyle(e).backgroundImage")
         assert "gradient" not in page.eval_on_selector("h1", "e => getComputedStyle(e).backgroundImage")

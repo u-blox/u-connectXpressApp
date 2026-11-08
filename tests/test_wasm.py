@@ -63,6 +63,27 @@ def test_page_script_is_injected_before_the_page_script(tmp_path):
     assert "coi-serviceworker.js" in html
 
 
+def test_site_is_an_installable_offline_app(tmp_path):
+    import json
+    import subprocess
+    out = tmp_path / "index.html"
+    subprocess.run(["cmake", f"-DPAGE={ROOT / 'app' / 'web' / 'index.html'}", f"-DOUT={out}", "-P",
+                    str(WASM / "site.cmake")], check=True)
+    html = out.read_text(encoding="ascii")
+    assert html.index('rel="manifest" href="manifest.webmanifest"') < html.index("</head>")
+    manifest = json.loads((WASM / "manifest.webmanifest").read_text(encoding="ascii"))
+    assert manifest["display"] == "standalone" and manifest["start_url"] == "./"
+    assert manifest["icons"] and all(i["src"] == "icon.svg" for i in manifest["icons"])
+    # every file the site ships is kept for offline use, and every kept file is shipped
+    worker = (WASM / "coi-serviceworker.js").read_text(encoding="ascii")
+    cached = set(re.findall(r"'([\w.-]+\.\w+)'", worker[worker.index("FILES"):worker.index("];")]))
+    cmake = (ROOT / "app" / "CMakeLists.txt").read_text(encoding="utf-8")
+    copied = cmake[cmake.index("add_custom_command(TARGET ucxapp POST_BUILD"):cmake.index("VERBATIM")]
+    shipped = {Path(p).name for p in re.findall(r"/(?:wasm|web|web/public)/([\w.-]+\.(?:json|js|css|svg|webmanifest))",
+                                                 copied)} - {"coi-serviceworker.js"}
+    assert cached == shipped | {"index.html", "ucxapp.js", "ucxapp.wasm"}
+
+
 def test_public_look_is_only_on_the_site(tmp_path):
     import subprocess
     out = tmp_path / "index.html"

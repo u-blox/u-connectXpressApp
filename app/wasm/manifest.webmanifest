@@ -1,0 +1,11 @@
+{
+  "name": "u-connectXpressApp",
+  "short_name": "ucxapp",
+  "description": "Test and configure u-blox u-connectXpress modules (NORA-W36, NORA-B26) from the browser over Web Serial",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0e15",
+  "theme_color": "#0a0e15",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_logcfg.h"
 #include "ucxapp_store.h"
 #include "ucxapp_thread.h"
 #include "ucxapp_tls.h"
@@ -166,7 +167,7 @@ typedef struct {
     uint32_t logCur, evCur, doneSeen;
     uint32_t stateSeen;
     int32_t stateMs;
-    uint32_t cardSeen[2];   /* hash of the GNSS and cellular cards the page has */
+    uint32_t cardSeen[3];   /* hash of the GNSS, cellular and connections cards the page has */
 } viewer_t;
 
 /* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
@@ -206,6 +207,7 @@ static viewer_t *viewer(int i)
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
         v->cardSeen[0] = UINT32_MAX;
         v->cardSeen[1] = UINT32_MAX;
+        v->cardSeen[2] = UINT32_MAX;
         v->stateMs = U_CX_PORT_GET_TIME_MS();
     }
     return v;
@@ -289,8 +291,8 @@ typedef struct {
     const char *event;
     bool (*get)(char *out, size_t size);
     int slot;   /* in viewer_t.cardSeen */
-    char text[1024];
-    char json[1200];
+    char text[UCXAPP_CONN_SNAPSHOT];
+    char json[UCXAPP_CONN_SNAPSHOT + 512];
     uint32_t hash;
     int32_t builtMs;
     bool built;
@@ -339,9 +341,11 @@ static void flushCards(int first, int last)
 {
     static card_t gnss = { .event = "gnss", .get = ucxapp_gnss_card, .slot = 0 };
     static card_t cell = { .event = "cell", .get = ucxapp_ui_cell_card, .slot = 1 };
+    static card_t conn = { .event = "conn", .get = ucxapp_ui_conn_card, .slot = 2 };
 
     flushCard(&gnss, first, last);
     flushCard(&cell, first, last);
+    flushCard(&conn, first, last);
 }
 
 static void flushDone(int first, int last)
@@ -368,6 +372,7 @@ static void pumpLoop(void *arg)
     int32_t lastKeepAlive = U_CX_PORT_GET_TIME_MS();
 
     (void)arg;
+    ucxappLogAtQuiet(true);
     while (!gStop) {
         webEvent_t e;
         while (!gStop && popEvent(&e)) {
@@ -788,7 +793,7 @@ static void routeVersion(const uHttpRequest_t *req, uHttpResponse_t *resp, void 
     }
     n += (size_t)snprintf(gBuf, API_BUF, "{\"v\":\"");
     jsonStr(gBuf, &n, ucxapp_version_text());
-    snprintf(gBuf + n, API_BUF - n, "\"}");
+    snprintf(gBuf + n, API_BUF - n, "\",\"at\":%d}", ucxappLogAtShown() ? 1 : 0);
     uWebServerSendJSON(resp, gBuf);
 }
 

@@ -2,7 +2,7 @@
  * sockets) as a table, and as compact lines for the web Connections view (host only).
  *
  * Snapshot lines, fields split by '|' (text fields never hold '|' or a newline):
- *   m|port
+ *   m|port|model|firmware|uptime_s|exact|bt_addr   module; exact 0 when no +STARTUP was seen since connect
  *   w|ssid|rssi|channel|ip|gateway                 Wi-Fi station, only when connected
  *   a|ssid|channel|ip|stations|mac,mac,...         Wi-Fi access point, only when it has an address
  *   b|conn|addr|rssi|mtu|role|txphy|cs_mm|cs_age_ms  BLE link; role c(entral) or p(eripheral), cs empty if none
@@ -25,7 +25,9 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_cx_bluetooth.h"
+#include "u_cx_general.h"
 #include "u_cx_socket.h"
+#include "u_cx_system.h"
 #include "u_cx_thread.h"
 #include "u_cx_wifi.h"
 #ifdef _MSC_VER
@@ -239,6 +241,39 @@ static void hostLine(snap_t *s, char tag, const char *kind, bool (*dash)(char *,
     put(s, "%c|%s|%s\n", tag, port, line);
 }
 
+/* Model, firmware and BLE address do not change while the port stays the same: read them once. */
+static void moduleLine(ucxapp_t *app, snap_t *s, const char *port)
+{
+    static char sPort[40], sModel[32], sFw[40], sBt[20];
+    static uint32_t sBoot;
+    const char *text = NULL;
+    bool exact;
+    uint32_t boot = ucxapp_module_boot_ms(&exact);
+    uint32_t up = (ucxapp_platform_tick_ms() - boot) / 1000u;
+
+    if (strcmp(sPort, port) != 0 || sModel[0] == '\0' || boot != sBoot) {
+        uMacAddress_t mac;
+
+        sBoot = boot;
+        snprintf(sPort, sizeof(sPort), "%s", port);
+        sModel[0] = sFw[0] = sBt[0] = '\0';
+        if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
+            clean(sModel, sizeof(sModel), text);
+        }
+        uCxEnd(app->ucx);
+        text = NULL;
+        if (uCxGeneralGetSoftwareVersionBegin(app->ucx, &text) && text != NULL) {
+            clean(sFw, sizeof(sFw), text);
+        }
+        uCxEnd(app->ucx);
+        if (uCxSystemGetLocalAddress(app->ucx, U_INTERFACE_ID_BLUETOOTH, &mac) == 0) {
+            snprintf(sBt, sizeof(sBt), "%02X:%02X:%02X:%02X:%02X:%02X", mac.address[0], mac.address[1],
+                     mac.address[2], mac.address[3], mac.address[4], mac.address[5]);
+        }
+    }
+    put(s, "m|%s|%s|%s|%lu|%d|%s\n", port, sModel, sFw, (unsigned long)up, exact ? 1 : 0, sBt);
+}
+
 size_t ucxapp_conn_snapshot(ucxapp_t *app, char *out, size_t size)
 {
     snap_t s = { out, size, 0 };
@@ -250,7 +285,7 @@ size_t ucxapp_conn_snapshot(ucxapp_t *app, char *out, size_t size)
     out[0] = '\0';
     if (app != NULL && app->ucx != NULL) {
         clean(port, sizeof(port), ucxapp_device_port());
-        put(&s, "m|%s\n", port);
+        moduleLine(app, &s, port);
         if (ucxapp_module_has_wifi(app)) {
             wifiLines(app->ucx, &s);
         }
@@ -304,9 +339,14 @@ static void printTable(char *snap)
         }
         (void)fields(line, f, 10);
         switch (f[0][0]) {
-        case 'm':
-            ucxapp_print("module on %s\n", f[1]);
+        case 'm': {
+            unsigned long up = strtoul(f[4], NULL, 10);
+
+            ucxapp_print("module  %s %s on %s, up %s%lu days %02lu:%02lu:%02lu%s%s\n", f[2], f[3], f[1],
+                         f[5][0] == '1' ? "" : "at least ", up / 86400, up / 3600 % 24, up / 60 % 60, up % 60,
+                         f[6][0] ? ", BT " : "", f[6]);
             break;
+        }
         case 'w':
             ucxapp_print("  wifi    %-20s %4s dBm  ch %-3s %s gw %s\n", f[1], f[2], f[3], f[4][0] ? f[4] : "no IP",
                          f[5][0] ? f[5] : "-");

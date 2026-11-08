@@ -368,10 +368,12 @@ static int closeAll(ucxapp_t *app)
 #define UDP_READ_MAX_OLD 1000   /* NORA-W36 3.2 */
 #define ERR_INVALID_INT_RANGE 36
 static volatile int32_t gUdpReadMax;   /* 0: not probed yet, else the largest length the module accepted */
+static volatile int32_t gSockWriteMax;   /* 0: not probed yet; AT+USORB/USOWB share the limit */
 
 void ucxapp_udp_reset_limit(void)
 {
     gUdpReadMax = 0;
+    gSockWriteMax = 0;
 }
 
 static bool lengthRejected(uCxHandle_t *ucx)
@@ -402,6 +404,42 @@ int32_t ucxapp_udp_recvfrom(uCxHandle_t *ucx, int32_t sock, int32_t len, uint8_t
 int32_t ucxapp_udp_max(void)
 {
     return gUdpReadMax > 0 ? gUdpReadMax : UDP_READ_MAX;
+}
+
+int32_t ucxapp_sock_read(uCxHandle_t *ucx, int32_t sock, uint8_t *buf, int32_t len)
+{
+    int32_t max = gSockWriteMax > 0 ? gSockWriteMax : UDP_READ_MAX;
+    if (len > max) {
+        len = max;
+    }
+    int32_t rc = uCxSocketRead(ucx, sock, len, buf);
+    if (gSockWriteMax == 0 && len > UDP_READ_MAX_OLD) {
+        if (rc < 0 && lengthRejected(ucx)) {
+            gSockWriteMax = UDP_READ_MAX_OLD;
+            rc = uCxSocketRead(ucx, sock, UDP_READ_MAX_OLD, buf);
+        } else if (rc >= 0) {
+            gSockWriteMax = UDP_READ_MAX;
+        }
+    }
+    return rc;
+}
+
+int32_t ucxapp_sock_write(uCxHandle_t *ucx, int32_t sock, const uint8_t *buf, int32_t len)
+{
+    int32_t max = gSockWriteMax > 0 ? gSockWriteMax : UDP_READ_MAX;
+    if (len > max) {
+        len = max;
+    }
+    int32_t rc = uCxSocketWrite(ucx, sock, buf, len);
+    if (gSockWriteMax == 0 && len > UDP_READ_MAX_OLD) {
+        if (rc < 0 && lengthRejected(ucx)) {
+            gSockWriteMax = UDP_READ_MAX_OLD;
+            rc = uCxSocketWrite(ucx, sock, buf, UDP_READ_MAX_OLD);
+        } else if (rc >= 0) {
+            gSockWriteMax = UDP_READ_MAX;
+        }
+    }
+    return rc;
 }
 
 static int cmdSockClose(ucxapp_t *app, int argc, char *argv[])

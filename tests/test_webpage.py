@@ -57,8 +57,20 @@ def test_script_only_calls_registered_routes():
 
 def test_script_listens_for_the_server_events():
     source = SRC.read_text(encoding="utf-8")
-    for name in re.findall(r"addEventListener\('(\w+)'", SCRIPT):
+    for name in re.findall(r"\bes\.addEventListener\('(\w+)'", SCRIPT):
         assert f'"{name}"' in source, name
+
+
+def test_connections_view_zooms_pans_and_drags():
+    """The Connections graph zooms (buttons, wheel, pinch), pans and lets nodes be dragged; reset restores both."""
+    page = PAGE_FILE.read_text(encoding="utf-8")
+    assert '<div id="cnz">' in page and 'data-z="1.25"' in page and 'data-z="0"' in page
+    for name in ("wheel", "pointerdown", "pointermove", "pointerup", "dblclick"):
+        assert f"cnS.addEventListener('{name}'" in SCRIPT, name
+    assert "CN.off[k]" in SCRIPT and "cnReset=()=>{CN.vb=[-430,-250,860,500];CN.off={}" in SCRIPT
+    assert "touch-action:none" in page
+    # .card sets display, which would otherwise override the hidden attribute and keep Close from hiding it
+    assert "#cnd[hidden]{display:none}" in page
 
 
 def test_cellular_card_and_status_chip():

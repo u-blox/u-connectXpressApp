@@ -9,7 +9,11 @@ header{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.55rem 1
 h1{margin:0;font-size:1.05rem;font-weight:700}.logo{height:1.9rem;width:auto}
 #st{font-size:.8rem;color:var(--warm);display:flex;align-items:center;gap:.4rem}#st::before{content:'';width:.6rem;height:.6rem;border-radius:50%;background:currentColor}
 #st.ok{color:var(--ok)}#st.bad{color:var(--err)}#st.bad::before{animation:bl 1s steps(2) infinite}@keyframes bl{50%{opacity:0}}
-.chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok)}.chip.off{color:var(--mut);opacity:.7}.chip.ck{cursor:pointer}#state{display:flex;gap:.3rem;flex-wrap:wrap}
+.chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok);white-space:nowrap}.chip.off{color:var(--mut);opacity:.7}.chip.ck{cursor:pointer}#state{display:flex;gap:.3rem;flex-wrap:nowrap;flex:1 1 0;min-width:0;overflow-x:auto;scrollbar-width:none;mask-image:linear-gradient(90deg,#000 calc(100% - 1.5rem),transparent)}#state::-webkit-scrollbar{display:none}
+header>button,#vw button{white-space:nowrap;flex:none}
+@media(min-width:801px){header{flex-wrap:nowrap}}
+@media(min-width:801px) and (max-width:1280px){header{gap:.5rem;padding:.45rem .7rem}h1{font-size:.92rem}.logo{height:1.5rem}header>button,#vw button{padding:.3rem .55rem;font-size:.85rem}#ver{display:none}}
+@media(min-width:801px) and (max-width:1100px){h1{display:none}main{grid-template-columns:15rem 1fr 1fr}}
 #vw{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}#vw button{border:0;border-radius:0;background:none}#vw button.on{background:var(--ac);color:#04121c;font-weight:600}
 #busy{margin-left:auto;font-size:.85rem;color:var(--warm);display:flex;align-items:center;gap:.4rem}
 #busy:not(:empty)::before{content:'';width:.8rem;height:.8rem;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite}
@@ -20,7 +24,9 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 .cnw{display:flex;flex-direction:column;gap:.4rem}.cnh{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap}#cnst{font-size:.8rem}
 .cnleg{display:flex;gap:.7rem;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}.cnleg i{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.25rem;background:var(--k);box-shadow:0 0 6px var(--k)}
 .k-wifi{--k:var(--ac)}.k-ap,.k-sta{--k:var(--ok)}.k-ble{--k:var(--ble)}.k-thr,.k-nbr{--k:var(--pu)}.k-sock{--k:var(--warm)}.k-gnss{--k:#4dd0c8}.k-cell{--k:#ff8a65}
-#cn{flex:1;width:100%;min-height:18rem;overflow:visible}
+#cnv{flex:1;position:relative;display:flex;min-height:18rem}
+#cn{flex:1;width:100%;min-height:18rem;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}#cn.drag{cursor:grabbing}
+#cnz{position:absolute;right:.4rem;bottom:.4rem;display:flex;gap:.25rem}#cnz button{width:2rem;height:2rem;padding:0;font-size:1.05rem;font-weight:800;border-radius:.5rem;opacity:.75}#cnz button:hover{opacity:1}
 #cn .ln{fill:none;stroke:var(--k);stroke-opacity:.22;stroke-width:4;transition:opacity .5s}
 #cn .fl{fill:none;stroke:var(--k);stroke-width:2.2;stroke-dasharray:1 11;stroke-linecap:round;animation:cnf var(--d,1.2s) linear infinite;transition:opacity .5s}
 #cn .ln.host{stroke-dasharray:6 6}@keyframes cnf{to{stroke-dashoffset:-24}}
@@ -28,26 +34,27 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 @keyframes cnin{from{opacity:0;transform:scale(.2)}}
 #cn .nd .b{fill:var(--bg2);stroke:var(--k);stroke-width:2.5;filter:drop-shadow(0 0 7px var(--k));transition:stroke-width .2s,fill .2s}
 #cn .nd:hover .b,#cn .nd.sel .b{fill:#16263a;stroke-width:4}
-#cn .ic{fill:var(--k);font:800 10px system-ui;text-anchor:middle;dominant-baseline:central;pointer-events:none}
-#cn .lb{fill:var(--tx);font:600 12px 'Segoe UI',system-ui;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
-#cn .sb{fill:#a9b4c3;font:11px Consolas,monospace;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
+#cn .ic{fill:var(--k);font:800 13px system-ui;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+#cn .lb{fill:var(--tx);font:600 17px 'Segoe UI',system-ui;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
+#cn .sb{fill:#a9b4c3;font:15px Consolas,monospace;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
 #cn .bar{fill:#2a3546}#cn .bar.on{fill:var(--k)}
 #cn .gone{opacity:0}#cn .pk{fill:var(--k);filter:drop-shadow(0 0 5px var(--k))}
 #cn .halo{fill:none;stroke:var(--ac);stroke-width:2;transform-box:fill-box;transform-origin:center;animation:cnh 2.6s ease-out infinite}
 @keyframes cnh{from{transform:scale(1);opacity:.7}to{transform:scale(2.4);opacity:0}}
 #cn .orb{fill:none;stroke:var(--ac);stroke-opacity:.4;stroke-dasharray:3 9;transform-box:fill-box;transform-origin:center;animation:sp 24s linear infinite}
-#cn .hub rect{fill:#0f1a29;stroke:var(--ac);stroke-width:2;filter:drop-shadow(0 0 10px #29b6f680)}#cn .hub.off{opacity:.45}#cn .hub.off .halo{animation:none;opacity:0}
-#cn .ht{fill:var(--tx);font:800 14px system-ui;text-anchor:middle}#cn .hs{fill:var(--mut);font:10px Consolas,monospace;text-anchor:middle}
-#cn .ring{fill:none;stroke:#2a3546;stroke-dasharray:2 6}#cn .rt{fill:var(--mut);font:10px system-ui;text-anchor:middle}
-#cn .cs{fill:var(--warm);font:800 14px system-ui;text-anchor:middle;text-shadow:0 0 4px var(--bg),0 0 4px var(--bg)}
+#cn .hub rect{fill:#0f1a29;stroke:var(--ac);stroke-width:2;filter:drop-shadow(0 0 10px #29b6f680)}#cn .hub{cursor:pointer}#cn .hub:hover rect,#cn .hub.sel rect{fill:#16263a;stroke-width:3.5}#cn .hub.off{opacity:.45;cursor:default}#cn .hub.off .halo{animation:none;opacity:0}
+#cn .ht{fill:var(--tx);font:800 18px system-ui;text-anchor:middle}#cn .hs{fill:var(--mut);font:13px Consolas,monospace;text-anchor:middle}
+#cn .ring{fill:none;stroke:#2a3546;stroke-dasharray:2 6}#cn .rt{fill:var(--mut);font:14px system-ui;text-anchor:middle}
+#cn .cs{fill:var(--warm);font:800 18px system-ui;text-anchor:middle;text-shadow:0 0 4px var(--bg),0 0 4px var(--bg)}
 #cn .sat{fill:var(--k);filter:drop-shadow(0 0 3px var(--k))}
 #cn .wave{fill:none;stroke:var(--k);stroke-width:2;stroke-linecap:round;animation:cnw 1.8s ease-out infinite;opacity:0}
 @keyframes cnw{0%{opacity:0}30%{opacity:.9}100%{opacity:0}}
-#cnd .kv{display:grid;grid-template-columns:auto 1fr;gap:.15rem .8rem;font-size:.85rem}#cnd .kv span{color:var(--mut)}#cnd .kv b{font:600 12px Consolas,monospace;overflow-wrap:anywhere}#cnd .r{flex-wrap:wrap}
+#cnd .kv{display:grid;grid-template-columns:auto 1fr;gap:.15rem .8rem;font-size:.85rem}#cnd .kv span{color:var(--mut)}#cnd .kv b{font:600 12px Consolas,monospace;overflow-wrap:anywhere}#cnd .r{flex-wrap:wrap}#cnd .r .cx{margin-left:auto}#cnd[hidden]{display:none}
 .pane{display:flex;flex-direction:column;min-height:0}.pane h2{margin:0 0 .35rem;color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}
 #out,#ev,#side,.sc{flex:1;overflow:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.6rem}
 #gc,#cc{flex:none;margin:0 0 .4rem;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.5rem .6rem;overflow-x:auto;cursor:pointer}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
+#pl{position:relative}#atlog{position:absolute;right:1.4rem;bottom:.6rem;font:700 .7rem system-ui;letter-spacing:.06em;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--mut);cursor:pointer;opacity:.85}#atlog:hover{opacity:1}#atlog.on{color:var(--ok);border-color:var(--ok)}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
 .badge,.v{font:700 .66rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:.05rem .4rem;border:1px solid currentColor;border-radius:4px;color:var(--warm)}.badge.ok,.v.ok{color:var(--ok)}.badge.bad,.v.gap{color:var(--err)}
 .note{color:var(--mut);font-style:italic}.scan{cursor:pointer}.scan:hover{background:#1b2a44}
@@ -101,7 +108,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 .tag{display:inline-block;margin-left:.4rem;padding:0 .45em;border:1px solid var(--bd);border-radius:999px;font-size:11px;line-height:1.45;color:var(--mut);white-space:nowrap}
 .tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warm);border-color:var(--warm)}
 #loc a{color:var(--ac);text-decoration:none}#loc a:hover{text-decoration:underline}#loc a::before{content:'\1F4CD  '}
-@media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;overflow-x:auto;flex-wrap:nowrap}
+@media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;flex:1 1 100%;overflow-x:auto;flex-wrap:nowrap}
  #busy{margin-left:0}#keys,#vw,#ver{display:none}
  #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1;padding:.4rem .2rem}#tabs button.on{background:var(--ac);border-color:var(--ac);color:#04121c}
  main,body.uc main,body.cn main{display:block;height:auto;padding:.4rem}.pane,body.uc .pane,body.cn .pane{display:none;height:calc(100dvh - 13rem)}.pane.on,body.uc .pane.on,body.cn .pane.on{display:flex}.pane h2{display:none}
@@ -133,9 +140,10 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div class="cards" id="steps"></div></div></div>
 <div class="pane" id="pn"><h2>Connections</h2><div class="sc cnw"><div class="cnh"><span class="uh">Connections</span><span id="cnst" class="note">starting...</span>
 <span class="cnleg"><span class="k-wifi"><i></i>Wi-Fi</span><span class="k-ap"><i></i>AP</span><span class="k-ble"><i></i>BLE</span><span class="k-thr"><i></i>Thread</span><span class="k-sock"><i></i>Socket</span><span class="k-gnss"><i></i>GNSS</span><span class="k-cell"><i></i>Cell</span></span></div>
-<svg id="cn" viewBox="-430 -250 860 500" role="img" aria-label="Live connections"></svg>
+<div id="cnv"><svg id="cn" viewBox="-430 -250 860 500" role="img" aria-label="Live connections"></svg>
+<div id="cnz"><button data-z="1.25" title="Zoom in (wheel, pinch)">+</button><button data-z="0.8" title="Zoom out">&minus;</button><button data-z="0" title="Reset view and node positions (double-click the background)">&#x27F2;</button></div></div>
 <div id="cnd" class="card" hidden></div></div></div>
-<div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div></div>
+<div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></div>
 <div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><pre id="cc" hidden title="Cellular modem, live (click: cell.status)"></pre><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
@@ -161,7 +169,10 @@ const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=nu
 function block(title){const b=el('div','blk'),body=el('div','bb');
  if(title){const h=el('div','bh');h.appendChild(el('span','',title));b.badge=el('span','badge','running');h.appendChild(b.badge);b.appendChild(h)}
  b.appendChild(body);b.body=body;out.appendChild(b);return b}
-function trim(){while(total>LOG_MAX&&out.children.length>2){const f=out.children[1];if(f===cur||f===free)break;total-=f.textContent.length;f.remove();$('trim').hidden=false}}
+function trim(){while(total>LOG_MAX&&out.children.length>1){const f=out.children[out.children.length>2?1:out.children.length-1];
+ if(f===cur||f===free){const b=f.body;if(!b||b.childNodes.length<2)break;
+  while(total>LOG_MAX&&b.childNodes.length>1){const n=b.firstChild;total-=n.textContent.length;n.remove()}$('trim').hidden=false;break}
+ total-=f.textContent.length;f.remove();$('trim').hidden=false}}
 const COL={30:'k',31:'r',32:'g',33:'y',34:'b',35:'m',36:'c',37:'w',90:'k',91:'r',92:'g',93:'y',94:'b',95:'m',96:'c',97:'w'};
 function sgr(p){(p||'0').split(';').forEach(n=>{n=+n;if(!n){fg='';bold=0}else if(n===1)bold=1;else if(n===22)bold=0;else if(n===39)fg='';else if(COL[n])fg=COL[n]})}
 function put(tgt,x){x=x.replace(/[\x00-\x08\x0b-\x1f\x7f]/g,'');if(!x)return;total+=x.length;
@@ -485,7 +496,7 @@ $('ucs').onchange=()=>pick($('ucs').value);pick(uc);
    eased toward its place every frame; events and commands send packets along the links ---- */
 const SVGN='http://www.w3.org/2000/svg',cnS=$('cn'),
  sv=(t,a,p)=>{const e=document.createElementNS(SVGN,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e},
- CN={n:{},sel:'',timer:0,raf:0,pk:[],t0:performance.now()},
+ CN={n:{},sel:'',timer:0,raf:0,pk:[],t0:performance.now(),off:{},vb:[-430,-250,860,500]},
  cnRing=sv('g',{},cnS),cnLinks=sv('g',{},cnS),cnPk=sv('g',{},cnS),cnHub=sv('g',{class:'hub off'},cnS),cnNodes=sv('g',{},cnS),
  cnEmpty=sv('text',{class:'rt',y:110},cnS),
  clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),
@@ -495,19 +506,43 @@ const SVGN='http://www.w3.org/2000/svg',cnS=$('cn'),
  spread=(i,n,a,b)=>n<2?(a+b)/2:a+(b-a)*i/(n-1),
  CNK={bt:['ble'],gatt:['ble'],sps:['ble'],hid:['ble'],ancs:['ble'],wifi:['wifi','ap','sta'],net:['wifi','ap'],http:['wifi'],ping:['wifi'],
   mdns:['wifi'],sock:['sock'],mqtt:['sock'],tls:['sock'],dtls:['sock'],coap:['sock'],tftp:['sock'],thread:['thr','nbr'],gnss:['gnss'],cell:['cell']};
+/* zoom and pan move the viewBox; dragging a node stores an offset from its computed place */
+const cnVB=()=>cnS.setAttribute('viewBox',CN.vb.map(v=>v.toFixed(1)).join(' ')),
+ cnPt=(cx,cy)=>{const r=cnS.getBoundingClientRect(),v=CN.vb,s=Math.max(v[2]/r.width,v[3]/r.height);return [v[0]+v[2]/2+(cx-r.left-r.width/2)*s,v[1]+v[3]/2+(cy-r.top-r.height/2)*s]},
+ cnZoom=(f,cx,cy)=>{const v=CN.vb,w=clamp(v[2]/f,215,3440);f=v[2]/w;const r=cnS.getBoundingClientRect(),p=cx==null?[v[0]+v[2]/2,v[1]+v[3]/2]:cnPt(cx,cy);
+  CN.vb=[p[0]-(p[0]-v[0])/f,p[1]-(p[1]-v[1])/f,w,v[3]/f];cnVB()},
+ cnReset=()=>{CN.vb=[-430,-250,860,500];CN.off={};cnVB()},CNP={};
+cnS.addEventListener('wheel',e=>{e.preventDefault();cnZoom(Math.exp(-e.deltaY*.0015),e.clientX,e.clientY)},{passive:false});
+cnS.addEventListener('dblclick',e=>{if(!e.target.closest('.nd,.hub'))cnReset()});
+cnS.addEventListener('pointerdown',e=>{const g=e.target.closest('.nd'),k=g&&Object.keys(CN.n).find(q=>CN.n[q].nd===g);
+ CNP[e.pointerId]={x:e.clientX,y:e.clientY,k,moved:0}});
+cnS.addEventListener('pointermove',e=>{const p=CNP[e.pointerId];if(!p)return;const ids=Object.keys(CNP);
+ if(ids.length===2){const [a,b]=ids.map(i=>CNP[i]),d0=Math.hypot(a.x-b.x,a.y-b.y);p.x=e.clientX;p.y=e.clientY;
+  const d1=Math.hypot(a.x-b.x,a.y-b.y);if(d0&&d1)cnZoom(d1/d0,(a.x+b.x)/2,(a.y+b.y)/2);a.moved=b.moved=1;return}
+ const p0=cnPt(p.x,p.y),p1=cnPt(e.clientX,e.clientY),dx=p1[0]-p0[0],dy=p1[1]-p0[1];
+ if(!p.moved&&Math.hypot(e.clientX-p.x,e.clientY-p.y)<4)return;if(!p.moved){cnS.setPointerCapture(e.pointerId);cnS.classList.add('drag')}p.moved=1;p.x=e.clientX;p.y=e.clientY;
+ if(p.k&&CN.n[p.k]){const o=CN.off[p.k]||(CN.off[p.k]=[0,0]),n=CN.n[p.k];o[0]+=dx;o[1]+=dy;n.x+=dx;n.y+=dy}
+ else{CN.vb[0]-=dx;CN.vb[1]-=dy;cnVB()}});
+const cnUpP=e=>{const p=CNP[e.pointerId];delete CNP[e.pointerId];if(!Object.keys(CNP).length)cnS.classList.remove('drag');
+ if(p&&p.moved)CN.drag=performance.now()};
+cnS.addEventListener('pointerup',cnUpP);cnS.addEventListener('pointercancel',cnUpP);
+/* a drag must not also count as a click that opens the details card */
+cnS.addEventListener('click',e=>{if(CN.drag&&performance.now()-CN.drag<300)e.stopPropagation()},true);
+document.querySelectorAll('#cnz button').forEach(b=>b.onclick=()=>{const z=+b.dataset.z;z?cnZoom(z):cnReset()});
 sv('circle',{class:'halo',r:40},cnHub);sv('circle',{class:'halo',r:40,style:'animation-delay:1.3s'},cnHub);sv('circle',{class:'orb',r:62},cnHub);
-sv('rect',{x:-46,y:-28,width:92,height:56,rx:10},cnHub);const cnHt=sv('text',{class:'ht',y:-2},cnHub),cnHs=sv('text',{class:'hs',y:15},cnHub);cnHt.textContent='module';
+sv('rect',{x:-56,y:-32,width:112,height:64,rx:10},cnHub);const cnHt=sv('text',{class:'ht',y:-2},cnHub),cnHs=sv('text',{class:'hs',y:18},cnHub);cnHt.textContent='module';cnHub.onclick=()=>{if(CN.mod)cnSelect('hub')};
 [1,5,10].forEach(m=>{sv('circle',{class:'ring',r:csR(m)},cnRing);sv('text',{class:'rt',y:-csR(m)-4},cnRing).textContent=m+' m'});cnRing.style.display='none';
 
-function cnParse(t){const L=[],by={};let port='';
- t.split('\n').forEach(l=>{const f=l.split('|');if(f[0]==='m')port=f[1];else if(f[0])(by[f[0]]=by[f[0]]||[]).push(f)});
+function cnUp(s,x){s=+s||0;const d=Math.floor(s/86400),p=v=>String(v).padStart(2,'0');return (x==='1'?'':'at least ')+(d?d+' d ':'')+p(Math.floor(s/3600)%24)+':'+p(Math.floor(s/60)%60)+':'+p(s%60)}
+function cnParse(t){const L=[],by={};let port='',mod=null;
+ t.split('\n').forEach(l=>{const f=l.split('|');if(f[0]==='m'){port=f[1];mod=f}else if(f[0])(by[f[0]]=by[f[0]]||[]).push(f)});
  const add=o=>{L.push(o);return o},has=k=>L.some(o=>o.k===k);
  (by.w||[]).forEach(f=>{const r=+f[2];add({k:'w',c:'wifi',ic:'WI-FI',a:-145,r:rr(r),q:qq(r),lb:f[1]||'(hidden)',sb:[r+' dBm  ch '+f[3],f[4]||'no IP'],
   info:[['SSID',f[1]],['RSSI',r+' dBm'],['Channel',f[3]],['IP',f[4]],['Gateway',f[5]]],
   act:[['Status','wifi.status']].concat(f[5]?[['Ping gateway','net.ping',[f[5]]]]:[],[['Disconnect','wifi.disconnect',null,1]])})});
  (by.a||[]).forEach(f=>{add({k:'a',c:'ap',ic:'AP',a:-55,r:130,lb:f[1],sb:['ch '+f[2]+'  '+f[3],f[4]+' station(s)'],
   info:[['SSID',f[1]],['Channel',f[2]],['IP',f[3]],['Stations',f[4]]],act:[['Status','wifi.ap.status'],['Stop','wifi.ap.disable',null,1]]});
-  const ms=f[5]?f[5].split(','):[];ms.forEach((m,i)=>add({k:'a'+m,c:'sta',ic:'STA',p:'a',a:-55+spread(i,ms.length,-50,50),r:85,small:1,lb:m.slice(9),sb:[],
+  const ms=f[5]?f[5].split(','):[];ms.forEach((m,i)=>add({k:'a'+m,c:'sta',ic:'STA',p:'a',a:-55+spread(i,ms.length,-60,60),r:120,small:1,lb:m.slice(9),sb:[],
    info:[['MAC',m],['Access point',f[1]]],act:[]}))});
  const bs=by.b||[];bs.forEach((f,i)=>{const r=+f[3],d=f[7]===''||f[7]==null?null:+f[7]/1000,role=f[5]==='c'?'central':f[5]==='p'?'peripheral':'';
   add({k:'b'+f[1],c:'ble',ic:'BLE',a:spread(i,bs.length,35,145),r:d==null?rr(r):csR(d),q:qq(r),lb:f[2],sb:[r+' dBm  MTU '+f[4],(role+' '+f[6]).trim()],cs:d,
@@ -515,16 +550,16 @@ function cnParse(t){const L=[],by={};let port='';
    act:[['GATT services','gatt.services',[f[1]]],['Range 10 s (CS)','bt.cs.range',[f[1],'10']],['Disconnect','bt.disconnect',[f[1]],1]]})});
  (by.t||[]).forEach(f=>{add({k:'t',c:'thr',ic:'THREAD',a:180,r:150,lb:'Thread '+f[1],sb:['rloc16 '+f[2]],
   info:[['Role',f[1]],['RLOC16',f[2]]],act:[['Status','thread.status'],['Neighbours','thread.neighbors']]});
-  const ns=by.n||[];ns.forEach((g,i)=>{const r=+g[3];add({k:'n'+g[1],c:'nbr',ic:'TH',p:'t',a:180+spread(i,ns.length,-60,60),r:90,small:1,q:qq(r),lb:g[1],sb:[g[2]+'  '+r+' dBm'],
+  const ns=by.n||[];ns.forEach((g,i)=>{const r=+g[3];add({k:'n'+g[1],c:'nbr',ic:'TH',p:'t',a:180+spread(i,ns.length,-70,70),r:120,small:1,q:qq(r),lb:g[1],sb:[g[2]+'  '+r+' dBm'],
    info:[['RLOC16',g[1]],['Role',g[2]],['RSSI',r+' dBm'],['Link quality',g[4]+' / 3']],act:[]})})});
  const ss=by.s||[],sp=has('w')?'w':has('t')?'t':'',sa=sp==='w'?-145:sp==='t'?180:-8;
- ss.forEach((f,i)=>add({k:'s'+f[1],c:'sock',ic:f[2].toUpperCase(),p:sp,a:sa+spread(i,ss.length,-45,45),r:sp?80:150,small:1,lb:f[2]+' '+f[1],sb:[f[4]||f[3]],
+ ss.forEach((f,i)=>add({k:'s'+f[2]+f[1],c:'sock',ic:f[2].toUpperCase(),p:sp,a:sa+spread(i,ss.length,-60,60),r:sp?120:170,small:1,lb:f[2]+' '+f[1],sb:[f[4]||f[3]],
   info:[['Handle',f[1]],['Protocol',f[2]],['State',f[3]],['Remote',f[4]]],act:[['Close','sock.close',[f[1]],1]]}));
  (by.g||[]).forEach(f=>{const m=f[2].match(/(\d+)\/(\d+) sats/);add({k:'g',c:'gnss',ic:'GNSS',host:1,a:12,r:195,lb:f[2].split('  ')[0],sb:[f[2].split('  ').slice(1).join('  '),f[1]],
   sats:m?+m[1]:0,info:[['Port',f[1]],['Status',f[2]]],act:[['Status','gnss.status'],['Satellites','gnss.sats']]})});
  (by.c||[]).forEach(f=>{const m=f[2].match(/(-\d+) dBm/),r=m?+m[1]:null;add({k:'c',c:'cell',ic:'CELL',host:1,a:-18,r:200,q:r==null?undefined:clamp(1-(-r-51)/62,0,1),
   lb:f[2].split('  ')[0],sb:[f[2].split('  ').slice(1).join('  '),f[1]],tower:1,info:[['Port',f[1]],['Status',f[2]]],act:[['Status','cell.status']]})});
- return {port,L}}
+ return {port,mod,L}}
 
 function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{class:'nd k-'+o.c},pos),R=o.small?16:26,
   n={pos,nd,R,x:p?p.x:0,y:p?p.y:0,ph:Math.random()*6.28,
@@ -533,7 +568,7 @@ function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{clas
  sv('circle',{class:'b',r:R},nd);n.ic=sv('text',{class:'ic'},nd);
  if(o.q!==undefined){n.bars=[0,1,2,3].map(i=>sv('rect',{class:'bar',x:R+5+i*5,y:-2-i*3,width:3.5,height:5+i*3,rx:1},nd))}
  if(o.sats!==undefined){n.sg=sv('g',{},nd);sv('animateTransform',{attributeName:'transform',type:'rotate',from:'0',to:'360',dur:'12s',repeatCount:'indefinite'},n.sg)}
- n.lb=sv('text',{class:'lb',y:R+16},nd);n.sb=[sv('text',{class:'sb',y:R+30},nd),sv('text',{class:'sb',y:R+43},nd)];
+ n.lb=sv('text',{class:'lb',y:R+20},nd);n.sb=[sv('text',{class:'sb',y:R+38},nd),sv('text',{class:'sb',y:R+55},nd)];
  n.cs=sv('text',{class:'cs'},cnLinks);nd.onclick=()=>cnSelect(o.k);return n}
 
 function cnFill(n,o){n.o=o;n.ic.textContent=o.ic;n.lb.textContent=o.lb;n.sb.forEach((s,i)=>s.textContent=o.sb[i]||'');
@@ -547,7 +582,9 @@ function cnDrop(k){const n=CN.n[k];if(n.gone)return;n.gone=1;[n.nd,n.ln,n.fl,n.c
  n.to=setTimeout(()=>{[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove());delete CN.n[k];if(CN.sel===k){CN.sel='';cnDetails()}},600)}
 
 function cnUpdate(t){const r=cnParse(t||''),keep={};
- cnHub.classList.toggle('off',!r.port);cnHt.textContent=r.port?'module':'no module';cnHs.textContent=r.port;
+ cnHub.classList.toggle('off',!r.port);cnHt.textContent=r.port?(r.mod[2]||'module'):'no module';cnHs.textContent=r.port;
+ CN.mod=r.mod?{k:'hub',ic:'MODULE',lb:(r.mod[2]||'module')+' on '+r.port,info:[['Status','connected'],['Port',r.port],['Model',r.mod[2]],['Firmware',r.mod[3]],['Uptime',cnUp(r.mod[4],r.mod[5])],['BT address',r.mod[6]]],
+  act:[['Info','dev.info'],['Status','dev.status'],['Diagnose','dev.diagnose'],['Reboot','dev.reboot',null,1]]}:null;
  r.L.forEach(o=>{keep[o.k]=1;let n=CN.n[o.k];
   if(n&&n.gone){clearTimeout(n.to);n.gone=0;[n.nd,n.ln,n.fl,n.cs].forEach(e=>e.classList.remove('gone'))}
   if(!n)n=CN.n[o.k]=cnMake(o);cnFill(n,o)});
@@ -559,7 +596,7 @@ function cnUpdate(t){const r=cnParse(t||''),keep={};
 function cnCurve(x0,y0,x1,y1){const mx=(x0+x1)/2,my=(y0+y1)/2,dx=x1-x0,dy=y1-y0;return [x0,y0,mx-dy*.12,my+dx*.12,x1,y1]}
 function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;
  ord.forEach(k=>{const n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
-   tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3,ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3;
+   tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3+(CN.off[k]?CN.off[k][0]:0),ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3+(CN.off[k]?CN.off[k][1]:0);
   if(!n.gone){n.x+=(tx-n.x)*.07;n.y+=(ty-n.y)*.07}
   n.pos.setAttribute('transform','translate('+n.x.toFixed(1)+' '+n.y.toFixed(1)+')');
   const c=n.c=cnCurve(px,py,n.x,n.y),d='M'+c[0].toFixed(1)+' '+c[1].toFixed(1)+'Q'+c[2].toFixed(1)+' '+c[3].toFixed(1)+' '+c[4].toFixed(1)+' '+c[5].toFixed(1);
@@ -575,14 +612,14 @@ function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
   for(let j=0;j<3;j++)CN.pk.push({k,t:-(i*.08+j*.07),s:.022,in:!out,e:sv('circle',{class:'pk k-'+CN.n[k].o.c,r:0},cnPk)})})}
 
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails()}
-function cnDetails(){const d=$('cnd'),n=CN.n[CN.sel];Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));d.hidden=!n;if(!n){d.sig='';return}
+function cnDetails(){const d=$('cnd'),n=CN.sel==='hub'?(CN.mod&&{o:CN.mod}):CN.n[CN.sel];Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));cnHub.classList.toggle('sel',CN.sel==='hub');d.hidden=!n;if(!n){d.sig='';return}
  const o=n.o,sig=JSON.stringify([o.k,o.info,o.act]);if(d.sig===sig)return;d.sig=sig;d.textContent='';
  d.appendChild(el('h3','',o.ic+'  '+o.lb));const g=el('div','kv');o.info.forEach(x=>{g.appendChild(el('span','',x[0]));g.appendChild(el('b','',x[1]||'-'))});d.appendChild(g);
  const r=el('div','r');o.act.forEach(x=>{const b=el('button',x[3]?'dg':'',x[0]);b.title=x[1]+(x[2]?' '+x[2].join(' '):'');b.onclick=()=>run(x[1],x[2]||null);r.appendChild(b)});
- if(o.act.length)d.appendChild(r)}
+ const cx=el('button','cx','Close');cx.title='Hide the details (click a node to show them again)';cx.onclick=()=>{CN.sel='';cnDetails()};r.appendChild(cx);d.appendChild(r)}
 
 function cnTick(){if(document.hidden)return;api('/api/conn').then(r=>r.json()).then(j=>cnUpdate(j.t)).catch(()=>{$('cnst').textContent='no answer from the app'})}
-function cnRun(on){if(on&&!CN.timer){cnTick();CN.timer=setInterval(cnTick,1000);if(!CN.raf)CN.raf=requestAnimationFrame(cnFrame)}
+function cnRun(on){if(on&&!CN.timer){cnTick();CN.timer=setInterval(cnTick,5000);if(!CN.raf)CN.raf=requestAnimationFrame(cnFrame)}
  else if(!on&&CN.timer){clearInterval(CN.timer);CN.timer=0;cancelAnimationFrame(CN.raf);CN.raf=0;CN.pk.forEach(p=>p.e.remove());CN.pk=[]}}
 
 function view(v){v=+v||0;document.body.classList.toggle('uc',v===1);document.body.classList.toggle('cn',v===2);localStorage.setItem('ucxv',String(v));
@@ -591,8 +628,12 @@ document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
 /* footer: the clock (time bright, date dim, source as a tag) and the place as a Google Maps link */
-let metaC='',metaL=null;
-function meta(clk,src,loc){if(metaC!==clk+src){metaC=clk+src;const c=$('clock'),m=clk.match(/^(\d{4}-\d\d-\d\d)([T ])(.*)$/);c.textContent='';
+let metaC='',metaL=null,metaT=null;
+/* The server resends the clock every 5 s; the seconds in between tick here. */
+setInterval(()=>{const t=document.querySelector('#clock .t');if(!metaT||!t)return;const m=metaT.clk.match(/(\d\d):(\d\d):(\d\d)/);if(!m)return;
+ const s=(+m[1]*3600+ +m[2]*60+ +m[3]+Math.floor((Date.now()-metaT.at)/1000))%86400,p=n=>String(n).padStart(2,'0');
+ t.textContent=t.textContent.replace(/\d\d:\d\d:\d\d/,p(Math.floor(s/3600))+':'+p(Math.floor(s/60)%60)+':'+p(s%60))},1000);
+function meta(clk,src,loc){metaT={clk,at:Date.now()};if(metaC!==clk+src){metaC=clk+src;const c=$('clock'),m=clk.match(/^(\d{4}-\d\d-\d\d)([T ])(.*)$/);c.textContent='';
   if(m)c.append(el('span','d',m[1]),el('span','sep',m[2]),el('span','t',m[3]));else c.append(el('span','t',clk));
   const tg=el('span','tag'+(/^(gnss|ntp)/.test(src)?' ok':/^unsynced/.test(src)?' warn':''),src.split(',')[0]);tg.title='Clock source: '+src;
   c.append(el('span','sep',' / '),tg)}
@@ -608,8 +649,9 @@ function events(){const es=new EventSource('/events');
  es.addEventListener('evt',e=>{const t=JSON.parse(e.data);addEv(t);cnPulse(t.slice(0,Math.max(0,t.indexOf(':'))),0)});
  es.addEventListener('gnss',e=>{const g=$('gc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('gnss.status')});
  es.addEventListener('cell',e=>{const g=$('cc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('cell.status')});
+ es.addEventListener('conn',e=>{if(CN.timer)cnUpdate(JSON.parse(e.data))});
  const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
- es.addEventListener('state',e=>{if(CN.timer)cnTick();const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
+ es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
  if(ti>=0){const li=ps.findIndex(p=>p.startsWith('Local ')),oi=ps.findIndex(p=>p.startsWith('Loc '));
   meta((li>=0?ps[li].slice(6):ps[ti].slice(5)),ps[ti+1],oi>=0?ps[oi].slice(4):'');
   [oi,li].filter(i=>i>=0).sort((a,b)=>b-a).forEach(i=>ps.splice(i,1));ps.splice(ti,2)}ps.forEach(p=>{
@@ -621,7 +663,8 @@ function events(){const es=new EventSource('/events');
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access token (printed by web.start)',{input:1});
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
- api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v}).catch(()=>{});
+ api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v;$('atlog').classList.toggle('on',!!j.at)}).catch(()=>{});
+ $('atlog').onclick=()=>{const on=!$('atlog').classList.contains('on');if(busy){note('busy: '+$('busy').textContent);return}$('atlog').classList.toggle('on',on);run('app.log.at.'+(on?'on':'off'))};
  let mh=0,hh=0,sec='';const side=$('grp');
  gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';
   if(w==='module'&&!mh){mh=1;sec='';side.appendChild(el('div','wh','MODULE: runs on the NORA module'))}

@@ -235,6 +235,11 @@ bool ucxapp_module_reboot(ucxapp_t *app);
 int32_t ucxapp_udp_recvfrom(uCxHandle_t *ucx, int32_t sock, int32_t len, uint8_t *buf, uCxSocketReceiveFrom_t *from);
 /* Largest datagram the module can read (1460, or 1000 once a FW 3.2 module was seen). */
 int32_t ucxapp_udp_max(void);
+/* AT+USOWB of up to 1460 bytes (1000 once a FW 3.2 module rejected more); returns the bytes taken, 0 when the
+   module's send buffer is full, < 0 on error. */
+int32_t ucxapp_sock_write(uCxHandle_t *ucx, int32_t sock, const uint8_t *buf, int32_t len);
+/* AT+USORB with the same limit. */
+int32_t ucxapp_sock_read(uCxHandle_t *ucx, int32_t sock, uint8_t *buf, int32_t len);
 
 /* Raw AT: ucxapp_at_send runs one command (AT prefix optional); in AT mode ucxapp_cmd_exec sends every line, 'back' leaves it. */
 int ucxapp_at_send(ucxapp_t *app, const char *cmd);

@@ -133,6 +133,15 @@ size_t ucxapp_ui_conn_text(char *out, size_t size)
     return strlen(out);
 }
 
+/* The snapshot for the event stream, only while a page shows the Connections view (it asks /api/conn now and then). */
+bool ucxapp_ui_conn_card(char *out, size_t size)
+{
+    U_CX_MUTEX_LOCK(gLock);
+    snprintf(out, size, "%s", gConnWanted ? gConnText : "");
+    U_CX_MUTEX_UNLOCK(gLock);
+    return out[0] != '\0';
+}
+
 void ucxapp_ui_thread_changed(void)
 {
     gThreadDirty++;
@@ -249,10 +258,11 @@ static void refreshDashCache(bool force)
         U_CX_MUTEX_UNLOCK(gLock);
     }
 #endif
-    if (gConnWanted && now - gConnWantMs > 5000u) {
+    if (gConnWanted && now - gConnWantMs > 12000u) {
         gConnWanted = false;   /* nobody looks: stop asking the module */
     }
-    if (gConnWanted && (force || now - connMs >= 1000u)) {
+    /* Every 2 s: one snapshot is about 15 AT commands, and the module also serves the web page. */
+    if (gConnWanted && (force || now - connMs >= 2000u)) {
         static char snap[sizeof(gConnText)];
         connMs = now;
         (void)ucxapp_conn_snapshot(gApp, snap, sizeof(snap));
@@ -317,7 +327,8 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
     for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
         if (parts[i][0] != '\0' && n + strlen(parts[i]) + 4 < size) {
             n += (size_t)snprintf(out + n, size - n, " | %s", parts[i]);
-            for (const char *part = parts[i]; *part != '\0'; part++) {
+            /* The clock ticks every second; the page runs it between the 5 s resends. */
+            for (const char *part = parts[i]; parts[i] != gClockText && *part != '\0'; part++) {
                 version = version * 31u + (uint8_t)*part;
             }
         }

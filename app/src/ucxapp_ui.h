@@ -58,8 +58,10 @@ void ucxapp_ui_dash_text(char *wifi, size_t wifiSize, char *cell, size_t cellSiz
 /* Cellular live card cached by the command worker (see ucxapp_cell_card); false when no modem is open. */
 bool ucxapp_ui_cell_card(char *out, size_t size);
 /* The links snapshot (ucxapp_conn_snapshot) cached by the command worker; asking keeps it refreshed every
-   second for 5 s. Empty until the first refresh or when no module is open. */
+   2 s for 12 s. Empty until the first refresh or when no module is open. */
 size_t ucxapp_ui_conn_text(char *out, size_t size);
+/* The same snapshot for the web event stream; false (nothing to send) while nobody asks ucxapp_ui_conn_text. */
+bool ucxapp_ui_conn_card(char *out, size_t size);
 void ucxapp_ui_wifi_set(bool up);   /* URC context safe */
 void ucxapp_ui_thread_changed(void);   /* URC context safe: re-read the Thread role */
 void ucxapp_ui_thread_text(char *out, size_t size);   /* role, "off", or empty without Thread firmware */

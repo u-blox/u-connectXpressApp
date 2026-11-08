@@ -12,8 +12,9 @@
 
 #include "ucxapp_store.h"
 #include "u_cx_socket.h"
+#include "ucxapp_cmd.h"
 
-#define IO_CHUNK   1000
+#define IO_CHUNK   1460   /* AT+USORB/USOWB maximum; ucxapp_sock_read/write drop to 1000 on FW 3.2 */
 #define PEM_MAX    4096
 #define MAX_SANS   8
 
@@ -414,7 +415,7 @@ void ucxapp_tls_server_free(ucxapp_tls_server_t *srv)
 static int bioSend(void *ctx, const unsigned char *buf, size_t len)
 {
     ucxapp_tls_conn_t *c = ctx;
-    int32_t n = uCxSocketWrite(c->ucx, c->sock, buf, (int32_t)(len > IO_CHUNK ? IO_CHUNK : len));
+    int32_t n = ucxapp_sock_write(c->ucx, c->sock, buf, (int32_t)(len > IO_CHUNK ? IO_CHUNK : len));
     if (n < 0) {
         return MBEDTLS_ERR_NET_SEND_FAILED;
     }
@@ -424,7 +425,7 @@ static int bioSend(void *ctx, const unsigned char *buf, size_t len)
 static int bioRecv(void *ctx, unsigned char *buf, size_t len)
 {
     ucxapp_tls_conn_t *c = ctx;
-    int32_t n = uCxSocketRead(c->ucx, c->sock, (int32_t)(len > IO_CHUNK ? IO_CHUNK : len), buf);
+    int32_t n = ucxapp_sock_read(c->ucx, c->sock, buf, (int32_t)(len > IO_CHUNK ? IO_CHUNK : len));
     if (n < 0) {
         return MBEDTLS_ERR_NET_RECV_FAILED;
     }

@@ -22,6 +22,7 @@
 #include "u_port.h"
 #include "ucxapp_stats.h"
 #include "ucxapp_tls.h"
+#include "ucxapp_cmd.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>
@@ -61,14 +62,17 @@ typedef struct {
     const char *tx_body;         /**< Static body sent in place (flash), NULL when all is in tx_buffer */
     int32_t  tx_offset;          /**< Bytes already sent */
     bool     tx_close_when_done; /**< Mark pending_close once tx_buffer drains (non-SSE) */
+    int32_t  tx_stall_ms;        /**< Time the module first took 0 bytes, 0 while sending moves */
     ucxapp_tls_conn_t *tls;      /**< HTTPS session, NULL for plain HTTP */
     uint32_t generation;         /**< Bumped on every accept into this slot; tells a new client from the last */
 } uWebServerClient_t;
 
+#define U_WEBSERVER_TX_STALL_MS 5000
+
 /* Per-call chunk size for deferred sends.
- * NORA-W36 AT+USOWB max payload is 1000 bytes; one chunk per Process() call
+ * AT+USOWB takes up to 1460 bytes (1000 on FW 3.2; ucxapp_sock_write falls back); one chunk per Process() call
  * keeps the main-loop blocking time bounded (~100-200ms per chunk over UART). */
-#define U_WEBSERVER_TX_CHUNK_SIZE 1000
+#define U_WEBSERVER_TX_CHUNK_SIZE 1460
 
 /* Forward declarations */
 static void client_release_tx_buffer(uWebServerClient_t *client);
@@ -306,6 +310,7 @@ static void client_release_tx_buffer(uWebServerClient_t *client)
     client->tx_body            = NULL;
     client->tx_offset          = 0;
     client->tx_close_when_done = false;
+    client->tx_stall_ms        = 0;
 }
 
 static void client_drop_tls(uWebServerClient_t *client, bool notify)
@@ -355,12 +360,13 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
      * feeds socket-closed events to uWebServerHandleSocketClosed() between chunks. */
     int32_t result = client->tls != NULL
         ? ucxapp_tls_write(client->tls, (const uint8_t *)src, (size_t)chunk_len)
-        : uCxSocketWrite(server->ucx_handle, client->socket, (const uint8_t *)src, chunk_len);
+        : ucxapp_sock_write(server->ucx_handle, client->socket, (const uint8_t *)src, chunk_len);
     if (result > 0) {
         ucxapp_stats_add(UCXAPP_STATS_WEB, (size_t)result, 0);
     }
     if (result < 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Deferred write failed at offset %d (socket=%d)",
+        /* Usually the browser closed first (reload, navigation): not an error. */
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Deferred write failed at offset %d (socket=%d)",
                       (int)client->tx_offset, (int)client->socket);
         // Drop the buffer and tear down the client; on_socket_closed will
         // also fire if the remote closed, which is harmless (idempotent).
@@ -369,6 +375,22 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
         client->pending_close = true;
         return result;
     }
+    /* A browser that stops reading (hidden or throttled tab) fills the module's TCP
+     * window; every write then takes 0 bytes. Drop it rather than spin on the AT link. */
+    if (result == 0) {
+        int32_t now = U_CX_PORT_GET_TIME_MS();
+        if (client->tx_stall_ms == 0) {
+            client->tx_stall_ms = now != 0 ? now : 1;
+        } else if (now - client->tx_stall_ms > U_WEBSERVER_TX_STALL_MS) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "WebServer: client socket=%d stopped reading, closing",
+                          (int)client->socket);
+            client_release_tx_buffer(client);
+            client->closing       = true;
+            client->pending_close = true;
+        }
+        return 0;
+    }
+    client->tx_stall_ms = 0;
 
     client->tx_offset += result;
 
@@ -583,12 +605,11 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
     
     // Read available data. Cap by:
     //   1) free space in our request buffer
-    //   2) NORA-W36 AT+USORB hard limit (2048 bytes since u-connectXpress 3.5.0)
+    //   2) AT+USORB limit (1460 bytes, 1000 on FW 3.2; ucxapp_sock_read caps it)
     //   3) bytes_available from +UESODA URC — asking for more makes NORA-W36
     //      stall the AT response while it figures out it has less, hurting
     //      throughput on slow links. The URC count is authoritative.
     int32_t rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
-    if (rx_space > 2048) rx_space = 2048;  // NORA-W36 AT+USORB max
     if (bytes_available > 0 && rx_space > bytes_available) {
         rx_space = bytes_available;
     }
@@ -600,7 +621,7 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
     }
     
     uint8_t *rx_ptr = (uint8_t*)(client->rx_buffer + client->rx_length);
-    int32_t result = uCxSocketRead(puCxHandle, socket, rx_space, rx_ptr);
+    int32_t result = ucxapp_sock_read(puCxHandle, socket, rx_ptr, rx_space);
     
     if (result > 0) {
         ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)result);
@@ -1005,12 +1026,22 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
         return -2;  // Client not connected or not SSE
     }
     
-    // Build SSE event message
-    char event_buffer[U_WEBSERVER_SSE_EVENT_SIZE];
+    // Build SSE event message, sized to the data ("data: " per line)
+    size_t cap = 16 + (event_name ? strlen(event_name) : 0);
+    if (data) {
+        cap += strlen(data) + 8;
+        for (const char *p = data; *p; p++) {
+            cap += (*p == '\n') ? 7 : 0;
+        }
+    }
+    char *event_buffer = (char *)malloc(cap);
     int32_t len = 0;
-    
+
+    if (!event_buffer) {
+        return -5;
+    }
     if (event_name) {
-        len += snprintf(event_buffer + len, sizeof(event_buffer) - (size_t)len, "event: %s\n", event_name);
+        len += snprintf(event_buffer + len, cap - (size_t)len, "event: %s\n", event_name);
     }
     
     if (data) {
@@ -1020,7 +1051,7 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
             const char *line_end = strchr(line_start, '\n');
             int32_t line_len = line_end ? (int32_t)(line_end - line_start) : (int32_t)strlen(line_start);
             
-            len += snprintf(event_buffer + len, sizeof(event_buffer) - (size_t)len, "data: %.*s\n", line_len, line_start);
+            len += snprintf(event_buffer + len, cap - (size_t)len, "data: %.*s\n", line_len, line_start);
             
             if (!line_end) break;
             line_start = line_end + 1;
@@ -1028,9 +1059,10 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
     }
     
     // Event terminator
-    len += snprintf(event_buffer + len, sizeof(event_buffer) - (size_t)len, "\n");
+    len += snprintf(event_buffer + len, cap - (size_t)len, "\n");
 
     if (len <= 0) {
+        free(event_buffer);
         return -3;
     }
 
@@ -1047,14 +1079,11 @@ int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const 
     if (c->tx_buffer) {
         // A previous event/response is still in flight on this SSE client.
         // Coalesce: drop this event. The browser will get the next one.
+        free(event_buffer);
         return -4;
     }
 
-    char *buf = (char *)malloc((size_t)len);
-    if (!buf) {
-        return -5;
-    }
-    memcpy(buf, event_buffer, (size_t)len);
+    char *buf = event_buffer;
 
     c->tx_buffer          = buf;
     c->tx_total           = len;
@@ -1227,12 +1256,11 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
     
     // Read available data. Cap by:
     //   1) free space in our request buffer
-    //   2) NORA-W36 AT+USORB hard limit (2048 bytes since u-connectXpress 3.5.0)
+    //   2) AT+USORB limit (1460 bytes, 1000 on FW 3.2; ucxapp_sock_read caps it)
     //   3) bytesAvailable from +UESODA URC — asking for more makes NORA-W36
     //      stall the AT response while it figures out it has less, hurting
     //      throughput on slow links. The URC count is authoritative.
     int32_t rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
-    if (rx_space > 2048) rx_space = 2048;  // NORA-W36 AT+USORB max
     if (bytesAvailable > 0 && rx_space > bytesAvailable) {
         rx_space = bytesAvailable;
     }
@@ -1272,7 +1300,7 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
     }
 
     uint8_t *rx_ptr = (uint8_t*)(client->rx_buffer + client->rx_length);
-    int32_t result = uCxSocketRead(puCxHandle, socketHandle, rx_space, rx_ptr);
+    int32_t result = ucxapp_sock_read(puCxHandle, socketHandle, rx_ptr, rx_space);
     
     if (result > 0) {
         ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)result);

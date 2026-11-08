@@ -90,9 +90,33 @@ static U_CX_MUTEX_HANDLE gTraceLock;
 static char gTraceLine[1024];
 static size_t gTraceLen;
 
+#if UCXAPP_HOST
+#if defined(_MSC_VER)
+static __declspec(thread) bool tLogAtQuiet;
+#else
+static __thread bool tLogAtQuiet;
+#endif
+#else
+static const bool tLogAtQuiet = false;
+#endif
+
+void ucxappLogAtQuiet(bool quiet)
+{
+#if UCXAPP_HOST
+    tLogAtQuiet = quiet;
+#else
+    (void)quiet;
+#endif
+}
+
 bool ucxappLogAtEnabled(void)
 {
-    return gLogAt || gTraceSink != NULL;
+    return (gLogAt || gTraceSink != NULL) && !tLogAtQuiet;
+}
+
+bool ucxappLogAtShown(void)
+{
+    return gLogAt;
 }
 
 void ucxappLogAtSetTrace(void (*sink)(const char *line))

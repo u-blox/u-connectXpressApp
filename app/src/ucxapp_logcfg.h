@@ -8,6 +8,13 @@
 bool ucxappLogAtEnabled(void);
 #define U_CX_LOG_AT ucxappLogAtEnabled()
 
+/* Hides the calling thread's AT traffic from the trace: the web server's own socket writes would otherwise
+ * be traced, sent to the page as trace lines, traced again and so on. */
+void ucxappLogAtQuiet(bool quiet);
+
+/* app.log.at.on/off: whether the AT trace is shown in the log (the web page's AT log button). */
+bool ucxappLogAtShown(void);
+
 /* at.trace: every whole AT TX/RX line (ANSI colours stripped, secrets masked) also goes to sink; NULL stops it.
  * Host builds only, where the library prints through ucxappLibPrintf. */
 void ucxappLogAtSetTrace(void (*sink)(const char *line));

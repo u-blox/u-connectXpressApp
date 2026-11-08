@@ -195,7 +195,7 @@ if(NOT WIN32)
 
   option(UCXAPP_COVERAGE "Instrument ucxapp with gcov" OFF)
   if(UCXAPP_COVERAGE)
-    target_compile_options(ucxapp PRIVATE --coverage -O0 -g)
+    target_compile_options(ucxapp PRIVATE --coverage -fprofile-update=atomic -O0 -g)
     target_link_options(ucxapp PRIVATE --coverage)
     # Keep the instrumented exe out of app/bin so it never replaces the normal build.
     set_target_properties(ucxapp PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}

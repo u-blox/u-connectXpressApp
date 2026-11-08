@@ -641,7 +641,9 @@ function cnSep(){const ns=Object.values(CN.n).filter(n=>!n.gone),H=[-80,-48,80,4
  ns.forEach(n=>{n.px=n.px||0;n.py=n.py||0;n.hit=0});
  const push=(n,a,b,k)=>{const ox=Math.min(a[2],b[2])-Math.max(a[0],b[0])+12,oy=Math.min(a[3],b[3])-Math.max(a[1],b[1])+12;if(ox<=0||oy<=0)return;n.hit=1;
   const cx=(a[0]+a[2]-b[0]-b[2])/2,cy=(a[1]+a[3]-b[1]-b[3])/2;if(ox<oy)n.px+=(cx>=0?1:-1)*ox*k;else n.py+=(cy>=0?1:-1)*oy*k};
- ns.forEach((n,i)=>{const a=cnBox(n);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m),.1)})});
+ ns.forEach((n,i)=>{const a=cnBox(n);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m),m.o.cs!=null?.2:.1)});
+  /* the module's ring is a keep-out circle too */
+  const d=Math.hypot(n.x,n.y)||1,min=105+n.R;if(!n.o.p&&d<min){n.px+=n.x/d*(min-d)*.2;n.py+=n.y/d*(min-d)*.2;n.hit=1}});
  ns.forEach(n=>{if(!n.hit){n.px*=.995;n.py*=.995}})}
 function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;cnSep();
  ord.forEach(k=>{let n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,

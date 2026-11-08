@@ -260,7 +260,7 @@
    "OK"
   ],
   "AT+UBTCST=*": [
-   "+UBTCST:0,23",
+   "+UBTCST:0,247",
    "OK"
   ],
   "AT+UBTPHYR=*": [

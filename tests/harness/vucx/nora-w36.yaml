@@ -51,7 +51,7 @@ commands:
   "AT+UBTCL": ["+UBTCL:0,C0FFEE001122p", "OK"]
   "AT+UBTBDL": ["+UBTBDL:C0FFEE001144p", "OK"]
   "AT+UBTRSS=*": ["+UBTRSS:-55", "OK"]
-  "AT+UBTCST=*": ["+UBTCST:0,23", "OK"]
+  "AT+UBTCST=*": ["+UBTCST:0,247", "OK"]
   "AT+UBTPHYR=*": ["+UBTPHYR:0,2,2", "OK"]
   "AT+UBTM?": ["+UBTM:3", "OK"]
   "AT+UBTLN?": ['+UBTLN:"vucx"', "OK"]

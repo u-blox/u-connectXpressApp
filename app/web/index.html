@@ -504,7 +504,9 @@ const UC={
  notify:{t:'Phone notifications',d:'Calls and messages from an iPhone (ANCS) or an Android companion app on a small display or wearable, with answer and dismiss.',
   h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS'],['android','Android','companion app'],['disp','Display','title and text','warm'],['act','Actions','answer, dismiss','pu']]},
  remote:{t:'Clicker or media remote',d:'The module is a BLE keyboard (HID over GATT): next slide, volume and play/pause on a PC, TV or phone without a driver.',
-  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID'],['slides','Slides','space, backspace','warm'],['media','Media','volume, play','pu'],['text','Text','hid.text']]}};
+  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID'],['slides','Slides','space, backspace','warm'],['media','Media','volume, play','pu'],['text','Text','hid.text']]},
+ finder:{t:'Item finder with Channel Sounding',d:'A tag on keys, a bag or a tool answers Channel Sounding: a second module or a Bluetooth 6.0 phone measures how far away it is, to about half a metre. Ranging only runs on an authenticated, bonded link.',
+  h:['Finder','NORA-B26 initiator'],n:[['ble','Tag','reflector, bt.cs on'],['dist','Distance','bt.cs.range','warm'],['auth','Bond','authenticated link','pu'],['phone','Phone','Bluetooth 6.0']]}};
 const KC={wifi:'ac',ap:'pu',sock:'warm',ble:'ble'},XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
 {const G={};Object.keys(UC).forEach(k=>{const s=UC[k].s||'Everyday';
  if(!G[s]){G[s]=document.createElement('optgroup');G[s].label=s;$('ucs').append(G[s])}G[s].append(new Option(UC[k].t,k))})}
@@ -642,8 +644,11 @@ function cnSep(){const ns=Object.values(CN.n).filter(n=>!n.gone),H=[-80,-48,80,4
  ns.forEach((n,i)=>{const a=cnBox(n);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m),.1)})});
  ns.forEach(n=>{if(!n.hit){n.px*=.995;n.py*=.995}})}
 function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;cnSep();
- ord.forEach(k=>{const n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
+ ord.forEach(k=>{let n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
    tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3+(CN.off[k]?CN.off[k][0]:0)+(n.px||0),ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3+(CN.off[k]?CN.off[k][1]:0)+(n.py||0);
+  /* a Channel Sounding distance is a magnet: the node keeps its angle but slides back onto the ring of that distance
+     unless it is being dragged */
+  if(o.cs!=null&&!o.p&&!Object.values(CNP).some(q=>q.k===k&&q.moved)){const l=Math.hypot(tx,ty)||1,R=csR(o.cs);tx=tx*R/l;ty=ty*R/l}
   if(!n.gone){n.x+=(tx-n.x)*.07;n.y+=(ty-n.y)*.07}
   n.pos.setAttribute('transform','translate('+n.x.toFixed(1)+' '+n.y.toFixed(1)+')');
   const c=n.c=cnCurve(px,py,n.x,n.y),d='M'+c[0].toFixed(1)+' '+c[1].toFixed(1)+'Q'+c[2].toFixed(1)+' '+c[3].toFixed(1)+' '+c[4].toFixed(1)+' '+c[5].toFixed(1);

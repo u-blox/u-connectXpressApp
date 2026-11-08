@@ -170,7 +170,7 @@ urcs:
   "AT+UBTUC=*,1": ["+UEBTB:C0FFEE001122p,0"]
   "AT+UBTB=*": ["+UEBTB:C0FFEE001122p,0"]
   "AT+UBTCSP=0,1 [cs=initiator]":
-    ["+UEBTCSS:0,2,0", "+UEBTCSM:0,1480", "+UEBTCSM:0,1510", "+UEBTCSM:0,1495", "+UEBTCSM:0,1502"]
+    ["+UEBTCSS:0,2,0", "+UEBTCSM:0,4980", "+UEBTCSM:0,5030", "+UEBTCSM:0,4995", "+UEBTCSM:0,5010"]
   # ANCS: one notification on the phone (uid 42), its attributes, then the generic write answer
   "AT+UBTGCCW=0,36,1": ["+UEBTGCN:0,35,001C04012A000000"]
   "AT+UBTGW=0,38,002A000000*":

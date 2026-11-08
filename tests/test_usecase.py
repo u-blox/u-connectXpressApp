@@ -66,13 +66,13 @@ USE_CASES = ("iiot", "medical", "site", "implement", "condition", "agv", "eol", 
              "border", "building", "gateway",
              "swarm", "recovery", "handover", "livestock", "boat", "rtk", "mower", "farm", "tracker",
              "fieldkit", "blecell", "vehicle", "xplr",
-             "home", "provision", "hotel", "notify", "remote")
+             "home", "provision", "hotel", "notify", "remote", "finder")
 SECTIONS = {"Industry": ("tool", "iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw"),
             "Edge AI": ("edge",),
             "Thread": ("mesh", "border", "building", "gateway"),
             "Location": ("swarm", "recovery", "handover", "livestock", "boat", "rtk", "mower", "farm", "tracker"),
             "Cellular": ("fieldkit", "blecell", "vehicle", "xplr"),
-            "Everyday": ("home", "provision", "hotel", "notify", "remote")}
+            "Everyday": ("home", "provision", "hotel", "notify", "remote", "finder")}
 
 
 @pytest.mark.app

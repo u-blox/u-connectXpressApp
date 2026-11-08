@@ -686,7 +686,7 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
 
 USE_CASES = ["iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw", "edge",
              "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote",
-             "handover", "livestock", "fieldkit", "blecell", "vehicle", "xplr"]
+             "handover", "livestock", "fieldkit", "blecell", "vehicle", "xplr", "finder"]
 
 
 @pytest.mark.parametrize("case", USE_CASES)
@@ -755,6 +755,26 @@ def test_thread_use_case_fits_and_runs_on_a_virtual_module(app_exe, case, tmp_pa
     bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
     assert ran == count and not bad, f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
     assert any(c.startswith("AT+UTH") for c in module.log), module.log[-15:]
+
+
+def test_demo_tour_ranges_a_tag_and_ends_with_a_ble_link(app_exe, tmp_path):
+    """demo runs the tour on a virtual ALMA-W1; the finder case shows Channel Sounding and leaves its link up, so
+    the Connections view still has a BLE node when the demo ends."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("alma-w1-thread.yaml")
+    try:
+        out = _run(app_exe, module.start(), "demo", "bt.list", timeout=400, cwd=tmp_path)
+    finally:
+        module.stop()
+    m = re.search(r"demo: \d+ use cases, (\d+) of (\d+) examples ran to the end", out.stdout)
+    assert m and m.group(1) == m.group(2), out.stdout[-3000:]
+    assert "=== finder (3) ===" in out.stdout, out.stdout[-3000:]
+    assert re.search(r"readings, [\d.]+\.\.[\d.]+ m", out.stdout), out.stdout[-3000:]
+    assert "> bt.bond 0" in out.stdout and "CS needs authentication" not in out.stdout   # comments are not echoed
+    assert any(c.startswith("AT+UBTCSM=2") for c in module.log), module.log[-15:]
+    assert re.search(r"^\d+ connection\(s\)", out.stdout.split("examples ran to the end")[-1], re.M), out.stdout[-800:]
 
 
 @pytest.mark.parametrize("profile, gaps", [("nora-b26.yaml", "no Thread firmware"),

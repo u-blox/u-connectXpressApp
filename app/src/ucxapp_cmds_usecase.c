@@ -420,6 +420,15 @@ static const ucRow_t kRemote[] = {
     { 0, "[limit]", "Keys", "characters, enter, esc, tab, backspace and space; no arrow keys", NULL },
 };
 
+static const ucRow_t kFinder[] = {
+    { 0, "[ok]", "Tag", "the item carries a NORA-B26/B27 as Channel Sounding reflector: bt.cs on", "bt.cs" },
+    { 0, "[ok]", "Finder", "a second module as initiator measures the distance: bt.cs initiator, bt.cs.range", "bt.cs.range" },
+    { 0, "[ok]", "Authentication", "CS runs only on an authenticated, encrypted link: bt.defaults secure, then bt.bond <conn>", "bt.bond" },
+    { 0, "[ok]", "Phone", "a phone with Channel Sounding (Bluetooth 6.0) ranges the tag the same way", NULL },
+    { 0, "[ok]", "Smoothing", "the module filters the distance; bt.cs.filter trades lag for steadiness", "bt.cs.filter" },
+    { 0, "[check]", "Accuracy", "about 0.5 m indoors, CS on both ends; RSSI alone is not a distance", NULL },
+};
+
 #define CASE(id, title, rows) { id, title, rows, sizeof(rows) / sizeof(rows[0]) }
 static const ucCase_t kCases[] = {
 #ifndef UCXAPP_LITE
@@ -457,6 +466,9 @@ static const ucCase_t kCases[] = {
     CASE("hotel", "Hotel or cafe Wi-Fi with a login page", kHotel),
     CASE("notify", "Phone notifications on a small display or wearable", kNotify),
     CASE("remote", "Presentation clicker or media remote (BLE keyboard)", kRemote),
+#ifndef UCXAPP_LITE
+    CASE("finder", "Item finder: distance to a BLE tag with Channel Sounding", kFinder),
+#endif
 };
 #define CASE_COUNT (sizeof(kCases) / sizeof(kCases[0]))
 

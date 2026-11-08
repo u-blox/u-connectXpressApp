@@ -675,6 +675,12 @@ static const example_t kExamples[] = {
       "hid.key space\nhid.key backspace" },
     { "uc-remote", "Media remote",
       "hid.media volup\nhid.media play\nhid.text hello" },
+    { "uc-finder", "Make the tag findable (reflector)",
+      "bt.defaults secure\nbt.cs on\nbt.pairing on\n# CS only runs on an authenticated, encrypted link: the finder bonds first, then measures\nbt.cs off" },
+    { "uc-finder", "Measure the distance to the tag",
+      "bt.defaults secure\nbt.cs initiator\nbt.connect reflector\n# CS needs authentication: bond (LE Secure Connections) before ranging\nbt.bond 0\nbt.bonds\nbt.cs.range 0 10" },
+    { "uc-finder", "Steadier readings while you walk",
+      "bt.cs.filter 1 500\nbt.cs.range 0 10\nbt.cs.filter off" },
 #endif
 #if UCXAPP_HOST
     { "utils", "Handy tools",
@@ -949,7 +955,7 @@ static int cmdDemo(ucxapp_t *app, int argc, char *argv[])
 static int cmdTour(ucxapp_t *app, int argc, char *argv[])
 {
     static const char *const kTour[] = { "provision", "home", "hotel", "boat", "fieldkit", "blegw", "notify",
-                                         "remote", "mesh", "border", "condition" };
+                                         "remote", "finder", "mesh", "border", "condition" };
 
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "all") != 0)) {
         return UCXAPP_ERR_USAGE;
@@ -959,7 +965,7 @@ static int cmdTour(ucxapp_t *app, int argc, char *argv[])
     }
     if (ucxapp_module_is_virtual(app)) {
         ucxapp_print("u-connectXpress tour: Wi-Fi (phone setup, MQTT, hotel portal), GNSS to a chart app, a Wi-Fi to LTE "
-                     "relay, BLE (sensor gateway, phone notifications, remote), a Thread mesh and border router, and an "
+                     "relay, BLE (sensor gateway, phone notifications, remote, Channel Sounding distance), a Thread mesh and border router, and an "
                      "IMU vibration monitor (demo all runs every use case)\n");
     }
     return runCases(app, kTour, sizeof(kTour) / sizeof(kTour[0]));

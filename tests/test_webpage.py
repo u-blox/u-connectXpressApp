@@ -102,6 +102,8 @@ def test_graph_labels_separate_and_link_to_the_logs():
         assert name in SCRIPT, name
     assert 'id="flt-on"' in PAGE and "body.flt" in PAGE
     assert "'tm'" in SCRIPT
+    # a Channel Sounding distance pulls the BLE node onto its ring unless it is being dragged
+    assert "R=csR(o.cs);tx=tx*R/l" in SCRIPT and "q.k===k&&q.moved" in SCRIPT
 
 
 def test_demo_ends_with_a_verdict_banner():

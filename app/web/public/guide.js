@@ -4,7 +4,9 @@
   const STEPS = [
     [null, 'Welcome to u-connectXpressApp',
       'This page drives a u-blox u-connectXpress module (NORA-W36, NORA-B26, ALMA-W1): Wi-Fi, Bluetooth LE and ' +
-      'Thread. You do not need to know AT commands. Five short steps show you around; skip any time.'],
+      'Thread. You do not need to know AT commands. No module at hand? Run the demo: a virtual module goes through ' +
+      'Wi-Fi, BLE with Channel Sounding distance, Thread, GNSS and cellular while Connections draws every link. ' +
+      'Or take five short steps around the page.'],
     ['#wsc,#wsv', '1. Pick a module',
       'Connect module opens a real module on a USB serial port (Chrome or Edge). No hardware at hand? ' +
       'Virtual module starts a simulated one with the radios picked next to it. Everything below works on both.'],
@@ -59,18 +61,20 @@
       document.body.appendChild(box);
     }
     box.innerHTML = '<h3></h3><p></p><div class="gd-r"><span class="gd-n"></span><button class="gd-x">Skip</button>' +
-      (i ? '<button class="gd-b">Back</button>' : '') + '<button class="gd-go"></button></div>';
+      (i ? '<button class="gd-b">Back</button>' : '<button class="gd-demo gd-go">Run the demo</button>') +
+      '<button class="gd-go gd-nx"></button></div>';
     box.querySelector('h3').textContent = title;
     box.querySelector('p').textContent = text;
     box.querySelector('.gd-n').textContent = (i + 1) + ' / ' + STEPS.length;
-    box.querySelector('.gd-go').textContent = i === STEPS.length - 1 ? 'Done' : i ? 'Next' : 'Show me';
+    box.querySelector('.gd-nx').textContent = i === STEPS.length - 1 ? 'Done' : i ? 'Next' : 'Show me around';
     box.querySelector('.gd-x').onclick = close;
     if (i) box.querySelector('.gd-b').onclick = () => show(i - 1);
-    box.querySelector('.gd-go').onclick = () => (i === STEPS.length - 1 ? close() : show(i + 1));
+    box.querySelector('.gd-nx').onclick = () => (i === STEPS.length - 1 ? close() : show(i + 1));
+    if (!i) box.querySelector('.gd-demo').onclick = runDemo;
     found.forEach(e => { e.classList.add('gd-on'); lit.push(e); });
     if (found[0]) found[0].scrollIntoView({ block: 'nearest' });
     place(found[0]);
-    box.querySelector('.gd-go').focus();
+    box.querySelector(i ? '.gd-nx' : '.gd-demo').focus();
   }
 
   function close() {
@@ -78,6 +82,22 @@
     if (box) box.remove();
     box = null;
     localStorage.setItem('ucxguide', '1');
+  }
+
+  /* Virtual module (on the site), then the Connections view and the demo once the module answers */
+  function runDemo() {
+    close();
+    const v = document.getElementById('wsv'), go = () => {
+      const c = document.querySelector('#vw button[data-v="2"]'), d = document.getElementById('demo');
+      if (c) c.click();
+      if (d) d.click();
+    };
+    if (!v || v.hidden) { go(); return; }
+    v.click();
+    let n = 0;
+    const t = setInterval(() => {
+      if (v.hidden || ++n > 100) { clearInterval(t); if (v.hidden) setTimeout(go, 800); }
+    }, 100);
   }
 
   document.addEventListener('keydown', e => { if (box && e.key === 'Escape') close(); });

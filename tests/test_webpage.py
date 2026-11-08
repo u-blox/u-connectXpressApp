@@ -88,6 +88,28 @@ def test_cellular_card_and_status_chip():
     assert "addEventListener('cell'" in SCRIPT and "Cell:'cell.status'" in SCRIPT
 
 
+def test_header_overflow_menu_keeps_the_main_buttons_visible():
+    """Manual, Files and Clear live in the overflow menu; Guide, Demo and the module buttons stay in the header."""
+    menu = re.search(r'<span id="morm" hidden>(.*?)</span>', PAGE, re.S)
+    assert menu and all(f'id="{i}"' in menu.group(1) for i in ("man", "files", "clr"))
+    assert 'id="demo"' not in menu.group(1)
+    assert "getElementById('more')" in WASM_JS.read_text(encoding="utf-8")
+
+
+def test_graph_labels_separate_and_link_to_the_logs():
+    """Graph nodes push apart, a clicked node filters the Log and events, and log blocks carry a time."""
+    for name in ("function cnSep(", "function fltSet(", "function cnPulse("):
+        assert name in SCRIPT, name
+    assert 'id="flt-on"' in PAGE and "body.flt" in PAGE
+    assert "'tm'" in SCRIPT
+
+
+def test_demo_ends_with_a_verdict_banner():
+    """A demo prints 'N of M examples ran to the end'; the page turns that into a pass/fail banner."""
+    assert '<div id="verdict"' in PAGE and "function verdict(" in SCRIPT
+    assert "examples ran to the end" in SCRIPT
+
+
 W3C_NU = "https://validator.w3.org/nu/?out=json"
 
 

@@ -11,6 +11,13 @@ h1{margin:0;font-size:1.05rem;font-weight:700}.logo{height:1.9rem;width:auto}
 #st.ok{color:var(--ok)}#st.bad{color:var(--err)}#st.bad::before{animation:bl 1s steps(2) infinite}@keyframes bl{50%{opacity:0}}
 .chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok);white-space:nowrap}.chip.off{color:var(--mut);opacity:.7}.chip.ck{cursor:pointer}#state{display:flex;gap:.3rem;flex-wrap:nowrap;flex:1 1 0;min-width:0;overflow-x:auto;scrollbar-width:none;mask-image:linear-gradient(90deg,#000 calc(100% - 1.5rem),transparent)}#state::-webkit-scrollbar{display:none}
 header>*:not(#state),#vw button{white-space:nowrap;flex:none}#state{min-width:6rem}
+@media(min-width:801px){#state{flex:none;overflow:visible;mask-image:none;-webkit-mask-image:none}}.chip u{text-decoration-thickness:2px;text-underline-offset:2px}
+#more{position:relative}#morb{font-weight:800;letter-spacing:.05em}#morm{position:absolute;right:0;top:calc(100% + .35rem);z-index:60;display:flex;flex-direction:column;gap:.3rem;min-width:9rem;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:.4rem;box-shadow:0 8px 30px #0008}#morm[hidden]{display:none}#morm button{text-align:left}
+#out .bh .tm,#ev .t{color:var(--mut);font:12px Consolas,monospace;font-weight:400}#ev{scroll-padding-top:.6rem}
+#flt-on{display:flex;gap:.4rem;align-items:center;font-size:.8rem;color:var(--ac);margin:0 0 .3rem}#flt-on[hidden]{display:none}#flt-on button{padding:.1rem .5rem;font-size:.75rem}
+body.flt #out>.blk:not(.hit),body.flt #ev>.e:not(.hit){display:none}
+#cn .nd.ping .b{animation:cnping .9s ease-out}@keyframes cnping{0%{stroke-width:7;filter:drop-shadow(0 0 16px var(--k))}}
+#verdict{position:fixed;left:50%;top:4.2rem;transform:translateX(-50%);z-index:70;display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;border-radius:12px;font-weight:600;box-shadow:0 10px 40px #000a;background:#0f2a1a;border:1px solid var(--ok);color:var(--ok)}#verdict.bad{background:#2a1214;border-color:var(--bad,#ff5c6c);color:var(--bad,#ff5c6c)}#verdict[hidden]{display:none}#verdict button{padding:.15rem .6rem}
 @media(min-width:801px) and (max-width:1280px){header{gap:.5rem;padding:.45rem .7rem}h1{font-size:.92rem}.logo{height:1.5rem}header>button,#vw button{padding:.3rem .55rem;font-size:.85rem}#ver{display:none}}
 @media(min-width:801px) and (max-width:1100px){h1{display:none}main{grid-template-columns:15rem 1fr 1fr}}
 #vw{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}#vw button{border:0;border-radius:0;background:none}#vw button.on{background:var(--ac);color:#04121c;font-weight:600}
@@ -34,8 +41,8 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 #cn .nd .b{fill:var(--bg2);stroke:var(--k);stroke-width:2.5;filter:drop-shadow(0 0 7px var(--k));transition:stroke-width .2s,fill .2s}
 #cn .nd:hover .b,#cn .nd.sel .b{fill:#16263a;stroke-width:4}
 #cn .ic{fill:var(--k);font:800 13px system-ui;text-anchor:middle;dominant-baseline:central;pointer-events:none}
-#cn .lb{fill:var(--tx);font:600 17px 'Segoe UI',system-ui;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
-#cn .sb{fill:#a9b4c3;font:15px Consolas,monospace;text-anchor:middle;text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
+#cn .lb,#cn .sb{stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}#cn .lb{fill:var(--tx);font:600 17px 'Segoe UI',system-ui;text-anchor:middle}
+#cn .sb{fill:#cdd6e1;font:15px Consolas,monospace;text-anchor:middle}
 #cn .bar{fill:#2a3546}#cn .bar.on{fill:var(--k)}
 #cn .gone{opacity:0}#cn .pk{fill:var(--k);filter:drop-shadow(0 0 5px var(--k))}
 #cn .halo{fill:none;stroke:var(--ac);stroke-width:2;transform-box:fill-box;transform-origin:center;animation:cnh 2.6s ease-out infinite}
@@ -130,9 +137,9 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <text x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
 <h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated: Wi-Fi, BLE, Thread, sockets, GNSS and cellular">Connections</button></span>
 <span id="state"></span><span id="busy"></span>
-<button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files">Files</button><button id="clr">Clear</button></header>
+<button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pn">Links</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
-<main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands"><div id="rc"></div>
+<div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands"><div id="rc"></div>
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
 <div class="pane" id="pu"><h2>Use case</h2><div class="sc"><select id="ucs" aria-label="Use case"></select><div class="uh" id="uh">Connected tool</div>
 <div class="ud" id="ud"></div>
@@ -145,7 +152,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div id="cnv"><svg id="cn" viewBox="-430 -250 860 500" role="img" aria-label="Live connections"></svg>
 <div id="cnz"><button data-z="1.25" title="Zoom in (wheel, pinch)">+</button><button data-z="0.8" title="Zoom out">&minus;</button><button data-z="0" title="Reset view and node positions (double-click the background)">&#x27F2;</button></div></div>
 <div id="cnd" class="card" hidden></div></div></div>
-<div class="pane on" id="pl"><h2>Log</h2><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></div>
+<div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></div>
 <div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><pre id="cc" hidden title="Cellular modem, live (click: cell.status)"></pre><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
@@ -169,7 +176,7 @@ const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=nu
 
 /* ---- log: one block per command, ANSI colours as spans ---- */
 function block(title){const b=el('div','blk'),body=el('div','bb');
- if(title){const h=el('div','bh');h.appendChild(el('span','',title));b.badge=el('span','badge','running');h.appendChild(b.badge);b.appendChild(h)}
+ if(title){const h=el('div','bh');h.appendChild(el('span','tm',new Date().toLocaleTimeString([],{hour12:false})));h.appendChild(el('span','',title));b.badge=el('span','badge','running');h.appendChild(b.badge);b.appendChild(h)}
  b.appendChild(body);b.body=body;out.appendChild(b);return b}
 function trim(){while(total>LOG_MAX&&out.children.length>1){const f=out.children[out.children.length>2?1:out.children.length-1];
  if(f===cur||f===free){const b=f.body;if(!b||b.childNodes.length<2)break;
@@ -188,7 +195,7 @@ function add(t){t=pend+t;pend='';const m=t.match(/\x1b(\[[0-9;?]*)?$/);if(m){pen
 function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight}
 function addEv(t){const s=stick(ev),i=t.indexOf(':'),k=i>0&&i<9?t.slice(0,i):'',d=el('div','e n '+k);
  d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','g',k||'info'));d.appendChild(el('span','x',k?t.slice(i+1).trim():t));
- ev.appendChild(d);setTimeout(()=>d.classList.remove('n'),1300);while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight}
+ fltMark(d,k);ev.appendChild(d);setTimeout(()=>d.classList.remove('n'),1300);while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight}
 function clearAll(){Array.from(out.children).slice(1).forEach(c=>{if(c!==cur)c.remove()});$('trim').hidden=true;total=0;free=null;ev.textContent=''}
 function scanLinks(b){const lines=b.body.textContent.split('\n');b.body.textContent='';
  lines.forEach((l,i)=>{const m=l.match(/^\s*(\d+)\s{2}(.+?)\s+[0-9A-F]{2}(:[0-9A-F]{2}){5}/);
@@ -214,7 +221,7 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  const sh=c+(a&&a.length?' '+a.join(' '):'');
  if(!yes)remember(sh);
  let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
- free=null;cnPulse(c.split('.')[0],1);const b=block('> '+sh);b.t0=Date.now();b.cmd=c;cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
+ free=null;cnPulse(c.split('.')[0],1);const b=block('> '+sh);b.t0=Date.now();b.cmd=c;fltMark(b,c.split('.')[0]);cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
  try{const r=await api(u,{method:'POST'});
   if(r.status===428){b.remove();cur=null;setBusy('');ask('Run "'+sh+'"? It changes or deletes data on the device.',{cancel:1,ok:'Run'}).then(y=>{if(y)run(c,a,raw,1)});return}
@@ -227,7 +234,11 @@ function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  if(!rc&&/^Examples for /m.test(b.body.textContent))exLinks(b);
  if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
  if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b);
- if(!rc&&/^ppk\.measure/.test(b.cmd))ppkChart(b)}
+ if(!rc&&/^ppk\.measure/.test(b.cmd))ppkChart(b);
+ const dv=/^(?:usecase\.)?demo\b/.test(b.cmd)&&/(\d+) of (\d+) examples ran to the end/.exec(b.body.textContent);if(dv)verdict(dv[1]===dv[2],dv[0])}
+/* a short banner for commands with a pass/fail outcome (the demo) */
+function verdict(ok,t){const v=$('verdict');v.className=ok?'':'bad';v.textContent='';v.appendChild(el('span','',(ok?'\u2714 Demo passed: ':'\u2716 Demo: ')+t));
+ const x=el('button','','OK');x.onclick=()=>v.hidden=true;v.appendChild(x);v.hidden=false;clearTimeout(v.tm);v.tm=setTimeout(()=>v.hidden=true,12000)}
 
 /* ---- ppk.measure: the "Chart:" line (min,avg,max uA per slot) drawn as a band with the average on top ---- */
 function ppkChart(b){const m=/^Chart:\s+([\d.]+) s uA avg ([-\d.]+)((?: [-\d.]+,[-\d.]+,[-\d.]+)+)\s*$/m.exec(b.body.textContent);if(!m)return;
@@ -412,6 +423,8 @@ async function openManual(topic){const d=$('md');d.showModal();
  if(MD===null){$('mc').textContent='Loading...';try{const r=await api('/api/manual');MD=r.ok?await r.text():'';}catch(x){MD=''}
   if(MD)mdRender(MD);else $('mc').textContent='The manual is not available.'}
  if(topic){$('mq').value=topic;mdFind(topic)}}
+$('morb').onclick=e=>{e.stopPropagation();const m=$('morm');m.hidden=!m.hidden;$('morb').setAttribute('aria-expanded',String(!m.hidden))};
+document.addEventListener('click',e=>{const m=$('morm');if(!m.hidden&&(!m.contains(e.target)||e.target.tagName==='BUTTON')){m.hidden=true;$('morb').setAttribute('aria-expanded','false')}});
 $('man').onclick=()=>openManual('');$('mclose').onclick=()=>$('md').close();
 $('mq').oninput=()=>mdFind($('mq').value.trim());
 $('mt').onclick=e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();const t=document.getElementById(a.getAttribute('href').slice(1));if(t)t.scrollIntoView()};
@@ -593,7 +606,7 @@ function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{clas
  sv('circle',{class:'b',r:R},nd);n.ic=sv('text',{class:'ic'},nd);
  if(o.q!==undefined){n.bars=[0,1,2,3].map(i=>sv('rect',{class:'bar',x:R+5+i*5,y:-2-i*3,width:3.5,height:5+i*3,rx:1},nd))}
  if(o.sats!==undefined){n.sg=sv('g',{},nd);sv('animateTransform',{attributeName:'transform',type:'rotate',from:'0',to:'360',dur:'12s',repeatCount:'indefinite'},n.sg)}
- n.lb=sv('text',{class:'lb',y:R+20},nd);n.sb=[sv('text',{class:'sb',y:R+38},nd),sv('text',{class:'sb',y:R+55},nd)];
+ n.lb=sv('text',{class:'lb',y:R+20,'paint-order':'stroke'},nd);n.sb=[sv('text',{class:'sb',y:R+38,'paint-order':'stroke'},nd),sv('text',{class:'sb',y:R+55,'paint-order':'stroke'},nd)];
  n.cs=sv('text',{class:'cs'},cnLinks);nd.onclick=()=>cnSelect(o.k);return n}
 
 function cnFill(n,o){n.o=o;n.ic.textContent=o.ic;n.lb.textContent=o.lb;n.sb.forEach((s,i)=>s.textContent=o.sb[i]||'');
@@ -619,9 +632,18 @@ function cnUpdate(t){const r=cnParse(t||''),keep={};
  $('cnst').textContent=(r.port||r.L.length?'live, ':'')+'updated '+new Date().toLocaleTimeString([],{hour12:false});cnDetails()}
 
 function cnCurve(x0,y0,x1,y1){const mx=(x0+x1)/2,my=(y0+y1)/2,dx=x1-x0,dy=y1-y0;return [x0,y0,mx-dy*.12,my+dx*.12,x1,y1]}
-function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;
+/* keeps nodes and their labels apart: each node's box (circle plus its label lines) pushes overlapping ones and the hub away;
+   the push builds up over a few frames and fades again when there is room, so the layout settles without jumps */
+function cnBox(n){const o=n.o,w=Math.max(2*n.R+24,(o.lb||'').length*9.5,...(o.sb||[]).map(t=>(t||'').length*8.6))+14;return [n.x-w/2,n.y-n.R-14,n.x+w/2,n.y+n.R+(o.sb&&o.sb[1]?70:o.sb&&o.sb[0]?52:30)]}
+function cnSep(){const ns=Object.values(CN.n).filter(n=>!n.gone),H=[-80,-48,80,48];
+ ns.forEach(n=>{n.px=n.px||0;n.py=n.py||0;n.hit=0});
+ const push=(n,a,b,k)=>{const ox=Math.min(a[2],b[2])-Math.max(a[0],b[0])+12,oy=Math.min(a[3],b[3])-Math.max(a[1],b[1])+12;if(ox<=0||oy<=0)return;n.hit=1;
+  const cx=(a[0]+a[2]-b[0]-b[2])/2,cy=(a[1]+a[3]-b[1]-b[3])/2;if(ox<oy)n.px+=(cx>=0?1:-1)*ox*k;else n.py+=(cy>=0?1:-1)*oy*k};
+ ns.forEach((n,i)=>{const a=cnBox(n);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m),.1)})});
+ ns.forEach(n=>{if(!n.hit){n.px*=.995;n.py*=.995}})}
+function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;cnSep();
  ord.forEach(k=>{const n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
-   tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3+(CN.off[k]?CN.off[k][0]:0),ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3+(CN.off[k]?CN.off[k][1]:0);
+   tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3+(CN.off[k]?CN.off[k][0]:0)+(n.px||0),ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3+(CN.off[k]?CN.off[k][1]:0)+(n.py||0);
   if(!n.gone){n.x+=(tx-n.x)*.07;n.y+=(ty-n.y)*.07}
   n.pos.setAttribute('transform','translate('+n.x.toFixed(1)+' '+n.y.toFixed(1)+')');
   const c=n.c=cnCurve(px,py,n.x,n.y),d='M'+c[0].toFixed(1)+' '+c[1].toFixed(1)+'Q'+c[2].toFixed(1)+' '+c[3].toFixed(1)+' '+c[4].toFixed(1)+' '+c[5].toFixed(1);
@@ -633,22 +655,28 @@ function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).
 
 /* g: event or command group; out: from the app to the peer */
 function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
- Object.keys(CN.n).filter(k=>!CN.n[k].gone&&kinds.includes(CN.n[k].o.c)).slice(0,4).forEach((k,i)=>{
+ Object.keys(CN.n).filter(k=>!CN.n[k].gone&&kinds.includes(CN.n[k].o.c)).slice(0,4).forEach((k,i)=>{const nd=CN.n[k].nd;nd.classList.remove('ping');void nd.getBBox();nd.classList.add('ping');
   for(let j=0;j<3;j++)CN.pk.push({k,t:-(i*.08+j*.07),s:.022,in:!out,e:sv('circle',{class:'pk k-'+CN.n[k].o.c,r:0},cnPk)})})}
 
-function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails()}
+function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
+/* a selected node (not the hub) filters Log and What's happening to the commands and events of its kind */
+function fltKind(){const n=CN.sel&&CN.sel!=='hub'&&CN.n[CN.sel];return n?n.o.c:''}
+function fltMark(e,g){e.dataset.g=g||'';const k=fltKind();e.classList.toggle('hit',!!k&&(CNK[g]||[]).includes(k))}
+function fltSet(){const k=fltKind(),n=k&&CN.n[CN.sel],bar=$('flt-on');document.body.classList.toggle('flt',!!k);bar.hidden=!k;bar.textContent='';
+ document.querySelectorAll('#out>.blk,#ev>.e').forEach(e=>{if(e.dataset.g!==undefined)fltMark(e,e.dataset.g)});
+ if(!k)return;bar.appendChild(el('span','','Showing only '+n.o.ic+' '+n.o.lb));const x=el('button','','Show all');x.onclick=()=>{CN.sel='';cnDetails();fltSet()};bar.appendChild(x)}
 function cnDetails(){const d=$('cnd'),n=CN.sel==='hub'?(CN.mod&&{o:CN.mod}):CN.n[CN.sel];Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));cnHub.classList.toggle('sel',CN.sel==='hub');d.hidden=!n;if(!n){d.sig='';return}
  const o=n.o,sig=JSON.stringify([o.k,o.info,o.act]);if(d.sig===sig)return;d.sig=sig;d.textContent='';
  d.appendChild(el('h3','',o.ic+'  '+o.lb));const g=el('div','kv');o.info.forEach(x=>{g.appendChild(el('span','',x[0]));g.appendChild(el('b','',x[1]||'-'))});d.appendChild(g);
  const r=el('div','r');o.act.forEach(x=>{const b=el('button',x[3]?'dg':'',x[0]);b.title=x[1]+(x[2]?' '+x[2].join(' '):'');b.onclick=()=>run(x[1],x[2]||null);r.appendChild(b)});
- const cx=el('button','cx','Close');cx.title='Hide the details (click a node to show them again)';cx.onclick=()=>{CN.sel='';cnDetails()};r.appendChild(cx);d.appendChild(r)}
+ const cx=el('button','cx','Close');cx.title='Hide the details (click a node to show them again)';cx.onclick=()=>{CN.sel='';cnDetails();fltSet()};r.appendChild(cx);d.appendChild(r)}
 
 function cnTick(){if(document.hidden)return;api('/api/conn').then(r=>r.json()).then(j=>cnUpdate(j.t)).catch(()=>{$('cnst').textContent='no answer from the app'})}
 function cnRun(on){if(on&&!CN.timer){cnTick();CN.timer=setInterval(cnTick,5000);if(!CN.raf)CN.raf=requestAnimationFrame(cnFrame)}
  else if(!on&&CN.timer){clearInterval(CN.timer);CN.timer=0;cancelAnimationFrame(CN.raf);CN.raf=0;CN.pk.forEach(p=>p.e.remove());CN.pk=[]}}
 
 function view(v){v=+v||0;document.body.classList.toggle('uc',v===1);document.body.classList.toggle('cn',v===2);localStorage.setItem('ucxv',String(v));
- document.querySelectorAll('#vw button').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));if(v===1)steps();cnRun(v===2)}
+ document.querySelectorAll('#vw button').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));if(v===1)steps();cnRun(v===2);if(v!==2&&CN.sel){CN.sel='';cnDetails();fltSet()}}
 document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset.v));
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
@@ -680,8 +708,9 @@ function events(){const es=new EventSource('/events');
  if(ti>=0){const li=ps.findIndex(p=>p.startsWith('Local ')),oi=ps.findIndex(p=>p.startsWith('Loc '));
   meta((li>=0?ps[li].slice(6):ps[ti].slice(5)),ps[ti+1],oi>=0?ps[oi].slice(4):'');
   [oi,li].filter(i=>i>=0).sort((a,b)=>b-a).forEach(i=>ps.splice(i,1));ps.splice(ti,2)}ps.forEach(p=>{
-  const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|unknown|disabled|detached)$/.test(p)?'off':'on'),p)),k=CK[p.split(' ')[0]];
-  if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; * = current handle, not listening':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
+  const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|unknown|disabled|detached)$/.test(p)?'off':'on'))),k=CK[p.split(' ')[0]];
+  p.split(/(\d+\*)/).forEach(x=>{if(/^\d+\*$/.test(x))c.appendChild(el('u','',x.slice(0,-1)));else if(x)c.appendChild(document.createTextNode(x))});
+  if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; numbers are the open '+(p[0]==='B'?'connection':'socket')+' handles, the underlined one is used when a command leaves the handle out':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
   if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2]==='-'?[]:m[2].split(' ')});
   if(!sessionStorage.getItem('ucxs')&&!/^Wi-Fi -|no module/.test(raw)&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});

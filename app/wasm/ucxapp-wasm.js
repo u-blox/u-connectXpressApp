@@ -614,7 +614,7 @@
   }
 
   function addButton(id, text, title, onclick) {
-    const files = document.getElementById('files');
+    const files = document.getElementById('more') || document.getElementById('files');
     const btn = document.createElement('button');
     btn.id = id;
     btn.textContent = text;
@@ -640,7 +640,7 @@
   ];
 
   function addButtons() {
-    const files = document.getElementById('files');
+    const files = document.getElementById('more') || document.getElementById('files');
     if (!files) return;
     const reason = noSerialReason();
     addButton('wsc', 'Connect module', reason || 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);

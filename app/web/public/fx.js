@@ -9,7 +9,7 @@
   const make = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
   {
     const b = make('button', calm ? '' : 'on'), files = document.getElementById('files');
-    b.id = 'fx-tg'; b.textContent = 'FX'; b.title = calm ? 'Turn animations on' : 'Turn animations off';
+    b.id = 'fx-tg'; b.textContent = calm ? 'Animations: off' : 'Animations: on'; b.title = calm ? 'Turn animations on' : 'Turn animations off';
     b.onclick = () => { localStorage.setItem('fxoff', calm ? '0' : '1'); location.reload(); };
     if (files) files.before(b);
     if (calm) document.body.classList.add('fx-off');

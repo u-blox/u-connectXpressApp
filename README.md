@@ -101,7 +101,7 @@ The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Up
 | Target | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
 |---|---|---|---|---|---|---|---|
 | `win` | Windows x64 | 2.5 MB | - | - | 9.3 MB | - | - |
-| `linux` | Linux x64 | 2.5 MB | - | - | 2.9 MB | - | - |
+| `linux` | Linux x64 | 2.5 MB | - | - | 2.8 MB | - | - |
 | `h753` | NUCLEO-H753ZI | 821 KB | 2048 KB | 40% | 404 KB | 512 KB | 79% |
 | `f767` | NUCLEO-F767ZI | 810 KB | 2048 KB | 40% | 334 KB | 368 KB | 91% |
 | `f439` | NUCLEO-F439ZI | 518 KB | 2048 KB | 25% | 127 KB | 192 KB | 66% |

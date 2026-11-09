@@ -71,7 +71,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
-        run: git submodule update --init u-connectClient
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

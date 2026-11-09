@@ -504,7 +504,11 @@ static bool acceptsGzip(const char *headers)
         if (kName[i] == '\0') {
             size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
             for (size_t j = i; j + 4 <= len; j++) {
-                if (strncmp(line + j, "gzip", 4) == 0) {
+                size_t k = 0;
+                while (k < 4 && tolower((unsigned char)line[j + k]) == "gzip"[k]) {
+                    k++;
+                }
+                if (k == 4) {
                     return true;
                 }
             }

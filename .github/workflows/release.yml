@@ -114,7 +114,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
-        run: git submodule update --init u-connectClient
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
       - name: Zephyr workspace around the checkout, SDK
         # The parent directory is the west workspace, so west build finds it from the repo root.
         run: |

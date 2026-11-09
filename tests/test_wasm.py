@@ -146,7 +146,7 @@ def test_fx_off_has_no_colors(site):
 FX_COST_TAG = "--ucx-fx-cost"   # marks the browser process whose CPU the FX test sums
 
 
-def _fx_cost(page, browser_pid, seconds=4.0):
+def _fx_cost(page, browser_pid, seconds=3.0):
     """CPU of the whole browser (every process, so paint, raster and GPU too) in % of one core while the page
     sits idle."""
     psutil = pytest.importorskip("psutil")
@@ -162,9 +162,13 @@ def _fx_cost(page, browser_pid, seconds=4.0):
                 pass
         return total
 
-    t0, c0 = time.monotonic(), cpu()
-    page.wait_for_timeout(seconds * 1000)
-    return (cpu() - c0) / (time.monotonic() - t0) * 100
+    # the lowest of three windows: other work on the machine only ever adds to a sample
+    costs = []
+    for _ in range(3):
+        t0, c0 = time.monotonic(), cpu()
+        page.wait_for_timeout(seconds * 1000)
+        costs.append((cpu() - c0) / (time.monotonic() - t0) * 100)
+    return min(costs)
 
 
 def test_fx_is_light(site):

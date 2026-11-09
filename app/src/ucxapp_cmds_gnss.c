@@ -1250,7 +1250,7 @@ typedef struct {
     uint8_t svinRate;          /* CFG-MSGOUT NAV-SVIN */
     bool rtcmOn;               /* any CFG-MSGOUT RTCM 3X message on */
     uint32_t svinMin, svinLimit;   /* CFG-TMODE-SVIN_MIN_DUR (s) and SVIN_ACC_LIMIT (0.1 mm) */
-    uint32_t svinSince, svinDone;  /* survey-in start tick, and its duration once valid (0 while running) */
+    uint32_t svinEpochs, svinDone; /* survey-in epochs so far, and its duration once valid (0 while running) */
     uint8_t ans[192];   /* answers to commands, sent with the next poll; guarded by the stream lock */
     size_t nAns;
 } virt_t;
@@ -1292,7 +1292,7 @@ static void virtCfg(virt_t *v, const uint8_t *f, size_t len)
             virtMsgRate(v, 0x0A, 0x38, pl[o + 4]);
         } else if (key == 0x20030001) {   /* CFG-TMODE-MODE */
             v->tmode = pl[o + 4];
-            v->svinSince = ucxapp_platform_tick_ms();
+            v->svinEpochs = 0;
             v->svinDone = 0;
         } else if (key == 0x40030010) {
             v->svinMin = le32(pl + o + 4);
@@ -1347,7 +1347,7 @@ static void putBits(uint8_t *buf, size_t *pos, int n, uint64_t val)
 /* The virtual receiver as a base station, once a second: UBX-NAV-SVIN during a survey-in (the mean accuracy
    shrinks as 20 m / (1 + seconds); valid once it is under the limit and the minimum time has passed), then
    RTCM 1005 with its position. */
-static void virtBase(ucxapp_stream_t *s, virt_t *v, uint32_t now)
+static void virtBase(ucxapp_stream_t *s, virt_t *v)
 {
     const double rad = 3.14159265358979323846 / 180.0;
     const double a = 6378137.0;
@@ -1365,7 +1365,8 @@ static void virtBase(ucxapp_stream_t *s, virt_t *v, uint32_t now)
     tmode = v->tmode;
     svinRate = v->svinRate;
     rtcmOn = v->rtcmOn;
-    dur = v->svinDone != 0 ? v->svinDone : (now - v->svinSince) / 1000u;
+    /* one epoch per second, like a real receiver: a late epoch under load does not skip a second */
+    dur = v->svinDone != 0 ? v->svinDone : ++v->svinEpochs;
     acc = 200000u / (1u + dur);
     valid = tmode == 1 && dur >= v->svinMin && acc <= v->svinLimit;
     if (valid && v->svinDone == 0) {
@@ -1621,7 +1622,7 @@ static void virtPoll(void *ctx, ucxapp_stream_t *s)
         snprintf(body, sizeof(body), "GPGGA,%s,%s,%s,1,10,0.8,%.1f,M,0.0,M,,", hms, lat, lon, v->alt);
         pushNmea(s, body);
         virtNavPvt(s, v, t, tm, true, 10);
-        virtBase(s, v, now);
+        virtBase(s, v);
         snprintf(body, sizeof(body), "GPGSA,A,3,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,,,1.4,0.8,1.1",
                  kSv[0][0], kSv[1][0], kSv[2][0], kSv[3][0], kSv[4][0], kSv[5][0], kSv[6][0], kSv[7][0],
                  kSv[8][0], kSv[9][0]);

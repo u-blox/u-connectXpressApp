@@ -12,6 +12,9 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_flashfs.h"
 #include "ucxapp_sdcard.h"
+#ifdef UCXAPP_SECURE
+#include "ucxapp_secure.h"
+#endif
 #include "ucxapp_store.h"
 #include "u_cx_system.h"
 #include "u_port.h"
@@ -291,6 +294,11 @@ static void mountStore(void)
         ucxapp_print("files: RAM only (lost at reset)\n");
     }
     ucxapp_store_set_backend(ops);
+#ifdef UCXAPP_SECURE
+    /* the install key stays in internal flash, so a pulled SD card holds only sealed keys */
+    ucxapp_secure_set_key_store(ucxapp_flashfs_mount(NULL), "internal flash");
+    ucxapp_secure_init();
+#endif
 }
 
 static int cmdFileMount(ucxapp_t *app, int argc, char *argv[])
@@ -379,6 +387,9 @@ static void appTask(void *arg)
     ucxapp_register_web_cmds();
     ucxapp_register_manual_cmds();
     ucxapp_register_conn_cmds();
+#endif
+#ifdef UCXAPP_SECURE
+    ucxapp_register_secure_cmds();
 #endif
 #ifndef UCXAPP_LITE
     ucxapp_register_examples_cmds();

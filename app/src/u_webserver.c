@@ -63,16 +63,22 @@ typedef struct {
     int32_t  tx_offset;          /**< Bytes already sent */
     bool     tx_close_when_done; /**< Mark pending_close once tx_buffer drains (non-SSE) */
     int32_t  tx_stall_ms;        /**< Time the module first took 0 bytes, 0 while sending moves */
+    int32_t  close_at_ms;        /**< After a full response: close here unless the browser closed first, 0 = not set */
     ucxapp_tls_conn_t *tls;      /**< HTTPS session, NULL for plain HTTP */
     uint32_t generation;         /**< Bumped on every accept into this slot; tells a new client from the last */
 } uWebServerClient_t;
 
 #define U_WEBSERVER_TX_STALL_MS 5000
+/* After a Connection: close response the browser closes first. Closing it ourselves at the same moment races the
+ * module, which reuses the socket number at once: a late AT+USOCL then closes the next connection. */
+#define U_WEBSERVER_CLOSE_GRACE_MS 1000
 
 /* Per-call chunk size for deferred sends.
  * AT+USOWB takes up to 1460 bytes (1000 on FW 3.2; ucxapp_sock_write falls back); one chunk per Process() call
  * keeps the main-loop blocking time bounded (~100-200ms per chunk over UART). */
 #define U_WEBSERVER_TX_CHUNK_SIZE 1460
+/* TLS record overhead: 5-byte header + 8-byte explicit IV + 16-byte GCM tag (TLS 1.2; TLS 1.3 is 22 bytes). */
+#define U_WEBSERVER_TLS_OVERHEAD 32
 
 /* Forward declarations */
 static void client_release_tx_buffer(uWebServerClient_t *client);
@@ -319,6 +325,14 @@ static void client_drop_tls(uWebServerClient_t *client, bool notify)
     client->tls = NULL;
 }
 
+/* Response sent: give the browser U_WEBSERVER_CLOSE_GRACE_MS to close first, then Process() closes it. */
+static void client_close_later(uWebServerClient_t *client)
+{
+    int32_t at = U_CX_PORT_GET_TIME_MS() + U_WEBSERVER_CLOSE_GRACE_MS;
+    client->closing     = true;
+    client->close_at_ms = at != 0 ? at : 1;
+}
+
 /**
  * Send one chunk of a client's pending TX buffer over its socket.
  *
@@ -342,8 +356,7 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
         // Already fully sent \u2014 finalize.
         client_release_tx_buffer(client);
         if (client->tx_close_when_done) {
-            client->closing       = true;
-            client->pending_close = true;
+            client_close_later(client);
         }
         return 0;
     }
@@ -354,7 +367,11 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     } else {
         remaining = client->tx_head - client->tx_offset;
     }
-    int32_t chunk_len = (remaining > U_WEBSERVER_TX_CHUNK_SIZE) ? U_WEBSERVER_TX_CHUNK_SIZE : remaining;
+    /* Over TLS each chunk becomes one record (up to 29 bytes of header, IV and tag); keep the record within one
+     * AT+USOWB so a chunk is one module write, not a full one plus a 29-byte tail. */
+    int32_t max_chunk = client->tls != NULL ? U_WEBSERVER_TX_CHUNK_SIZE - U_WEBSERVER_TLS_OVERHEAD
+                                            : U_WEBSERVER_TX_CHUNK_SIZE;
+    int32_t chunk_len = (remaining > max_chunk) ? max_chunk : remaining;
 
     /* The older u-connectClient used here has no URC queue to drain; the app pump
      * feeds socket-closed events to uWebServerHandleSocketClosed() between chunks. */
@@ -399,8 +416,7 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     if (client->tx_offset >= client->tx_total) {
         client_release_tx_buffer(client);
         if (client->tx_close_when_done) {
-            client->closing       = true;
-            client->pending_close = true;
+            client_close_later(client);
         }
     }
 
@@ -784,6 +800,16 @@ int32_t uWebServerProcess(uWebServer_t *server)
     }
 
     // Process deferred socket closes.
+    {
+        int32_t now = U_CX_PORT_GET_TIME_MS();
+        for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+            uWebServerClient_t *c = &server->clients[i];
+            if (c->active && c->close_at_ms != 0 && now - c->close_at_ms >= 0) {
+                c->close_at_ms   = 0;
+                c->pending_close = true;
+            }
+        }
+    }
     // Sockets are marked pending_close in handle_client_request() instead of
     // calling uCxSocketClose() synchronously inside URC callbacks. This avoids
     // a 20-second AT timeout when NORA-W36 generates URCs (+UESOIC for new
@@ -1175,6 +1201,19 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     if (!server || !server->running) {
         return;
     }
+
+    /* The module reuses a socket number as soon as it is closed. A slot still holding this number belongs to a
+     * connection that is gone: retire it without AT+USOCL, which would close the new connection instead. */
+    for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+        uWebServerClient_t *stale = &server->clients[i];
+        if (stale->active && stale->socket == clientSocket) {
+            client_release_tx_buffer(stale);
+            client_drop_tls(stale, false);
+            stale->pending_close = false;
+            stale->close_at_ms = 0;
+            stale->active = false;
+        }
+    }
     
     // Find free client slot
     uWebServerClient_t *client = NULL;
@@ -1235,6 +1274,7 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     client->is_sse = false;
     client->closing = false;
     client->pending_close = false;
+    client->close_at_ms = 0;
     client->rx_length = 0;
     client->request_complete = false;
     memset(client->rx_buffer, 0, sizeof(client->rx_buffer));
@@ -1282,8 +1322,12 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
             }
             int32_t n = ucxapp_tls_read(client->tls, (uint8_t *)(client->rx_buffer + client->rx_length), (size_t)rx_space);
             if (n < 0) {
+                /* Usually the browser's close_notify after a full response: it closes the socket next, so keep
+                 * the grace deadline instead of racing it with AT+USOCL (see U_WEBSERVER_CLOSE_GRACE_MS). */
                 client->closing = true;
-                client->pending_close = true;
+                if (client->close_at_ms == 0) {
+                    client->pending_close = true;
+                }
                 return;
             }
             if (n == 0) {
@@ -1370,6 +1414,7 @@ void uWebServerHandleSocketClosed(uWebServer_t *server, struct uCxHandle *puCxHa
         // a redundant AT+USOCL (which returns ERROR:11 "already closed").
         client->active = false;
         client->pending_close = false;
+        client->close_at_ms = 0;
         client->is_sse = false;
         client->closing = false;
         client->rx_length = 0;

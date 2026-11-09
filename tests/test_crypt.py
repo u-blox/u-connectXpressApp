@@ -1,6 +1,8 @@
 """utils.encrypt / utils.decrypt and the AES-256-GCM sealed Wi-Fi passwords (offline)."""
 
+import re
 import subprocess
+import sys
 
 import pytest
 
@@ -92,7 +94,11 @@ def test_wifi_passwords_are_sealed_with_the_install_key(app_exe, tmp_path):
     lines = dict(line.split("\t", 1) for line in (storage / "ucxapp.wifi").read_text().splitlines())
     assert lines["home"].startswith("ubx\ta1:")
     assert lines["cafe"] == "CafeNet\t"
-    assert len((storage / "ucxapp.key").read_bytes()) == 32
+    key_file = (storage / "ucxapp.key").read_bytes()
+    if sys.platform == "win32":
+        assert key_file.startswith(b"UCXK\x01") and len(key_file) > 37   # wrapped with DPAPI
+    else:
+        assert len(key_file) == 32
 
     # A changed key cannot open the passwords: the profile loads without one and says why.
     key = (storage / "ucxapp.key").read_bytes()
@@ -118,3 +124,79 @@ def test_wifi_old_obfuscated_profiles_are_dropped(app_exe, tmp_path):
     assert "new: ssid=NewNet WPA" in out.stdout and "ssid=OldNet" not in out.stdout
     text = (storage / "ucxapp.wifi").read_text()
     assert obf not in text and text.count("\ta1:") == 1
+
+
+PEM = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg\n-----END PRIVATE KEY-----\n"
+
+
+def _export(app_exe, tmp_path, name):
+    """A store file as the app reads it, through utils.encrypt/decrypt to an absolute (unsealed) path."""
+    enc, out_file = tmp_path / "export.enc", tmp_path / "export.out"
+    out_file.unlink(missing_ok=True)
+    out = _run(app_exe, tmp_path, f"utils.encrypt {name} {enc} pw", f"utils.decrypt {enc} {out_file} pw")
+    return out_file.read_text() if out.returncode == 0 else None
+
+
+def test_secure_store_seals_private_keys(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "utils.secure")
+    assert out.returncode == 0, out.stdout
+    assert "install key: none yet" in out.stdout and "0 private key file(s) sealed" in out.stdout
+
+    (tmp_path / "dev.pem").write_bytes(PEM.encode())
+    out = _run(app_exe, tmp_path, f"utils.encrypt dev.pem {tmp_path / 'k.enc'} pw",
+               f"utils.decrypt {tmp_path / 'k.enc'} dev.key pw",
+               f"utils.decrypt {tmp_path / 'k.enc'} {tmp_path / 'plain.key'} pw", "utils.secure")
+    assert out.returncode == 0, out.stdout
+    sealed = (tmp_path / "storage" / "dev.key").read_bytes()
+    assert sealed.startswith(b"UCXS\x01") and b"PRIVATE" not in sealed
+    assert len(sealed) == 4 + 1 + 12 + len(PEM) + 16
+    assert (tmp_path / "plain.key").read_text() == PEM      # paths outside the store stay as asked
+    assert re.search(r"dev\.key\s+sealed", out.stdout) and "1 private key file(s) sealed" in out.stdout
+    if sys.platform == "win32":
+        assert "DPAPI" in out.stdout, out.stdout
+    assert _export(app_exe, tmp_path, "dev.key") == PEM
+
+
+def test_secure_store_rejects_changed_or_renamed_files(app_exe, tmp_path):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    (storage / "a.key").write_text(PEM)
+    assert _run(app_exe, tmp_path, "utils.secure").returncode == 0
+    sealed = (storage / "a.key").read_bytes()
+    assert sealed.startswith(b"UCXS")                         # plain keys are sealed at start
+    assert _export(app_exe, tmp_path, "a.key") == PEM
+
+    (storage / "b.key").write_bytes(sealed)                  # the name is authenticated
+    assert _export(app_exe, tmp_path, "b.key") is None
+    changed = bytearray(sealed)
+    changed[-20] ^= 1
+    (storage / "a.key").write_bytes(bytes(changed))
+    assert _export(app_exe, tmp_path, "a.key") is None
+    out = _run(app_exe, tmp_path, "utils.secure")
+    assert re.search(r"a\.key\s+sealed", out.stdout), out.stdout   # still sealed, just not openable
+
+
+def test_secure_store_keeps_an_older_raw_install_key(app_exe, tmp_path):
+    pytest.importorskip("cryptography.hazmat.primitives.ciphers.aead", exc_type=ImportError)
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key, iv = os.urandom(32), os.urandom(12)
+    sealed = "a1:" + (iv + AESGCM(key).encrypt(iv, b"oldkey99", b"ucxapp-secret-1")).hex()
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    (storage / "ucxapp.key").write_bytes(key)
+    (storage / "ucxapp.wifi").write_text(f"home\tHomeNet\t{sealed}\n")
+    out = _run(app_exe, tmp_path, "wifi.profile.list", "utils.secure")
+    assert "home: ssid=HomeNet WPA" in out.stdout and "cannot decrypt" not in out.stdout, out.stdout
+    if sys.platform == "win32":
+        assert (storage / "ucxapp.key").read_bytes().startswith(b"UCXK\x01")   # wrapped on first use
+        out = _run(app_exe, tmp_path, "wifi.profile.list")
+        assert "home: ssid=HomeNet WPA" in out.stdout, out.stdout
+    else:
+        assert (storage / "ucxapp.key").read_bytes() == key
+
+
+def test_secure_usage(app_exe, tmp_path):
+    assert _run(app_exe, tmp_path, "utils.secure extra").returncode != 0

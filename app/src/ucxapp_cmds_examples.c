@@ -79,6 +79,17 @@ static const example_t kExamples[] = {
       "# JAM:, SPOOF: and ANT: lines report each change" },
     { "gnss", "Fast start after power off (save-on-shutdown)",
       "gnss.open\ngnss.backup save\n# power the receiver off and on, then:\ngnss.open\ngnss.backup status" },
+    { "gnss", "Standard receiver setup (NMEA + NAV-PVT, any u-blox receiver)",
+      "gnss.open\ngnss.setup standard\ngnss.cfg save\ngnss.status" },
+    { "gnss", "RTK rover setup (ZED-F9P / ZED-X20P) with NTRIP corrections",
+      "gnss.open\ngnss.setup rover\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS}\ngnss.watch 120\n"
+      "# the RTK line goes DGNSS -> RTK float -> RTK fixed" },
+    { "gnss", "RTK base station: survey-in, then serve RTCM3 to rovers over TCP",
+      "gnss.open\ngnss.setup base survey 120 2\ngnss.status\ngnss.bridge tcp 2101\n"
+      "# when gnss.status says survey-in done, it prints the gnss.setup base fixed line that keeps the position\n"
+      "# rover: gnss.setup rover, then gnss.bridge tcpc <base-ip> 2101" },
+    { "gnss", "RTK base station at a known position",
+      "gnss.open\ngnss.setup base fixed 55.612760000 12.986250000 52.1234 0.02\ngnss.cfg save\ngnss.status" },
 
     { "imu", "First look at the sensor",
       "imu.detect\nimu.open\nimu.status" },
@@ -198,6 +209,9 @@ static const example_t kExamples[] = {
     { "utils", "Encrypt a file with a passphrase and get it back",
       "utils.encrypt device.key device.key.enc MyPassphrase\nutils.decrypt device.key.enc device.key MyPassphrase" },
 #endif
+#ifdef UCXAPP_SECURE
+    { "utils", "Check that the private keys in the store are sealed", "utils.secure" },
+#endif
 
     { "bt", "Find and connect a device",
       "bt.scan\nbt.connect 1\nbt.list\nbt.disconnect" },
@@ -245,8 +259,12 @@ static const example_t kExamples[] = {
       "bt.scan\nbt.connect 1\nhid.client 0\n# keys, mouse moves and media keys are printed\nhid.client off" },
 
     { "web", "Web UI from the module over HTTPS (the first start makes its certificate)",
-      "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start 443 mytoken\nweb.status\n"
-      "# browse to https://<module-ip>/#t=mytoken; trust the local CA once (utils.tls.pem ca) to skip the warning" },
+      "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start\nweb.status\n"
+      "# browse to https://<module-ip>/; no warning once the local CA is trusted\nutils.tls.ca.trust check" },
+    { "web", "HTTPS web UI that also asks for an access token",
+      "web.stop\nweb.start 443 mytoken\n# browse to https://<module-ip>/#t=mytoken (web.start 443 token makes a random one)" },
+    { "utils", "Trust the local CA so browsers on this PC do not warn",
+      "utils.tls.ca.create\nutils.tls.ca.trust\nutils.tls.ca.trust check" },
     { "web", "Plain HTTP web UI (trusted networks only)",
       "web.stop\nweb.start 80 mytoken http" },
 

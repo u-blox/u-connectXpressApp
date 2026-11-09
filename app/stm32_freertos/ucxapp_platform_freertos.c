@@ -192,6 +192,49 @@ char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_
     return NULL;
 }
 
+ucxapp_trust_t ucxapp_platform_root_trust(const uint8_t *der, size_t len, bool add)
+{
+    (void)der;
+    (void)len;
+    (void)add;
+    return UCXAPP_TRUST_UNSUPPORTED;
+}
+
+bool ucxapp_platform_key_protect(bool protect, const uint8_t *in, size_t len, uint8_t *out, size_t outSize,
+                                 size_t *outLen)
+{
+    (void)protect;
+    (void)in;
+    (void)len;
+    (void)out;
+    (void)outSize;
+    (void)outLen;
+    return false;   /* the key stays in internal flash, behind readout protection */
+}
+
+/* Option byte RDP: 0xAA level 0, 0xCC level 2 (permanent), anything else level 1. */
+static int rdpLevel(uint32_t rdp)
+{
+    return rdp == 0xAAu ? 0 : rdp == 0xCCu ? 2 : 1;
+}
+
+int ucxapp_platform_readout_protection(void)
+{
+#if defined(FLASH_OPTSR_RDP_Pos)
+    return rdpLevel((FLASH->OPTSR_CUR >> FLASH_OPTSR_RDP_Pos) & 0xFFu);
+#elif defined(FLASH_OPTCR_RDP_Pos)
+    return rdpLevel((FLASH->OPTCR >> FLASH_OPTCR_RDP_Pos) & 0xFFu);
+#elif defined(FLASH_OPTR_RDP_Pos)
+    return rdpLevel((FLASH->OPTR >> FLASH_OPTR_RDP_Pos) & 0xFFu);
+#elif defined(FLASH_OBR_RDPRT)
+    (void)rdpLevel;
+    return (FLASH->OBR & FLASH_OBR_RDPRT) != 0 ? 1 : 0;
+#else
+    (void)rdpLevel;
+    return -1;
+#endif
+}
+
 bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)
 {
     (void)zipPath;

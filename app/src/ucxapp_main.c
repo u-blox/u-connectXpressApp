@@ -7,6 +7,7 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
+#include "ucxapp_secure.h"
 #include "ucxapp_store.h"
 #include "ucxapp_tui.h"
 #ifdef APP_VERSION_MAJOR
@@ -452,6 +453,7 @@ int main(int argc, char *argv[])
     ucxapp_platform_args(&argc, &argv);
     ucxapp_io_set(&ucxapp_io_stdio);
     ucxapp_store_set_dir("storage/");
+    ucxapp_secure_init();
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--exec") == 0 && i + 1 < argc) {
@@ -546,6 +548,7 @@ int main(int argc, char *argv[])
     ucxapp_register_utils_cmds();
     ucxapp_register_qr_cmds();
     ucxapp_register_crypt_cmds();
+    ucxapp_register_secure_cmds();
     ucxapp_register_tls_cmds();
     ucxapp_register_dtls_cmds();
     ucxapp_register_coap_cmds();

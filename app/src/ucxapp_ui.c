@@ -116,6 +116,7 @@ static char gThreadRole[16];   /* empty: no Thread firmware */
 static volatile uint32_t gThreadVersion;
 static volatile uint32_t gThreadDirty;
 static char gRadioText[96];
+static volatile int gSockOther;   /* module sockets the app opened itself (web server, bridges, ...) */
 static char gClockText[192];
 static bool gRadioDirty = true;
 static char gConnText[UCXAPP_CONN_SNAPSHOT];
@@ -190,6 +191,7 @@ static void refreshDashCache(bool force)
             gThreadRole[0] = '\0';
             gRadioText[0] = '\0';
             U_CX_MUTEX_UNLOCK(gLock);
+            gSockOther = 0;
             gThreadVersion++;
         }
     }
@@ -206,12 +208,23 @@ static void refreshDashCache(bool force)
         uCxSocketListStatus_t sock;
         char listeners[40] = "";
         size_t used = 0;
+        int other = 0;
+        int32_t mine[8];
+        int mineCount = ucxapp_handle_list(UCXAPP_HANDLE_SOCK, mine, 8);
         int32_t result = uCxBluetoothGetAdvertiseInformation(gApp->ucx, &adv);
         radioMs = now;
         gRadioDirty = false;
         if (ucxapp_module_has_wifi(gApp) || ucxapp_module_has_thread(gApp)) {
             uCxSocketListStatusBegin(gApp->ucx);
             while (uCxSocketListStatusGetNext(gApp->ucx, &sock)) {
+                bool user = false;
+                if (!ucxapp_sock_listed(&sock) || ucxapp_web_client_socket(sock.socket_handle)) {
+                    continue;
+                }
+                for (int i = 0; i < mineCount; i++) {
+                    user = user || mine[i] == sock.socket_handle;
+                }
+                other += user ? 0 : 1;
                 if (sock.protocol == U_SOCKET_PROTOCOL_TCP && sock.status == 1 && used + 12 < sizeof(listeners)) {
                     used += (size_t)snprintf(listeners + used, sizeof(listeners) - used, "%s%d",
                                              used == 0 ? "" : " ", (int)sock.socket_handle);
@@ -221,6 +234,7 @@ static void refreshDashCache(bool force)
                 snprintf(listeners, sizeof(listeners), "unknown");
             }
         }
+        gSockOther = other;
         U_CX_MUTEX_LOCK(gLock);
         snprintf(gRadioText, sizeof(gRadioText), "Advertising %s | Listening %s",
                  result != 0 ? "unknown" : adv.legacy_adv || adv.directed_adv ? "on" : "off",
@@ -305,7 +319,8 @@ static size_t appendHandles(char *out, size_t size, size_t n, const char *label,
 
 uint32_t ucxapp_ui_state(char *out, size_t size)
 {
-    uint32_t version = ucxapp_handle_version() + gWifiVersion + gThreadVersion * 7u;
+    int other = gSockOther;
+    uint32_t version = ucxapp_handle_version() + gWifiVersion + gThreadVersion * 7u + (uint32_t)other * 131u;
     bool bleOnly = gWifiUp == -2;   /* Bluetooth LE only module: no Wi-Fi or socket chips */
     size_t n = bleOnly ? 0 : (size_t)snprintf(out, size, "Wi-Fi %s | ", gWifiUp < 0 ? "-" : gWifiUp ? "up" : "down");
 
@@ -321,6 +336,9 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
     if (!bleOnly && n + 14 < size) {
         n += (size_t)snprintf(out + n, size - n, " | ");
         n = appendHandles(out, size, n, "Sockets", UCXAPP_HANDLE_SOCK);
+        if (other > 0 && n + 6 < size) {
+            n += (size_t)snprintf(out + n, size - n, " +%d", other);
+        }
     }
     U_CX_MUTEX_LOCK(gLock);
     const char *parts[] = { gRadioText, gCellSummary, gClockText };

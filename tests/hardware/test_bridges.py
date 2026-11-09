@@ -62,8 +62,9 @@ def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, so
         tls += " ucxtestrover ucxtestroverkey"
     try:
         _run(app_exe, port_b, "cert.remove ucxtestca", "cert.remove ucxtestrover", "cert.remove ucxtestroverkey")
+        # cwd: the stored key is sealed with the install key of tmp_path
         out = _run(app_exe, port_b, wifi, *upload, "sock.open tcp", tls,
-                   f"sock.connect 0 {ip_a} 2947", "sock.read 0 400 15", "sock.close 0", timeout=240)
+                   f"sock.connect 0 {ip_a} 2947", "sock.read 0 400 15", "sock.close 0", timeout=240, cwd=tmp_path)
         if clientauth:
             # B without a client certificate must be refused by A
             refused = _run(app_exe, port_b, wifi, "sock.open tcp", "sock.tls ucxtestca",

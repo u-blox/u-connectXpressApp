@@ -87,6 +87,23 @@ def test_web_routes_answer_with_and_without_the_token(app_exe, tmp_path):
     assert "403" in status[17], status
 
 
+def test_web_page_is_gzip_for_browsers_and_demo_flag_follows_the_module(app_exe, tmp_path):
+    import gzip
+
+    reqs = [_get("/", extra="Accept-Encoding: deflate, GZIP;q=1\r\n"), _get("/"),
+            _get("/", extra="accept-encoding: br\r\n"), _get("/api/version")]
+    _, replies = _serve(app_exe, tmp_path, reqs)
+    head, body = replies[0].split("\r\n\r\n", 1)
+    assert "Content-Encoding: gzip" in head and "Vary: Accept-Encoding" in head, head
+    page = gzip.decompress(body.encode("latin-1")).decode("utf-8")
+    assert "<html" in page.lower() or "<!doctype" in page.lower(), page[:200]
+    plain = replies[1].split("\r\n\r\n", 1)
+    assert "Content-Encoding" not in plain[0] and plain[1] == page, plain[0]
+    assert "Content-Encoding" not in replies[2].split("\r\n\r\n", 1)[0], replies[2][:300]
+    assert len(body) * 2 < len(plain[1]), (len(body), len(plain[1]))
+    assert '"real":0' in replies[3], replies[3][-200:]
+
+
 def test_web_exec_runs_commands_and_guards_dangerous_ones(app_exe, tmp_path):
     reqs = [_post("/api/exec?cmd=help%20wifi", ""), _post("/api/exec?cmd=app.version&r=1", ""),
             _post("/api/exec?cmd=nosuch.cmd", ""), _post("/api/exec", ""),

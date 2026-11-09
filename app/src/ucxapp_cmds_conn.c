@@ -204,7 +204,7 @@ static void sockLines(uCxHandle_t *ucx, snap_t *s)
 
     uCxSocketListStatusBegin(ucx);
     while (uCxSocketListStatusGetNext(ucx, &st)) {
-        if (count < CONN_MAX_SOCK) {
+        if (ucxapp_sock_listed(&st) && count < CONN_MAX_SOCK) {
             list[count++] = st;
         }
     }

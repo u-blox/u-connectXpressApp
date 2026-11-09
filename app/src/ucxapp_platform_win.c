@@ -22,6 +22,7 @@
 #include <psapi.h>
 #include <shellapi.h>
 #include <timeapi.h>
+#include <wincrypt.h>
 
 #include "u_cx_log.h"
 #include "u_port_uart.h"
@@ -33,6 +34,7 @@
 #pragma comment(lib, "cfgmgr32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "crypt32.lib")
 
 /* DEVPKEY_Device_BusReportedDeviceDesc, defined here to avoid INITGUID issues */
 static const DEVPROPKEY MY_DEVPKEY_BusReportedDeviceDesc = {
@@ -404,6 +406,56 @@ int ucxapp_platform_read_key(void)
             return (unsigned char)k->uChar.AsciiChar;
         }
     }
+    return -1;
+}
+
+ucxapp_trust_t ucxapp_platform_root_trust(const uint8_t *der, size_t len, bool add)
+{
+    ucxapp_trust_t result = UCXAPP_TRUST_NO;
+    PCCERT_CONTEXT cert = CertCreateCertificateContext(X509_ASN_ENCODING, der, (DWORD)len);
+    if (cert == NULL) {
+        return UCXAPP_TRUST_NO;
+    }
+    HCERTSTORE store = CertOpenStore(CERT_STORE_PROV_SYSTEM_W, 0, 0,
+                                     CERT_SYSTEM_STORE_CURRENT_USER | (add ? 0 : CERT_STORE_READONLY_FLAG), L"Root");
+    if (store != NULL) {
+        PCCERT_CONTEXT found = CertFindCertificateInStore(store, X509_ASN_ENCODING, 0, CERT_FIND_EXISTING, cert, NULL);
+        if (found != NULL) {
+            CertFreeCertificateContext(found);
+            result = UCXAPP_TRUST_YES;
+        } else if (add && CertAddCertificateContextToStore(store, cert, CERT_STORE_ADD_NEW, NULL)) {
+            result = UCXAPP_TRUST_YES;   /* Windows showed its security warning and the user said yes */
+        }
+        CertCloseStore(store, 0);
+    }
+    CertFreeCertificateContext(cert);
+    return result;
+}
+
+bool ucxapp_platform_key_protect(bool protect, const uint8_t *in, size_t len, uint8_t *out, size_t outSize,
+                                 size_t *outLen)
+{
+    static const char kEntropy[] = "u-connectXpressApp store key";
+    DATA_BLOB src = { (DWORD)len, (BYTE *)in };
+    DATA_BLOB entropy = { sizeof(kEntropy) - 1, (BYTE *)kEntropy };
+    DATA_BLOB dst = { 0, NULL };
+    BOOL ok = protect ? CryptProtectData(&src, L"u-connectXpressApp", &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &dst)
+                      : CryptUnprotectData(&src, NULL, &entropy, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &dst);
+    bool fit = ok && dst.cbData <= outSize;
+
+    if (fit) {
+        memcpy(out, dst.pbData, dst.cbData);
+        *outLen = dst.cbData;
+    }
+    if (dst.pbData != NULL) {
+        SecureZeroMemory(dst.pbData, dst.cbData);
+        LocalFree(dst.pbData);
+    }
+    return fit;
+}
+
+int ucxapp_platform_readout_protection(void)
+{
     return -1;
 }
 

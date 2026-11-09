@@ -57,12 +57,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "u-blox AG"
-            VALUE "FileDescription", "u-connectClient Windows App for NORA-W36/NORA-B26"
+            VALUE "FileDescription", "u-connectXpressApp - test and configure u-connectXpress modules"
             VALUE "FileVersion", VERSION_STRING
             VALUE "InternalName", "ucxapp.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2025"
+            VALUE "LegalCopyright", "Copyright (C) 2025-2026 u-blox AG"
             VALUE "OriginalFilename", "ucxapp.exe"
-            VALUE "ProductName", "u-connectClient Windows App"
+            VALUE "ProductName", "u-connectXpressApp"
             VALUE "ProductVersion", VERSION_STRING
         END
     END

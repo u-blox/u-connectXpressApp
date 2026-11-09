@@ -198,6 +198,31 @@ char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_
     return NULL;
 }
 
+ucxapp_trust_t ucxapp_platform_root_trust(const uint8_t *der, size_t len, bool add)
+{
+    (void)der;
+    (void)len;
+    (void)add;
+    return UCXAPP_TRUST_UNSUPPORTED;
+}
+
+bool ucxapp_platform_key_protect(bool protect, const uint8_t *in, size_t len, uint8_t *out, size_t outSize,
+                                 size_t *outLen)
+{
+    (void)protect;
+    (void)in;
+    (void)len;
+    (void)out;
+    (void)outSize;
+    (void)outLen;
+    return false;
+}
+
+int ucxapp_platform_readout_protection(void)
+{
+    return -1;
+}
+
 bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)
 {
     (void)zipPath;

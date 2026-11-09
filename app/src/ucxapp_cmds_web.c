@@ -49,6 +49,9 @@ typedef struct {
 
 /* kPage: app/web/index.html, turned into a C array by CMake at configure time */
 #include "ucxapp_webpage.h"
+#ifdef UCXAPP_PAGE_GZ
+#include "ucxapp_webpage_gz.h"   /* kPageGz: the same page gzip-compressed, for browsers that accept it */
+#endif
 #include "ucxapp_favicon.h"
 
 static ucxapp_t *gApp;
@@ -438,8 +441,8 @@ static bool tokenOk(const uHttpRequest_t *req)
     char t[TOKEN_LEN + 8];
     unsigned diff = 0;
 
-    if (req == &gLocalReq) {
-        return true;   /* the page and the app share one browser tab */
+    if (req == &gLocalReq || (gHttps && gToken[0] == '\0')) {
+        return true;   /* the same browser tab, or HTTPS without a token (the default) */
     }
     if (uWebServerGetHeader(req, "X-Token", t, sizeof(t)) != 0 && !cookieToken(req, t, sizeof(t)) &&
         uWebServerGetQueryParam(req, "t", t, sizeof(t)) != 0) {
@@ -486,6 +489,33 @@ static void urlDecode(char *s)
     *w = '\0';
 }
 
+
+#ifdef UCXAPP_PAGE_GZ
+/* True when an Accept-Encoding header lists gzip (header names are case-insensitive). */
+static bool acceptsGzip(const char *headers)
+{
+    static const char kName[] = "accept-encoding:";
+    for (const char *line = headers; line != NULL && *line != '\0';) {
+        size_t i = 0;
+        while (kName[i] != '\0' && tolower((unsigned char)line[i]) == kName[i]) {
+            i++;
+        }
+        const char *end = strchr(line, '\n');
+        if (kName[i] == '\0') {
+            size_t len = end != NULL ? (size_t)(end - line) : strlen(line);
+            for (size_t j = i; j + 4 <= len; j++) {
+                if (strncmp(line + j, "gzip", 4) == 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        line = end != NULL ? end + 1 : NULL;
+    }
+    return false;
+}
+#endif
+
 static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
     /* The page holds no data; the token travels in the URL fragment (never sent to the server)
@@ -499,6 +529,17 @@ static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     resp->body = (const char *)kPageBytes;
     resp->body_length = (int32_t)sizeof(kPageBytes);
 #else
+#ifdef UCXAPP_PAGE_GZ
+    if (acceptsGzip(req->headers)) {
+        resp->status_code = 200;
+        snprintf(resp->content_type, sizeof(resp->content_type), "text/html");
+        snprintf(resp->custom_headers, sizeof(resp->custom_headers), "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n");
+        resp->body = (const char *)kPageGz;
+        resp->body_length = (int32_t)sizeof(kPageGz);
+        resp->body_static = true;
+        return;
+    }
+#endif
     uWebServerSendHTML(resp, kPage);
 #endif
     resp->body_static = true;
@@ -785,8 +826,10 @@ static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
         buildGroups();
         uWebServerSendJSON(resp, gBuf);
         /* the event stream cannot send X-Token, so it authenticates with this cookie */
-        snprintf(resp->custom_headers, sizeof(resp->custom_headers),
-                 "Set-Cookie: " COOKIE "=%s; Path=/; HttpOnly; SameSite=Strict\r\n", gToken);
+        if (gToken[0] != '\0') {
+            snprintf(resp->custom_headers, sizeof(resp->custom_headers),
+                     "Set-Cookie: " COOKIE "=%s; Path=/; HttpOnly; SameSite=Strict\r\n", gToken);
+        }
         return;
     }
     if (uWebServerGetQueryParam(req, "g", group, sizeof(group)) != 0) {
@@ -808,7 +851,9 @@ static void routeVersion(const uHttpRequest_t *req, uHttpResponse_t *resp, void 
     }
     n += (size_t)snprintf(gBuf, API_BUF, "{\"v\":\"");
     jsonStr(gBuf, &n, ucxapp_version_text());
-    snprintf(gBuf + n, API_BUF - n, "\",\"at\":%d}", ucxappLogAtShown() ? 1 : 0);
+    /* real: a hardware module is open, so the page hides Demo (it only runs on a virtual module) */
+    snprintf(gBuf + n, API_BUF - n, "\",\"at\":%d,\"real\":%d}", ucxappLogAtShown() ? 1 : 0,
+             gApp != NULL && gApp->ucx != NULL && !ucxapp_module_is_virtual(gApp) ? 1 : 0);
     uWebServerSendJSON(resp, gBuf);
 }
 
@@ -1154,6 +1199,34 @@ static void webStop(void)
     U_CX_MUTEX_DELETE(gLock);
 }
 
+/* A killed earlier run leaves its listener and page connections on the module; close TCP sockets this run does not own. */
+static int closeStaleSockets(ucxapp_t *app)
+{
+    int32_t mine[8], stale[8];
+    int mineCount = ucxapp_handle_list(UCXAPP_HANDLE_SOCK, mine, 8);
+    int count = 0;
+    uCxSocketListStatus_t sock;
+
+    uCxSocketListStatusBegin(app->ucx);
+    while (count < 8 && uCxSocketListStatusGetNext(app->ucx, &sock)) {
+        bool own = false;
+        for (int i = 0; i < mineCount; i++) {
+            own = own || mine[i] == sock.socket_handle;
+        }
+        if (!own && sock.protocol == U_SOCKET_PROTOCOL_TCP) {
+            stale[count++] = sock.socket_handle;
+        }
+    }
+    if (uCxEnd(app->ucx) != 0) {
+        return 0;
+    }
+    for (int i = 0; i < count; i++) {
+        ucxapp_print("closing socket %d left by an earlier run\n", (int)stale[i]);
+        (void)uCxSocketClose(app->ucx, stale[i]);
+    }
+    return count;
+}
+
 static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t port = -1;
@@ -1209,6 +1282,16 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("created certificate tls-web for %s, signed by the local CA (tls-ca)\n", ip);
         }
         cert = UCXAPP_TLS_WEB_NAME;
+        if (ucxapp_tls_ca_trust(false, NULL, 0) == UCXAPP_TRUST_NO) {
+            if (!ucxapp_shell_interactive()) {
+                ucxapp_print("note: the browser will warn until you run utils.tls.ca.trust\n");
+            } else {
+                ucxapp_print("trusting the local CA so the browser does not warn, confirm the Windows dialog...\n");
+                if (ucxapp_tls_ca_trust(true, NULL, 0) != UCXAPP_TRUST_YES) {
+                    ucxapp_print("note: not trusted, the browser will warn (utils.tls.ca.trust)\n");
+                }
+            }
+        }
     }
     if (cert != NULL) {
         tls = ucxapp_tls_server_new(cert, false, err, sizeof(err));
@@ -1218,9 +1301,10 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
     }
-    if (argc == 3) {
+    gToken[0] = '\0';
+    if (argc == 3 && strcmp(argv[2], "token") != 0) {
         snprintf(gToken, sizeof(gToken), "%s", argv[2]);
-    } else if (!makeToken(gToken)) {
+    } else if ((plain || argc == 3) && !makeToken(gToken)) {
         ucxapp_print("ERROR: no random source for the access token\n");
         ucxapp_tls_server_free(tls);
         return UCXAPP_ERR_FAILED;
@@ -1260,6 +1344,9 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     int32_t result = uWebServerStart(gServer);
+    if (result < 0 && closeStaleSockets(app) > 0) {
+        result = uWebServerStart(gServer);
+    }
     if (result < 0) {
         ucxapp_print("ERROR: listen on port %d failed (%d%s)\n", (int)port, (int)result, ucxapp_errname(result));
         uWebServerFree(gServer);
@@ -1276,8 +1363,13 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         webStop();
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("web server on %s: %s://%s:%d/#t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
+    ucxapp_print("web server on %s: %s://%s:%d/%s%s\n", ssid, gHttps ? "https" : "http", ip, (int)port,
+                 gToken[0] != '\0' ? "#t=" : "", gToken);
     if (gHttps) {
+        if (gToken[0] == '\0') {
+            ucxapp_print("no access token: anyone who can reach this address can use the page (web.start %d token adds one)\n",
+                         (int)port);
+        }
         ucxapp_print("trust tls-ca.crt in the browser (utils.tls.pem ca) to avoid the certificate warning\n");
     } else {
         ucxapp_print("note: plain HTTP: anyone on this network can read the page and the link token; leave out http to serve HTTPS\n");
@@ -1301,6 +1393,11 @@ static int cmdWebStop(ucxapp_t *app, int argc, char *argv[])
 bool ucxapp_web_running(void)
 {
     return gServer != NULL && gRunning;
+}
+
+bool ucxapp_web_client_socket(int32_t sock)
+{
+    return gServer != NULL && sock != uWebServerGetListenSocket(gServer) && uWebServerOwnsSocket(gServer, sock);
 }
 
 static int cmdWebStatus(ucxapp_t *app, int argc, char *argv[])
@@ -1375,7 +1472,7 @@ static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWebCmds[] = {
     { "web.export", "<dir>",          "Write the page's command lists and examples as JSON files (preview, static demo)", 0, cmdWebExport },
-    { "web.start",  "[port] [token] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
+    { "web.start",  "[port] [token] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80. HTTPS needs no token unless one is given (token makes a random one); plain HTTP always uses one", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Web server state",                                             0, cmdWebStatus },
 };

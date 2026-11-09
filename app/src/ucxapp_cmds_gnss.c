@@ -118,9 +118,18 @@ typedef struct {
     uint32_t sosSeq;
     int sosAck;       /* UPD-SOS backup creation: 1 acknowledged */
     uint32_t sosAckSeq;
+    uint32_t svinSeq;    /* counts NAV-SVIN: the survey-in of a base station */
+    uint32_t svinDur, svinObs;
+    double svinAcc;      /* mean position accuracy, metres */
+    double svinX, svinY, svinZ;   /* mean ECEF position, metres */
+    bool svinValid, svinActive;
+    uint32_t rtcm;       /* RTCM3 frames with a good CRC-24Q (a base station's corrections output) */
+    uint16_t rtcmTypes[8];
+    int nRtcmTypes;
 } gnss_t;
 
-enum { ST_IDLE, ST_NMEA, ST_SYNC2, ST_CLS, ST_ID, ST_LEN1, ST_LEN2, ST_PAY, ST_CKA, ST_CKB };
+enum { ST_IDLE, ST_NMEA, ST_SYNC2, ST_CLS, ST_ID, ST_LEN1, ST_LEN2, ST_PAY, ST_CKA, ST_CKB,
+       ST_RTCM_LEN1, ST_RTCM_LEN2, ST_RTCM_PAY };
 
 typedef struct {
     gnss_t st;
@@ -395,6 +404,16 @@ static void ubxFrame(parser_t *p)
             s->hpHAcc = le32(d + 28) * 1e-4;
             s->hpVAcc = le32(d + 32) * 1e-4;
         }
+    } else if (p->cls == 0x01 && p->id == 0x3B && p->len >= 40) {   /* NAV-SVIN */
+        s->svinDur = le32(d + 8);
+        s->svinX = s32(d + 12) * 1e-2 + (int8_t)d[24] * 1e-4;
+        s->svinY = s32(d + 16) * 1e-2 + (int8_t)d[25] * 1e-4;
+        s->svinZ = s32(d + 20) * 1e-2 + (int8_t)d[26] * 1e-4;
+        s->svinAcc = le32(d + 28) * 1e-4;
+        s->svinObs = le32(d + 32);
+        s->svinValid = d[36] != 0;
+        s->svinActive = d[37] != 0;
+        s->svinSeq++;
     } else if (p->cls == 0x01 && p->id == 0x03 && p->len >= 16) {   /* NAV-STATUS */
         int spoof = (d[7] >> 3) & 3;
         s->navSpoof = spoof != 0 ? spoof : s->navSpoof;
@@ -475,6 +494,46 @@ static void ubxFrame(parser_t *p)
     }
 }
 
+/* CRC-24Q of RTCM3 frames (and SPARTN). */
+static uint32_t crc24q(const uint8_t *d, size_t n)
+{
+    uint32_t crc = 0;
+
+    for (size_t i = 0; i < n; i++) {
+        crc ^= (uint32_t)d[i] << 16;
+        for (int b = 0; b < 8; b++) {
+            crc <<= 1;
+            if ((crc & 0x1000000u) != 0) {
+                crc ^= 0x1864CFBu;
+            }
+        }
+    }
+    return crc & 0xFFFFFFu;
+}
+
+/* An RTCM3 frame in p->pay (0xD3, length, message, CRC-24Q): counts it and keeps the message numbers seen. */
+static void rtcmFrame(parser_t *p)
+{
+    gnss_t *s = &p->st;
+    size_t n = 3 + p->len;
+    uint32_t crc = ((uint32_t)p->pay[n] << 16) | ((uint32_t)p->pay[n + 1] << 8) | p->pay[n + 2];
+
+    if (crc24q(p->pay, n) != crc) {
+        s->bad++;
+        return;
+    }
+    uint16_t type = (uint16_t)(((uint32_t)p->pay[3] << 4) | (p->pay[4] >> 4));
+    int i = 0;
+    while (i < s->nRtcmTypes && s->rtcmTypes[i] != type) {
+        i++;
+    }
+    if (i == s->nRtcmTypes && i < (int)(sizeof(s->rtcmTypes) / sizeof(s->rtcmTypes[0]))) {
+        s->rtcmTypes[s->nRtcmTypes++] = type;
+    }
+    s->rtcm++;
+    s->lastMs = ucxapp_platform_tick_ms();
+}
+
 #define CK(p, b) do { (p)->ca = (uint8_t)((p)->ca + (b)); (p)->cb = (uint8_t)((p)->cb + (p)->ca); } while (0)
 
 static void feedByte(parser_t *p, uint8_t b)
@@ -487,6 +546,9 @@ static void feedByte(parser_t *p, uint8_t b)
                 p->line[p->nlen++] = '$';
             } else if (b == 0xB5) {
                 p->stage = ST_SYNC2;
+            } else if (b == 0xD3) {
+                p->pay[0] = b;
+                p->stage = ST_RTCM_LEN1;
             }
             break;
         case ST_NMEA:
@@ -561,6 +623,23 @@ static void feedByte(parser_t *p, uint8_t b)
                 p->st.bad++;
             }
             p->stage = ST_IDLE;
+            break;
+        case ST_RTCM_LEN1:
+            p->pay[1] = b;
+            p->stage = (b & 0xFC) == 0 ? ST_RTCM_LEN2 : ST_IDLE;   /* 6 reserved bits, then a 10-bit length */
+            break;
+        case ST_RTCM_LEN2:
+            p->pay[2] = b;
+            p->len = (((uint32_t)p->pay[1] & 3u) << 8) | b;
+            p->pos = 3;
+            p->stage = p->len >= 2 ? ST_RTCM_PAY : ST_IDLE;
+            break;
+        case ST_RTCM_PAY:
+            p->pay[p->pos++] = b;
+            if (p->pos == 3 + p->len + 3) {
+                rtcmFrame(p);
+                p->stage = ST_IDLE;
+            }
             break;
         default:
             p->stage = ST_IDLE;
@@ -924,11 +1003,13 @@ static ucxapp_stream_t *gStream;
 static gnss_t gSnap;
 static uint32_t gOpenMs;
 static uint32_t gFixMs;   /* first 2D/3D fix since gnss.open, 0 = none yet */
+static int gBaseMode;     /* set by gnss.setup: 0 rover or standard, 1 base with survey-in, 2 base at a fixed position */
 
 /* A fresh receiver: parser, fence state, alarms and the time to first fix. */
 static void resetLive(void)
 {
     memset(&gP, 0, sizeof(gP));
+    gBaseMode = 0;
     gFence.state = -1;
     gAlarm.jam = 0;
     gAlarm.spoof = 0;
@@ -984,12 +1065,36 @@ static double sentenceTime(const char *line)
     return ((v[0] - '0') * 10 + (v[1] - '0')) * 3600.0 + ((v[2] - '0') * 10 + (v[3] - '0')) * 60.0 + atof(v + 4);
 }
 
-/* Next NMEA sentence (ending in \r\n) or UBX frame of a recording, NUL-terminated; other bytes are skipped. */
+/* Next NMEA sentence (ending in \r\n), UBX frame or RTCM3 frame of a recording, NUL-terminated; other bytes are
+   skipped. */
 static bool readUnit(FILE *f, uint8_t *u, size_t *len)
 {
     int c;
 
     while ((c = getc(f)) != EOF) {
+        if (c == 0xD3) {
+            size_t pl;
+            c = getc(f);
+            if (c == EOF || (c & 0xFC) != 0) {
+                if (c != EOF) {
+                    (void)ungetc(c, f);
+                }
+                continue;
+            }
+            u[0] = 0xD3;
+            u[1] = (uint8_t)c;
+            if ((c = getc(f)) == EOF) {
+                return false;
+            }
+            u[2] = (uint8_t)c;
+            pl = (((size_t)u[1] & 3u) << 8) | u[2];
+            if (fread(u + 3, 1, pl + 3, f) != pl + 3) {
+                return false;
+            }
+            *len = pl + 6;
+            u[*len] = '\0';
+            return true;
+        }
         if (c == '$') {
             size_t n = 0;
             u[n++] = '$';
@@ -1041,7 +1146,7 @@ static double unitTime(const uint8_t *u, size_t len, int *clock)
         return sentenceTime((const char *)u);
     }
     *clock = CLOCK_UBX;
-    return (u[2] == 0x01 && u[3] == 0x07 && len >= 12) ? le32(u + 6) / 1000.0 : -1.0;
+    return (u[0] == 0xB5 && u[2] == 0x01 && u[3] == 0x07 && len >= 12) ? le32(u + 6) / 1000.0 : -1.0;
 }
 
 /* Next unit of the file, from the start again at the end; false when the file has none. */
@@ -1112,6 +1217,26 @@ static bool replayWrite(void *ctx, const uint8_t *data, size_t n)
 #define MALMO_LON 12.98625
 #define MALMO_ALT 10.0
 
+/* The RTCM3 messages of an RTK base: CFG-MSGOUT-RTCM_3X_TYPEnnnn_UART1 keys (USB is the key + 2). */
+static const struct { uint16_t type; uint32_t key; } kRtcm[] = {
+    { 1005, 0x209102BE },   /* station position */
+    { 1074, 0x2091035F },   /* GPS MSM4 */
+    { 1084, 0x20910364 },   /* GLONASS MSM4 */
+    { 1094, 0x20910369 },   /* Galileo MSM4 */
+    { 1124, 0x2091036E },   /* BeiDou MSM4 */
+    { 1230, 0x20910304 },   /* GLONASS code-phase biases */
+};
+
+static bool rtcmKey(uint32_t key)
+{
+    for (size_t i = 0; i < sizeof(kRtcm) / sizeof(kRtcm[0]); i++) {
+        if (key == kRtcm[i].key || key == kRtcm[i].key + 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
 typedef struct {
     bool on;
     double lat, lon, alt;
@@ -1121,6 +1246,11 @@ typedef struct {
     uint32_t lostAt;
     uint8_t secRate, rfRate;   /* SEC-SIG and MON-RF output rates set by gnss.cfg msg */
     uint32_t secSince;         /* tick when the first of them was turned on: the demo episode starts there */
+    uint8_t tmode;             /* CFG-TMODE-MODE: 0 off, 1 survey-in, 2 fixed */
+    uint8_t svinRate;          /* CFG-MSGOUT NAV-SVIN */
+    bool rtcmOn;               /* any CFG-MSGOUT RTCM 3X message on */
+    uint32_t svinMin, svinLimit;   /* CFG-TMODE-SVIN_MIN_DUR (s) and SVIN_ACC_LIMIT (0.1 mm) */
+    uint32_t svinSince, svinDone;  /* survey-in start tick, and its duration once valid (0 while running) */
     uint8_t ans[192];   /* answers to commands, sent with the next poll; guarded by the stream lock */
     size_t nAns;
 } virt_t;
@@ -1160,6 +1290,18 @@ static void virtCfg(virt_t *v, const uint8_t *f, size_t len)
             virtMsgRate(v, 0x27, 0x09, pl[o + 4]);
         } else if (key == 0x2091035a || key == 0x2091035c) {
             virtMsgRate(v, 0x0A, 0x38, pl[o + 4]);
+        } else if (key == 0x20030001) {   /* CFG-TMODE-MODE */
+            v->tmode = pl[o + 4];
+            v->svinSince = ucxapp_platform_tick_ms();
+            v->svinDone = 0;
+        } else if (key == 0x40030010) {
+            v->svinMin = le32(pl + o + 4);
+        } else if (key == 0x40030011) {
+            v->svinLimit = le32(pl + o + 4);
+        } else if (key == 0x20910089 || key == 0x2091008B) {
+            v->svinRate = pl[o + 4];
+        } else if (rtcmKey(key)) {
+            v->rtcmOn = pl[o + 4] != 0;
         }
         o += 4 + vn;
     }
@@ -1190,6 +1332,84 @@ static size_t virtSecurity(uint8_t *out, const virt_t *v, uint32_t now)
         n += buildFrame(out + n, 0x27, 0x09, pl, 4);
     }
     return n;
+}
+
+/* Writes the n lowest bits of val big-endian at bit position *pos (RTCM3 bit fields). */
+static void putBits(uint8_t *buf, size_t *pos, int n, uint64_t val)
+{
+    for (int i = n - 1; i >= 0; i--, (*pos)++) {
+        if (((val >> i) & 1u) != 0) {
+            buf[*pos / 8] |= (uint8_t)(0x80u >> (*pos % 8));
+        }
+    }
+}
+
+/* The virtual receiver as a base station, once a second: UBX-NAV-SVIN during a survey-in (the mean accuracy
+   shrinks as 20 m / (1 + seconds); valid once it is under the limit and the minimum time has passed), then
+   RTCM 1005 with its position. */
+static void virtBase(ucxapp_stream_t *s, virt_t *v, uint32_t now)
+{
+    const double rad = 3.14159265358979323846 / 180.0;
+    const double a = 6378137.0;
+    const double e2 = (1.0 / 298.257223563) * (2.0 - 1.0 / 298.257223563);
+    double n = a / sqrt(1.0 - e2 * sin(v->lat * rad) * sin(v->lat * rad));
+    double ecef[3] = { (n + v->alt) * cos(v->lat * rad) * cos(v->lon * rad),
+                       (n + v->alt) * cos(v->lat * rad) * sin(v->lon * rad),
+                       (n * (1.0 - e2) + v->alt) * sin(v->lat * rad) };
+    uint8_t tmode, svinRate;
+    bool rtcmOn;
+    uint32_t dur, acc;
+    bool valid;
+
+    ucxapp_stream_lock(s);
+    tmode = v->tmode;
+    svinRate = v->svinRate;
+    rtcmOn = v->rtcmOn;
+    dur = v->svinDone != 0 ? v->svinDone : (now - v->svinSince) / 1000u;
+    acc = 200000u / (1u + dur);
+    valid = tmode == 1 && dur >= v->svinMin && acc <= v->svinLimit;
+    if (valid && v->svinDone == 0) {
+        v->svinDone = dur > 0 ? dur : 1;
+    }
+    ucxapp_stream_unlock(s);
+    if (tmode == 1 && svinRate != 0) {
+        uint8_t pl[40] = { 0 };
+        uint8_t f[48];
+        for (int i = 0; i < 3; i++) {
+            int64_t c = llround(ecef[i] * 1e4);   /* 0.1 mm: cm in meanX/Y/Z, the rest in meanXHP/YHP/ZHP */
+            int32_t cm = (int32_t)(c / 100);
+            for (int b = 0; b < 4; b++) {
+                pl[12 + 4 * i + b] = (uint8_t)((uint32_t)cm >> (8 * b));
+            }
+            pl[24 + i] = (uint8_t)(int8_t)(c % 100);
+        }
+        for (int b = 0; b < 4; b++) {
+            pl[8 + b] = (uint8_t)(dur >> (8 * b));
+            pl[28 + b] = (uint8_t)(acc >> (8 * b));
+            pl[32 + b] = (uint8_t)((dur * 10u) >> (8 * b));
+        }
+        pl[36] = valid ? 1 : 0;
+        pl[37] = valid ? 0 : 1;
+        ucxapp_stream_push(s, f, buildFrame(f, 0x01, 0x3B, pl, sizeof(pl)));
+    }
+    if (rtcmOn && (tmode == 2 || valid)) {
+        uint8_t f[3 + 19 + 3] = { 0xD3, 0, 19 };
+        size_t pos = 24;
+        putBits(f, &pos, 12, 1005);
+        putBits(f, &pos, 12, 0);       /* reference station 0 */
+        putBits(f, &pos, 6, 0);        /* ITRF realization year */
+        putBits(f, &pos, 4, 0xF);      /* GPS, GLONASS, Galileo, reference station */
+        putBits(f, &pos, 38, (uint64_t)llround(ecef[0] * 1e4));
+        putBits(f, &pos, 2, 0);
+        putBits(f, &pos, 38, (uint64_t)llround(ecef[1] * 1e4));
+        putBits(f, &pos, 2, 0);
+        putBits(f, &pos, 38, (uint64_t)llround(ecef[2] * 1e4));
+        uint32_t crc = crc24q(f, 3 + 19);
+        f[22] = (uint8_t)(crc >> 16);
+        f[23] = (uint8_t)(crc >> 8);
+        f[24] = (uint8_t)crc;
+        ucxapp_stream_push(s, f, sizeof(f));
+    }
 }
 
 /* Like a real receiver, the virtual one acknowledges UBX-CFG commands (not CFG-RST), accepts UBX-MGA data with
@@ -1401,6 +1621,7 @@ static void virtPoll(void *ctx, ucxapp_stream_t *s)
         snprintf(body, sizeof(body), "GPGGA,%s,%s,%s,1,10,0.8,%.1f,M,0.0,M,,", hms, lat, lon, v->alt);
         pushNmea(s, body);
         virtNavPvt(s, v, t, tm, true, 10);
+        virtBase(s, v, now);
         snprintf(body, sizeof(body), "GPGSA,A,3,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,%02d,,,1.4,0.8,1.1",
                  kSv[0][0], kSv[1][0], kSv[2][0], kSv[3][0], kSv[4][0], kSv[5][0], kSv[6][0], kSv[7][0],
                  kSv[8][0], kSv[9][0]);
@@ -1451,11 +1672,16 @@ size_t ucxapp_gnss_summary(char *out, size_t size)
     int used = gP.st.satsUsed;
     uint32_t last = gP.st.lastMs;
     const char *rtk = rtkName(&gP.st);
+    bool svin = gP.st.svinSeq > 0 && gP.st.svinActive;
+    bool base = svin || gP.st.rtcm > 0;
     ucxapp_stream_unlock(s);
     bool stalled = last == 0 || ucxapp_platform_tick_ms() - last > 3000u;
     int n = snprintf(out, size, "GNSS %s", stalled ? "no data" : rtk != NULL && fix >= 2 ? rtk : kFix[fix]);
     if (!stalled && fix > 0 && n > 0 && (size_t)n < size) {
         n += snprintf(out + n, size - (size_t)n, " %dsv", used);
+    }
+    if (!stalled && base && n > 0 && (size_t)n < size) {
+        n += snprintf(out + n, size - (size_t)n, svin ? " base survey" : " base");
     }
     if (ucxapp_stream_bridge_active(s) && n > 0 && (size_t)n < size) {
         n += snprintf(out + n, size - (size_t)n, " bridged");
@@ -1665,6 +1891,63 @@ static void rtkStatus(const gnss_t *s)
     ucxapp_print("\n");
 }
 
+/* WGS84 ECEF (metres) to latitude, longitude (degrees) and ellipsoid height (metres). */
+static void ecefToLlh(double x, double y, double z, double *lat, double *lon, double *h)
+{
+    const double a = 6378137.0;
+    const double f = 1.0 / 298.257223563;
+    const double e2 = f * (2.0 - f);
+    const double deg = 180.0 / 3.14159265358979323846;
+    double p = sqrt(x * x + y * y);
+    double la = atan2(z, p * (1.0 - e2));
+    double n = a;
+
+    for (int i = 0; i < 6; i++) {
+        n = a / sqrt(1.0 - e2 * sin(la) * sin(la));
+        la = atan2(z + e2 * n * sin(la), p);
+    }
+    n = a / sqrt(1.0 - e2 * sin(la) * sin(la));
+    *lat = la * deg;
+    *lon = atan2(y, x) * deg;
+    *h = p / cos(la) - n;
+}
+
+/* Base station: survey-in progress (UBX-NAV-SVIN) and the RTCM3 messages it sends. */
+static void baseStatus(const gnss_t *s)
+{
+    if (s->svinSeq == 0 && s->rtcm == 0 && gBaseMode == 0) {
+        return;
+    }
+    ucxapp_print("Base:      ");
+    if (s->svinSeq > 0 && s->svinActive) {
+        ucxapp_print("survey-in running %u s, %u observations, mean accuracy %.3f m", (unsigned)s->svinDur,
+                     (unsigned)s->svinObs, s->svinAcc);
+    } else if (s->svinSeq > 0 && s->svinValid) {
+        ucxapp_print("survey-in done after %u s, mean accuracy %.3f m", (unsigned)s->svinDur, s->svinAcc);
+    } else if (gBaseMode == 2) {
+        ucxapp_print("fixed position");
+    } else if (gBaseMode == 1) {
+        ucxapp_print("survey-in starting (no UBX-NAV-SVIN yet)");
+    } else {
+        ucxapp_print("not surveying");
+    }
+    if (s->rtcm == 0) {
+        ucxapp_print("; no RTCM3 output yet\n");
+    } else {
+        ucxapp_print("; RTCM3 out:");
+        for (int i = 0; i < s->nRtcmTypes; i++) {
+            ucxapp_print(" %u", (unsigned)s->rtcmTypes[i]);
+        }
+        ucxapp_print(" (%u frames)\n", (unsigned)s->rtcm);
+    }
+    if (s->svinSeq > 0 && s->svinValid && !s->svinActive) {
+        double lat, lon, h;
+        ecefToLlh(s->svinX, s->svinY, s->svinZ, &lat, &lon, &h);
+        ucxapp_print("           %.9f, %.9f, %.4f m (ellipsoid); keep it: gnss.setup base fixed %.9f %.9f %.4f %.3f\n",
+                     lat, lon, h, lat, lon, h, s->svinAcc);
+    }
+}
+
 static bool isVirtual(void)
 {
     return gReplay.f != NULL || gVirt.on;
@@ -1738,7 +2021,11 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("Port:      %s at %d baud, %u bytes received\n", ucxapp_stream_port(gStream),
                      (int)ucxapp_stream_baud(gStream), (unsigned)ucxapp_stream_rx_bytes(gStream));
     }
-    ucxapp_print("Messages:  %u NMEA, %u UBX, %u bad%s\n", (unsigned)gSnap.nmea, (unsigned)gSnap.ubx, (unsigned)gSnap.bad,
+    ucxapp_print("Messages:  %u NMEA, %u UBX, ", (unsigned)gSnap.nmea, (unsigned)gSnap.ubx);
+    if (gSnap.rtcm > 0) {
+        ucxapp_print("%u RTCM3, ", (unsigned)gSnap.rtcm);
+    }
+    ucxapp_print("%u bad%s\n", (unsigned)gSnap.bad,
                  gSnap.lastMs == 0 ? " (no data yet)" : (now - gSnap.lastMs > 3000u ? " (stalled)" : ""));
     if (gSnap.mod[0] != '\0' || gSnap.sw[0] != '\0') {
         ucxapp_print("Receiver:  %s %s, FW %s, HW %s, PROTVER %s\n", generation(gSnap.hw), gSnap.mod,
@@ -1757,6 +2044,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("Motion:    %.2f m/s, course %.1f deg\n", gSnap.speed, gSnap.course);
         rtkStatus(&gSnap);
     }
+    baseStatus(&gSnap);
     if (gSnap.hasTime) {
         ucxapp_print("Time:      %04d-%02d-%02d %02d:%02d:%02d UTC\n", gSnap.hasDate ? gSnap.year : 0,
                      gSnap.month, gSnap.day, gSnap.hour, gSnap.min, gSnap.sec);
@@ -2749,7 +3037,8 @@ static int cmdCfg(ucxapp_t *app, int argc, char *argv[])
         { "gsv", 0x209100c5, 0xF0, 0x03 }, { "rmc", 0x209100ac, 0xF0, 0x04 }, { "vtg", 0x209100b1, 0xF0, 0x05 },
         { "gst", 0x209100d4, 0xF0, 0x07 }, { "zda", 0x209100d9, 0xF0, 0x08 }, { "gns", 0x209100b6, 0xF0, 0x0D },
         { "nav-pvt", 0x20910007, 0x01, 0x07 }, { "nav-sat", 0x20910016, 0x01, 0x35 },
-        { "nav-hpposllh", 0x20910034, 0x01, 0x14 },
+        { "nav-hpposllh", 0x20910034, 0x01, 0x14 }, { "nav-svin", 0x20910089, 0x01, 0x3B },
+        { "nav-relposned", 0x2091008e, 0x01, 0x3C },
         { "nav-status", 0x2091001b, 0x01, 0x03 }, { "mon-rf", 0x2091035a, 0x0A, 0x38 },
         { "sec-sig", 0x20910635, 0x27, 0x09 },
     };
@@ -2875,6 +3164,205 @@ static int cmdCfg(ucxapp_t *app, int argc, char *argv[])
                                 "then gnss.open finds it)");
     }
     return UCXAPP_ERR_USAGE;
+}
+
+/* ---- gnss.setup: the basic configuration of a standard receiver, an RTK rover or an RTK base station ---- */
+
+/* A CFG-MSGOUT rate on UART1 and USB (the USB key is the UART1 key + 2). */
+static void valsetMsg(valset_t *v, uint32_t uart1Key, uint32_t rate)
+{
+    valsetAdd(v, uart1Key, rate);
+    valsetAdd(v, uart1Key + 2, rate);
+}
+
+/* Sends one UBX-CFG-VALSET step and prints how it went. An optional step may be refused by receivers without
+   those keys; returns false when a required step failed. */
+static bool setupStep(valset_t *v, const char *what, bool optional)
+{
+    int rc = sendAcked(0x06, 0x8A, v->pl, v->len);
+
+    ucxapp_print("  %-58s %s\n", what, rc == 1 ? "ok" : rc == -1 ? "no answer" :
+                 optional ? "not on this receiver" : "refused (UBX-ACK-NAK)");
+    valsetBegin(v);
+    return rc == 1 || (optional && rc == 0);
+}
+
+static void setupRtcm(valset_t *v, bool on)
+{
+    for (size_t i = 0; i < sizeof(kRtcm) / sizeof(kRtcm[0]); i++) {
+        valsetMsg(v, kRtcm[i].key, !on ? 0u : kRtcm[i].type == 1230 ? 5u : 1u);
+    }
+}
+
+/* Older receivers (no CFG-VALSET): the standard messages with UBX-CFG-MSG on the port in use. */
+static int setupLegacy(void)
+{
+    static const struct { const char *name; uint8_t cls, id, rate; } kStd[] = {
+        { "NMEA GGA", 0xF0, 0x00, 1 }, { "NMEA GLL off", 0xF0, 0x01, 0 }, { "NMEA GSA", 0xF0, 0x02, 1 },
+        { "NMEA GSV", 0xF0, 0x03, 1 }, { "NMEA RMC", 0xF0, 0x04, 1 }, { "NMEA VTG", 0xF0, 0x05, 1 },
+        { "UBX NAV-PVT", 0x01, 0x07, 1 },
+    };
+    uint8_t nav5[36] = { 0x01, 0x00, 0 };   /* CFG-NAV5, mask: dynModel only, portable */
+    bool ok = true;
+
+    for (size_t i = 0; i < sizeof(kStd) / sizeof(kStd[0]); i++) {
+        uint8_t msg[3] = { kStd[i].cls, kStd[i].id, kStd[i].rate };
+        int rc = sendAcked(0x06, 0x01, msg, sizeof(msg));
+        ucxapp_print("  %-58s %s\n", kStd[i].name, rc == 1 ? "ok" : rc == 0 ? "refused (UBX-ACK-NAK)" : "no answer");
+        ok = ok && (rc == 1 || (rc == 0 && kStd[i].cls == 0x01));   /* NAV-PVT is missing before u-blox 7 */
+    }
+    int rc = sendAcked(0x06, 0x24, nav5, sizeof(nav5));
+    ucxapp_print("  %-58s %s\n", "dynamic model portable", rc == 1 ? "ok" : rc == 0 ? "refused (UBX-ACK-NAK)" : "no answer");
+    return ok && rc == 1;
+}
+
+static int cmdSetup(ucxapp_t *app, int argc, char *argv[])
+{
+    enum { STANDARD, ROVER, SURVEY, FIXED, BASE_OFF } kind = STANDARD;
+    const char *mode = argc > 1 ? argv[1] : "";
+    const char *sub = argc > 2 ? argv[2] : "";
+    double lat = 0.0, lon = 0.0, h = 0.0, acc = 0.05, limit = 2.0, minDur = 120.0;
+    char what[96];
+    valset_t v;
+    bool ok = true;
+    (void)app;
+
+    if (strcasecmp(mode, "standard") == 0 && argc == 2) {
+        kind = STANDARD;
+    } else if (strcasecmp(mode, "rover") == 0 && argc == 2) {
+        kind = ROVER;
+    } else if (strcasecmp(mode, "base") == 0 && strcasecmp(sub, "survey") == 0 && argc <= 5 &&
+               (argc < 4 || parseDouble(argv[3], &minDur, 1.0, 86400.0)) &&
+               (argc < 5 || parseDouble(argv[4], &limit, 0.01, 100.0))) {
+        kind = SURVEY;
+    } else if (strcasecmp(mode, "base") == 0 && strcasecmp(sub, "fixed") == 0 && (argc == 6 || argc == 7) &&
+               parseDouble(argv[3], &lat, -90.0, 90.0) && parseDouble(argv[4], &lon, -180.0, 180.0) &&
+               parseDouble(argv[5], &h, -1000.0, 10000.0) && (argc < 7 || parseDouble(argv[6], &acc, 0.0001, 100.0))) {
+        kind = FIXED;
+    } else if (strcasecmp(mode, "base") == 0 && strcasecmp(sub, "off") == 0 && argc == 3) {
+        kind = BASE_OFF;
+    } else {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!needOpen()) {
+        return UCXAPP_ERR_FAILED;
+    }
+    snapshot();
+    if (!hasValset()) {
+        if (kind == STANDARD) {
+            ucxapp_print("standard GNSS on a PROTVER %s receiver (UBX-CFG-MSG, RAM only; gnss.cfg save keeps it):\n",
+                         gSnap.proto);
+            return setupLegacy() ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("ERROR: RTK needs a high-precision receiver (ZED-F9P, ZED-X20P: PROTVER 27 or later); "
+                     "this one has PROTVER %s\n", gSnap.proto);
+        return UCXAPP_ERR_FAILED;
+    }
+    valsetBegin(&v);
+    switch (kind) {
+        case STANDARD:
+            ucxapp_print("standard GNSS (RAM only; gnss.cfg save keeps it):\n");
+            valsetMsg(&v, 0x209100bb, 1);   /* GGA */
+            valsetMsg(&v, 0x209100c0, 1);   /* GSA */
+            valsetMsg(&v, 0x209100c5, 1);   /* GSV */
+            valsetMsg(&v, 0x209100ac, 1);   /* RMC */
+            valsetMsg(&v, 0x209100b1, 1);   /* VTG */
+            valsetMsg(&v, 0x209100ca, 0);   /* GLL */
+            ok = setupStep(&v, "NMEA GGA GSA GSV RMC VTG every epoch, GLL off", false);
+            valsetMsg(&v, 0x20910007, 1);   /* NAV-PVT */
+            valsetAdd(&v, 0x20110021, 0);   /* CFG-NAVSPG-DYNMODEL portable */
+            ok = setupStep(&v, "UBX NAV-PVT every epoch, dynamic model portable", false) && ok;
+            valsetAdd(&v, 0x20030001, 0);   /* CFG-TMODE-MODE disabled */
+            valsetAdd(&v, 0x10930006, 0);   /* CFG-NMEA-HIGHPREC */
+            valsetMsg(&v, 0x20910034, 0);   /* NAV-HPPOSLLH */
+            valsetMsg(&v, 0x20910089, 0);   /* NAV-SVIN */
+            ok = setupStep(&v, "base mode, high-precision NMEA and NAV-HPPOSLLH off", true) && ok;
+            setupRtcm(&v, false);
+            ok = setupStep(&v, "RTCM3 output off", true) && ok;
+            break;
+        case ROVER:
+            ucxapp_print("RTK rover (RAM only; gnss.cfg save keeps it):\n");
+            valsetAdd(&v, 0x10730004, 1);   /* CFG-UART1INPROT-RTCM3X */
+            valsetAdd(&v, 0x10770004, 1);   /* CFG-USBINPROT-RTCM3X */
+            ok = setupStep(&v, "RTCM3 corrections in on UART1 and USB", false);
+            valsetAdd(&v, 0x10730005, 1);   /* CFG-UART1INPROT-SPARTN */
+            valsetAdd(&v, 0x10770005, 1);   /* CFG-USBINPROT-SPARTN */
+            ok = setupStep(&v, "SPARTN corrections in (PointPerfect)", true) && ok;
+            valsetMsg(&v, 0x20910007, 1);   /* NAV-PVT */
+            valsetMsg(&v, 0x20910034, 1);   /* NAV-HPPOSLLH */
+            valsetMsg(&v, 0x209100bb, 1);   /* GGA, which NTRIP casters with virtual reference stations need */
+            ok = setupStep(&v, "UBX NAV-PVT, NAV-HPPOSLLH and NMEA GGA every epoch", false) && ok;
+            valsetAdd(&v, 0x10930006, 1);   /* CFG-NMEA-HIGHPREC */
+            valsetAdd(&v, 0x20140011, 3);   /* CFG-NAVHPG-DGNSSMODE: RTK fixed (ambiguities fixed when possible) */
+            valsetAdd(&v, 0x20030001, 0);   /* CFG-TMODE-MODE disabled */
+            ok = setupStep(&v, "high-precision NMEA, RTK fixed mode, base mode off", false) && ok;
+            setupRtcm(&v, false);
+            ok = setupStep(&v, "RTCM3 output off", true) && ok;
+            break;
+        case SURVEY:
+            ucxapp_print("RTK base station with survey-in (RAM only; gnss.cfg save keeps it):\n");
+            valsetAdd(&v, 0x20030001, 1);   /* CFG-TMODE-MODE survey-in */
+            valsetAdd(&v, 0x40030010, (uint32_t)llround(minDur));        /* SVIN_MIN_DUR, s */
+            valsetAdd(&v, 0x40030011, (uint32_t)llround(limit * 1e4));   /* SVIN_ACC_LIMIT, 0.1 mm */
+            snprintf(what, sizeof(what), "survey-in for at least %.0f s and %.2f m", minDur, limit);
+            ok = setupStep(&v, what, false);
+            break;
+        case FIXED: {
+            long long la = llround(lat * 1e9);   /* 1e-9 deg: 1e-7 deg in LAT, the rest in LAT_HP */
+            long long lo = llround(lon * 1e9);
+            long long hh = llround(h * 1e4);     /* 0.1 mm: cm in HEIGHT, the rest in HEIGHT_HP */
+            ucxapp_print("RTK base station at a fixed position (RAM only; gnss.cfg save keeps it):\n");
+            valsetAdd(&v, 0x20030001, 2);   /* CFG-TMODE-MODE fixed */
+            valsetAdd(&v, 0x20030002, 1);   /* CFG-TMODE-POS_TYPE LLH */
+            valsetAdd(&v, 0x40030009, (uint32_t)(int32_t)(la / 100));
+            valsetAdd(&v, 0x4003000A, (uint32_t)(int32_t)(lo / 100));
+            valsetAdd(&v, 0x4003000B, (uint32_t)(int32_t)(hh / 100));
+            valsetAdd(&v, 0x2003000C, (uint32_t)(int32_t)(la % 100));
+            valsetAdd(&v, 0x2003000D, (uint32_t)(int32_t)(lo % 100));
+            valsetAdd(&v, 0x2003000E, (uint32_t)(int32_t)(hh % 100));
+            valsetAdd(&v, 0x4003000F, (uint32_t)llround(acc * 1e4));   /* FIXED_POS_ACC, 0.1 mm */
+            snprintf(what, sizeof(what), "fixed at %.9f, %.9f, %.4f m (%.4f m)", lat, lon, h, acc);
+            ok = setupStep(&v, what, false);
+            break;
+        }
+        case BASE_OFF:
+            ucxapp_print("base station off (RAM only; gnss.cfg save keeps it):\n");
+            valsetAdd(&v, 0x20030001, 0);
+            valsetMsg(&v, 0x20910089, 0);
+            ok = setupStep(&v, "base mode and NAV-SVIN off", false);
+            setupRtcm(&v, false);
+            ok = setupStep(&v, "RTCM3 output off", false) && ok;
+            break;
+    }
+    if (kind == SURVEY || kind == FIXED) {
+        setupRtcm(&v, true);
+        ok = setupStep(&v, "RTCM 1005 1074 1084 1094 1124 every epoch, 1230 every 5", false) && ok;
+        valsetAdd(&v, 0x10740004, 1);   /* CFG-UART1OUTPROT-RTCM3X */
+        valsetAdd(&v, 0x10780004, 1);   /* CFG-USBOUTPROT-RTCM3X */
+        valsetMsg(&v, 0x20910089, 1);   /* NAV-SVIN */
+        valsetAdd(&v, 0x20110021, 2);   /* CFG-NAVSPG-DYNMODEL stationary */
+        ok = setupStep(&v, "RTCM3 out on UART1 and USB, NAV-SVIN, stationary model", false) && ok;
+    }
+    if (!ok) {
+        ucxapp_print("ERROR: the receiver refused part of the setup (an RTK base or rover needs a ZED-F9P or ZED-X20P)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    gBaseMode = kind == SURVEY ? 1 : kind == FIXED ? 2 : 0;
+    ucxapp_stream_lock(gStream);   /* a new base status: the survey-in and RTCM3 output from here on */
+    gP.st.svinSeq = 0;
+    gP.st.svinActive = false;
+    gP.st.svinValid = false;
+    gP.st.rtcm = 0;
+    gP.st.nRtcmTypes = 0;
+    ucxapp_stream_unlock(gStream);
+    if (kind == ROVER) {
+        ucxapp_print("next: corrections with gnss.bridge ntrip <caster> <port> <mount> [user pass], "
+                     "gnss.bridge pointperfect <client-id>, or from a base with gnss.bridge tcpc <host> <port>\n");
+    } else if (kind == SURVEY || kind == FIXED) {
+        ucxapp_print("next: %sserve the corrections with gnss.bridge tcp [port] (rovers: gnss.bridge tcpc <host> <port>)\n",
+                     kind == SURVEY ? "gnss.status shows the survey-in; " : "");
+    }
+    return UCXAPP_OK;
 }
 
 /* ---- Save-on-shutdown: UBX-UPD-SOS keeps the receiver state in flash for a fast start after power off ---- */
@@ -3420,7 +3908,8 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.send", "<hex...> | <$NMEA> | ubx <cls> <id> [hex...]", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz=1>", "Navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
-    { "gnss.cfg", "gnss <gps,gal,bds,glo,qzss,sbas,navic> | model <portable|stationary|pedestrian|automotive|sea|air1g|air2g|air4g|wrist|bike|mower|escooter> | msg <name> <rate> | baud <rate> | save | reset", "Configure the receiver (UBX-CFG-VALSET, legacy UBX-CFG before PROTVER 23) and check its ACK: GNSS systems, dynamic model, message rates (gga gll gsa gsv rmc vtg gst zda gns nav-pvt nav-hpposllh nav-sat nav-status mon-rf sec-sig; 0 off), UART baud (reopens), save to flash, factory reset", 0, cmdCfg },
+    { "gnss.cfg", "gnss <gps,gal,bds,glo,qzss,sbas,navic> | model <portable|stationary|pedestrian|automotive|sea|air1g|air2g|air4g|wrist|bike|mower|escooter> | msg <name> <rate> | baud <rate> | save | reset", "Configure the receiver (UBX-CFG-VALSET, legacy UBX-CFG before PROTVER 23) and check its ACK: GNSS systems, dynamic model, message rates (gga gll gsa gsv rmc vtg gst zda gns nav-pvt nav-hpposllh nav-svin nav-relposned nav-sat nav-status mon-rf sec-sig; 0 off), UART baud (reopens), save to flash, factory reset", 0, cmdCfg },
+    { "gnss.setup", "standard | rover | base survey [min_s=120] [acc_m=2] | base fixed <lat> <lon> <height_m> [acc_m=0.05] | base off", "Basic setup in one step, each part checked by its UBX-ACK: standard NMEA + NAV-PVT; RTK rover (RTCM3/SPARTN in, NAV-HPPOSLLH, high-precision NMEA); RTK base (survey-in or fixed position, RTCM3 1005 1074 1084 1094 1124 1230 out); base and rover need a ZED-F9P or ZED-X20P", 0, cmdSetup },
     { "gnss.backup", "<save|clear|status>", "Save-on-shutdown (UBX-UPD-SOS): save stops navigation and keeps the state in flash for a fast start after power off; status shows how the last start went", 0, cmdBackup },
     { "gnss.assist", "<file.ubx>|online [gnss] [data]|register <ztp-token>|chipcode <code>|id [ztp-token]|legacy <token> [gnss]", "u-blox AssistNow: UBX-MGA time, orbits and almanac over the module's Wi-Fi (or from a file) to the receiver for a fast first fix", 0, cmdAssist },
     { "gnss.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | ntrip <host> <port> <mount> [user pass] [ble] [cell] | pointperfect <client-id> [eu|us|kr|au|jp] [cert] | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | off [n] | status", "Two-way bridges of the receiver stream: TCP server/client, NTRIP corrections, PointPerfect SPARTN over MQTT (certificates <cert>, <cert>-key, <cert>-ca), UDP, BLE NUS/SPS, PC UART; up to 4 at once", 0, cmdBridge },

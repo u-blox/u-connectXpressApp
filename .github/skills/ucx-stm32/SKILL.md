@@ -73,9 +73,14 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - Command list: `COMMANDS.md`.
 
 ## Web UI over HTTPS (H753, F767)
-- NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) build the web UI with mbedTLS: `wifi.connect <ssid> <pw>`, then `web.start` prints `https://<module-ip>/#t=<token>`. Plain `http` is refused.
+- NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) build the web UI with mbedTLS: `wifi.connect <ssid> <pw>`, then `web.start` prints `https://<module-ip>/` (no access token by default; `web.start 443 token` adds one). Plain `http` is refused.
 - The first start makes `tls-ca` and `tls-web` on the board (littlefs on FreeRTOS, RAM on Zephyr, so a new CA after each reset); accept the browser's certificate warning once per CA.
 - Keys and the token come only from the RNG peripheral (TRNG); if it fails, `web.start` fails. See `docs/SECURITY.md`. Other boards have no web UI (RAM or no RNG).
+
+## Secure store (H753, F767)
+- Private keys (`*.key`) and saved Wi-Fi passwords are sealed with AES-256-GCM. The install key lives in the internal flash (littlefs on FreeRTOS, also when files are on the SD card; RAM on Zephyr, lost at reset). Older obfuscated Wi-Fi profiles are re-sealed on first load.
+- No TrustZone on these parts: set readout protection level 1 after flashing (`STM32_Programmer_CLI -c port=SWD -ob RDP=0xBB`) so the flash cannot be read over SWD. `utils.secure` shows the RDP level and the key files. Going back to level 0 erases the flash; never use level 2 (permanent) on development boards.
+- `file.format yes` on the internal flash erases the install key; sealed files on the SD card can then no longer be opened. Reset after formatting.
 
 ## Low power (host MCU)
 - FreeRTOS: a `sleep` task at idle priority (listed by `sys.tasks`) stops the core with WFI until the next interrupt, and the shell polls the console every 10 ms once it has been quiet for 200 ms. Interrupts wake the core at once, so AT and bridge latency are unchanged.

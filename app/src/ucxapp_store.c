@@ -88,6 +88,7 @@ static const ucxapp_store_ops_t gStdioOps = {
     stdioOpen, stdioRead, stdioWrite, stdioClose, stdioRemove, stdioRename, stdioList
 };
 static const ucxapp_store_ops_t *gOps = &gStdioOps;
+static const ucxapp_store_secure_t *gSecure;
 
 struct ucxapp_store_writer {
     void *handle;
@@ -99,6 +100,29 @@ struct ucxapp_store_writer {
 void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops)
 {
     gOps = ops != NULL ? ops : &gStdioOps;
+}
+
+void ucxapp_store_set_secure(const ucxapp_store_secure_t *secure)
+{
+    gSecure = secure;
+}
+
+static bool isSecret(const char *name, bool *mayBeSealed)
+{
+#ifdef UCXAPP_LITE   /* no secure store on the 128 KB boards: let the compiler drop the sealing paths */
+    (void)name;
+    if (mayBeSealed != NULL) {
+        *mayBeSealed = false;
+    }
+    return false;
+#else
+    bool sealed = false;
+    bool secret = gSecure != NULL && gSecure->secret(name, &sealed);
+    if (mayBeSealed != NULL) {
+        *mayBeSealed = gSecure != NULL && sealed;
+    }
+    return secret;
+#endif
 }
 
 void ucxapp_store_set_dir(const char *dir)
@@ -166,6 +190,34 @@ bool ucxapp_store_end(ucxapp_store_writer_t *w, bool commit)
     bool ok = commit && !w->failed && gOps->rename(w->tmp, w->name);
     if (!ok) {
         gOps->remove(w->tmp);
+    } else if (isSecret(w->name, NULL)) {
+        /* streamed in plain (web upload, BLE transfer): seal it now, or do not keep it */
+        size_t len = 0;
+        uint8_t *plain = ucxapp_store_load(w->name, &len);
+        ok = plain != NULL && ucxapp_store_save(w->name, plain, len);
+        if (plain != NULL) {
+            memset(plain, 0, len);
+            free(plain);
+        }
+        if (!ok) {
+            gOps->remove(w->name);
+        }
+    }
+    free(w);
+    return ok;
+}
+
+static bool saveRaw(const char *name, const void *data, size_t len)
+{
+    ucxapp_store_writer_t *w = ucxapp_store_begin(name);
+    if (w == NULL) {
+        return false;
+    }
+    bool ok = ucxapp_store_append(w, data, len);
+    gOps->close(w->handle);
+    ok = ok && gOps->rename(w->tmp, w->name);
+    if (!ok) {
+        gOps->remove(w->tmp);
     }
     free(w);
     return ok;
@@ -173,12 +225,17 @@ bool ucxapp_store_end(ucxapp_store_writer_t *w, bool commit)
 
 bool ucxapp_store_save(const char *name, const void *data, size_t len)
 {
-    ucxapp_store_writer_t *w = ucxapp_store_begin(name);
-    if (w == NULL) {
-        return false;
+    size_t sealedLen = 0;
+    uint8_t *sealed;
+    bool ok;
+
+    if (!isSecret(name, NULL)) {
+        return saveRaw(name, data, len);
     }
-    bool ok = ucxapp_store_append(w, data, len);
-    return ucxapp_store_end(w, ok);
+    sealed = gSecure->seal(name, (const uint8_t *)data, len, &sealedLen);
+    ok = sealed != NULL && saveRaw(name, sealed, sealedLen);
+    free(sealed);
+    return ok;
 }
 
 /* Opens for reading; a file still under its old name (u-connectClientApp.wifi -> ucxapp.wifi) is moved first. */
@@ -196,6 +253,31 @@ static void *openForRead(const char *name)
 }
 
 uint8_t *ucxapp_store_load(const char *name, size_t *outLen)
+{
+#ifdef UCXAPP_LITE
+    return ucxapp_store_load_raw(name, outLen);
+#else
+    size_t len = 0;
+    bool mayBeSealed = false;
+    uint8_t *data = ucxapp_store_load_raw(name, &len);
+
+    (void)isSecret(name, &mayBeSealed);
+    if (data != NULL && mayBeSealed && !gSecure->open(name, data, &len)) {
+        memset(data, 0, len);
+        free(data);
+        data = NULL;
+    }
+    if (data != NULL) {
+        data[len] = '\0';
+        if (outLen != NULL) {
+            *outLen = len;
+        }
+    }
+    return data;
+#endif
+}
+
+uint8_t *ucxapp_store_load_raw(const char *name, size_t *outLen)
 {
     void *h = openForRead(name);
     if (h == NULL) {

@@ -141,7 +141,44 @@ static int cmdCaCreate(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("created local CA tls-ca.crt / tls-ca.key\n");
-    ucxapp_print("install tls-ca.crt as a trusted root on clients (utils.tls.pem ca prints it)\n");
+    ucxapp_print("utils.tls.ca.trust makes this computer trust it (no browser warning)\n");
+    return UCXAPP_OK;
+}
+
+static int cmdCaTrust(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    char err[160] = "";
+    bool check = argc == 2 && strcmp(argv[1], "check") == 0;
+    if (argc != 1 && !check) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_trust_t t = ucxapp_tls_ca_trust(false, err, sizeof(err));
+    if (err[0] != '\0') {
+        ucxapp_print("ERROR: tls-ca: %s (utils.tls.ca.create first)\n", err);
+        return UCXAPP_ERR_FAILED;
+    }
+    if (t == UCXAPP_TRUST_UNSUPPORTED) {
+        ucxapp_print("cannot install it here; import tls-ca.crt (utils.tls.pem ca) as a trusted root:\n");
+        ucxapp_print("  Linux:   sudo cp tls-ca.crt /usr/local/share/ca-certificates/ucxapp-ca.crt && sudo update-ca-certificates\n");
+        ucxapp_print("  macOS:   security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db tls-ca.crt\n");
+        ucxapp_print("  Firefox: Settings > Certificates > Authorities > Import\n");
+        return check ? UCXAPP_ERR_FAILED : UCXAPP_OK;
+    }
+    if (t == UCXAPP_TRUST_YES) {
+        ucxapp_print("local CA is trusted on this computer\n");
+        return UCXAPP_OK;
+    }
+    if (check) {
+        ucxapp_print("local CA is not trusted on this computer (utils.tls.ca.trust)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("adding the local CA to your trusted roots, confirm the Windows dialog...\n");
+    if (ucxapp_tls_ca_trust(true, err, sizeof(err)) != UCXAPP_TRUST_YES) {
+        ucxapp_print("ERROR: not added (dialog declined?)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("local CA is trusted; restart the browser if a page is still open\n");
     return UCXAPP_OK;
 }
 
@@ -255,6 +292,7 @@ static int cmdRemove(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gTlsCmds[] = {
     { "utils.tls.ca.create",     "[cn] [force]",            "Create the local CA (ECDSA P-256) that signs the app certificates", 0, cmdCaCreate },
+    { "utils.tls.ca.trust",      "[check]",                 "Trust the local CA on this computer (Windows user root store; prints the steps elsewhere)", UCXAPP_CMD_DANGER, cmdCaTrust },
     { "utils.tls.server.create", "<name> <host> [...]",  "Create a server certificate for the given host names / IPv4 addresses", 0, cmdServerCreate },
     { "utils.tls.client.create", "<name>",                  "Create a client certificate (for tls clientauth)", 0, cmdClientCreate },
     { "utils.tls.list",          "",                        "List the app certificates", 0, cmdList },

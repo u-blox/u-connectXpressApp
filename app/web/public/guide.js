@@ -52,7 +52,8 @@
   function show(i) {
     at = i;
     unlight();
-    const [sel, title, text] = STEPS[i], offer = !i || i === STEPS.length - 1;
+    const dm = document.getElementById('demo');
+    const [sel, title, text] = STEPS[i], offer = (!i || i === STEPS.length - 1) && !!dm && !dm.hidden;
     const found = sel ? [...document.querySelectorAll(sel)].filter(e => e.offsetParent) : [];
     if (!box) {
       box = document.createElement('div');
@@ -90,7 +91,7 @@
     const v = document.getElementById('wsv'), go = () => {
       const c = document.querySelector('#vw button[data-v="2"]'), d = document.getElementById('demo');
       if (c) c.click();
-      if (d) d.click();
+      if (d && !d.hidden) d.click();
     };
     if (!v || v.hidden) { go(); return; }
     v.click();

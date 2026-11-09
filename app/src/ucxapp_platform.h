@@ -106,6 +106,19 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
 char *ucxapp_platform_https_get_text(const char *host, const char *path);
 char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize);
 
+typedef enum { UCXAPP_TRUST_UNSUPPORTED, UCXAPP_TRUST_NO, UCXAPP_TRUST_YES } ucxapp_trust_t;
+
+/** Is the DER certificate a trusted root of this user? With add, installs it first (the OS asks the user to confirm). */
+ucxapp_trust_t ucxapp_platform_root_trust(const uint8_t *der, size_t len, bool add);
+
+/** Wraps (protect) or unwraps the store's install key with a key the OS keeps for this user (Windows DPAPI);
+    false where the platform has none, or when the data does not unwrap. */
+bool ucxapp_platform_key_protect(bool protect, const uint8_t *in, size_t len, uint8_t *out, size_t outSize,
+                                 size_t *outLen);
+
+/** Flash readout protection level (STM32 RDP 0, 1 or 2); -1 where there is none. */
+int ucxapp_platform_readout_protection(void);
+
 /** Extracts a ZIP archive into destDir (created if missing) using the OS tools. */
 bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir);
 

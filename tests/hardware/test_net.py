@@ -181,8 +181,10 @@ def test_wifi_portal_logs_in_to_fake_hotel_page(app_exe, port_a):
 
 
 @pytest.mark.hardware
-def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
-    """web.start https with a local-CA certificate; the PC trusts the CA, uploads, lists and downloads a file."""
+@pytest.mark.parametrize("token", ["", "hw-token"])
+def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path, token):
+    """web.start https with a local-CA certificate; the PC trusts the CA, uploads, lists and downloads a file.
+    Without a token argument HTTPS needs none; with one, a request without it is refused."""
     import ssl
     import urllib.error
     import urllib.request
@@ -191,7 +193,8 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
     ip_a, _ = _join_wifi(app_exe, port_a, wifi)
     made = _run(app_exe, port_a, "utils.tls.ca.create", f"utils.tls.server.create server {ip_a}", cwd=tmp_path)
     assert made.returncode == 0, made.stdout
-    proc = subprocess.Popen(_args(app_exe, port_a, wifi, "web.start 8443 hw-token https server") + ["--shell"],
+    proc = subprocess.Popen(_args(app_exe, port_a, wifi, f"web.start 8443 {token} https server".replace("  ", " "))
+                            + ["--shell"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             errors="replace", cwd=tmp_path)
     lines = queue.Queue()
@@ -199,8 +202,9 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
     ctx = None
     base = f"https://{ip_a}:8443"
 
-    def call(path, data=None):
-        req = urllib.request.Request(base + path, data, {"X-Token": "hw-token"}, method="POST" if data else "GET")
+    def call(path, data=None, tok=token):
+        req = urllib.request.Request(base + path, data, {"X-Token": tok} if tok else {},
+                                     method="POST" if data else "GET")
         try:
             with urllib.request.urlopen(req, context=ctx, timeout=20) as r:
                 return r.status, r.read()
@@ -221,6 +225,8 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path):
         except OSError as e:
             pytest.skip(f"this PC cannot reach the module at {ip_a}: {e}")
         assert status == 200
+        if token:
+            assert call("/api/files", tok="")[0] == 403
         payload = bytes(range(256)) * 4
         assert call("/api/upload?n=hw.bin&o=0&e=1", payload)[0] == 200
         assert b'"hw.bin"' in call("/api/files")[1]

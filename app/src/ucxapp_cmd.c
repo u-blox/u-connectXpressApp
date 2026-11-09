@@ -155,8 +155,12 @@ bool ucxapp_module_has_thread(ucxapp_t *app)
 
 bool ucxapp_cmd_needs_wifi(const char *name)
 {
+#ifdef UCXAPP_LITE   /* the lite command set has no net, MQTT, HTTP or web groups */
+    static const char *const kGroups[] = { "wifi.", "sock." };
+#else
     static const char *const kGroups[] = { "wifi.", "sock.", "mqtt.", "http.", "net.", "cert.", "tftp.", "web.",
                                            "coap.", "dtls.", "mdns." };
+#endif
 
     for (size_t i = 0; i < sizeof(kGroups) / sizeof(kGroups[0]); i++) {
         if (strncmp(name, kGroups[i], strlen(kGroups[i])) == 0) {

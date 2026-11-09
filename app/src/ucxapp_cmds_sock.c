@@ -351,7 +351,9 @@ static int closeAll(ucxapp_t *app)
 
     uCxSocketListStatusBegin(app->ucx);
     while (uCxSocketListStatusGetNext(app->ucx, &status) && count < (int)(sizeof(handles) / sizeof(handles[0]))) {
-        handles[count++] = status.socket_handle;
+        if (ucxapp_sock_listed(&status)) {
+            handles[count++] = status.socket_handle;
+        }
     }
     uCxEnd(app->ucx);
     for (int i = 0; i < count; i++) {
@@ -564,6 +566,9 @@ static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
 
     uCxSocketListStatusBegin(app->ucx);
     while (uCxSocketListStatusGetNext(app->ucx, &status)) {
+        if (!ucxapp_sock_listed(&status)) {
+            continue;
+        }
         count++;
         ucxapp_print("%csocket %d: %s, %s\n", status.socket_handle == cur ? '*' : ' ', (int)status.socket_handle,
                      status.protocol == U_SOCKET_PROTOCOL_TCP ? "TCP" : "UDP",

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/pk.h"
@@ -11,12 +12,17 @@
 #include "psa/crypto.h"
 
 #include "ucxapp_store.h"
+#include "ucxapp_platform.h"
 #include "u_cx_socket.h"
 #include "ucxapp_cmd.h"
 
 #define IO_CHUNK   1460   /* AT+USORB/USOWB maximum; ucxapp_sock_read/write drop to 1000 on FW 3.2 */
 #define PEM_MAX    4096
 #define MAX_SANS   8
+#define CA_DAYS     7305   /* 20 years */
+#define CLIENT_DAYS 3652   /* 10 years */
+#define SERVER_DAYS 825    /* the most Apple accepts for TLS server certificates */
+#define RENEW_DAYS  30
 
 struct ucxapp_tls_server {
     mbedtls_ssl_config conf;
@@ -113,8 +119,32 @@ static int generateKey(mbedtls_pk_context *pk)
     return rc;
 }
 
-/* Validity starts at the build date: no target needs a real-time clock. */
-static void validity(char notBefore[32], char notAfter[32], int years)
+/* Days since 1970-01-01 (H. Hinnant's days_from_civil / civil_from_days). */
+static int64_t daysFromCivil(int y, int m, int d)
+{
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    return era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+}
+
+static void formatDay(int64_t days, char out[32])
+{
+    int64_t z = days + 719468;
+    int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    int64_t doe = z - era * 146097;
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    int64_t mp = (5 * doy + 2) / 153;
+    int d = (int)(doy - (153 * mp + 2) / 5 + 1);
+    int m = (int)(mp < 10 ? mp + 3 : mp - 9);
+    int y = (int)(yoe + era * 400 + (m <= 2));
+    snprintf(out, 32, "%04d%02d%02d000000", y, m, d);
+}
+
+/* Today when the clock is set, else the build date: boards need no real-time clock. */
+static int64_t today(void)
 {
     static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
     const char *date = __DATE__; /* "Mmm dd yyyy" */
@@ -124,10 +154,16 @@ static void validity(char notBefore[32], char notAfter[32], int years)
             month = m + 1;
         }
     }
-    int day = atoi(date + 4);
-    int year = atoi(date + 7);
-    snprintf(notBefore, 32, "%04d%02d%02d000000", year, month, day);
-    snprintf(notAfter, 32, "%04d%02d%02d000000", year + years, month, day);
+    int64_t build = daysFromCivil(atoi(date + 7), month, atoi(date + 4));
+    int64_t now = (int64_t)time(NULL) / 86400;
+    return now > build ? now : build;
+}
+
+static void validity(char notBefore[32], char notAfter[32], int days)
+{
+    int64_t start = today();
+    formatDay(start, notBefore);
+    formatDay(start + days, notAfter);
 }
 
 static bool loadPair(const char *name, mbedtls_x509_crt *crt, mbedtls_pk_context *key, char *err, size_t errLen)
@@ -135,6 +171,10 @@ static bool loadPair(const char *name, mbedtls_x509_crt *crt, mbedtls_pk_context
     char file[96];
     size_t len = 0;
     int rc;
+    if (!cryptoReady()) {
+        setErr(err, errLen, "crypto init failed", 0);
+        return false;
+    }
     ucxapp_tls_cert_file(name, file, sizeof(file));
     uint8_t *pem = ucxapp_store_load(file, &len);
     if (!pem) {
@@ -201,7 +241,7 @@ static bool issue(const char *name, const char *subject, const char *issuerName,
     }
     serial[0] &= 0x7F;
     serial[0] |= 0x01;
-    validity(notBefore, notAfter, ca ? 20 : 10);
+    validity(notBefore, notAfter, ca ? CA_DAYS : client ? CLIENT_DAYS : SERVER_DAYS);
 
     mbedtls_x509write_crt_set_version(&crt, MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(&crt, MBEDTLS_MD_SHA256);
@@ -216,6 +256,15 @@ static bool issue(const char *name, const char *subject, const char *issuerName,
                                                             : MBEDTLS_X509_KU_DIGITAL_SIGNATURE)) != 0) {
         setErr(err, errLen, "certificate fields", rc);
         goto out;
+    }
+    if (!ca) {
+        static unsigned char kServerAuth[] = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01 };
+        static unsigned char kClientAuth[] = { 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02 };
+        mbedtls_asn1_sequence eku = { { MBEDTLS_ASN1_OID, sizeof(kServerAuth), client ? kClientAuth : kServerAuth }, NULL };
+        if ((rc = mbedtls_x509write_crt_set_ext_key_usage(&crt, &eku)) != 0) {
+            setErr(err, errLen, "extended key usage", rc);
+            goto out;
+        }
     }
 #if defined(PSA_WANT_ALG_SHA_1)
     mbedtls_x509write_crt_set_subject_key_identifier(&crt);
@@ -345,15 +394,19 @@ bool ucxapp_tls_web_cert(const char *ip, bool *created, char *err, size_t errLen
     mbedtls_x509_crt crt;
     char subject[128] = "", want[80], file[96];
     const char *sans[1] = { ip };
+    bool current = false;
 
     *created = false;
     mbedtls_x509_crt_init(&crt);
     if (loadPair(UCXAPP_TLS_WEB_NAME, &crt, NULL, NULL, 0)) {
         (void)mbedtls_x509_dn_gets(subject, sizeof(subject), &crt.subject);
+        /* Renew before it expires, and replace certificates from older versions (no EKU, 10 years) */
+        current = mbedtls_x509_crt_has_ext_type(&crt, MBEDTLS_X509_EXT_EXTENDED_KEY_USAGE) &&
+                  daysFromCivil(crt.valid_to.year, crt.valid_to.mon, crt.valid_to.day) > today() + RENEW_DAYS;
     }
     mbedtls_x509_crt_free(&crt);
     snprintf(want, sizeof(want), "CN=%s,", ip);
-    if (strncmp(subject, want, strlen(want)) == 0) {
+    if (current && strncmp(subject, want, strlen(want)) == 0) {
         return true;
     }
     ucxapp_tls_cert_file(UCXAPP_TLS_CA_NAME, file, sizeof(file));
@@ -362,6 +415,18 @@ bool ucxapp_tls_web_cert(const char *ip, bool *created, char *err, size_t errLen
     }
     *created = ucxapp_tls_create_cert(UCXAPP_TLS_WEB_NAME, false, sans, 1, err, errLen);
     return *created;
+}
+
+ucxapp_trust_t ucxapp_tls_ca_trust(bool add, char *err, size_t errLen)
+{
+    mbedtls_x509_crt crt;
+    ucxapp_trust_t result = UCXAPP_TRUST_NO;
+    mbedtls_x509_crt_init(&crt);
+    if (loadPair(UCXAPP_TLS_CA_NAME, &crt, NULL, err, errLen)) {
+        result = ucxapp_platform_root_trust(crt.raw.p, crt.raw.len, add);
+    }
+    mbedtls_x509_crt_free(&crt);
+    return result;
 }
 
 bool ucxapp_tls_describe(const char *name, char *out, size_t outLen)

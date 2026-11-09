@@ -3,6 +3,7 @@
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -727,13 +728,14 @@ def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
     store = _store(tmp_path)
     for name in ("ca", "server", "alice"):
         assert (store / f"tls-{name}.crt").read_text().startswith("-----BEGIN CERTIFICATE-----")
-        assert "PRIVATE KEY-----" in (store / f"tls-{name}.key").read_text()
+        sealed = (store / f"tls-{name}.key").read_bytes()
+        assert sealed.startswith(b"UCXS\x01") and b"PRIVATE KEY" not in sealed   # secure section
     assert re.search(r"^server\s+CN=localhost, O=u-blox ucxapp \| issuer CN=ucxapp-local-ca", out.stdout, re.M)
     assert "| SAN" in out.stdout
 
-    _handshake(store / "tls-ca.crt", store / "tls-server.crt", store / "tls-server.key", "localhost")
-    _handshake(store / "tls-ca.crt", store / "tls-server.crt", store / "tls-server.key", "localhost",
-               client_cert=(store / "tls-alice.crt", store / "tls-alice.key"))
+    server = _files(app_exe, tmp_path, "server")
+    _handshake(store / "tls-ca.crt", *server, "localhost")
+    _handshake(store / "tls-ca.crt", *server, "localhost", client_cert=_files(app_exe, tmp_path, "alice"))
 
 
 def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
@@ -757,6 +759,29 @@ def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
     assert "tls-ca.crt not found" in out.stdout
 
 
+def test_tls_ca_trust_check_never_installs(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.trust check")
+    assert out.returncode == 1 and "utils.tls.ca.create first" in out.stdout, out.stdout
+
+    # A fresh CA is unknown to the OS; check only reports, it must not open the Windows dialog.
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "utils.tls.ca.trust check")
+    assert out.returncode == 1, out.stdout
+    if sys.platform == "win32":
+        assert "not trusted on this computer" in out.stdout, out.stdout
+    else:
+        assert "update-ca-certificates" in out.stdout and "security add-trusted-cert" in out.stdout, out.stdout
+
+    # A new process reads the stored CA before anything else has started the crypto library.
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.trust check")
+    assert "bad certificate" not in out.stdout, out.stdout
+    if sys.platform == "win32":
+        assert "not trusted on this computer" in out.stdout, out.stdout
+    out = _run_in(app_exe, tmp_path, "utils.tls.list")
+    assert out.returncode == 0 and re.search(r"^ca\s+CN=ucxapp-local-ca", out.stdout, re.M), out.stdout
+
+    assert _run_in(app_exe, tmp_path, "utils.tls.ca.trust extra").returncode == 1
+
+
 def test_https_needs_a_device(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "web.start https")
     assert out.returncode == 1
@@ -774,18 +799,25 @@ def tls_dir(app_exe, tmp_path):
     return tmp_path
 
 
-def _files(d, name):
-    return _store(d) / f"tls-{name}.crt", _store(d) / f"tls-{name}.key"
+def _files(app_exe, d, name):
+    """Certificate and key files for Python's ssl; the stored key is sealed, so the app prints it as PEM."""
+    key = d / f"{name}-key.pem"
+    if not key.exists():
+        out = _run_in(app_exe, d, f"utils.tls.pem {name} key")
+        pem = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", out.stdout, re.S)
+        assert pem, out.stdout
+        key.write_text(pem.group(0) + "\n")
+    return _store(d) / f"tls-{name}.crt", key
 
 
-def test_tls_server_certificate_is_valid_for_its_names_only(tls_dir):
+def test_tls_server_certificate_is_valid_for_its_names_only(app_exe, tls_dir):
     import ssl
 
     ca = _store(tls_dir) / "tls-ca.crt"
     for host in ("gnss.local", "192.168.1.42"):
-        assert not _try_handshake(ca, *_files(tls_dir, "server"), host), host
+        assert not _try_handshake(ca, *_files(app_exe, tls_dir, "server"), host), host
     for host in ("other.local", "192.168.1.43"):
-        errors = _try_handshake(ca, *_files(tls_dir, "server"), host)
+        errors = _try_handshake(ca, *_files(app_exe, tls_dir, "server"), host)
         assert any(isinstance(e, ssl.SSLCertVerificationError) for e in errors), (host, errors)
 
 
@@ -801,19 +833,83 @@ def test_tls_certificate_contents(tls_dir):
     assert ("commonName", "rover") in [rdn[0] for rdn in rover["subject"]]
     year = lambda c, k: int(c[k].split()[3])   # noqa: E731
     assert year(ca, "notAfter") - year(ca, "notBefore") == 20
-    assert year(server, "notAfter") - year(server, "notBefore") == 10
+    assert year(rover, "notAfter") - year(rover, "notBefore") == 10
+    # Apple rejects TLS server certificates valid for more than 825 days, even from a user-trusted root
+    days = (ssl.cert_time_to_seconds(server["notAfter"]) - ssl.cert_time_to_seconds(server["notBefore"])) / 86400
+    assert days == 825, days
     assert server["serialNumber"] != rover["serialNumber"]
+
+
+def _der(path):
+    import ssl
+
+    return ssl.PEM_cert_to_DER_cert(Path(path).read_text())
+
+
+EKU_OID = bytes.fromhex("0603551d25")
+SERVER_AUTH = bytes.fromhex("06082b06010505070301")
+CLIENT_AUTH = bytes.fromhex("06082b06010505070302")
+
+
+def test_tls_certificates_carry_the_usage_browsers_require(tls_dir):
+    """macOS/iOS and strict verifiers need serverAuth on server certificates; client certificates get clientAuth."""
+    ca, server, rover = (_der(_store(tls_dir) / f"tls-{n}.crt") for n in ("ca", "server", "rover"))
+    assert EKU_OID not in ca
+    assert EKU_OID in server and SERVER_AUTH in server and CLIENT_AUTH not in server
+    assert EKU_OID in rover and CLIENT_AUTH in rover and SERVER_AUTH not in rover
+
+
+def test_tls_certificates_pass_openssl_strict_checks(tls_dir):
+    import shutil
+
+    openssl = shutil.which("openssl")
+    if not openssl:
+        pytest.skip("openssl is not installed")
+    store = _store(tls_dir)
+    for purpose, name, extra in (("sslserver", "server", ["-verify_ip", "192.168.1.42"]),
+                                 ("sslserver", "server", ["-verify_hostname", "gnss.local"]),
+                                 ("sslclient", "rover", [])):
+        out = subprocess.run([openssl, "verify", "-x509_strict", "-purpose", purpose, *extra,
+                              "-CAfile", str(store / "tls-ca.crt"), str(store / f"tls-{name}.crt")],
+                             capture_output=True, text=True, timeout=30)
+        assert out.returncode == 0 and ": OK" in out.stdout, (purpose, extra, out.stdout, out.stderr)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows certificate engine")
+def test_tls_server_certificate_passes_the_windows_chain_engine(tls_dir):
+    """The engine Edge and Chrome use on Windows builds the chain to the local CA with serverAuth; the only complaint
+    allowed is the untrusted root, which utils.tls.ca.trust removes."""
+    store = _store(tls_dir)
+    script = (
+        "$ca = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $args[0];"
+        "$leaf = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $args[1];"
+        "$ch = New-Object Security.Cryptography.X509Certificates.X509Chain;"
+        "$ch.ChainPolicy.RevocationMode = 'NoCheck';"
+        "$ch.ChainPolicy.VerificationFlags = 'AllowUnknownCertificateAuthority';"
+        "[void]$ch.ChainPolicy.ExtraStore.Add($ca);"
+        "[void]$ch.ChainPolicy.ApplicationPolicy.Add((New-Object Security.Cryptography.Oid '1.3.6.1.5.5.7.3.1'));"
+        "$ok = $ch.Build($leaf);"
+        "'OK=' + $ok + ' LEN=' + $ch.ChainElements.Count + ' ROOT=' + $ch.ChainElements[$ch.ChainElements.Count-1]"
+        ".Certificate.Thumbprint + ' CA=' + $ca.Thumbprint;"
+        "$ch.ChainStatus | ForEach-Object { 'STATUS=' + $_.Status }")
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", "& {" + script + "}",
+                          str(store / "tls-ca.crt"), str(store / "tls-server.crt")],
+                         capture_output=True, text=True, timeout=60)
+    assert "OK=True LEN=2" in out.stdout, out.stdout + out.stderr
+    root, ca = re.search(r"ROOT=(\w+) CA=(\w+)", out.stdout).groups()
+    assert root == ca, out.stdout
+    assert set(re.findall(r"STATUS=(\w+)", out.stdout)) <= {"UntrustedRoot"}, out.stdout
 
 
 def test_tls_client_auth_accepts_only_certificates_from_the_ca(app_exe, tls_dir, tmp_path_factory):
     ca = _store(tls_dir) / "tls-ca.crt"
-    server = _files(tls_dir, "server")
-    assert not _try_handshake(ca, *server, "gnss.local", client_cert=_files(tls_dir, "rover"))
+    server = _files(app_exe, tls_dir, "server")
+    assert not _try_handshake(ca, *server, "gnss.local", client_cert=_files(app_exe, tls_dir, "rover"))
     assert _try_handshake(ca, *server, "gnss.local", require_client=ca)   # no client certificate
 
     other = tmp_path_factory.mktemp("other")
     assert _run_in(app_exe, other, "utils.tls.ca.create", "utils.tls.client.create mallory").returncode == 0
-    assert _try_handshake(ca, *server, "gnss.local", client_cert=_files(other, "mallory"), require_client=ca)
+    assert _try_handshake(ca, *server, "gnss.local", client_cert=_files(app_exe, other, "mallory"), require_client=ca)
 
 
 def test_tls_ca_force_invalidates_old_certificates(app_exe, tls_dir):
@@ -822,9 +918,10 @@ def test_tls_ca_force_invalidates_old_certificates(app_exe, tls_dir):
     assert out.returncode == 0, out.stdout
     assert (_store(tls_dir) / "tls-ca.crt").read_text() != old
     assert re.search(r"^ca\s+CN=my-ca", out.stdout, re.M)
-    assert _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+    assert _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(app_exe, tls_dir, "server"), "gnss.local")
     assert _run_in(app_exe, tls_dir, "utils.tls.server.create server gnss.local").returncode == 0
-    assert not _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+    (tls_dir / "server-key.pem").unlink()
+    assert not _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(app_exe, tls_dir, "server"), "gnss.local")
 
 
 def test_tls_pem_prints_the_key_only_when_asked(app_exe, tls_dir):

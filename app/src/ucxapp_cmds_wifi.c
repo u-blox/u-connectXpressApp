@@ -1,9 +1,10 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_store.h"
-#ifdef UCXAPP_CRYPTO
+#ifdef UCXAPP_SECURE
 #include "ucxapp_crypt.h"
-#else
+#endif
+#ifndef UCXAPP_CRYPTO
 #include "ucx_obfuscate.h"
 #endif
 #include "u_port.h"
@@ -455,14 +456,14 @@ static int cmdWifiPeap(ucxapp_t *app, int argc, char *argv[])
 #endif
 
 /* ---- saved profiles: one "name<TAB>ssid<TAB>sealed password" line each (older files add an ignored field).
-   Host builds seal with AES-256-GCM (ucxapp_crypt.c); embedded builds and older files use the XOR+hex form. ---- */
+   UCXAPP_SECURE builds seal with AES-256-GCM (ucxapp_secure.c); the lite boards use the XOR+hex form. ---- */
 
 #define PROFILES_FILE  "ucxapp.wifi"
 #define MAX_PROFILES   16
 #define NAME_LEN       32
 #define SSID_LEN       33
 #define PASS_LEN       64
-#ifdef UCXAPP_CRYPTO
+#ifdef UCXAPP_SECURE
 #define OBF_LEN        UCXAPP_SECRET_LEN(PASS_LEN)
 #else
 #define OBF_LEN        (PASS_LEN * 2 + 1)
@@ -480,11 +481,14 @@ static bool fieldOk(const char *s, size_t maxLen)
     return s[0] != '\0' && strlen(s) < maxLen && strpbrk(s, "\t\r\n") == NULL;
 }
 
+static bool saveProfiles(const profile_t *list, int count);
+
 static int loadProfiles(profile_t *list)
 {
     size_t len = 0;
     uint8_t *data = ucxapp_store_load(PROFILES_FILE, &len);
     int count = 0;
+    bool legacy = false;
     char *line = (char *)data;
 
     if (data == NULL) {
@@ -509,14 +513,19 @@ static int loadProfiles(profile_t *list)
             if (strlen(line) < NAME_LEN && strlen(tab1 + 1) < SSID_LEN && strlen(tab2 + 1) < OBF_LEN) {
                 snprintf(p->name, sizeof(p->name), "%s", line);
                 snprintf(p->ssid, sizeof(p->ssid), "%s", tab1 + 1);
-#ifdef UCXAPP_CRYPTO
+#ifdef UCXAPP_SECURE
                 p->password[0] = '\0';
                 if (tab2[1] != '\0' && strncmp(tab2 + 1, UCXAPP_SECRET_PREFIX, strlen(UCXAPP_SECRET_PREFIX)) != 0) {
+#ifdef UCXAPP_CRYPTO
                     ucxapp_print("WARNING: profile %s has an old password format; add it again\n", p->name);
                     line = next;
                     continue;
-                }
-                if (tab2[1] != '\0' && !ucxapp_secret_open(tab2 + 1, p->password, sizeof(p->password))) {
+#else
+                    /* obfuscated by older board firmware: sealed below */
+                    deobfuscatePassword(tab2 + 1, p->password, sizeof(p->password));
+                    legacy = true;
+#endif
+                } else if (tab2[1] != '\0' && !ucxapp_secret_open(tab2 + 1, p->password, sizeof(p->password))) {
                     ucxapp_print("WARNING: cannot decrypt the password of profile %s (storage/ucxapp.key missing or changed)\n",
                                  p->name);
                 }
@@ -529,6 +538,9 @@ static int loadProfiles(profile_t *list)
         line = next;
     }
     free(data);
+    if (legacy) {
+        (void)saveProfiles(list, count);
+    }
     return count;
 }
 
@@ -544,7 +556,7 @@ static bool saveProfiles(const profile_t *list, int count)
         char obf[OBF_LEN];
         size_t used = strlen(text);
 
-#ifdef UCXAPP_CRYPTO
+#ifdef UCXAPP_SECURE
         if (!ucxapp_secret_seal(list[i].password, obf, sizeof(obf))) {
             ucxapp_print("ERROR: cannot encrypt the password of profile %s\n", list[i].name);
             free(text);
@@ -560,10 +572,10 @@ static bool saveProfiles(const profile_t *list, int count)
     return ok;
 }
 
-/* Boards without UCXAPP_CRYPTO only obfuscate: say so where the password is saved, not just in the README. */
+/* Lite boards only obfuscate: say so where the password is saved, not just in the README. */
 static void warnWeakStore(const char *password)
 {
-#if defined(UCXAPP_CRYPTO) || defined(UCXAPP_LITE)   /* lite (128 KB flash): documented in docs/SECURITY.md */
+#if defined(UCXAPP_SECURE) || defined(UCXAPP_LITE)   /* lite (128 KB flash): documented in docs/SECURITY.md */
     (void)password;
 #else
     if (password != NULL && password[0] != '\0') {

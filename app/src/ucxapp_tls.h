@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "u_cx.h"
+#include "ucxapp_platform.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,9 @@ void ucxapp_tls_key_file(const char *name, char *out, size_t outLen);
 /** Makes sure tls-web.crt/.key exist for `ip` (its common name): creates the local CA when there is none and
  *  (re)issues the certificate when it is missing or was made for another address. *created tells which. */
 bool ucxapp_tls_web_cert(const char *ip, bool *created, char *err, size_t errLen);
+
+/** Is the local CA a trusted root on this computer? With add, installs it (the OS asks the user). */
+ucxapp_trust_t ucxapp_tls_ca_trust(bool add, char *err, size_t errLen);
 
 typedef struct ucxapp_tls_server ucxapp_tls_server_t;
 typedef struct ucxapp_tls_conn ucxapp_tls_conn_t;

@@ -372,6 +372,15 @@ def test_socket_open_connect_list_close(app_exe, wifi_module):
     assert out.returncode == 0, out.stdout + str(log)
 
 
+def test_socket_list_skips_the_stale_entry_of_nora_w36_3_6(app_exe, wifi_module):
+    # NORA-W36 3.6.0 can keep listing "+USOST:0,0,0" (protocol 0) after a socket closed
+    wifi_module.commands["AT+USOST?"] = ["+USOST:0,6,2", "+USOST:0,0,0", "OK"]
+    out = _run(app_exe, wifi_module.port, "sock.list", "conn.status")
+    assert "AT+USOST?" in wifi_module.log, wifi_module.log
+    assert "1 socket(s)" in out.stdout and "UDP" not in out.stdout, out.stdout
+    assert "sock 0  udp" not in out.stdout, out.stdout
+
+
 def test_wifi_ap_enable_status_disable_on_the_virtual_module(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap secret123 11",
                "wifi.ap.status", "wifi.ap.disable")

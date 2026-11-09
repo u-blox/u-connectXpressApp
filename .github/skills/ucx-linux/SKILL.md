@@ -19,6 +19,7 @@ description: Build and run u-connectXpressApp on Linux to test and configure a u
 - Serial access: add your user to the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again).
 - Connect to a module: `dev.connect /dev/ttyUSB0` in the shell, or pass the port on the command line.
 - Script commands non-interactively with `--exec "<command>"`; type `help` for the full list (see `COMMANDS.md`) and `<group>.example` (e.g. `gnss.example`) for worked examples.
+- Private keys in `storage/` (`*.key`) are sealed with AES-256-GCM under `storage/ucxapp.key`, which is readable only by your user (no OS key wrapping on Linux). Keep `storage/` together; export a key with `utils.tls.pem <name> key`. `utils.secure` lists the key files and fails if one is plain.
 - `./ucxapp.py --coverage` builds an instrumented binary in `~/ucxapp-coverage`, runs the offline app tests in parallel (pytest-xdist) and writes per-file line coverage to `build/coverage.txt`.
 
 ## Module documentation

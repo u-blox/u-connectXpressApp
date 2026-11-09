@@ -223,7 +223,7 @@ class Mock(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             for name, data in (("out", '"ready\\n\\u001b[92mgreen\\u001b[0m\\n"'), ("evt", '"wifi:link up"'),
-                               ("state", '"Wi-Fi up | BLE - | Advertising on | Listening 2 | '
+                               ("state", '"Wi-Fi up | BLE - | Sockets 1* +2 | Advertising on | Listening 2 | '
                                           'Time 2030-01-02T03:04:05Z | ntp pool.ntp.org, 1 s ago | '
                                           'Loc 55.61276, 12.98625 (gnss)"')):
                 self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode())
@@ -279,10 +279,14 @@ def test_page_in_a_browser(server):
         assert page.inner_text(".chip.on >> nth=0") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
         # advertising and listening sockets get their own chips; the clock and its source go to the footer
         assert page.locator("#state .chip").all_inner_texts() == [
-            "Wi-Fi up", "BLE -", "Advertising on", "Listening 2"]
+            "Wi-Fi up", "BLE -", "Sockets 1 +2", "Advertising on", "Listening 2"]
+        # +2: sockets the app opened itself (web server); only handle 1 is offered for commands
+        assert "+N: sockets the app uses itself" in page.get_attribute("#state .chip >> text=Sockets", "title")
+        assert page.evaluate("HS.sock") == ["1*"]
         assert page.get_attribute("#state .chip >> text=Advertising on", "title") == "Run bt.adv"
         assert page.get_attribute("#state .chip >> text=Listening 2", "title") == "Run sock.list"
-        assert "* = current handle, not listening" in page.get_attribute(".chip.off", "title")
+        assert "the underlined one is used when a command leaves the handle out" in \
+            page.get_attribute(".chip.off", "title")
         # the clock keeps its text, the source is a tag (green for a network or GNSS time), the place opens a map
         assert page.text_content("#clock") == "2030-01-02T03:04:05Z / ntp pool.ntp.org"
         assert page.get_attribute("#clock .tag", "title") == "Clock source: ntp pool.ntp.org, 1 s ago"

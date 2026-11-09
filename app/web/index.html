@@ -717,14 +717,14 @@ function events(){const es=new EventSource('/events');
   [oi,li].filter(i=>i>=0).sort((a,b)=>b-a).forEach(i=>ps.splice(i,1));ps.splice(ti,2)}ps.forEach(p=>{
   const c=s.appendChild(el('span','chip '+(/( -|down|n\/a|off|unknown|disabled|detached)$/.test(p)?'off':'on'))),k=CK[p.split(' ')[0]];
   p.split(/(\d+\*)/).forEach(x=>{if(/^\d+\*$/.test(x))c.appendChild(el('u','',x.slice(0,-1)));else if(x)c.appendChild(document.createTextNode(x))});
-  if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; numbers are the open '+(p[0]==='B'?'connection':'socket')+' handles, the underlined one is used when a command leaves the handle out':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
-  if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2]==='-'?[]:m[2].split(' ')});
+  if(k){c.classList.add('ck');c.title='Run '+k+(/^(BLE|Sockets) /.test(p)?'; numbers are the open '+(p[0]==='B'?'connection':'socket')+' handles, the underlined one is used when a command leaves the handle out':'')+(/ \+\d+$/.test(p)?'; +N: sockets the app uses itself (web server, bridges)':'');c.onclick=()=>run(k)}const m=p.match(/^(BLE|Sockets) (.+)$/);
+  if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2].split(' ').filter(x=>x!=='-'&&x[0]!=='+')});
   if(!sessionStorage.getItem('ucxs')&&!/^Wi-Fi -|no module/.test(raw)&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access token (printed by web.start)',{input:1});
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
- api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v;$('atlog').classList.toggle('on',!!j.at)}).catch(()=>{});
+ api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v;$('atlog').classList.toggle('on',!!j.at);if(j.real)$('demo').hidden=true}).catch(()=>{});
  $('atlog').onclick=()=>{const on=!$('atlog').classList.contains('on');if(busy){note('busy: '+$('busy').textContent);return}$('atlog').classList.toggle('on',on);run('app.log.at.'+(on?'on':'off'))};
  let mh=0,hh=0,sec='';const side=$('grp');
  gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1],ex=p[2]==='x';

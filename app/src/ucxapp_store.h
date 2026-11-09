@@ -57,6 +57,21 @@ bool ucxapp_store_remove(const char *name);
 /** Calls cb for every stored file (no folders); returns the count, -1 if the backend cannot list. */
 int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx);
 
+/** Secure section (ucxapp_secure.c): files it names are sealed by save/end and opened by load. */
+typedef struct {
+    /* true: name is sealed when written (a store-relative name), *mayBeSealed: data read under name may be */
+    bool (*secret)(const char *name, bool *mayBeSealed);
+    /* malloc'ed sealed copy of plain, or NULL */
+    uint8_t *(*seal)(const char *name, const uint8_t *plain, size_t len, size_t *outLen);
+    /* opens sealed data in place (plain data is left as it is); false if it does not open */
+    bool (*open)(const char *name, uint8_t *data, size_t *len);
+} ucxapp_store_secure_t;
+
+void ucxapp_store_set_secure(const ucxapp_store_secure_t *secure);
+
+/** Reads a whole blob as stored, without opening sealed data (caller frees). */
+uint8_t *ucxapp_store_load_raw(const char *name, size_t *outLen);
+
 /** Streaming write for large data such as downloads. Nothing appears under `name` until commit. */
 ucxapp_store_writer_t *ucxapp_store_begin(const char *name);
 bool ucxapp_store_append(ucxapp_store_writer_t *w, const void *data, size_t len);

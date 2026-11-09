@@ -93,6 +93,8 @@ def test_status_without_corrections_or_security_data(app_exe, tmp_path):
     ("gnss.cfg msg gsv 5", "gsv on UART1 and USB every 5 epoch(s)"),
     ("gnss.cfg msg sec-sig 0", "sec-sig off on UART1 and USB"),
     ("gnss.cfg msg nav-hpposllh 1", "nav-hpposllh on UART1 and USB every 1 epoch(s)"),
+    ("gnss.cfg msg nav-svin 1", "nav-svin on UART1 and USB every 1 epoch(s)"),
+    ("gnss.cfg msg nav-relposned 1", "nav-relposned on UART1 and USB every 1 epoch(s)"),
     ("gnss.cfg save", "configuration saved"),
     ("gnss.cfg reset", "configuration reset to the factory defaults"),
 ])
@@ -164,4 +166,130 @@ def test_pointperfect_bridge_offline(app_exe, tmp_path, command, message):
 
 def test_pointperfect_needs_a_receiver(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "gnss.bridge pointperfect my-client")
+    assert "ERROR: no receiver open (use gnss.open)" in out.stdout, out.stdout
+
+
+# ---- gnss.setup: standard receiver, RTK rover and RTK base station ----
+
+def _crc24q(data):
+    crc = 0
+    for x in data:
+        crc ^= x << 16
+        for _ in range(8):
+            crc <<= 1
+            if crc & 0x1000000:
+                crc ^= 0x1864CFB
+    return crc & 0xFFFFFF
+
+
+def _rtcm(msg_type, length=12, bad=False):
+    """An RTCM3 frame of the given message number (the rest of the message zero) with its CRC-24Q."""
+    frame = bytes([0xD3, length >> 8, length & 0xFF, msg_type >> 4, (msg_type & 0xF) << 4]) + bytes(length - 2)
+    return frame + (_crc24q(frame) ^ int(bad)).to_bytes(3, "big")
+
+
+def _navsvin(dur, acc_01mm, obs, valid, active):
+    return _ubx(0x01, 0x3B, struct.pack("<B3xIIiiibbbxIIBB2x", 0, 300_000_000, dur, 350_000_000, 80_000_000,
+                                        520_000_000, 12, -5, 0, acc_01mm, obs, valid, active))
+
+
+def _monver(protver):
+    ext = f"PROTVER={protver}".encode().ljust(30, b"\0")
+    return _ubx(0x0A, 0x04, b"ROM CORE 3.01 (107888)".ljust(30, b"\0") + b"00080000".ljust(10, b"\0") + ext)
+
+
+def _no_errors(out):
+    return [line for line in out.stdout.splitlines() if line.startswith("ERROR:") and "COM255" not in line]
+
+
+@pytest.mark.parametrize(("command", "steps"), [
+    ("gnss.setup standard", ["NMEA GGA GSA GSV RMC VTG every epoch, GLL off", "UBX NAV-PVT every epoch",
+                             "base mode, high-precision NMEA and NAV-HPPOSLLH off", "RTCM3 output off"]),
+    ("gnss.setup rover", ["RTCM3 corrections in on UART1 and USB", "SPARTN corrections in (PointPerfect)",
+                          "UBX NAV-PVT, NAV-HPPOSLLH and NMEA GGA every epoch",
+                          "high-precision NMEA, RTK fixed mode, base mode off",
+                          "next: corrections with gnss.bridge ntrip"]),
+    ("gnss.setup base survey", ["survey-in for at least 120 s and 2.00 m",
+                                "RTCM 1005 1074 1084 1094 1124 every epoch, 1230 every 5",
+                                "RTCM3 out on UART1 and USB, NAV-SVIN, stationary model", "serve the corrections"]),
+    ("gnss.setup base fixed 55.612760001 -12.98625 52.1234 0.02",
+     ["fixed at 55.612760001, -12.986250000, 52.1234 m (0.0200 m)", "RTCM3 out on UART1 and USB"]),
+    ("gnss.setup base off", ["base mode and NAV-SVIN off", "RTCM3 output off"]),
+])
+def test_setup_is_acknowledged_step_by_step(app_exe, tmp_path, command, steps):
+    out = _run(app_exe, tmp_path, "gnss.virtual", command)
+    for step in steps:
+        assert step in out.stdout, out.stdout
+    assert "refused" not in out.stdout and "no answer" not in out.stdout, out.stdout
+    assert not _no_errors(out), out.stdout
+
+
+def test_base_survey_on_the_virtual_receiver_converges_and_sends_rtcm(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "gnss.virtual 55.6 13.0 10", "gnss.setup base survey 3 5", "gnss.watch 6",
+               "gnss.status")
+    assert "Base:      survey-in done after 3 s, mean accuracy 5.000 m; RTCM3 out: 1005 (" in out.stdout, out.stdout
+    assert re.search(r"Messages:  \d+ NMEA, \d+ UBX, \d+ RTCM3, 0 bad", out.stdout), out.stdout
+    keep = re.search(r"keep it: gnss.setup base fixed (\S+) (\S+) (\S+) 5.000", out.stdout)
+    assert keep, out.stdout
+    lat, lon, h = (float(x) for x in keep.groups())
+    assert abs(lat - 55.6) < 1e-8 and abs(lon - 13.0) < 1e-8 and abs(h - 10.0) < 1e-3, keep.group(0)
+
+
+def test_base_survey_in_progress_and_fixed_base(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "gnss.virtual 55.6 13.0 10", "gnss.setup base survey 600 0.01", "gnss.watch 2",
+               "gnss.status", "gnss.setup base fixed 55.6 13.0 10 0.02", "gnss.watch 2", "gnss.status",
+               "gnss.setup base off", "gnss.setup standard", "gnss.status")
+    assert re.search(r"Base:      survey-in running \d+ s, \d+ observations, mean accuracy [\d.]+ m; "
+                     r"no RTCM3 output yet", out.stdout), out.stdout
+    assert re.search(r"Base:      fixed position; RTCM3 out: 1005 \(\d+ frames\)", out.stdout), out.stdout
+    assert not _no_errors(out), out.stdout
+
+
+def test_replay_of_a_base_shows_survey_in_and_rtcm_messages(app_exe, tmp_path):
+    data = (_navpvt_rtk(0) + _navsvin(42, 18_500, 840, 0, 1) + _rtcm(1074) + _rtcm(1230, 8) + _rtcm(1074, bad=True)
+            + _navpvt_rtk(1))
+    (tmp_path / "base.ubx").write_bytes(data)
+    out = _run(app_exe, tmp_path, "gnss.replay base.ubx 10", "gnss.watch 2", "gnss.status")
+    assert "Base:      survey-in running 42 s, 840 observations, mean accuracy 1.850 m; RTCM3 out: 1074 1230 (" \
+        in out.stdout, out.stdout
+    assert re.search(r"\d+ RTCM3, [1-9]\d* bad", out.stdout), out.stdout   # the frame with the wrong CRC-24Q
+
+
+def test_replay_of_a_finished_survey_offers_the_fixed_position(app_exe, tmp_path):
+    (tmp_path / "done.ubx").write_bytes(_navpvt_rtk(0) + _navsvin(300, 9_000, 3000, 1, 0) + _navpvt_rtk(1))
+    out = _run(app_exe, tmp_path, "gnss.replay done.ubx 10", "gnss.watch 2", "gnss.status")
+    assert "Base:      survey-in done after 300 s, mean accuracy 0.900 m; no RTCM3 output yet" in out.stdout, out.stdout
+    assert "keep it: gnss.setup base fixed " in out.stdout, out.stdout
+
+
+def test_setup_on_a_legacy_receiver(app_exe, tmp_path):
+    (tmp_path / "m8.ubx").write_bytes(_monver("18.00") + _navpvt_rtk(0) + _navpvt_rtk(1))
+    out = _run(app_exe, tmp_path, "gnss.replay m8.ubx 10", "gnss.watch 2", "gnss.setup rover")
+    assert "ERROR: RTK needs a high-precision receiver (ZED-F9P, ZED-X20P: PROTVER 27 or later); this one has " \
+           "PROTVER 18.00" in out.stdout, out.stdout
+    out = _run(app_exe, tmp_path, "gnss.replay m8.ubx 10", "gnss.watch 2", "gnss.setup standard", timeout=90)
+    assert "standard GNSS on a PROTVER 18.00 receiver (UBX-CFG-MSG" in out.stdout, out.stdout
+    assert re.search(r"NMEA GGA\s+no answer", out.stdout), out.stdout   # a replay answers nothing
+
+
+def test_setup_without_answer_fails(app_exe, tmp_path):
+    (tmp_path / "rtk.ubx").write_bytes(b"".join(_navpvt_rtk(i) for i in range(2)))
+    out = _run(app_exe, tmp_path, "gnss.replay rtk.ubx", "gnss.setup base survey", timeout=90)
+    assert re.search(r"survey-in for at least 120 s and 2.00 m\s+no answer", out.stdout), out.stdout
+    assert "ERROR: the receiver refused part of the setup" in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("command", [
+    "gnss.setup", "gnss.setup rover x", "gnss.setup base", "gnss.setup base later", "gnss.setup base survey 0",
+    "gnss.setup base survey 60 200", "gnss.setup base survey 60 2 x", "gnss.setup base fixed 91 0 0",
+    "gnss.setup base fixed 1 2", "gnss.setup base fixed 1 200 0", "gnss.setup base fixed 1 2 3 0",
+    "gnss.setup base off now", "gnss.setup moon",
+])
+def test_setup_usage(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "gnss.virtual", command)
+    assert "usage" in out.stdout.lower(), out.stdout
+
+
+def test_setup_needs_a_receiver(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "gnss.setup standard")
     assert "ERROR: no receiver open (use gnss.open)" in out.stdout, out.stdout

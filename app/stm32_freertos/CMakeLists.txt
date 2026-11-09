@@ -114,6 +114,7 @@ if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi)$")
         ${APP_SRC}/ucxapp_ui.c
         ${APP_SRC}/u_webserver.c
         ${APP_SRC}/ucxapp_tls.c
+        ${APP_SRC}/ucxapp_secure.c
         ${APP_SRC}/ucxapp_cmds_manual.c
         ${APP_SRC}/ucxapp_cmds_conn.c
         ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_thread_freertos.c
@@ -148,7 +149,7 @@ if(UCXAPP_CAN_HW)
 endif()
 if(UCXAPP_WEB)
     target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})
-    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_WEB UCXAPP_WEB_HTTPS_ONLY ${UCXAPP_MBEDTLS_DEFINES}
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_WEB UCXAPP_WEB_HTTPS_ONLY UCXAPP_SECURE ${UCXAPP_MBEDTLS_DEFINES}
         "kManual=((const char *)kManualBytes)" API_BUF=32768 DL_CHUNK=4096)
 endif()
 # The command layer needs more heap than the examples (32 KB default); the F439ZI and F407VG have little RAM.

@@ -1,7 +1,7 @@
 #ifndef UCXAPP_CRYPT_H
 #define UCXAPP_CRYPT_H
 
-/* AES-256-GCM through PSA crypto (host builds only, they link mbedTLS). */
+/* Sealed short secrets (ucxapp_secure.c) and utils.encrypt (ucxapp_crypt.c); built where mbedTLS is linked. */
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -12,6 +12,9 @@
 #include <zephyr/sys/ring_buffer.h>
 
 #include "ucxapp_cmd.h"
+#ifdef UCXAPP_SECURE
+#include "ucxapp_secure.h"
+#endif
 #include "ucxapp_store.h"
 #include "ucxapp_zephyr.h"
 #include "u_cx_system.h"
@@ -340,6 +343,10 @@ int main(void)
                  (int)gModuleBaud);
     ucxapp_store_set_backend(&ucxapp_store_ram);
     ucxapp_print("files: RAM only (lost at reset)\n");
+#ifdef UCXAPP_SECURE
+    ucxapp_secure_set_key_store(NULL, "RAM (lost at reset)");
+    ucxapp_secure_init();
+#endif
 
     /* Menu order (ucxapp_ui.c), as in ucxapp_main.c; the examples pack must come last. */
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));
@@ -376,6 +383,9 @@ int main(void)
     ucxapp_register_web_cmds();
     ucxapp_register_manual_cmds();
     ucxapp_register_conn_cmds();
+#endif
+#ifdef UCXAPP_SECURE
+    ucxapp_register_secure_cmds();
 #endif
 #ifndef UCXAPP_LITE
     ucxapp_register_examples_cmds();

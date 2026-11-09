@@ -119,6 +119,12 @@ int32_t ucxapp_handle_current(ucxapp_handle_kind_t kind);   /* -1 if none */
 uint32_t ucxapp_handle_version(void);                       /* changes whenever a handle is added or removed */
 int ucxapp_handle_list(ucxapp_handle_kind_t kind, int32_t *out, int max);   /* oldest first; returns the count */
 
+/* NORA-W36 3.6 can list a stale "+USOST:0,0,0" (protocol 0); only TCP and UDP entries are real sockets. */
+static inline bool ucxapp_sock_listed(const uCxSocketListStatus_t *s)
+{
+    return s->protocol == U_SOCKET_PROTOCOL_TCP || s->protocol == U_SOCKET_PROTOCOL_UDP;
+}
+
 /* Command packs */
 void ucxapp_register_device_cmds(void);
 
@@ -222,6 +228,8 @@ const char *ucxapp_manual_text(void);
 /* Browser build: the page calls the web routes in the same tab and polls the events (ucxapp_cmds_web.c). */
 bool ucxapp_web_local_begin(ucxapp_t *app);
 bool ucxapp_web_running(void);
+/* A browser connection of the web page (not the listener): these come and go with every request. */
+bool ucxapp_web_client_socket(int32_t sock);
 int ucxapp_web_local_request(const char *method, const char *path, const char *query, const char *body, int len);
 const char *ucxapp_web_local_body(void);
 int ucxapp_web_local_length(void);

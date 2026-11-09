@@ -57,6 +57,10 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp
   "/* Generated from app/web/index.html by CMake; do not edit. */\nstatic const unsigned char kPageBytes[] = {\n${_ucx_page}0x00\n};\n#define kPage ((const char *)kPageBytes)\n")
 configure_file(${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h.tmp ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage.h COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html)
+# Gzip copy for browsers (Accept-Encoding: gzip): about a quarter of the bytes over the module's UART
+include(${CMAKE_CURRENT_SOURCE_DIR}/embed.cmake)
+ucxapp_embed(${CMAKE_CURRENT_SOURCE_DIR}/web/index.html ${CMAKE_CURRENT_BINARY_DIR}/ucxapp_webpage_gz.h kPageGz GZIP)
+add_compile_definitions(UCXAPP_PAGE_GZ)
 
 # The page's /icon.svg (tab icon and header logo): app/web/icon.svg as a byte array
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/web/icon.svg _ucx_ico HEX)
@@ -146,6 +150,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_cert.c
     src/ucxapp_cmds_certfile.c
     src/ucxapp_crypt.c
+    src/ucxapp_secure.c
     src/ucxapp_cmds_tls.c
     src/ucxapp_tls.c
     src/ucxapp_cmds_dtls.c
@@ -216,6 +221,7 @@ if(NOT WIN32)
 
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
     UCXAPP_CRYPTO
+    UCXAPP_SECURE
     UCXAPP_UCC_COMMIT="${UCC_COMMIT}"
     UCXAPP_UCX_MODULE="${UCX_MODULE}"
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
@@ -320,6 +326,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_cert.c
   src/ucxapp_cmds_certfile.c
   src/ucxapp_crypt.c
+  src/ucxapp_secure.c
   src/ucxapp_cmds_tls.c
   src/ucxapp_tls.c
   src/ucxapp_cmds_dtls.c
@@ -374,6 +381,7 @@ ucxapp_wrap_serial(${PORT_UART_SRC})
 target_compile_definitions(ucxapp PRIVATE
   U_PORT_WINDOWS
   UCXAPP_CRYPTO
+  UCXAPP_SECURE
   UCXAPP_UCC_COMMIT="${UCC_COMMIT}"
   UCXAPP_UCX_MODULE="${UCX_MODULE}"
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"

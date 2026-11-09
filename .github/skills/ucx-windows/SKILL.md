@@ -20,6 +20,7 @@ Always use `--detect` (or `gnss.detect`, `imu.detect`, `--list-modules`, `--list
 - Script: `ucxapp COM13 --exec "dev.info" --exec "wifi.scan"` (exit code 1 on first failure).
 - Firmware update: `--exec "fw.flash <file>"`.
 - Type `help` in the shell for all commands; see `COMMANDS.md`. `examples` lists worked examples, `<group>.example` (e.g. `gnss.example`, `wifi.example`) shows one group.
+- Private keys in `storage/` (`*.key`) are sealed with AES-256-GCM; the install key `storage/ucxapp.key` is wrapped with DPAPI for this Windows user, so a copied `storage/` folder or another user cannot open them. Export a key with `utils.tls.pem <name> key`; `utils.secure` lists the key files and fails if one is plain. Files written to absolute paths stay plain PEM.
 - `.\ucxapp --coverage` runs the offline app tests on a gcov build in WSL, in parallel (pytest-xdist), and writes line coverage to `build/coverage.txt`.
 
 ## Module documentation

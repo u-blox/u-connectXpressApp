@@ -2,13 +2,11 @@
 uploads and downloads, and the error paths of u_webserver.c, all without a browser or a network."""
 
 import subprocess
-import sys
 import time
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 TOKEN = "0123456789abcdef0123456789abcdef"
 

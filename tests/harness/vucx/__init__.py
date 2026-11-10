@@ -611,10 +611,13 @@ class Vucx:
             pass
 
     def start(self):
-        """Opens the pty and serves it in a thread; returns the port name for the app.
+        """Opens the pty and serves it in a thread; returns the port name for the app. Without ptys (Windows) the
+        module is served over TCP instead (start_tcp), which the app opens like a serial port.
 
         The tty keeps the kernel's default (cooked) settings, as a fresh /dev/ttyUSB has: ICRNL, IXON, ECHO and OPOST
         on. The app's port layer must make it raw itself, or binary data with 0x0D, 0x11 or 0x13 gets changed."""
+        if not hasattr(os, "openpty"):
+            return self.start_tcp()
         self._fd, slave = os.openpty()
         self._slave = slave
         self.port = os.ttyname(slave)
@@ -631,9 +634,9 @@ class Vucx:
                 if not select.select([self._fd], [], [], 0.1)[0]:
                     continue
                 buf += os.read(self._fd, 4096)
-            except (OSError, ValueError):   # stop() closed the pty
+                buf = self._feed(buf)
+            except (OSError, ValueError):   # stop() closed the pty, or the app did while an answer was on its way
                 return
-            buf = self._feed(buf)
 
     def start_tcp(self, port=0, host="127.0.0.1"):
         """Serves the module on a TCP port instead of a pty (any OS); returns "tcp:HOST:PORT" for the app, which
@@ -663,13 +666,13 @@ class Vucx:
             while not self._stop.is_set():
                 try:
                     chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf = self._feed(buf + chunk)
                 except socket.timeout:
                     continue
-                except OSError:
+                except OSError:   # the app left, maybe while an answer was on its way
                     break
-                if not chunk:
-                    break
-                buf = self._feed(buf + chunk)
             self._conn = None
             conn.close()
 
@@ -708,15 +711,21 @@ class Vucx:
 
 
 class Feeder:
-    """A pty that repeats a byte stream (a virtual GNSS receiver or IMU) and records what it receives."""
+    """A pty (or, without ptys, a TCP port) that repeats a byte stream (a virtual GNSS receiver or IMU) and records
+    what it receives."""
 
     def __init__(self, data, interval=0.1):
         self.data = data.encode() if isinstance(data, str) else data
         self.interval = interval
         self.received = b""
         self._stop = threading.Event()
+        self._fd = None
+        self._conn = None
+        self._listen = None
 
     def start(self):
+        if not hasattr(os, "openpty"):
+            return self.start_tcp()
         import tty
 
         self._fd, self._slave = os.openpty()
@@ -724,6 +733,17 @@ class Feeder:
         tty.setraw(self._slave)
         self.port = os.ttyname(self._slave)
         self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+        return self.port
+
+    def start_tcp(self, port=0, host="127.0.0.1"):
+        """Serves the stream on a TCP port (any OS); returns "tcp:HOST:PORT" for gnss.open / imu.open."""
+        import socket
+
+        self._listen = socket.create_server((host, port))
+        self._listen.settimeout(0.1)
+        self.port = f"tcp:{host}:{self._listen.getsockname()[1]}"
+        self._thread = threading.Thread(target=self._serve_tcp, daemon=True)
         self._thread.start()
         return self.port
 
@@ -737,6 +757,32 @@ class Feeder:
                     self.received += os.read(self._fd, 4096)
             except OSError:
                 return
+
+    def _serve_tcp(self):
+        import socket
+
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._listen.accept()
+            except socket.timeout:
+                continue
+            except OSError:   # stop() closed the listener
+                return
+            conn.settimeout(self.interval)
+            self._conn = conn
+            while not self._stop.is_set():
+                try:
+                    conn.sendall(self.data)
+                    chunk = conn.recv(4096)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                self.received += chunk
+            self._conn = None
+            conn.close()
 
     stop = Vucx.stop
 

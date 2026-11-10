@@ -824,7 +824,7 @@ static bool saveFile(const char *name, const char *data, size_t len, const char 
 static int cmdConvert(ucxapp_t *app, int argc, char *argv[])
 {
     bundle_t b;
-    char out[96], name[112];
+    char out[240], name[sizeof(out) + 8];
     char *pem;
     size_t len = 0;
     bool ok = true;
@@ -834,6 +834,10 @@ static int cmdConvert(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (argc > 2 && argv[2][0] != '\0') {
+        if (strlen(argv[2]) >= sizeof(out)) {
+            ucxapp_print("ERROR: output path longer than %u characters\n", (unsigned)(sizeof(out) - 1));
+            return UCXAPP_ERR_USAGE;
+        }
         snprintf(out, sizeof(out), "%s", argv[2]);
     } else {
         stem(argv[1], out, sizeof(out));

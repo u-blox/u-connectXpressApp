@@ -2,12 +2,10 @@
 command line (the AT client kept a pointer to a buffer that the next --exec overwrote; needs a pty: Linux/WSL)."""
 
 import subprocess
-import sys
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 
 @pytest.fixture

@@ -1,14 +1,12 @@
-"""The app against vucx, the virtual u-connectXpress module (needs a pty: Linux/WSL, run by ucxapp --coverage)."""
+"""The app against vucx, the virtual u-connectXpress module (a pty on Linux/WSL, TCP on Windows; ucxapp --coverage)."""
 
 import re
 import subprocess
-import sys
 import time
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 # The app keeps profiles and settings in storage/ under its working directory; run it in a scratch directory so the
 # virtual networks never land in the repo's storage, where the hardware tests would try them.
@@ -1117,6 +1115,21 @@ def test_bt_phy_usage(app_exe, nora, args):
     out = _shell(app_exe, nora.port, [args], log=nora.log)
     assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
     assert not any(cmd.startswith(("AT+UBTCS4=", "AT+UBTCS5=", "AT+UBTPHYR=")) for cmd in nora.log), nora.log
+
+
+def test_command_result_survives_a_urc_whose_handler_sends_at(app_exe, nora):
+    """A +UEBTUC (pairing confirmation) arrives inside the answer to AT+UBTIOC; auto-confirm answers it with
+    AT+UBTUC from the URC handler, which the AT client runs right after the command. bt.defaults secure must report
+    its own result, not the handler's (the client once returned the status of the last command run, or 2147483647
+    when that one was still in progress on another thread)."""
+    nora.commands["AT+UBTIOC=2"] = ["+UEBTUC:C0FFEE001122p,123456", "OK"]
+    nora.commands["AT+UBTUC=C0FFEE001122p,1"] = ["ERROR"]
+    out = _shell(app_exe, nora.port, ["bt.defaults secure"], log=nora.log)
+    assert out.returncode == 0, out.stdout
+    assert "secure connections with legacy fallback" in out.stdout, out.stdout
+    assert "[BT] ERROR: could not confirm pairing" in out.stdout, out.stdout   # the handler's own failure
+    assert "could not apply" not in out.stdout, out.stdout
+    assert "AT+UBTUC=C0FFEE001122p,1" in nora.log, nora.log
 
 
 def test_bt_cs_sets_reflector_and_explains_a_module_without_it(app_exe, nora):

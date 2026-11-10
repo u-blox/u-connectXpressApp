@@ -1,12 +1,10 @@
 """ft.* file transfer client against the ft server behind the virtual module (TCP port 6970, see FtServer)."""
 
 import subprocess
-import sys
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 HOST = "192.168.1.10"
 
@@ -85,7 +83,7 @@ def test_ft_tcp_server_answers_a_client(app_exe, tmp_path):
     pytest.importorskip("yaml")
     from harness.vucx import Vucx, load
 
-    (tmp_path / "served.txt").write_text("hello\n")
+    (tmp_path / "served.txt").write_bytes(b"hello\n")   # bytes: write_text would make it hello\r\n on Windows
 
     def frame(pkt):
         return len(pkt).to_bytes(2, "little") + b"\0" + pkt

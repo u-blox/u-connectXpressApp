@@ -175,6 +175,10 @@ def test_bad_input(app_exe, tmp_path):
         assert out.returncode == 1
         assert "ERROR" in out.stdout
     assert "usage:" in _run(app_exe, "utils.cert.convert").stdout
+    long_out = tmp_path / ("x" * 240)   # longer than the output buffer: refused, not silently truncated
+    out = _run(app_exe, f"utils.cert.convert {junk} {long_out}")
+    assert out.returncode == 1 and "output path longer than" in out.stdout, out.stdout
+    assert not list(tmp_path.glob("x*")), list(tmp_path.iterdir())
 
 
 def test_import_needs_a_device(app_exe, tmp_path):

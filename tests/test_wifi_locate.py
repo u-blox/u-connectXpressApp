@@ -3,7 +3,6 @@
 Key storage and errors run anywhere; the scan, request and answer run against vucx (needs a pty: Linux/WSL)."""
 
 import json
-import sys
 
 import pytest
 from test_gnss_replay import _run as _run_offline
@@ -66,7 +65,7 @@ def test_saved_key_without_module(app_exe, tmp_path):
 
 # ---- against vucx: the scan, the request and the answer ----
 
-vucx_only = pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")
+vucx_only = pytest.mark.app   # vucx runs on a pty (Linux/WSL) or TCP (Windows)
 
 
 def _module(status=200, answer=GOOGLE_ANSWER, scan=None):

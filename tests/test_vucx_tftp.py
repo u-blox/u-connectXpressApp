@@ -2,13 +2,11 @@
 by scripted UDP clients (Network requests)."""
 
 import subprocess
-import sys
 import time
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 HOST = "192.168.1.10"
 
@@ -42,7 +40,7 @@ def test_tftp_get_and_put_against_the_virtual_server(app_exe, tmp_path):
     finally:
         module.stop()
     assert out.returncode == 0, out.stdout
-    assert (tmp_path / "boot.cfg").read_text() == "vucx demo file boot.cfg\n", out.stdout
+    assert (tmp_path / "boot.cfg").read_bytes() == b"vucx demo file boot.cfg\n", out.stdout
     assert (tmp_path / "copy.cfg").exists(), out.stdout
     assert any(c.startswith("AT+USOSTB=") for c in module.log), module.log
 
@@ -89,7 +87,7 @@ def _serve(app_exe, tmp_path, datagrams, *commands, wait_s=10):
 
 
 def test_tftp_server_sends_a_file_to_a_client(app_exe, tmp_path):
-    (tmp_path / "hello.txt").write_text("hello over tftp\n")
+    (tmp_path / "hello.txt").write_bytes(b"hello over tftp\n")   # bytes: write_text would add \r on Windows
     out, replies = _serve(app_exe, tmp_path, [_rrq("hello.txt"), b"\0\4\0\1"])
     assert "TFTP server" in out, out
     assert replies and replies[0] == b"\0\3\0\1hello over tftp\n", (replies, out)
@@ -107,4 +105,4 @@ def test_tftp_server_takes_an_upload_with_options(app_exe, tmp_path):
     out, replies = _serve(app_exe, tmp_path, [b"\0\2up.txt\0octet\0blksize\0" + b"512\0tsize\0" + b"6\0",
                                               b"\0\3\0\1hello\n"])
     assert replies and replies[0][:2] in (b"\0\4", b"\0\6"), (replies, out)
-    assert (tmp_path / "up.txt").read_text() == "hello\n", (replies, out)
+    assert (tmp_path / "up.txt").read_bytes() == b"hello\n", (replies, out)

@@ -1,12 +1,10 @@
 """perf.echo against scripted TCP and UDP clients of the virtual module (Network requests)."""
 
 import subprocess
-import sys
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 
 def _echo(app_exe, tmp_path, port, requests, command):

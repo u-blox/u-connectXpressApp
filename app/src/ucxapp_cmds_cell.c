@@ -591,6 +591,11 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
         int count = ucxapp_platform_list_serial_ports(ports, 32);
         char resp[RESP_SIZE];
 
+        /* A virtual module gets the simulated SARA-R5 first: the demo attaches and connects on whatever it opens,
+         * which must never be a real modem that happens to be plugged in (cell.open <port> still reaches it). */
+        if (ucxapp_module_is_virtual(app)) {
+            (void)openPort(UCXAPP_VPORT_CELL, baud);
+        }
         for (int i = 0; i < count && !gOpen; i++) {
             const char *dev = ucxapp_device_port();
 
@@ -603,9 +608,6 @@ static int cmdOpen(ucxapp_t *app, int argc, char *argv[])
             if (gOpen && atCmd("AT+CGMI", resp, sizeof(resp), 1000, 0) != AT_OK) {
                 closePort();
             }
-        }
-        if (!gOpen && ucxapp_module_is_virtual(app)) {
-            (void)openPort(UCXAPP_VPORT_CELL, baud);
         }
         if (!gOpen) {
             (void)xplrBringUp(ports, count, NULL);

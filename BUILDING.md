@@ -50,6 +50,7 @@ git submodule update --init u-connectClient
 .\ucxapp --selftest      # workspace validation
 .\ucxapp --detect        # ports, NORA modules, GNSS receiver and IMU, with the UCX_* test variables
 .\ucxapp --detect --test tests/hardware   # hardware tests on the detected devices
+.\ucxapp --test          # offline tests: lint, repo checks and the app against the virtual module (vucx, TCP on Windows)
 .\ucxapp --coverage      # line coverage of app/src from the offline tests (gcov build in WSL), report in build/coverage.txt
 ```
 

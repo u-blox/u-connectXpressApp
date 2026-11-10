@@ -1,6 +1,5 @@
 """app.hunt: signal hunt over Wi-Fi scans. Errors run anywhere; the hunt runs against vucx (needs a pty: Linux/WSL)."""
 
-import sys
 
 import pytest
 from test_gnss_replay import _run as _run_offline
@@ -21,7 +20,7 @@ def test_hunt_errors(app_exe, tmp_path, command, message):
     assert out.returncode == 1 and message in out.stdout.lower(), out.stdout
 
 
-vucx_only = pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")
+vucx_only = pytest.mark.app   # vucx runs on a pty (Linux/WSL) or TCP (Windows)
 
 
 def _module(scan):

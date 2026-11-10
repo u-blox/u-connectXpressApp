@@ -262,9 +262,7 @@ static void cellCommand(vdev_t *d, const char *cmd)
     } else if (is(cmd, "AT+CGDCONT?")) {
         say(d, "+CGDCONT: 1,\"IP\",\"%s\",\"%s\",0,0", gCell.apn, gCell.attached ? "10.0.0.5" : "0.0.0.0");
     } else if (is(cmd, "AT+CGDCONT=1,")) {
-        if (quoted(cmd, 2, text, sizeof(text))) {
-            snprintf(gCell.apn, sizeof(gCell.apn), "%s", text);
-        }
+        (void)quoted(cmd, 2, gCell.apn, sizeof(gCell.apn));   /* an APN is at most 63 characters (3GPP) */
     } else if (is(cmd, "AT+CGPADDR")) {
         say(d, gCell.attached ? "+CGPADDR: 1,\"10.0.0.5\"" : "+CGPADDR: 1");
     } else if (is(cmd, "AT+UPING=")) {

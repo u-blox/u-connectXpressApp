@@ -653,7 +653,7 @@ does not answer they power cycle it (`power_off`, 5 s, `power_on`). A port left 
 | Command | Arguments | Description |
 |---|---|---|
 | `cell.detect` | `[port]` | Find a module answering AT (115200, 9600, 921600, 460800 baud); powers on the SARA-R5 of an XPLR-IOT-1 |
-| `cell.open` | `[port] [baud=115200]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI`. Already open: says so and succeeds |
+| `cell.open` | `[port] [baud=115200]` | Open a module (default 115200); without a port, the first one answering `AT+CGMI` (on a virtual module: `virt:cell` first, so a demo never attaches a real modem). Already open: says so and succeeds |
 | `cell.close` |  | Close it |
 | `cell.status` |  | SIM, ICCID, signal in dBm, registration, the reject cause when denied (`AT+CEER`), operator, IP |
 | `cell.info` |  | Maker, model, firmware, IMEI, IMSI and ICCID |

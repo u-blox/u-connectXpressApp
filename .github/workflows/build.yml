@@ -157,10 +157,18 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Smoke tests (drives the exe through a pseudo console, no hardware)
+      - name: App tests on Windows (the virtual module over TCP, no hardware)
+        env:
+          UCX_PORT_A: ""
+          UCX_PORT_B: ""
+          UCX_GNSS_PORT: ""
+          UCX_IMU_PORT: ""
+          UCX_CELL_PORT: ""
+          UCX_PPK_PORT: ""
+          PYTHONUNBUFFERED: "1"
         run: |
-          python -m pip install pytest pywinpty
-          python -m pytest tests/test_app_smoke.py
+          python -m pip install pytest pytest-xdist pywinpty pyyaml cryptography
+          python -m pytest tests -m app -p no:cacheprovider -n auto
       - uses: actions/upload-artifact@v5
         with:
           name: ucxapp-windows

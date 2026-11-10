@@ -3,12 +3,10 @@ the module's distance events, PCT events carry binary data (needs a pty: Linux/W
 
 import struct
 import subprocess
-import sys
 
 import pytest
 
-pytestmark = [pytest.mark.app,
-              pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")]
+pytestmark = pytest.mark.app
 
 
 @pytest.fixture

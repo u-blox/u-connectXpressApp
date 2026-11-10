@@ -2,7 +2,6 @@
 
 Runs against vucx (needs a pty: Linux/WSL)."""
 
-import sys
 
 import pytest
 from test_vucx import _run
@@ -10,7 +9,7 @@ from test_wifi_locate import _module
 
 pytestmark = pytest.mark.app
 
-vucx_only = pytest.mark.skipif(sys.platform == "win32", reason="vucx needs a pty (Linux/WSL)")
+vucx_only = pytest.mark.app   # vucx runs on a pty (Linux/WSL) or TCP (Windows)
 
 
 @vucx_only

@@ -4,6 +4,10 @@
 /* Portable application core: runs on Windows, Linux and embedded targets.
  * Feature code must only use this API for output and input (no printf/fgets/getchar). */
 
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+#error "u-connectXpressApp needs a C11 compiler (C_STANDARD 11, /std:c11, CONFIG_STD_C11)"
+#endif
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>

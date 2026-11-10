@@ -396,22 +396,40 @@ static void parseCts(const uint8_t *d, size_t n)
                  (unsigned)d[4], (unsigned)d[5], (unsigned)d[6], (unsigned)d[7]);
 }
 
+/* v / 10^decimals as text without floating point: newlib-nano's printf (STM32) has no %f. */
+static const char *fixedText(char *out, size_t size, int32_t v, unsigned decimals)
+{
+    uint32_t mag = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
+    uint32_t div = 1;
+
+    for (unsigned i = 0; i < decimals; i++) {
+        div *= 10;
+    }
+    snprintf(out, size, "%s%lu.%0*lu", v < 0 ? "-" : "", (unsigned long)(mag / div), (int)decimals,
+             (unsigned long)(mag % div));
+    return out;
+}
+
 static void parseTemp(const uint8_t *d, size_t n)
 {
+    char t[16];
+
     if (n < 2) {
         ucxapp_print("[ESS] invalid temperature length %u\n", (unsigned)n);
         return;
     }
-    ucxapp_print("[ESS] Temperature: %.2f C\n", (int16_t)(d[0] | (d[1] << 8)) / 100.0);
+    ucxapp_print("[ESS] Temperature: %s C\n", fixedText(t, sizeof(t), (int16_t)(d[0] | (d[1] << 8)), 2));
 }
 
 static void parseHum(const uint8_t *d, size_t n)
 {
+    char t[16];
+
     if (n < 2) {
         ucxapp_print("[ESS] invalid humidity length %u\n", (unsigned)n);
         return;
     }
-    ucxapp_print("[ESS] Humidity: %.2f %%\n", (uint16_t)(d[0] | (d[1] << 8)) / 100.0);
+    ucxapp_print("[ESS] Humidity: %s %%\n", fixedText(t, sizeof(t), (uint16_t)(d[0] | (d[1] << 8)), 2));
 }
 
 /* Location and Speed (GSS): the flags say which optional fields precede Location. */
@@ -434,7 +452,9 @@ static void parseLoc(const uint8_t *d, size_t n)
     const uint8_t *p = d + off;
     int32_t lat = (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
     int32_t lon = (int32_t)((uint32_t)p[4] | ((uint32_t)p[5] << 8) | ((uint32_t)p[6] << 16) | ((uint32_t)p[7] << 24));
-    ucxapp_print("[LNS] lat=%.7f lon=%.7f (flags 0x%04X)\n", lat / 1e7, lon / 1e7, flags);
+    char la[16], lo[16];
+    ucxapp_print("[LNS] lat=%s lon=%s (flags 0x%04X)\n", fixedText(la, sizeof(la), lat, 7),
+                 fixedText(lo, sizeof(lo), lon, 7), flags);
 }
 
 static void parseAioDigital(const uint8_t *d, size_t n)
@@ -524,19 +544,21 @@ static char gParsed[200];
 /* 20-byte packet: 0x55 0x61, then accel, gyro and angle as nine little-endian int16 (x, y, z each). */
 static bool parseWit(const uint8_t *d, size_t n)
 {
-    int16_t w[9];
+    /* Full scale 16 g, 2000 dps and 180 deg over 32768, kept in 1/1000 g and 1/100 dps or deg. */
+    static const int32_t kScale[3] = { 16000, 200000, 18000 };
+    static const unsigned kDecimals[3] = { 3, 2, 2 };
+    char f[9][12];
 
     if (n < 20 || d[0] != 0x55 || d[1] != 0x61) {
         return false;
     }
     for (int i = 0; i < 9; i++) {
-        w[i] = (int16_t)(d[2 + 2 * i] | (d[3 + 2 * i] << 8));
+        int64_t x = (int64_t)(int16_t)(d[2 + 2 * i] | (d[3 + 2 * i] << 8)) * kScale[i / 3];
+        fixedText(f[i], sizeof(f[i]), (int32_t)((x + (x < 0 ? -16384 : 16384)) / 32768), kDecimals[i / 3]);
     }
     snprintf(gParsed, sizeof(gParsed),
-             "[WIT] acc %7.3f %7.3f %7.3f g  gyro %8.2f %8.2f %8.2f dps  roll %7.2f pitch %7.2f yaw %7.2f deg",
-             w[0] * 16.0 / 32768.0, w[1] * 16.0 / 32768.0, w[2] * 16.0 / 32768.0,
-             w[3] * 2000.0 / 32768.0, w[4] * 2000.0 / 32768.0, w[5] * 2000.0 / 32768.0,
-             w[6] * 180.0 / 32768.0, w[7] * 180.0 / 32768.0, w[8] * 180.0 / 32768.0);
+             "[WIT] acc %7s %7s %7s g  gyro %8s %8s %8s dps  roll %7s pitch %7s yaw %7s deg",
+             f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
     ucxapp_print("%s\n", gParsed);
     return true;
 }

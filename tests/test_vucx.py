@@ -494,6 +494,35 @@ def test_command_group_runs_against_module(app_exe, nora, group):
     assert not errors, "\n".join(errors) + f"\nlast AT: {nora.log[-10:]}"
 
 
+def test_gatt_decoders_print_fixed_point_values(app_exe, tmp_path):
+    """ESS, LNS and WitMotion values are decoded without floating point (no %f on STM32), negatives included."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    wit = "5561" + "0040" + "00C0" + "0008" + "0000" + "0100" + "FFFF" + "0040" + "0080" + "0000"
+    profile = tmp_path / "decoders.yaml"
+    profile.write_text(
+        "include: [nora-w36.yaml]\n"
+        "peer:\n"
+        "  start: 100\n"
+        "  services:\n"
+        '    - {uuid: "181A", chars: [["2A6E", R, "E6FB"], ["2A6F", R, "9411"]]}\n'
+        '    - {uuid: "1819", chars: [["2A67", R, "040040253321805B40F8"]]}\n'   # flags 4, 55.7, -13.0
+        f'    - {{uuid: "FFE5", chars: [["FFE4", R, "{wit}"]]}}\n', encoding="utf-8")
+    module = Vucx(str(profile))
+    module.start()
+    try:
+        out = _shell(app_exe, module.port, ["bt.connect C0:FF:EE:00:11:22", "gatt.client.ess 0", "gatt.client.lns 0",
+                                            "gatt.client.witmotion 0"], log=module.log)
+    finally:
+        module.stop()
+    assert "[ESS] Temperature: -10.50 C" in out.stdout, out.stdout[-3000:]
+    assert "[ESS] Humidity: 45.00 %" in out.stdout, out.stdout[-3000:]
+    assert "[LNS] lat=55.7000000 lon=-13.0000000 (flags 0x0004)" in out.stdout, out.stdout[-3000:]
+    assert re.search(r"\[WIT\] acc +8\.000 +-8\.000 +1\.000 g  gyro +0\.00 +0\.06 +-0\.06 dps  "
+                     r"roll +90\.00 pitch -180\.00 yaw +0\.00 deg", out.stdout), out.stdout[-3000:]
+
+
 def test_mdns_service_with_txt_records(app_exe, nora):
     out = _shell(app_exe, nora.port, ["mdns.on nora 2", "mdns.add _http._tcp 80 \"vucx dashboard\" path=/ fw=3.5.0",
                                       "mdns.status", "mdns.txt 0 remove fw", "mdns.remove all", "mdns.off"],

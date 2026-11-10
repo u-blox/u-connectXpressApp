@@ -487,8 +487,9 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         page.fill("#cmd", "utils.qr.wifi Setup-1234 setup1234")
         page.press("#cmd", "Enter")
         page.wait_for_selector(".blk .qr svg")
-        n, rows = len(QR_MATRIX), qr_text(QR_MATRIX).count("\n")
-        assert page.get_attribute(".qr svg", "viewBox") == f"-2 -2 {n + 8} {2 * rows + 4}"   # 2 printed + 2 added
+        n = len(QR_MATRIX)
+        # square although 21 modules + border print as 13 half-block lines: 2 printed + 2 added
+        assert page.get_attribute(".qr svg", "viewBox") == f"-2 -2 {n + 8} {n + 8}"
         assert page.get_attribute(".qr svg", "width") == str((n + 8) * 7)
         modules = page.evaluate("document.querySelector('.qr svg path').getAttribute('d').split('M').length - 1")
         assert modules == sum(sum(row) for row in QR_MATRIX)

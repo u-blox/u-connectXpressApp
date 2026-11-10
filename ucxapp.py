@@ -1709,19 +1709,19 @@ def web_preview(exe, port):
     fresh host app without a module, so host commands work and module commands report that no module answers."""
     import queue
     import secrets
+    import tempfile
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import parse_qs, urlparse
 
-    api = ROOT / "build" / "webpreview"
-    api.mkdir(parents=True, exist_ok=True)
-    for f in api.glob("*.json"):
-        f.unlink()
-    out = subprocess.run([str(exe), "--offline", "--exec", f'web.export "{api.as_posix()}"'], capture_output=True,
-                         text=True, errors="replace", timeout=60)
-    if not (api / "groups.json").exists():
+    # a private export, held in memory: a second preview (or its test) must not pull the files from under this one
+    with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+        out = subprocess.run([str(exe), "--offline", "--exec", f'web.export "{Path(tmp).as_posix()}"'],
+                             capture_output=True, text=True, errors="replace", timeout=60)
+        files = {f.stem: f.read_bytes() for f in Path(tmp).glob("*.json")}
+    if "groups" not in files:
         fail(f"web.export failed:\n{out.stdout}{out.stderr}")
-    commands = [c for f in sorted(api.glob("commands-*.json")) for c in json.loads(f.read_text(encoding="utf-8"))]
+    commands = [c for k in sorted(files) if k.startswith("commands-") for c in json.loads(files[k].decode("utf-8"))]
     danger = {c["n"] for c in commands if c.get("d")}
     token = secrets.token_hex(6)
     clients, lock, busy = [], threading.Lock(), threading.Lock()
@@ -1735,7 +1735,7 @@ def web_preview(exe, port):
         rc = -1
         try:
             proc = subprocess.Popen([str(exe), "--offline", "--exec", line], stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, errors="replace")
+                                    stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
             for text in proc.stdout:
                 broadcast("out", json.dumps(text))
             rc = proc.wait()
@@ -1763,8 +1763,7 @@ def web_preview(exe, port):
             return secrets.compare_digest(given, token)
 
         def json_file(self, name):
-            f = api / f"{name}.json"
-            self.reply(f.read_bytes() if re.fullmatch(r"[\w.-]+", name) and f.exists() else "[]")
+            self.reply(files.get(name, b"[]"))
 
         def do_GET(self):
             u = urlparse(self.path)
@@ -1777,7 +1776,7 @@ def web_preview(exe, port):
                 return self.reply("token required", "text/plain", 403)
             group = q.get("g", [""])[0]
             if u.path == "/api/groups":
-                self.reply((api / "groups.json").read_bytes(),
+                self.reply(files["groups"],
                            headers=[("Set-Cookie", f"ucxt={token}; Path=/; HttpOnly; SameSite=Strict")])
             elif u.path == "/api/commands":
                 self.json_file(f"commands-{group}")
@@ -1791,7 +1790,8 @@ def web_preview(exe, port):
             elif u.path == "/api/complete":
                 line = q.get("q", [""])[0].replace("\\", "\\\\").replace('"', '\\"')
                 out = subprocess.run([str(exe), "--offline", "--exec", f'app.complete "{line}"'], capture_output=True,
-                                     text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout
+                                     text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+                                     timeout=30).stdout
                 m = re.search(r"^(\d+) match(?:es)?: (.*)$", out, re.M)
                 rest = out[m.end():].lstrip("\r\n").splitlines() if m else []
                 self.reply(json.dumps({"l": m.group(2) if m else "", "n": int(m.group(1)) if m else 0,
@@ -1800,7 +1800,8 @@ def web_preview(exe, port):
                 self.reply("[]")
             elif u.path == "/api/version":
                 out = subprocess.run([str(exe), "--offline", "--exec", "app.version"], capture_output=True,
-                                     text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout
+                                     text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+                                     timeout=30).stdout
                 line = next((x.strip() for x in out.splitlines() if "u-connectXpressApp" in x), "")
                 self.reply(json.dumps({"v": line}))
             elif u.path == "/events":

@@ -562,6 +562,7 @@ static int cmdHashText(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#ifndef UCXAPP_LITE
 /* Known-answer vectors from RFC 1321 and FIPS 180-2. */
 static int cmdHashSelftest(ucxapp_t *app, int argc, char *argv[])
 {
@@ -600,6 +601,7 @@ static int cmdHashSelftest(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("hash selftest: md5 and sha256 ok\n");
     return UCXAPP_OK;
 }
+#endif
 
 #define VIEW_DEFAULT_LINES 40
 #define VIEW_LINE_MAX      120
@@ -817,7 +819,9 @@ static const ucxapp_cmd_t gSysCmds[] = {
     { "app.defaults", "<confirm>", "Forget all app settings (log, Wi-Fi and BLE profiles, last used, region); type 'confirm'", UCXAPP_CMD_DANGER, cmdAppDefaults },
     { "file.hash", "<md5|sha256> <file>", "Hash of a file", 0, cmdFileHash },
     { "utils.hash.text", "<md5|sha256> <text...>", "Hash of a text", 0, cmdHashText },
+#ifndef UCXAPP_LITE
     { "utils.hash.selftest", "", "Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors", 0, cmdHashSelftest },
+#endif
     { "file.view", "<file> [lines=40]", "First lines of a text file", 0, cmdFileView },
     { "file.list", "", "Files in the working folder with numbers and sizes", 0, cmdFileList },
     { "file.remove", "<file|number>", "Delete a file by name or by its file.list number", UCXAPP_CMD_DANGER, cmdFileRemove },

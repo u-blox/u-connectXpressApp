@@ -283,6 +283,7 @@ static int cmdDeviceUptime(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#ifndef UCXAPP_LITE
 /* Developer command AT+USYTS: +USYTS:"<task>",<stack size>,<used>,<usage %> per task. */
 static int cmdDeviceStack(ucxapp_t *app, int argc, char *argv[])
 {
@@ -361,6 +362,7 @@ static int cmdDeviceCrash(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print(rows == 0 ? "no crash information stored\n" : "(crash information cleared on the module)\n");
     return UCXAPP_OK;
 }
+#endif
 
 static int cmdDeviceCaps(ucxapp_t *app, int argc, char *argv[])
 {
@@ -680,9 +682,9 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
 #endif
     { "dev.status", "", "Overview: module, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
     { "dev.uptime", "", "Time since the module's last +STARTUP", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
+#ifndef UCXAPP_LITE
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
     { "dev.crash", "", "Developer: last crash info in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
-#ifndef UCXAPP_LITE
     { "dev.power", "[auto [<s>|off]|save <0|1> [idle_ms]|sleep|wake|recover [hold_ms]|deep [pin|reset|uart]]", "Power state (active, power save, light sleep, deep sleep); auto: the module saves power after <s> idle (default 30) and wakes on traffic (NORA-W36, stored); save: level 0 off or 1 on with the idle time in ms; light sleep keeping Wi-Fi (NORA-W36 3.5.0+, Bluetooth off) or Bluetooth links (NORA-B26) and wake, DTR recovery of a stuck module (DTR low 1200 ms, 5 pulses), or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
 #endif
 };

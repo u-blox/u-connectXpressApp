@@ -253,12 +253,13 @@ function verdict(ok,t){const v=$('verdict');v.className=ok?'':'bad';v.textConten
    "large") becomes a picture: square modules, black on white with a 4-module quiet zone, so a phone camera reads it
    where the stretched, seamed text in the log failed ---- */
 const QRL=/^[ \u2580\u2584\u2588]{7,}$/;
-function qrImage(b){for(const x of [...b.body.childNodes]){if(x.nodeType!==3)continue;const L=x.textContent.split('\n');
+function qrImage(b){b.body.normalize();   /* put() caps text nodes at 4000 chars, which can split a QR code */
+ for(const x of [...b.body.childNodes]){if(x.nodeType!==3)continue;const L=x.textContent.split('\n');
  for(let i=0;i<L.length;i++){if(!QRL.test(L[i])||!/[\u2580\u2584\u2588]/.test(L[i]))continue;
   let j=i;while(j<L.length&&QRL.test(L[j])&&L[j].length===L[i].length)j++;
   while(i>0&&/^ +$/.test(L[i-1])&&L[i-1].length===L[j-1].length)i--;   /* the blank border line above */
   if(j-i<5){i=j;continue}
-  const R=L.slice(i,j),big=R.every(r=>/^(\u2588\u2588|  )*$/.test(r)),w=big?R[0].length/2:R[0].length,h=big?R.length:R.length*2;let d='';
+  const R=L.slice(i,j),big=R.every(r=>/^(\u2588\u2588|  )*$/.test(r)),w=big?R[0].length/2:R[0].length,h=big?R.length:Math.min(R.length*2,w);let d='';   /* QR is square: an odd size leaves a blank last half row */
   for(let y=0;y<h;y++)for(let c=0;c<w;c++){const ch=big?R[y][2*c]:R[y>>1][c];
    if(big?ch==='\u2588':ch==='\u2588'||ch===(y&1?'\u2584':'\u2580'))d+=`M${c} ${y}h1v1h-1z`}
   const img=el('div','qr'),px=7;   /* 7 px a module: a little bigger than the text was, still small on the page */
@@ -712,7 +713,8 @@ function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).
 function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
  Object.keys(CN.n).filter(k=>!CN.n[k].gone&&kinds.includes(CN.n[k].o.c)).slice(0,4).forEach((k,i)=>{const nd=CN.n[k].nd;nd.classList.remove('ping');void nd.getBBox();nd.classList.add('ping');
   for(let j=0;j<3;j++)CN.pk.push({k,t:-(i*.08+j*.07),s:.022,in:!out,e:sv('circle',{class:'pk k-'+CN.n[k].o.c,r:0},cnPk)})})}
-
+
+
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
 function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';

@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(u-connectXpressApp)
 
+# C11 with GNU extensions (POSIX functions on Linux); CMake < 3.21 does not pass /std:c11 to MSVC.
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+if(MSVC)
+  add_compile_options($<$<COMPILE_LANGUAGE:C>:/std:c11>)
+endif()
+
 # Include u-connectClient library definitions from submodule
 set(UCX_MODULE "MERGED" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated (MERGED: NORA-W36X + NORA-B26X)")
 if(UCX_MODULE MATCHES "^NORA-(W36X|B26X)$")

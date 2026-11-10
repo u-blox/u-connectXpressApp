@@ -113,8 +113,8 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | `dev.summary` | | Short overview shown on connect (text UI, shell, web page once per session, `dev.use`): model, firmware, radios, Wi-Fi and Thread state, open BLE links and sockets, a newer firmware (built-in release or the one `fw.update` last found) and the last Wi-Fi profile and BLE peer when not connected |
 | `dev.caps` | | Capabilities grouped by radio, Wi-Fi features and Bluetooth LE features: model, firmware, Wi-Fi, Bluetooth LE, Thread, the saved region, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support, then what to try next. A Bluetooth LE only module (NORA-B26) shows `Wi-Fi: no` and no Wi-Fi features; the TUI and web UI then hide the Wi-Fi, socket and network groups. `Thread: yes` when the module answers `AT+UTHE?` (Thread firmware); otherwise `thread.*` is hidden |
 | `dev.uptime` | | Time since the module started, counted from its last `+STARTUP` |
-| `dev.stack` | | Developer: stack size, used bytes and usage % of every module task |
-| `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it |
+| `dev.stack` | | Developer: stack size, used bytes and usage % of every module task. Not in lite builds |
+| `dev.crash` | | Developer: last crash info stored in module flash; reading it clears it. Not in lite builds |
 | `dev.diagnose` | `[host]` | Support report: `dev.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates. Each check prints `PASS`, `FAIL <code>`, `NOT RUN` (e.g. Wi-Fi not connected) or `NOT SUPPORTED` with a hint for the next step; ends with `Result: PASS`, `PARTIAL` (some checks not run) or `FAIL` |
 | `dev.status` | | Overview: module info, Wi-Fi state and IP, open sockets, BLE connections, certificates |
 | `dev.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
@@ -800,7 +800,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `prod.test` | `[script.ucx\|-] [dir]` | Production test: runs a script (or `-`: `dev.info`, `dev.caps`, `dev.diagnose`; `expect`/`expect-fail` lines as in `session.replay`), writes `<dir>/<serial>_<date>.txt` with all output and adds a line to `<dir>/report.csv` (date, serial, model, firmware, script, steps, failed, PASS/FAIL); default dir `reports` |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
 | `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
-| `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
+| `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors. Not in lite builds |
 | `file.view` | `<file> [lines=40]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |

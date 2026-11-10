@@ -538,7 +538,7 @@ $('ucs').onchange=()=>pick($('ucs').value);pick(uc);
    eased toward its place every frame; events and commands send packets along the links ---- */
 const SVGN='http://www.w3.org/2000/svg',cnS=$('cn'),
  sv=(t,a,p)=>{const e=document.createElementNS(SVGN,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e},
- CN={n:{},sel:'',timer:0,raf:0,pk:[],t0:performance.now(),off:{},vb:[-538,-313,1075,625]},
+ CN={n:{},sel:'',timer:0,raf:0,pk:[],t0:performance.now(),off:{},vb:[-538,-313,1075,625],auto:1},
  cnRing=sv('g',{},cnS),cnLinks=sv('g',{},cnS),cnPk=sv('g',{},cnS),cnHub=sv('g',{class:'hub off'},cnS),cnNodes=sv('g',{},cnS),
  cnEmpty=sv('text',{class:'rt',y:110},cnS),
  clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),
@@ -548,12 +548,19 @@ const SVGN='http://www.w3.org/2000/svg',cnS=$('cn'),
  spread=(i,n,a,b)=>n<2?(a+b)/2:a+(b-a)*i/(n-1),
  CNK={bt:['ble'],gatt:['ble'],sps:['ble'],hid:['ble'],ancs:['ble'],wifi:['wifi','ap','sta'],net:['wifi','ap'],http:['wifi'],ping:['wifi'],
   mdns:['wifi'],sock:['sock'],mqtt:['sock'],tls:['sock'],dtls:['sock'],coap:['sock'],tftp:['sock'],thread:['thr','nbr'],gnss:['gnss'],cell:['cell']};
-/* zoom and pan move the viewBox; dragging a node stores an offset from its computed place */
+/* zoom and pan move the viewBox; dragging a node stores an offset from its computed place. Until the user zooms or
+   pans (reset turns it back on), the view follows the content: it starts as the default box and grows only when a
+   node, pushed out by its neighbours, would leave it, so every link stays on screen */
 const cnVB=()=>cnS.setAttribute('viewBox',CN.vb.map(v=>v.toFixed(1)).join(' ')),
  cnPt=(cx,cy)=>{const r=cnS.getBoundingClientRect(),v=CN.vb,s=Math.max(v[2]/r.width,v[3]/r.height);return [v[0]+v[2]/2+(cx-r.left-r.width/2)*s,v[1]+v[3]/2+(cy-r.top-r.height/2)*s]},
  cnZoom=(f,cx,cy)=>{const v=CN.vb,w=clamp(v[2]/f,215,3440);f=v[2]/w;const r=cnS.getBoundingClientRect(),p=cx==null?[v[0]+v[2]/2,v[1]+v[3]/2]:cnPt(cx,cy);
-  CN.vb=[p[0]-(p[0]-v[0])/f,p[1]-(p[1]-v[1])/f,w,v[3]/f];cnVB()},
- cnReset=()=>{CN.vb=[-538,-313,1075,625];CN.off={};cnVB()},CNP={};
+  CN.auto=0;CN.vb=[p[0]-(p[0]-v[0])/f,p[1]-(p[1]-v[1])/f,w,v[3]/f];cnVB()},
+ cnReset=()=>{CN.vb=[-538,-313,1075,625];CN.off={};CN.auto=1;cnVB()},CNP={},
+ cnFit=()=>{if(!CN.auto||Object.values(CNP).some(q=>q.moved))return;let b=[-538,-313,537,312];
+  Object.values(CN.n).forEach(n=>{if(n.gone||!n.o)return;const c=cnBox(n);b=[Math.min(b[0],c[0]-20),Math.min(b[1],c[1]-20),Math.max(b[2],c[2]+20),Math.max(b[3],c[3]+20)]});
+  let w=b[2]-b[0],h=b[3]-b[1];if(w/h>1075/625)h=w*625/1075;else w=h*1075/625;   /* the default aspect, so nothing stretches */
+  const t=[(b[0]+b[2]-w)/2,(b[1]+b[3]-h)/2,w,h],v=CN.vb;if(t.every((x,i)=>Math.abs(x-v[i])<.5))return;
+  CN.vb=v.map((x,i)=>x+(t[i]-x)*.08);cnVB()};
 cnS.addEventListener('wheel',e=>{e.preventDefault();cnZoom(Math.exp(-e.deltaY*.0015),e.clientX,e.clientY)},{passive:false});
 cnS.addEventListener('dblclick',e=>{if(!e.target.closest('.nd,.hub'))cnReset()});
 cnS.addEventListener('pointerdown',e=>{const g=e.target.closest('.nd'),k=g&&Object.keys(CN.n).find(q=>CN.n[q].nd===g);
@@ -564,7 +571,7 @@ cnS.addEventListener('pointermove',e=>{const p=CNP[e.pointerId];if(!p)return;con
  const p0=cnPt(p.x,p.y),p1=cnPt(e.clientX,e.clientY),dx=p1[0]-p0[0],dy=p1[1]-p0[1];
  if(!p.moved&&Math.hypot(e.clientX-p.x,e.clientY-p.y)<4)return;if(!p.moved){cnS.setPointerCapture(e.pointerId);cnS.classList.add('drag')}p.moved=1;p.x=e.clientX;p.y=e.clientY;
  if(p.k&&CN.n[p.k]){const o=CN.off[p.k]||(CN.off[p.k]=[0,0]),n=CN.n[p.k];o[0]+=dx;o[1]+=dy;n.x+=dx;n.y+=dy}
- else{CN.vb[0]-=dx;CN.vb[1]-=dy;cnVB()}});
+ else{CN.auto=0;CN.vb[0]-=dx;CN.vb[1]-=dy;cnVB()}});
 const cnUpP=e=>{const p=CNP[e.pointerId];delete CNP[e.pointerId];if(!Object.keys(CNP).length)cnS.classList.remove('drag');
  if(p&&p.moved)CN.drag=performance.now()};
 cnS.addEventListener('pointerup',cnUpP);cnS.addEventListener('pointercancel',cnUpP);
@@ -590,11 +597,13 @@ function cnParse(t){const L=[],by={};let port='',mod=null;
   add({k:'b'+f[1],c:'ble',ic:'BLE',a:spread(i,bs.length,35,145),r:d==null?rr(r):csR(d),q:qq(r),lb:f[2],sb:[r+' dBm  MTU '+f[4],(role+' '+f[6]).trim()],cs:d,
    info:[['Connection',f[1]],['Address',f[2]],['RSSI',r+' dBm'],['MTU',f[4]],['Local role',role],['TX PHY',f[6]]].concat(d==null?[]:[['Distance (CS)',d.toFixed(2)+' m, '+f[8]+' ms ago']]),
    act:[['GATT services','gatt.services',[f[1]]],['Range 10 s (CS)','bt.cs.range',[f[1],'10']],['Disconnect','bt.disconnect',[f[1]],1]]})});
- (by.t||[]).forEach(f=>{add({k:'t',c:'thr',ic:'THREAD',a:180,r:150,lb:'Thread '+f[1],sb:['rloc16 '+f[2]],
+ /* Thread sits lower left: straight left is where the sockets hanging off Wi-Fi land, and the two then push each other
+    around for seconds before the layout settles */
+ (by.t||[]).forEach(f=>{add({k:'t',c:'thr',ic:'THREAD',a:135,r:170,lb:'Thread '+f[1],sb:['rloc16 '+f[2]],
   info:[['Role',f[1]],['RLOC16',f[2]]],act:[['Status','thread.status'],['Neighbours','thread.neighbors']]});
-  const ns=by.n||[];ns.forEach((g,i)=>{const r=+g[3];add({k:'n'+g[1],c:'nbr',ic:'TH',p:'t',a:180+spread(i,ns.length,-70,70),r:120,small:1,q:qq(r),lb:g[1],sb:[g[2]+'  '+r+' dBm'],
+  const ns=by.n||[];ns.forEach((g,i)=>{const r=+g[3];add({k:'n'+g[1],c:'nbr',ic:'TH',p:'t',a:135+spread(i,ns.length,-60,60),r:120,small:1,q:qq(r),lb:g[1],sb:[g[2]+'  '+r+' dBm'],
    info:[['RLOC16',g[1]],['Role',g[2]],['RSSI',r+' dBm'],['Link quality',g[4]+' / 3']],act:[]})})});
- const ss=by.s||[],sp=has('w')?'w':has('t')?'t':'',sa=sp==='w'?-145:sp==='t'?180:-8;
+ const ss=by.s||[],sp=has('w')?'w':has('t')?'t':'',sa=sp==='w'?-145:sp==='t'?135:-8;
  ss.forEach((f,i)=>add({k:'s'+f[2]+f[1],c:'sock',ic:f[2].toUpperCase(),p:sp,a:sa+spread(i,ss.length,-60,60),r:sp?120:170,small:1,lb:f[2]+' '+f[1],sb:[f[4]||f[3]],
   info:[['Handle',f[1]],['Protocol',f[2]],['State',f[3]],['Remote',f[4]]],act:[['Close','sock.close',[f[1]],1]]}));
  (by.q||[]).forEach(f=>add({k:'q',c:'mqtt',ic:'MQTT',p:sp,a:sa+(ss.length?75:0),r:sp?140:170,mid:1,lb:f[1]||'mqtt',
@@ -640,22 +649,28 @@ function cnUpdate(t){const r=cnParse(t||''),keep={};
 
 function cnCurve(x0,y0,x1,y1){const mx=(x0+x1)/2,my=(y0+y1)/2,dx=x1-x0,dy=y1-y0;return [x0,y0,mx-dy*.12,my+dx*.12,x1,y1]}
 /* keeps nodes and their labels apart: each node's box (circle plus its label lines) pushes overlapping ones and the hub away;
-   the push builds up over a few frames and fades again when there is room, so the layout settles without jumps */
-function cnBox(n){const o=n.o,w=Math.max(2*n.R+24,(o.lb||'').length*9.5,...(o.sb||[]).map(t=>(t||'').length*8.6))+14;return [n.x-w/2,n.y-n.R-14,n.x+w/2,n.y+n.R+(o.sb&&o.sb[1]?70:o.sb&&o.sb[0]?52:30)]}
+   the push builds up over a few frames and fades again when there is room, so the layout settles without jumps.
+   Boxes sit where a node is heading (sx, sy), not where it is on its way there: new nodes all start at the hub, and
+   pushing them apart while they fly out blew the layout up for seconds */
+function cnBox(n,x=n.x,y=n.y){const o=n.o,w=Math.max(2*n.R+24,(o.lb||'').length*9.5,...(o.sb||[]).map(t=>(t||'').length*8.6))+14;return [x-w/2,y-n.R-14,x+w/2,y+n.R+(o.sb&&o.sb[1]?70:o.sb&&o.sb[0]?52:30)]}
 function cnSep(){const ns=Object.values(CN.n).filter(n=>!n.gone),H=[-80,-48,80,48];
- ns.forEach(n=>{n.px=n.px||0;n.py=n.py||0;n.hit=0});
+ ns.forEach(n=>{n.px=n.px||0;n.py=n.py||0;n.hit=0;if(n.sx==null){n.sx=n.x;n.sy=n.y}});
  const push=(n,a,b,k)=>{const ox=Math.min(a[2],b[2])-Math.max(a[0],b[0])+12,oy=Math.min(a[3],b[3])-Math.max(a[1],b[1])+12;if(ox<=0||oy<=0)return;n.hit=1;
   const cx=(a[0]+a[2]-b[0]-b[2])/2,cy=(a[1]+a[3]-b[1]-b[3])/2;if(ox<oy)n.px+=(cx>=0?1:-1)*ox*k;else n.py+=(cy>=0?1:-1)*oy*k};
- ns.forEach((n,i)=>{const a=cnBox(n);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m),m.o.cs!=null?.2:.1)});
+ ns.forEach((n,i)=>{const a=cnBox(n,n.sx,n.sy);push(n,a,H,.2);ns.forEach((m,j)=>{if(i!==j)push(n,a,cnBox(m,m.sx,m.sy),m.o.cs!=null?.2:.1)});
   /* the module's ring is a keep-out circle too */
-  const d=Math.hypot(n.x,n.y)||1,min=105+n.R;if(!n.o.p&&d<min){n.px+=n.x/d*(min-d)*.2;n.py+=n.y/d*(min-d)*.2;n.hit=1}});
+  const d=Math.hypot(n.sx,n.sy)||1,min=105+n.R;if(!n.o.p&&d<min){n.px+=n.sx/d*(min-d)*.2;n.py+=n.sy/d*(min-d)*.2;n.hit=1}
+  /* a node on a Channel Sounding ring can only slide along it: drop the radial part, or it would pile up unbounded */
+  if(n.o.cs!=null&&!n.o.p){const ux=n.sx/d,uy=n.sy/d,r=n.px*ux+n.py*uy;n.px-=r*ux;n.py-=r*uy}});
  ns.forEach(n=>{if(!n.hit){n.px*=.995;n.py*=.995}})}
 function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).concat(ks.filter(k=>CN.n[k].o.p)),tm=(now-CN.t0)/1000;cnSep();
  ord.forEach(k=>{let n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
-   tx=px+Math.cos(a)*o.r+Math.cos(tm*.7+n.ph)*3+(CN.off[k]?CN.off[k][0]:0)+(n.px||0),ty=py+Math.sin(a)*o.r+Math.sin(tm*.9+n.ph)*3+(CN.off[k]?CN.off[k][1]:0)+(n.py||0);
+   ox=Math.cos(a)*o.r+(CN.off[k]?CN.off[k][0]:0)+(n.px||0),oy=Math.sin(a)*o.r+(CN.off[k]?CN.off[k][1]:0)+(n.py||0),
+   tx=px+ox+Math.cos(tm*.7+n.ph)*3,ty=py+oy+Math.sin(tm*.9+n.ph)*3,sx=(p?p.sx:0)+ox,sy=(p?p.sy:0)+oy;
   /* a Channel Sounding distance is a magnet: the node keeps its angle but slides back onto the ring of that distance
      unless it is being dragged */
-  if(o.cs!=null&&!o.p&&!Object.values(CNP).some(q=>q.k===k&&q.moved)){const l=Math.hypot(tx,ty)||1,R=csR(o.cs);tx=tx*R/l;ty=ty*R/l}
+  if(o.cs!=null&&!o.p&&!Object.values(CNP).some(q=>q.k===k&&q.moved)){const l=Math.hypot(tx,ty)||1,R=csR(o.cs);tx=tx*R/l;ty=ty*R/l;const m=Math.hypot(sx,sy)||1;sx=sx*R/m;sy=sy*R/m}
+  n.sx=sx;n.sy=sy;
   if(!n.gone){n.x+=(tx-n.x)*.07;n.y+=(ty-n.y)*.07}
   n.pos.setAttribute('transform','translate('+n.x.toFixed(1)+' '+n.y.toFixed(1)+')');
   const c=n.c=cnCurve(px,py,n.x,n.y),d='M'+c[0].toFixed(1)+' '+c[1].toFixed(1)+'Q'+c[2].toFixed(1)+' '+c[3].toFixed(1)+' '+c[4].toFixed(1)+' '+c[5].toFixed(1);
@@ -663,7 +678,7 @@ function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).
  CN.pk=CN.pk.filter(p=>{const n=CN.n[p.k];p.t+=p.s;if(!n||!n.c||p.t>=1){p.e.remove();return false}if(p.t<0)return true;
   const c=n.c,t=p.in?1-p.t:p.t,u=1-t;p.e.setAttribute('cx',(u*u*c[0]+2*u*t*c[2]+t*t*c[4]).toFixed(1));p.e.setAttribute('cy',(u*u*c[1]+2*u*t*c[3]+t*t*c[5]).toFixed(1));
   p.e.setAttribute('r',(2.5+Math.sin(t*Math.PI)*2.5).toFixed(1));return true});
- CN.raf=requestAnimationFrame(cnFrame)}
+ cnFit();CN.raf=requestAnimationFrame(cnFrame)}
 
 /* g: event or command group; out: from the app to the peer */
 function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;

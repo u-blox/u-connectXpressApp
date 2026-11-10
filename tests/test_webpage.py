@@ -190,6 +190,23 @@ DEMO = [
      "f": [["topic", 0, "", "", "t", ""], ["text ...", 0, "", "", "r", ""]]},
 ]
 
+# /api/conn after the demo on a virtual ALMA-W1 (ucxapp_cmds_conn.c lines): every kind of node at once
+CONN = "\n".join([
+    "m|webserial|ALMA-W1|1.0.0-0|3600|1|C0:FF:EE:00:00:01",
+    "w|vucx-net|-47|6|192.168.1.50|192.168.1.1",
+    "s|0|tcp|open|", "s|1|tcp|open|",
+    "q|mqtt:1883|ucx|home/garage/cmd|home/garage/door",
+    "b|0|C0:FF:EE:00:11:22|-55|247|c|coded|5010|120",
+    "t|leader|0400", "n|0800|disabled|-60|3",
+    "g|virt:gnss|3D  10/10 sats HDOP 0.8",
+    "c|virt:cell|registered (home)  vucx telecom -73 dBm",
+]) + "\n"
+
+# True once every node's box (circle and labels) lies inside the view box.
+ALL_IN_VIEW = """() => { const v = CN.vb, ns = Object.values(CN.n).filter(n => !n.gone && n.o);
+  return ns.length >= 9 && ns.every(n => { const b = cnBox(n);
+    return b[0] >= v[0] && b[1] >= v[1] && b[2] <= v[0] + v[2] && b[3] <= v[1] + v[3] }) }"""
+
 
 class Mock(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -223,6 +240,8 @@ class Mock(BaseHTTPRequestHandler):
                                    {"t": "Join with PEAP", "l": "# factory\nwifi.peap FactoryNet u p ca.pem"}]))
         elif self.path.startswith("/api/version"):
             self.reply(json.dumps({"v": "u-connectXpressApp 3.5.0.261104 (built today)"}))
+        elif self.path.startswith("/api/conn"):
+            self.reply(json.dumps({"t": CONN}))
         elif self.path.startswith("/events"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -350,6 +369,43 @@ def test_page_in_a_browser(server):
         assert page.is_visible("#mb") and "on" in page.get_attribute("#n-wifi", "class")
         page.click("#vw button[data-v='0']")
         assert page.is_visible("#pc")
+        browser.close()
+    assert not js_errors, js_errors
+
+
+def test_connections_view_keeps_every_node_on_screen(server):
+    """The demo's full ALMA-W1 graph: Thread and its neighbour used to be pushed below the canvas for seconds. The
+    view follows the content until the user zooms or pans; reset hands it back."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector("#st.ok")
+        page.click("#vw button[data-v='2']")
+        page.wait_for_function("() => CN.n.t && CN.n.n0800 && CN.n.g && CN.n.c")   # Thread, its neighbour, GNSS, cell
+        page.wait_for_function(ALL_IN_VIEW, timeout=15000)
+        assert page.evaluate("CN.auto") == 1
+        size = page.evaluate("[CN.vb[2], CN.vb[3]]")
+        assert size[0] >= 1075 and size[1] >= 625, size   # never closer than the default view
+        page.wait_for_timeout(1500)   # and stays in view once the layout has settled
+        assert page.evaluate(ALL_IN_VIEW)
+        # the layout settles instead of exploding (pushes of 500+ before), and a node on its Channel Sounding ring
+        # slides along it instead of piling up push it cannot follow
+        assert page.evaluate("Math.max(...Object.values(CN.n).map(n => Math.hypot(n.px || 0, n.py || 0)))") < 300
+        # the user zooms: the view is theirs; reset gives it back to the content
+        box = page.locator("#cn").bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, -300)
+        assert page.evaluate("CN.auto") == 0
+        page.click("#cnz button[data-z='0']")
+        assert page.evaluate("CN.auto") == 1
+        page.wait_for_function(ALL_IN_VIEW, timeout=15000)
         browser.close()
     assert not js_errors, js_errors
 

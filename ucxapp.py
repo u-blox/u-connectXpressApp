@@ -1715,7 +1715,7 @@ def web_preview(exe, port):
     from urllib.parse import parse_qs, urlparse
 
     # a private export, held in memory: a second preview (or its test) must not pull the files from under this one
-    with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+    with tempfile.TemporaryDirectory() as tmp:
         out = subprocess.run([str(exe), "--offline", "--exec", f'web.export "{Path(tmp).as_posix()}"'],
                              capture_output=True, text=True, errors="replace", timeout=60)
         files = {f.stem: f.read_bytes() for f in Path(tmp).glob("*.json")}

@@ -1073,6 +1073,32 @@ def test_bt_filter_addr_name_usage(app_exe, nora, args):
     assert not any(cmd.startswith(("AT+UBTDFD=", "AT+USYLA=0,", "AT+UBTLN=")) for cmd in nora.log), nora.log
 
 
+def test_bt_phy_uses_the_typed_api(app_exe, nora):
+    entries = {"AT+UBTCS4?": ["+UBTCS4:4", "OK"], "AT+UBTCS5?": ["+UBTCS5:4", "OK"],
+               "AT+UBTPHYR=3": ["+UBTPHYR:3,4,4", "OK"], "AT+UBTCS4=*": ["OK"], "AT+UBTCS5=*": ["OK"],
+               "AT+UBTPHYR=*": ["OK"]}
+    rest = {k: v for k, v in nora.commands.items() if k not in entries}
+    nora.commands.clear()
+    nora.commands.update(entries)
+    nora.commands.update(rest)
+    out = _shell(app_exe, nora.port, ["bt.phy coded", "bt.phy", "bt.phy 3", "bt.phy 3 2m"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "preferred PHY Coded on new links, set and stored" in out.stdout, out.stdout
+    assert "preferred PHY: tx Coded, rx Coded" in out.stdout, out.stdout
+    assert "connection 3: tx Coded, rx Coded" in out.stdout, out.stdout
+    assert "connection 3: 2M PHY requested" in out.stdout, out.stdout
+    sent = nora.log
+    assert "AT+UBTCS4=4" in sent and "AT+UBTCS5=4" in sent and "AT&W" in sent, sent
+    assert "AT+UBTPHYR=3,2,2" in sent, sent
+
+
+@pytest.mark.parametrize("args", ["bt.phy fast", "bt.phy 3 auto", "bt.phy 3 4g", "bt.phy coded 2m", "bt.phy 1 2 3"])
+def test_bt_phy_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith(("AT+UBTCS4=", "AT+UBTCS5=", "AT+UBTPHYR=")) for cmd in nora.log), nora.log
+
+
 def test_bt_cs_sets_reflector_and_explains_a_module_without_it(app_exe, nora):
     out = _shell(app_exe, nora.port, ["bt.cs on", "bt.cs off"], log=nora.log)
     assert out.returncode == 0 and "Channel Sounding on: reflector" in out.stdout, out.stdout

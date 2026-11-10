@@ -575,9 +575,9 @@ static const example_t kExamples[] = {
     { "uc-livestock", "Find a tag after a fence event (manual demonstration)",
       "bt.name FarmTag-001\n"
       "# Coded PHY S8 on every link: lowest rate, longest range (NORA-B26, ALMA-W1)\n"
-      "at AT+UBTCS4=4\nat AT+UBTCS5=4\n"
+      "bt.phy coded\n"
       "bt.adv on\nbt.adv\n"
-      "# once the gateway connects, at AT+UBTPHYR=<handle> shows tx/rx PHY 4 (Coded)\n"
+      "# once the gateway connects, bt.phy <conn> shows tx/rx Coded\n"
       "# edge host triggers this after a confirmed area event" },
     { "uc-livestock", "Notify the farm server (the tag position over cellular)",
       "gnss.bridge off\ncell.open\ncell.attach on\ncell.connect farm.example.com 5000\n"

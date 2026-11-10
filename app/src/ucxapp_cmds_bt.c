@@ -1240,6 +1240,93 @@ static int cmdBtName(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* PHY bits of AT+UBTCS4/5 and AT+UBTPHYR: bit 0 1M, bit 1 2M, bit 2 Coded (S8); 0 lets the peer decide */
+static int32_t phyParse(const char *s)
+{
+    return !strcmp(s, "auto") ? 0 : !strcmp(s, "1m") ? 1 : !strcmp(s, "2m") ? 2 : !strcmp(s, "coded") ? 4 : -1;
+}
+
+static const char *phyName(int32_t phy)
+{
+    switch (phy) {
+    case 0: return "auto";
+    case 1: return "1M";
+    case 2: return "2M";
+    case 3: return "1M|2M";
+    case 4: return "Coded";
+    case 5: return "1M|Coded";
+    case 6: return "2M|Coded";
+    case 7: return "1M|2M|Coded";
+    default: return "?";
+    }
+}
+
+static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t r, tx = 0, rx = 0;
+
+    if (argc > 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc >= 2 && isdigit((unsigned char)argv[1][0])) {
+        int32_t conn = (int32_t)strtol(argv[1], NULL, 10);
+        if (argc == 3) {
+            int32_t phy = phyParse(argv[2]);
+            if (phy <= 0) {
+                return UCXAPP_ERR_USAGE;
+            }
+            r = uCxBluetoothRequestPhy(app->ucx, conn, phy, phy);
+            if (r != 0) {
+                ucxapp_print("ERROR: PHY update on connection %d failed (%d%s)\n", (int)conn, (int)r, ucxapp_errname(r));
+                return UCXAPP_ERR_FAILED;
+            }
+            ucxapp_print("connection %d: %s PHY requested (bt.phy %d shows the result)\n", (int)conn, phyName(phy),
+                         (int)conn);
+            return UCXAPP_OK;
+        }
+        uCxBtGetPhy_t cur;
+        r = uCxBluetoothGetPhy(app->ucx, conn, &cur);
+        if (r != 0) {
+            ucxapp_print("ERROR: read the PHY of connection %d failed (%d%s)\n", (int)conn, (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("connection %d: tx %s, rx %s\n", (int)conn, phyName(cur.tx_phy), phyName(cur.rx_phy));
+        return UCXAPP_OK;
+    }
+    if (argc == 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        int32_t phy = phyParse(argv[1]);
+        if (phy < 0) {
+            return UCXAPP_ERR_USAGE;
+        }
+        r = uCxBluetoothSetPreferredTxPhy(app->ucx, phy);
+        if (r == 0) {
+            r = uCxBluetoothSetPreferredRxPhy(app->ucx, phy);
+        }
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+        if (r != 0) {
+            ucxapp_print("ERROR: set the preferred PHY failed (%d%s)\n", (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("preferred PHY %s on new links, set and stored\n", phyName(phy));
+        return UCXAPP_OK;
+    }
+    r = uCxBluetoothGetPreferredTxPhy(app->ucx, &tx);
+    if (r == 0) {
+        r = uCxBluetoothGetPreferredRxPhy(app->ucx, &rx);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: read the preferred PHY failed (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("preferred PHY: tx %s, rx %s\n", phyName(tx), phyName(rx));
+    return UCXAPP_OK;
+}
+
 #define ADV_DATA_MAX 31
 
 static const char *advTypeName(int32_t type)
@@ -1696,6 +1783,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.scan",       "[full] [filter]",     "Scan for BLE devices (up to 30 s), named and strongest first; full decodes the data, filter applies bt.filter", UCXAPP_CMD_NEEDS_DEVICE, cmdBtScan },
     { "bt.connect",    "[addr[,random]|n|name]", "Connect by address, scan number, profile or device name (case-sensitive, scanned for); no argument: last profile", UCXAPP_CMD_NEEDS_DEVICE, cmdBtConnect },
     { "bt.name",       "[name]",              "Show or set the module's Bluetooth name (stored)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtName },
+    { "bt.phy",        "[auto|1m|2m|coded]|<conn> [1m|2m|coded]", "Preferred PHY for new links (stored; coded = Coded S8, longest range), or show or change the PHY of a connection", UCXAPP_CMD_NEEDS_DEVICE, cmdBtPhy },
     { "bt.addr",       "[addr]",              "Show or set the module's Bluetooth address (XX:XX:XX:XX:XX:XX, applies after dev.reboot)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAddr },
     { "bt.adv",        "[on|off|<hex> [connectable|scannable|broadcast]|interval <min_ms> [max_ms]]", "Legacy advertising: show, start or stop it, or set the custom AD payload (3-31 bytes) and type, or the interval", UCXAPP_CMD_NEEDS_DEVICE, cmdBtAdv },
 #ifndef UCXAPP_LITE

@@ -139,6 +139,14 @@ static int cmdMdnsStatus(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("Host name:      (the Wi-Fi host name)\n");
     }
     uCxEnd(app->ucx);
+    {
+        int32_t type;
+        const char *prev, *renamed;
+        if (ucxapp_mdns_conflict(&type, &prev, &renamed)) {
+            ucxapp_print("Name conflict:  %s '%s' was in use, renamed to '%s'\n",
+                         type == 0 ? "host name" : "service", prev, renamed);
+        }
+    }
     printServices(app);
     return UCXAPP_OK;
 }

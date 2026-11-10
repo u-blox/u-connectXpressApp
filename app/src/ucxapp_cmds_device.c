@@ -9,6 +9,7 @@
 #pragma warning(push)
 #pragma warning(disable: 4200 4201)
 #endif
+#include "u_cx_bluetooth.h"
 #include "u_cx_general.h"
 #include "u_cx_power.h"
 #include "u_cx_security.h"
@@ -201,6 +202,7 @@ static int cmdDeviceStatus(ucxapp_t *app, int argc, char *argv[])
     }
     uCxEnd(app->ucx);
     ucxapp_print("Certificates:     %d\n", certs);
+    ucxapp_print("Power:            %s\n", ucxapp_power_name(ucxapp_power_get()));
     return UCXAPP_OK;
 }
 
@@ -513,11 +515,39 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
     if (argc == 1) {
         r = uCxPowerGetPowerSaveLevel(app->ucx, &level);
         if (r != 0) {
-            ucxapp_print("no power save level on this module: dev.power sleep for light sleep (NORA-B26), "
+            ucxapp_print("no power save level on this module: dev.power sleep for light sleep, "
                          "dev.power deep for deep sleep\n");
             return UCXAPP_OK;
         }
+        ucxapp_power_save_level(level == 1);
         ucxapp_print("power save level %d%s\n", (int)level, level == 0 ? " (off, fastest response)" : " (saves power after the idle timeout)");
+        ucxapp_print("state: %s\n", ucxapp_power_name(ucxapp_power_get()));
+        return UCXAPP_OK;
+    }
+    if (strcmp(argv[1], "auto") == 0) {
+        /* Friendly form of save: seconds instead of a level and milliseconds. */
+        int32_t seconds = 30;
+        bool off = argc == 3 && strcmp(argv[2], "off") == 0;
+        if (argc > 3 || (argc == 3 && !off && (!ucxapp_parse_int(argv[2], &seconds) || seconds < 1 || seconds > 3600))) {
+            return UCXAPP_ERR_USAGE;
+        }
+        r = uCxPowerSetPowerSaveLevel(app->ucx, off ? 0 : 1);
+        if (r == 0 && !off) {
+            r = uCxPowerSetPowerSaveTimeout(app->ucx, seconds * 1000);
+        }
+        if (r == 0) {
+            r = uCxSystemStoreConfiguration(app->ucx);
+        }
+        if (r != 0) {
+            return powerFailed("set power save", r, "it needs a NORA-W36 (NORA-B26: dev.power sleep)");
+        }
+        ucxapp_power_save_level(!off);
+        if (off) {
+            ucxapp_print("power save off: always active, fastest response\n");
+        } else {
+            ucxapp_print("power save on: the module saves power after %d s idle and wakes on traffic; "
+                         "use 115200 baud or lower\n", (int)seconds);
+        }
         return UCXAPP_OK;
     }
     if (strcmp(argv[1], "save") == 0) {
@@ -535,6 +565,7 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
         if (r != 0) {
             return powerFailed("set the power save level", r, "it needs a NORA-W36 (NORA-B26: dev.power sleep)");
         }
+        ucxapp_power_save_level(level == 1);
         ucxapp_print("power save level %d stored", (int)level);
         if (argc == 4) {
             ucxapp_print(", idle timeout %d ms", (int)timeoutMs);
@@ -543,14 +574,26 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_OK;
     }
     if (argc == 2 && strcmp(argv[1], "sleep") == 0) {
+        bool wifi = ucxapp_module_has_wifi(app);
+        if (wifi) {
+            /* NORA-W36 (3.5.0+) only sleeps with Bluetooth off; say so instead of a bare ERROR. */
+            uBtMode_t mode = U_BT_MODE_DISABLED;
+            if (uCxBluetoothGetMode(app->ucx, &mode) == 0 && mode != U_BT_MODE_DISABLED) {
+                ucxapp_print("ERROR: light sleep on NORA-W36 needs Bluetooth off: AT+UBTM=0, AT&W, AT+CPWROFF, "
+                             "then connect Wi-Fi and run dev.power sleep again\n");
+                return UCXAPP_ERR_FAILED;
+            }
+        }
         r = uCxPowerSleep(app->ucx);
         if (r != 0) {
-            return powerFailed("light sleep", r, "it needs a NORA-B26 (NORA-W36: dev.power save 1)");
+            return powerFailed("light sleep", r, wifi ? "NORA-W36 needs firmware 3.5.0 or later (fw.update)"
+                                                      : "this module has no light sleep (dev.power save 1)");
         }
         /* The module falls asleep a little after its OK; a command in between is lost half way. */
         U_CX_PORT_SLEEP_MS(POWER_SLEEP_SETTLE_MS);
-        ucxapp_print("light sleep: Bluetooth links stay up and events still come; dev.power wake (or the WAKE_UP pin) "
-                     "wakes it for commands\n");
+        ucxapp_power_set(UCXAPP_POWER_LIGHT);
+        ucxapp_print("light sleep: %s links stay up and events still come; dev.power wake (or the WAKE_UP pin) "
+                     "wakes it for commands\n", wifi ? "Wi-Fi" : "Bluetooth");
         return UCXAPP_OK;
     }
     if (argc == 2 && strcmp(argv[1], "wake") == 0) {
@@ -563,6 +606,7 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
             }
             uCxAtClientSetCommandTimeout(app->ucx->pAtClient, POWER_WAKE_TIMEOUT_MS, false);
             if (uCxGeneralAttention(app->ucx) == 0) {
+                ucxapp_power_awake();
                 ucxapp_print(i == 0 ? "awake\n" : "awake after %u ms\n", (unsigned)(ucxapp_platform_tick_ms() - startMs));
                 return UCXAPP_OK;
             }
@@ -614,6 +658,7 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
             return powerFailed("deep sleep", r, "wake-up by reset or UART needs a NORA-B26");
         }
         U_CX_PORT_SLEEP_MS(POWER_SLEEP_SETTLE_MS);
+        ucxapp_power_set(UCXAPP_POWER_DEEP);
         ucxapp_print("deep sleep: no radio; wake it with the %s, then it starts as after a reset\n",
                      mode == 0 ? "wake-up pin (pull low)" : mode == 1 ? "reset pin" : "UART RX pin");
         return UCXAPP_OK;
@@ -638,7 +683,7 @@ static const ucxapp_cmd_t gDeviceCmds[] = {
     { "dev.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
     { "dev.crash", "", "Developer: last crash info in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
 #ifndef UCXAPP_LITE
-    { "dev.power", "[save <0|1> [idle_ms]|sleep|wake|recover [hold_ms]|deep [pin|reset|uart]]", "Power save level (NORA-W36, stored), light sleep keeping Bluetooth links (NORA-B26) and wake, DTR recovery of a stuck module (DTR low 1200 ms, 5 pulses), or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
+    { "dev.power", "[auto [<s>|off]|save <0|1> [idle_ms]|sleep|wake|recover [hold_ms]|deep [pin|reset|uart]]", "Power state (active, power save, light sleep, deep sleep); auto: the module saves power after <s> idle (default 30) and wakes on traffic (NORA-W36, stored); save: level 0 off or 1 on with the idle time in ms; light sleep keeping Wi-Fi (NORA-W36 3.5.0+, Bluetooth off) or Bluetooth links (NORA-B26) and wake, DTR recovery of a stuck module (DTR low 1200 ms, 5 pulses), or deep sleep (no radio, wakes as after a reset)", UCXAPP_CMD_NEEDS_DEVICE, cmdDevicePower },
 #endif
 };
 

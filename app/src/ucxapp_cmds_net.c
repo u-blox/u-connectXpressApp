@@ -120,6 +120,57 @@ static void printPrintable(const uint8_t *data, int32_t len)
     }
 }
 
+/* ca=/cert=/key= of the running http command (certificates from cert.upload); none means TLS without a server check. */
+static const char *gTlsCa, *gTlsCert, *gTlsKey;
+
+/* Takes ca=, cert= and key= out of argv so each command parses only its own words; false on a bad combination. */
+static bool takeTlsOpts(int *argc, char *argv[], int from)
+{
+    static const char *const kNames[] = { "ca=", "cert=", "key=" };
+    const char **const kDest[] = { &gTlsCa, &gTlsCert, &gTlsKey };
+    int out = from;
+
+    gTlsCa = gTlsCert = gTlsKey = NULL;
+    for (int i = from; i < *argc; i++) {
+        size_t k = 0;
+        while (k < 3 && strncmp(argv[i], kNames[k], strlen(kNames[k])) != 0) {
+            k++;
+        }
+        if (k == 3) {
+            argv[out++] = argv[i];
+            continue;
+        }
+        *kDest[k] = argv[i] + strlen(kNames[k]);
+        if (**kDest[k] == '\0') {
+            return false;
+        }
+    }
+    *argc = out;
+    return (gTlsCert == NULL) == (gTlsKey == NULL) && (gTlsCert == NULL || gTlsCa != NULL);
+}
+
+typedef int (*httpCmd_t)(ucxapp_t *app, int argc, char *argv[]);
+
+/* Runs an http command with its TLS options (after the first `from` words, so a POST body like key=v stays the body),
+   then clears them so wifi.portal and the web never inherit them. */
+static int withTls(httpCmd_t fn, int from, ucxapp_t *app, int argc, char *argv[])
+{
+    int rc = argc >= from && takeTlsOpts(&argc, argv, from) ? fn(app, argc, argv) : UCXAPP_ERR_USAGE;
+    gTlsCa = gTlsCert = gTlsKey = NULL;
+    return rc;
+}
+
+static int32_t setSessionTls(ucxapp_t *app)
+{
+    if (gTlsCert != NULL) {
+        return uCxHttpSetTLS5(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, gTlsCa, gTlsCert, gTlsKey);
+    }
+    if (gTlsCa != NULL) {
+        return uCxHttpSetTLS3(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, gTlsCa);
+    }
+    return uCxHttpSetTLS2(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2);
+}
+
 static int32_t configureSession(ucxapp_t *app, bool https, const char *host, const char *path)
 {
     char *hostUrl = gBuf.hostUrl;
@@ -128,13 +179,13 @@ static int32_t configureSession(ucxapp_t *app, bool https, const char *host, con
 
     if (colon != NULL && strchr(host, ']') == NULL && atoi(colon + 1) > 0) {
         snprintf(hostUrl, sizeof(gBuf.hostUrl), "%s://%.*s", https ? "https" : "http", (int)(colon - host), host);
-        err = https ? uCxHttpSetTLS2(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2) : 0;
+        err = https ? setSessionTls(app) : 0;
         if (err >= 0) {
             err = uCxHttpSetConnectionParams3(app->ucx, HTTP_SESSION, hostUrl, atoi(colon + 1));
         }
     } else if (https) {
         snprintf(hostUrl, sizeof(gBuf.hostUrl), "https://%s", host);
-        err = uCxHttpSetTLS2(app->ucx, HTTP_SESSION, U_WIFI_TLS_VERSION_TLS1_2);
+        err = setSessionTls(app);
         if (err >= 0) {
             err = uCxHttpSetConnectionParams3(app->ucx, HTTP_SESSION, hostUrl, 443);
         }
@@ -994,14 +1045,18 @@ static int cmdNetNtp(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_ERR_USAGE;
 }
 
+static int cmdHttpGetTls(ucxapp_t *app, int argc, char *argv[])      { return withTls(cmdHttpGet, 2, app, argc, argv); }
+static int cmdHttpDownloadTls(ucxapp_t *app, int argc, char *argv[]) { return withTls(cmdHttpDownload, 3, app, argc, argv); }
+static int cmdHttpPostTls(ucxapp_t *app, int argc, char *argv[])     { return withTls(cmdHttpPost, 3, app, argc, argv); }
+
 static const ucxapp_cmd_t gNetCmds[] = {
     { "net.ping", "<host> [count=4]",    "ICMP ping (count 1-10)",                UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
     { "net.ntp", "status | on [manual|auto] | off | server <0|1> <host|->", "NTP client: state, on (manual or auto servers), off, or set server 0/1 ('-' removes it)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
     { "net.iperf", "server [tcp|udp] [port] | client <ip> [tcp|udp] [seconds] [port] | stop", "iperf throughput: server or client against an iperf on the PC, stop", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
-    { "http.get", "<url> [show_bytes]", "HTTP(S) GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
-    { "http.download", "<url> <file>", "Download to a file, following redirects", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownload },
-    { "http.post", "<url> <body> [content_type]", "HTTP(S) POST (default form-urlencoded), prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPost },
+    { "http.get", "<url> [show_bytes] [ca=<name> [cert=<name> key=<name>]]", "HTTP(S) GET, prints status and body; ca= verifies the server, cert/key add a client certificate (mutual TLS), all from cert.upload", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGetTls },
+    { "http.download", "<url> <file> [ca=<name> [cert=<name> key=<name>]]", "Download to a file, following redirects; TLS options as http.get", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownloadTls },
+    { "http.post", "<url> <body> [content_type] [ca=<name> [cert=<name> key=<name>]]", "HTTP(S) POST (default form-urlencoded), prints status and body; TLS options as http.get", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPostTls },
     { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel or guest Wi-Fi login page: check detects it (fails only without internet), login fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
     { "wifi.portal.form", "<html_file> <page_url> [field=value ...]", "What wifi.portal login would submit for a saved login page (no module needed)", 0, cmdWifiPortalForm },
 };

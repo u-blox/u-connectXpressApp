@@ -352,6 +352,11 @@ uint32_t ucxapp_ui_state(char *out, size_t size)
         }
     }
     U_CX_MUTEX_UNLOCK(gLock);
+    ucxapp_power_t power = ucxapp_power_get();
+    if (power != UCXAPP_POWER_ACTIVE && n + 20 < size) {
+        n += (size_t)snprintf(out + n, size - n, " | Power %s", ucxapp_power_name(power));
+    }
+    version += (uint32_t)power * 1009u;
     size_t (*const kExtra[])(char *, size_t) = { ucxapp_gatt_summary, ucxapp_gnss_summary, ucxapp_imu_summary };
     for (size_t i = 0; i < sizeof(kExtra) / sizeof(kExtra[0]); i++) {
         char part[48];
@@ -745,7 +750,7 @@ static const char *const kCmdOrder[] = {
     "wifi.ap.enable", "wifi.ap.disable", "wifi.ap.status",
     "net.ping", "net.dns", "net.ntp", "net.iperf",
     "sock.list", "sock.open", "sock.connect", "sock.send", "sock.read", "sock.close", "sock.tls",
-    "mqtt.connect", "mqtt.disconnect", "mqtt.subscribe", "mqtt.publish", "mqtt.read", "mqtt.unsubscribe",
+    "mqtt.connect", "mqtt.disconnect", "mqtt.subscribe", "mqtt.publish", "mqtt.read", "mqtt.unsubscribe", "mqtt.will",
     "dash", "app.info", "app.version", "app.memory", "app.uptime", "app.time",
     "utils.zip", "utils.unzip", "utils.hash.text", "utils.tls.list", "utils.tls.ca.create",
     "utils.tls.server.create", "utils.tls.client.create", "utils.tls.pem", "utils.tls.remove",

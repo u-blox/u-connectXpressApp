@@ -89,6 +89,23 @@ void ucxapp_adopt_connections(uCxHandle_t *ucx);
 void ucxapp_udp_reset_limit(void);   /* forget the UDP read limit learned from the previous module */
 /* Tick of the last +STARTUP; *exact is false when none was seen and the time is the connect time instead. */
 uint32_t ucxapp_module_boot_ms(bool *exact);
+/* Last +UEMDCD (NORA-W36 3.5.0+): the module renamed its mDNS hostname (type 0) or a service instance (type 1)
+   after a name conflict; false when none was seen since start. */
+bool ucxapp_mdns_conflict(int32_t *type, const char **previous, const char **renamed);
+
+/* Module power state as the app last set it (dev.power); +STARTUP brings light and deep sleep back to
+   active, or to power save when the stored level is on. Shown by dev.status and the status line. */
+typedef enum {
+    UCXAPP_POWER_ACTIVE,
+    UCXAPP_POWER_SAVE,      /* NORA-W36 power save level 1: the module idles itself and wakes on traffic */
+    UCXAPP_POWER_LIGHT,     /* AT+UPMS: links stay up, no AT until woken */
+    UCXAPP_POWER_DEEP       /* AT+UPMDS: no radio, links dropped, wakes as after a reset */
+} ucxapp_power_t;
+void ucxapp_power_set(ucxapp_power_t state);
+void ucxapp_power_save_level(bool on);   /* the stored level, which +STARTUP returns to */
+void ucxapp_power_awake(void);           /* answered again after light sleep: active or power save */
+ucxapp_power_t ucxapp_power_get(void);
+const char *ucxapp_power_name(ucxapp_power_t state);
 
 /* Event flags set by URC handlers. Direct access to the flags requires the lock. */
 extern volatile uint32_t gUcxappEventFlags;

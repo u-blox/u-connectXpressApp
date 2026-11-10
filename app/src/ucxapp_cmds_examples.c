@@ -146,6 +146,10 @@ static const example_t kExamples[] = {
       "http.get https://www.u-blox.com 200\nhttp.download https://example.com/file.bin file.bin\nfile.hash sha256 file.bin" },
     { "http", "Post form data",
       "http.post http://httpbin.org/post name=ucx&value=1" },
+    { "http", "HTTPS with a server check, and mutual TLS with a client certificate",
+      "cert.upload ca server-ca.pem server-ca\nhttp.get https://myserver.example.com/status 200 ca=server-ca\n"
+      "cert.upload client device.pem device\ncert.upload key device.key device-key\n"
+      "http.post https://myserver.example.com/api t=21.5 ca=server-ca cert=device key=device-key" },
 
     { "sock", "TCP client",
       "sock.open tcp\nsock.connect example.com 80\nsock.send \"GET / HTTP/1.0\\r\\n\\r\\n\"\nsock.read\nsock.close" },
@@ -180,6 +184,9 @@ static const example_t kExamples[] = {
     { "mqtt", "Mutual TLS with a client certificate (AWS IoT, Azure IoT Hub)",
       "cert.upload ca root-ca.pem root-ca\ncert.upload client device.pem device\ncert.upload key device.key device-key\n"
       "mqtt.connect xxxxxx-ats.iot.eu-west-1.amazonaws.com ca=root-ca cert=device key=device-key id=device1" },
+    { "mqtt", "Last will: the broker publishes 'offline' if the module drops off",
+      "mqtt.will devices/device1/status offline qos=1 retain\nmqtt.connect mybroker.local 1883 id=device1\n"
+      "mqtt.publish devices/device1/status online" },
 
     { "thread", "Start a new Thread network on this module (it becomes the leader)",
       "thread.network new\nthread.start\nthread.status\nthread.network" },
@@ -286,8 +293,9 @@ static const example_t kExamples[] = {
       "dev.info\ndev.status\ndev.diagnose" },
     { "dev", "Start clean",
       "dev.factory confirm" },
-    { "dev", "Save power: NORA-W36 power save, NORA-B26 light sleep",
-      "dev.power save 1 1000\ndev.power\n# NORA-B26: links stay up while it sleeps\ndev.power sleep\ndev.power wake" },
+    { "dev", "Save power: NORA-W36 power save, light sleep",
+      "dev.power auto 30\ndev.power save 1 1000\ndev.power\n# light sleep: NORA-B26 keeps Bluetooth links, NORA-W36 (3.5.0+, Bluetooth off) keeps Wi-Fi\n"
+      "dev.power sleep\ndev.power wake" },
     { "dev", "Deep sleep until the wake-up pin is pulled low",
       "dev.power deep\n# the module starts as after a reset" },
 

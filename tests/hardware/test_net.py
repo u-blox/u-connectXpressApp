@@ -133,12 +133,13 @@ def test_mdns_hostname_and_service_round_trip(app_exe, port_a):
 def test_mqtt_publish_is_received_back(app_exe, port_a):
     wifi = _wifi_connect_command()
     topic = f"ucxapp/test/{int(time.time())}"
-    out = _run(app_exe, port_a, wifi, "mqtt.connect", f"mqtt.subscribe {topic} 0",
-               f"mqtt.publish {topic} hello-mqtt", "mqtt.read 10", f"mqtt.unsubscribe {topic}", "mqtt.disconnect",
-               timeout=90)
+    out = _run(app_exe, port_a, wifi, f"mqtt.will {topic}/status offline", "mqtt.will", "mqtt.connect",
+               f"mqtt.subscribe {topic} 0", f"mqtt.publish {topic} hello-mqtt", "mqtt.read 10",
+               f"mqtt.unsubscribe {topic}", "mqtt.disconnect", "mqtt.will off", timeout=90)
     if "connect failed" in out.stdout or "timeout waiting for the broker" in out.stdout:
         pytest.skip("public MQTT broker unreachable")
     assert out.returncode == 0, out.stdout
+    assert f"last will: 'offline' on {topic}/status" in out.stdout and "last will cleared" in out.stdout, out.stdout
     assert f"{topic}: hello-mqtt" in out.stdout, out.stdout
     assert "no subscribe confirmation" not in out.stdout, out.stdout
     assert "read failed" not in out.stdout, out.stdout

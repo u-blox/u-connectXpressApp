@@ -518,6 +518,65 @@ def test_mdns_usage_errors_send_nothing(app_exe, nora):
     assert not any(c.startswith("AT+UMD") for c in nora.log), nora.log
 
 
+def _nora_with(urcs=None, **commands):
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["commands"].update(commands)
+    profile["urcs"].update(urcs or {})
+    module = Vucx(profile)
+    module.start()
+    return module
+
+
+def test_mdns_name_conflict_is_reported(app_exe):
+    pytest.importorskip("yaml")
+    module = _nora_with(urcs={"AT+UMDE=1": ["+UEMDU", '+UEMDCD:0,"nora","nora-2"']})
+    try:
+        out = _shell(app_exe, module.port, ["mdns.on nora 2", "mdns.status"], log=module.log)
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "Name conflict:  host name 'nora' was in use, renamed to 'nora-2'" in out.stdout, out.stdout
+    assert "mDNS up: vucx.local" in out.stdout, out.stdout     # the client still gets every other URC
+
+
+def test_http_tls_options(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["http.get https://srv.local/x 10 ca=myca",
+                                      "http.post https://srv.local/p t=1 ca=myca cert=dev key=devkey",
+                                      "http.post https://srv.local/p key=v", "http.get https://srv.local/x 10"],
+                 timeout=90, log=nora.log)
+    tls = [c for c in nora.log if c.startswith("AT+UHTCTLS=")]
+    assert tls == ['AT+UHTCTLS=0,3,"myca"',     'AT+UHTCTLS=0,3,"myca","dev","devkey"', "AT+UHTCTLS=0,1",
+                       "AT+UHTCTLS=0,1"], tls       # a body like key=v stays the body; options never carry over
+    for bad in ("http.get https://srv.local/x cert=dev key=devkey", "http.get https://srv.local/x key=k",
+                "http.post https://srv.local/p t=1 ca="):
+        out = _run(app_exe, nora.port, bad)
+        assert out.returncode != 0 and "usage:" in out.stdout.lower(), (bad, out.stdout)
+
+
+def test_mqtt_last_will_is_set_and_cleared(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["mqtt.will dev/status offline qos=1 retain", "mqtt.will off",
+                                      "mqtt.will dev/status", "mqtt.will a b qos=3", "mqtt.will"], log=nora.log)
+    wills = [c for c in nora.log if c.startswith("AT+UMQLWT=")]
+    assert wills == ['AT+UMQLWT=0,"dev/status","offline",1,1', 'AT+UMQLWT=0,"",""', "AT+UMQLWT=0"], wills
+    assert "last will set" in out.stdout and "last will cleared" in out.stdout, out.stdout
+    assert out.stdout.lower().count("usage:") == 2, out.stdout
+
+
+def test_light_sleep_on_nora_w36_needs_bluetooth_off(app_exe, nora):
+    out = _run(app_exe, nora.port, "dev.power sleep")
+    assert out.returncode != 0 and "needs Bluetooth off" in out.stdout, out.stdout
+    assert "AT+UPMS" not in nora.log, nora.log
+    module = _nora_with(**{"AT+UBTM?": ["+UBTM:0", "OK"]})
+    try:
+        out = _run(app_exe, module.port, "dev.power sleep")
+    finally:
+        module.stop()
+    assert out.returncode == 0 and "Wi-Fi links stay up" in out.stdout, out.stdout
+    assert "AT+UPMS" in module.log, module.log
+
+
 def test_sock_mcast_expands_ipv6_and_rejects_unicast(app_exe, nora):
     out = _shell(app_exe, nora.port, ["sock.open udp", "sock.bind 0 5353", "sock.mcast 0 join 224.0.0.251",
                                       "sock.mcast 0 join ff02::fb", "sock.mcast 0 leave ff02::fb",
@@ -1184,8 +1243,27 @@ def test_dev_power_levels_sleep_and_deep_sleep(app_exe, nora):
     assert "power save level 0 (off" in out.stdout and "idle timeout 2000 ms" in out.stdout, out.stdout
     assert "light sleep" in out.stdout and "awake" in out.stdout and "UART RX pin" in out.stdout, out.stdout
     sent = nora.log
-    for cmd in ("AT+UPMPSL=1", "AT+UPMPSTO=2000", "AT+UPMPSL=0", "AT&W", "AT+UPMS", "AT", "AT+UPMDS", "AT+UPMDS=2"):
+    for cmd in ("AT+UPMPSL=1", "AT+UPMPSTO=2000", "AT+UPMPSL=0", "AT&W", "AT", "AT+UPMDS", "AT+UPMDS=2"):
         assert cmd in sent, (cmd, sent)
+
+
+def test_dev_power_auto_and_state(app_exe, nora):
+    out = _shell(app_exe, nora.port, ["dev.power auto", "dev.status", "dev.power auto 60", "dev.power auto off",
+                                      "dev.power"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "after 30 s idle" in out.stdout and "after 60 s idle" in out.stdout, out.stdout
+    assert "Power:            power save" in out.stdout and "power save off" in out.stdout, out.stdout
+    assert "state: active" in out.stdout, out.stdout
+    sent = nora.log
+    for cmd in ("AT+UPMPSTO=30000", "AT+UPMPSTO=60000", "AT+UPMPSL=0"):
+        assert cmd in sent, (cmd, sent)
+
+
+@pytest.mark.parametrize("args", ["dev.power auto 0", "dev.power auto x", "dev.power auto 3601", "dev.power auto 5 6"])
+def test_dev_power_auto_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith("AT+UPM") for cmd in nora.log), nora.log
 
 
 @pytest.mark.parametrize("args", ["dev.power save 2", "dev.power save 1 0", "dev.power save", "dev.power deep gpio",

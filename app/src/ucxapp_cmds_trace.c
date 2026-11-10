@@ -42,6 +42,7 @@ static const urc_info_t kUrcs[] = {
     { "UEDGPC", "ping complete", "transmitted_packets,received_packets,packet_loss_rate,avg_response_time" },
     { "UEHTCDC", "HTTP disconnected", "session_id" },
     { "UEHTCRS", "HTTP response", "session_id,status_code,description" },
+    { "UEMDCD", "mDNS name conflict, renamed", "conflict_type,previous_name,new_name" },
     { "UEMDD", "mDNS service down", "" },
     { "UEMDU", "mDNS service up", "" },
     { "UEMQC", "MQTT connected", "mqtt_id" },

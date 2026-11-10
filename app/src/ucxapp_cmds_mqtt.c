@@ -25,6 +25,7 @@
 /* AT+UMQPB takes up to 5000 bytes (u-connectXpress MQTT packet limit). */
 #define MQTT_MODULE_MAX_PUBLISH 5000
 #define MQTT_MAX_MESSAGES  10
+#define MQTT_WILL_MAX       256   /* AT+UMQLWT topic and message, 0..256 */
 
 static char gSubTopic[64], gPubTopic[64];
 
@@ -153,6 +154,55 @@ static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("connected to %s:%d as %s%s%s%s\n", o.host, (int)o.port, o.id, o.user != NULL ? ", user " : "",
                  o.user != NULL ? o.user : "", o.cert != NULL ? ", TLS with client certificate"
                                                : o.ca != NULL ? ", TLS" : o.tls ? ", TLS (server not verified)" : "");
+    return UCXAPP_OK;
+}
+
+/* AT+UMQLWT is kept by the module and sent to the broker on the next mqtt.connect; an empty topic clears it. */
+static int cmdMqttWill(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t r;
+
+    if (argc == 1) {
+        uCxMqttGetLastWillAndTestament_t w;
+        if (!uCxMqttGetLastWillAndTestamentBegin(app->ucx, MQTT_ID, &w)) {
+            uCxEnd(app->ucx);
+            ucxapp_print("ERROR: cannot read the last will\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        if (w.topic == NULL || w.topic[0] == '\0') {
+            ucxapp_print("no last will\n");
+        } else {
+            ucxapp_print("last will: '%s' on %s (qos %d%s)\n", w.will_msg != NULL ? w.will_msg : "", w.topic,
+                         (int)w.qos, w.retain ? ", retained" : "");
+        }
+        uCxEnd(app->ucx);
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "off") == 0) {
+        r = uCxMqttSetLastWillAndTestament3(app->ucx, MQTT_ID, "", "");
+    } else {
+        uMqttQos_t qos = U_MQTT_QOS_AT_MOST_ONCE;
+        bool retain = false;
+        int i = 3;
+        if (argc < 3 || strlen(argv[1]) > MQTT_WILL_MAX || strlen(argv[2]) > MQTT_WILL_MAX) {
+            return UCXAPP_ERR_USAGE;
+        }
+        for (; i < argc; i++) {
+            if (strcmp(argv[i], "retain") == 0) {
+                retain = true;
+            } else if (strncmp(argv[i], "qos=", 4) != 0 || !parseQos(argv[i] + 4, &qos)) {
+                return UCXAPP_ERR_USAGE;
+            }
+        }
+        r = uCxMqttSetLastWillAndTestament5(app->ucx, MQTT_ID, argv[1], argv[2], qos,
+                                            retain ? U_MQTT_RETAIN_YES : U_MQTT_RETAIN_NO);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: cannot set the last will (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print(argc == 2 ? "last will cleared\n"
+                           : "last will set; the broker publishes it if the link drops after the next mqtt.connect\n");
     return UCXAPP_OK;
 }
 
@@ -343,6 +393,7 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gMqttCmds[] = {
     { "mqtt.connect",     "[host] [port] [id=<client>] [user=<name>] [pass=<pw>] [tls|ca=<name> [cert=<name> key=<name>]]", "Connect to a broker (default broker.emqx.io:1883); user/pass to log in, ca= for TLS (port 8883) plus cert/key for a client certificate, all from cert.upload", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttConnect },
+    { "mqtt.will",        "[<topic> <message> [qos=<0-2>] [retain] | off]", "Last will the broker publishes if the module drops off (set before mqtt.connect), off clears it, none shows it", UCXAPP_CMD_NEEDS_DEVICE, cmdMqttWill },
     { "mqtt.disconnect",  "",                 "Disconnect from the broker",                               UCXAPP_CMD_NEEDS_DEVICE, cmdMqttDisconnect },
     { "mqtt.subscribe",   "<topic> [qos=0]",    "Subscribe to a topic (wildcards allowed, qos 0-2)",        UCXAPP_CMD_NEEDS_DEVICE, cmdMqttSubscribe },
     { "mqtt.unsubscribe", "<topic>",          "Unsubscribe from a topic",                                 UCXAPP_CMD_NEEDS_DEVICE, cmdMqttUnsubscribe },

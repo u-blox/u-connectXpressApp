@@ -2,7 +2,10 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "u_cx_at_client.h"
 #include "u_cx_bluetooth.h"
 #include "u_cx_channel_sounding.h"
 #include "u_cx_channel_sounding_initiator.h"
@@ -54,6 +57,41 @@ uint32_t ucxapp_module_boot_ms(bool *exact)
     return gBootMs;
 }
 
+static volatile ucxapp_power_t gPower = UCXAPP_POWER_ACTIVE;
+static volatile bool gPowerSaveLevel;
+
+void ucxapp_power_set(ucxapp_power_t state)
+{
+    if (state != gPower) {
+        gPower = state;
+        evt("power: %s", ucxapp_power_name(state));
+    }
+}
+
+void ucxapp_power_save_level(bool on)
+{
+    gPowerSaveLevel = on;
+    if (gPower == UCXAPP_POWER_ACTIVE || gPower == UCXAPP_POWER_SAVE) {
+        ucxapp_power_set(on ? UCXAPP_POWER_SAVE : UCXAPP_POWER_ACTIVE);
+    }
+}
+
+ucxapp_power_t ucxapp_power_get(void)
+{
+    return gPower;
+}
+
+void ucxapp_power_awake(void)
+{
+    ucxapp_power_set(gPowerSaveLevel ? UCXAPP_POWER_SAVE : UCXAPP_POWER_ACTIVE);
+}
+
+const char *ucxapp_power_name(ucxapp_power_t state)
+{
+    static const char *const kNames[] = { "active", "power save", "light sleep", "deep sleep" };
+    return (unsigned)state < sizeof(kNames) / sizeof(kNames[0]) ? kNames[state] : "?";
+}
+
 static void startupUrc(struct uCxHandle *h)
 {
     (void)h;
@@ -61,6 +99,7 @@ static void startupUrc(struct uCxHandle *h)
     gBootSeen = true;
     gMqttUp = false;
     evt("device: startup");
+    ucxapp_power_set(gPowerSaveLevel ? UCXAPP_POWER_SAVE : UCXAPP_POWER_ACTIVE);
     ucxapp_events_signal(URC_FLAG_STARTUP);
 }
 static void networkUpUrc(struct uCxHandle *h)                                          { (void)h; evt("net: network up"); ucxapp_events_signal(URC_FLAG_NETWORK_UP); }
@@ -192,12 +231,88 @@ static void threadJoinerUrc(struct uCxHandle *h, uThreadJoinerResult_t r)   { (v
 
 static void mdnsUpUrc(struct uCxHandle *h)                                  { (void)h; evt("mdns: up"); ucxapp_events_signal(URC_FLAG_MDNS_UP); }
 static void mdnsDownUrc(struct uCxHandle *h)                                { (void)h; evt("mdns: down"); ucxapp_events_signal(URC_FLAG_MDNS_DOWN); }
+
+/* +UEMDCD is newer than u-connectClient, so it is picked off the AT client's URC callback before the client
+   parses the line (which it changes in place); every URC then goes on to the client unchanged. */
+static uUrcCallback_t gNextUrc;
+static void *gNextUrcTag;
+static bool gMdnsConflictSeen;
+static int32_t gMdnsConflictType;
+static char gMdnsConflictPrev[64], gMdnsConflictNew[64];
+
+/* Copies the next comma-separated field (quotes removed) of *p into out and moves *p past it. */
+static void urcField(const char **p, char *out, size_t size)
+{
+    const char *s = *p;
+    bool quoted = *s == '"';
+    size_t n = 0;
+
+    if (quoted) {
+        s++;
+    }
+    while (*s != '\0' && (quoted ? *s != '"' : *s != ',')) {
+        if (n + 1 < size) {
+            out[n++] = *s;
+        }
+        s++;
+    }
+    out[n] = '\0';
+    if (quoted && *s == '"') {
+        s++;
+    }
+    if (*s == ',') {
+        s++;
+    }
+    *p = s;
+}
+
+static void mdnsConflictLine(const char *params)
+{
+    char type[8];
+
+    urcField(&params, type, sizeof(type));
+    urcField(&params, gMdnsConflictPrev, sizeof(gMdnsConflictPrev));
+    urcField(&params, gMdnsConflictNew, sizeof(gMdnsConflictNew));
+    gMdnsConflictType = atoi(type);
+    gMdnsConflictSeen = true;
+    evt("mdns: %s '%s' in use, renamed to '%s'", gMdnsConflictType == 0 ? "hostname" : "service",
+        gMdnsConflictPrev, gMdnsConflictNew);
+}
+
+static void urcTap(struct uCxAtClient *pClient, void *pTag, char *pLine, size_t lineLength,
+                   uint8_t *pBinaryData, size_t binaryDataLen)
+{
+    static const char kConflict[] = "+UEMDCD:";
+    if (lineLength >= sizeof(kConflict) - 1 && strncmp(pLine, kConflict, sizeof(kConflict) - 1) == 0) {
+        mdnsConflictLine(pLine + sizeof(kConflict) - 1);
+    }
+    if (gNextUrc != NULL) {
+        gNextUrc(pClient, pTag, pLine, lineLength, pBinaryData, binaryDataLen);
+    }
+}
 #endif
+
+bool ucxapp_mdns_conflict(int32_t *type, const char **previous, const char **renamed)
+{
+#ifndef UCXAPP_LITE
+    *type = gMdnsConflictType;
+    *previous = gMdnsConflictPrev;
+    *renamed = gMdnsConflictNew;
+    return gMdnsConflictSeen;
+#else
+    (void)type;
+    (void)previous;
+    (void)renamed;
+    return false;
+#endif
+}
 
 void ucxapp_urc_register(uCxHandle_t *ucx)
 {
     gBootMs = ucxapp_platform_tick_ms();
     gBootSeen = false;
+    gPower = UCXAPP_POWER_ACTIVE;
+    gPowerSaveLevel = false;
     ucx->callbacks.STARTUP = startupUrc;
 
     uCxWifiRegisterLinkUp(ucx, linkUpUrc);
@@ -246,6 +361,12 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
 
     uCxMdnsRegisterMdnsUp(ucx, mdnsUpUrc);
     uCxMdnsRegisterMdnsDown(ucx, mdnsDownUrc);
+    gMdnsConflictSeen = false;
+    if (ucx->pAtClient->urcCallback != urcTap) {
+        gNextUrc = ucx->pAtClient->urcCallback;
+        gNextUrcTag = ucx->pAtClient->pUrcCallbackTag;
+        uCxAtClientSetUrcCallback(ucx->pAtClient, urcTap, gNextUrcTag);
+    }
 #endif
 
     uCxGattClientRegisterNotification(ucx, gattNotifyUrc);

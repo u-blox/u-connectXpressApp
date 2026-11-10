@@ -397,7 +397,8 @@ static void printTable(char *snap)
                          f[5][0] == 'c' ? "central" : f[5][0] == 'p' ? "peripheral" : "-", f[6]);
             if (f[7][0] != '\0') {
                 int mm = (int)strtol(f[7], NULL, 10);
-                ucxapp_print("  distance %d.%02d m (%s ms ago)", mm / 1000, (mm < 0 ? -mm : mm) % 1000 / 10, f[8]);
+                long ageS = (strtol(f[8], NULL, 10) + 500) / 1000;
+                ucxapp_print("  distance %d.%02d m (%ld s ago)", mm / 1000, (mm < 0 ? -mm : mm) % 1000 / 10, ageS);
             }
             ucxapp_print("\n");
             links++;

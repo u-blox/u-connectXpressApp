@@ -1,6 +1,7 @@
 """The app against vucx over TCP (tcp:HOST:PORT): the simulated module on any OS, and `ucxapp --virtual`."""
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -40,6 +41,7 @@ def test_b26_over_tcp_ranges_with_channel_sounding(app_exe, b26, tmp_path):
     assert f"connected to {b26.port}" in out.stdout, out.stdout
     assert "NORA-B26" in out.stdout and "bonding succeeded" in out.stdout, out.stdout
     assert "5.0" in out.stdout and "mtu 247" in out.stdout, out.stdout
+    assert re.search(r"distance \d\.\d\d m \(\d+ s ago\)", out.stdout), out.stdout   # seconds, not ms
 
 
 def test_tcp_module_can_be_reopened(app_exe, b26, tmp_path):

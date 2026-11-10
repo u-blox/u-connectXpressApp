@@ -445,6 +445,10 @@ def test_connections_view_keeps_every_node_on_screen(server):
         page.click("#vw button[data-v='2']")
         page.wait_for_function("() => CN.n.t && CN.n.n0800 && CN.n.g && CN.n.c")   # Thread, its neighbour, GNSS, cell
         page.wait_for_function(ALL_IN_VIEW, timeout=15000)
+        # the details card gives the Channel Sounding age in seconds
+        page.evaluate("cnSelect('b0')")
+        assert "5.01 m, 0 s ago" in page.inner_text("#cnd"), page.inner_text("#cnd")
+        page.evaluate("cnSelect('b0')")
         assert page.evaluate("CN.auto") == 1
         size = page.evaluate("[CN.vb[2], CN.vb[3]]")
         assert size[0] >= 1075 and size[1] >= 625, size   # never closer than the default view

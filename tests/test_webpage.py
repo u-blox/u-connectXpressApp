@@ -229,6 +229,23 @@ ALL_IN_VIEW = """() => { const v = CN.vb, ns = Object.values(CN.n).filter(n => !
     return b[0] >= v[0] && b[1] >= v[1] && b[2] <= v[0] + v[2] && b[3] <= v[1] + v[3] }) }"""
 
 
+def qr_text(matrix, border=2):
+    """What ucxapp_qr_print prints for a module matrix: half blocks, two module rows per line, a 2-module border."""
+    n = len(matrix)
+    half = [" ", "\u2584", "\u2580", "\u2588"]
+
+    def mod(x, y):
+        return 0 <= x < n and 0 <= y < n and matrix[y][x]
+
+    return "".join("".join(half[(2 if mod(x, y) else 0) | (1 if mod(x, y + 1) else 0)]
+                           for x in range(-border, n + border)) + "\n" for y in range(-border, n + border, 2))
+
+
+# A 21-module matrix with finder patterns and pseudo-random data, the shape of a version 1 QR code.
+QR_MATRIX = [[(x < 7 and y < 7) or (x > 13 and y < 7) or (x < 7 and y > 13) or (x * 7 + y * 13) % 5 < 2
+              for x in range(21)] for y in range(21)]
+
+
 class Mock(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -280,6 +297,10 @@ class Mock(BaseHTTPRequestHandler):
                     acked += 1
                     if re.search(r"cmd=(dev\.summary|wifi\.status)(&|$)", url):
                         out = json.dumps("Module:           u-blox NORA-W36, firmware 3.5.0\n")
+                        self.wfile.write(f"event: out\ndata: {out}\n\nevent: done\ndata: 0\n\n".encode())
+                        self.wfile.flush()
+                    elif re.search(r"cmd=utils\.qr", url):
+                        out = json.dumps("WIFI:T:WPA;S:Setup-1234;P:setup1234;;\n" + qr_text(QR_MATRIX))
                         self.wfile.write(f"event: out\ndata: {out}\n\nevent: done\ndata: 0\n\n".encode())
                         self.wfile.flush()
                     elif re.search(r"cmd=examples(%20|\+| )uc-provision$", url):
@@ -441,6 +462,33 @@ def test_connections_view_keeps_every_node_on_screen(server):
         page.wait_for_function(ALL_IN_VIEW, timeout=15000)
         browser.close()
     assert not js_errors, js_errors
+
+
+def test_qr_code_in_the_log_becomes_a_picture(server):
+    """The half-block QR text of utils.qr.* / wifi.ap.enable is replaced by an SVG: square modules, black on white
+    with a 4-module quiet zone (the stretched text in the log was unreadable for a phone); the payload line stays."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector(".blk .badge.ok")
+        page.fill("#cmd", "utils.qr.wifi Setup-1234 setup1234")
+        page.press("#cmd", "Enter")
+        page.wait_for_selector(".blk .qr svg")
+        n, rows = len(QR_MATRIX), qr_text(QR_MATRIX).count("\n")
+        assert page.get_attribute(".qr svg", "viewBox") == f"-2 -2 {n + 8} {2 * rows + 4}"   # 2 printed + 2 added
+        assert page.get_attribute(".qr svg", "width") == str((n + 8) * 7)
+        modules = page.evaluate("document.querySelector('.qr svg path').getAttribute('d').split('M').length - 1")
+        assert modules == sum(sum(row) for row in QR_MATRIX)
+        # the first module (a finder corner) is where the matrix has it
+        assert page.evaluate("document.querySelector('.qr svg path').getAttribute('d').startsWith('M2 2h1v1h-1z')")
+        text = page.inner_text(".blk:last-child .bb")
+        assert "WIFI:T:WPA;S:Setup-1234;P:setup1234;;" in text and "\u2588" not in text and "\u2580" not in text
+        browser.close()
 
 
 def test_example_titles_in_the_log_run_on_click(server):

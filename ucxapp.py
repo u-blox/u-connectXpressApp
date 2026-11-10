@@ -46,7 +46,9 @@ ROOT = Path(__file__).resolve().parent
 BIN = ROOT / "app" / "bin"
 SIGNED = ROOT / "app" / "release" / "ucxapp-signed.exe"
 IS_WINDOWS = platform.system() == "Windows"
-SUBMODULE_BRANCH = "master"
+# The app builds against the MERGED API (NORA-W36X + NORA-B26X + Thread + Channel Sounding), which only this branch
+# of u-connectClient has; master lacks ucx_api/generated/MERGED and does not build the app.
+SUBMODULE_BRANCH = "cmag_merged_api"
 
 BOARDS = {
     "h753": ("nucleo_h753zi", "NUCLEO-H753ZI", "H7", "STM32CubeH7", "stm32h7"),

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-u-connectXpressApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB and NUCLEO-G071RB as lite builds). It uses the u-connectClient library as a git submodule (branch `master`).
+u-connectXpressApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB and NUCLEO-G071RB as lite builds). It uses the u-connectClient library as a git submodule (branch `cmag_merged_api`, the one with the MERGED API; `master` does not build the app).
 
 ## Documentation
 

@@ -623,7 +623,7 @@ function cnParse(t){const L=[],by={};let port='',mod=null;
    info:[['MAC',m],['Access point',f[1]]],act:[]}))});
  const bs=by.b||[];bs.forEach((f,i)=>{const r=+f[3],d=f[7]===''||f[7]==null?null:+f[7]/1000,role=f[5]==='c'?'central':f[5]==='p'?'peripheral':'';
   add({k:'b'+f[1],c:'ble',ic:'BLE',a:spread(i,bs.length,35,145),r:d==null?rr(r):csR(d),q:qq(r),lb:f[2],sb:[r+' dBm  MTU '+f[4],(role+' '+f[6]).trim()],cs:d,
-   info:[['Connection',f[1]],['Address',f[2]],['RSSI',r+' dBm'],['MTU',f[4]],['Local role',role],['TX PHY',f[6]]].concat(d==null?[]:[['Distance (CS)',d.toFixed(2)+' m, '+Math.round(+f[8]/1000)+' s ago']]),
+   info:[['Connection',f[1]],['Address',f[2]],['RSSI',r+' dBm'],['MTU',f[4]],['Local role',role],['TX PHY',f[6]]].concat(d==null?[]:[['Distance (CS)',d.toFixed(2)+' m, '+f[8]+' s ago']]),
    act:[['GATT services','gatt.services',[f[1]]],['Range 10 s (CS)','bt.cs.range',[f[1],'10']],['Disconnect','bt.disconnect',[f[1]],1]]})});
  /* Thread sits lower left: straight left is where the sockets hanging off Wi-Fi land, and the two then push each other
     around for seconds before the layout settles */

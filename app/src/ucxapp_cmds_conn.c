@@ -5,7 +5,7 @@
  *   m|port|model|firmware|uptime_s|exact|bt_addr   module; exact 0 when no +STARTUP was seen since connect
  *   w|ssid|rssi|channel|ip|gateway                 Wi-Fi station, only when connected
  *   a|ssid|channel|ip|stations|mac,mac,...         Wi-Fi access point, only when it has an address
- *   b|conn|addr|rssi|mtu|role|txphy|cs_mm|cs_age_ms  BLE link; role c(entral) or p(eripheral), cs empty if none
+ *   b|conn|addr|rssi|mtu|role|txphy|cs_mm|cs_age_s   BLE link; role c(entral) or p(eripheral), cs empty if none
  *   t|role|rloc16                                  Thread, only when enabled
  *   n|rloc16|role|rssi|link_quality                Thread neighbour
  *   s|handle|tcp/udp|state|remote                  socket; state listen, open or conn
@@ -166,7 +166,7 @@ static void bleLines(uCxHandle_t *ucx, snap_t *s)
         (void)uCxBluetoothGetConnectionStatus(ucx, handle[i], U_BT_PROP_ID_LOCAL_ROLE, &role);
         (void)uCxBluetoothGetConnectionStatus(ucx, handle[i], U_BT_PROP_ID_TX_PHY, &phy);
         if (ucxapp_bt_cs_last(handle[i], &mm, &age)) {
-            snprintf(cs, sizeof(cs), "%d|%u", (int)mm, (unsigned)age);
+            snprintf(cs, sizeof(cs), "%d|%u", (int)mm, (unsigned)((age + 500u) / 1000u));
         }
         put(s, "b|%d|%02X:%02X:%02X:%02X:%02X:%02X|%d|%d|%s|%s|%s\n", (int)handle[i], a[0], a[1], a[2], a[3], a[4],
             a[5], (int)rssi, (int)mtu, role == 1 ? "c" : role == 2 ? "p" : "", phy & 4 ? "coded" : phy & 2 ? "2M" : "1M",
@@ -397,8 +397,7 @@ static void printTable(char *snap)
                          f[5][0] == 'c' ? "central" : f[5][0] == 'p' ? "peripheral" : "-", f[6]);
             if (f[7][0] != '\0') {
                 int mm = (int)strtol(f[7], NULL, 10);
-                long ageS = (strtol(f[8], NULL, 10) + 500) / 1000;
-                ucxapp_print("  distance %d.%02d m (%ld s ago)", mm / 1000, (mm < 0 ? -mm : mm) % 1000 / 10, ageS);
+                ucxapp_print("  distance %d.%02d m (%s s ago)", mm / 1000, (mm < 0 ? -mm : mm) % 1000 / 10, f[8]);
             }
             ucxapp_print("\n");
             links++;

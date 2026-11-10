@@ -1,6 +1,7 @@
 """tftp.* against the virtual module: the client against its TFTP server (port 69), and the app's own server fed
 by scripted UDP clients (Network requests)."""
 
+import re
 import subprocess
 import time
 
@@ -42,6 +43,9 @@ def test_tftp_get_and_put_against_the_virtual_server(app_exe, tmp_path):
     assert out.returncode == 0, out.stdout
     assert (tmp_path / "boot.cfg").read_bytes() == b"vucx demo file boot.cfg\n", out.stdout
     assert (tmp_path / "copy.cfg").exists(), out.stdout
+    # durations for people: "123 ms", "1.2 s" or "2 min 5 s", with the rate
+    assert re.search(r"^got boot\.cfg -> .*: 24 bytes in (\d+ ms|\d+\.\d s|\d+ min \d+ s) \(\d+ B/s\)$", out.stdout,
+                     re.M), out.stdout
     assert any(c.startswith("AT+USOSTB=") for c in module.log), module.log
 
 

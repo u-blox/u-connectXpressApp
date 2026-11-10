@@ -221,7 +221,7 @@ CONN = "\n".join([
     "w|vucx-net|-47|6|192.168.1.50|192.168.1.1",
     "s|0|tcp|open|", "s|1|tcp|open|",
     "q|mqtt:1883|ucx|home/garage/cmd|home/garage/door",
-    "b|0|C0:FF:EE:00:11:22|-55|247|c|coded|5010|120",
+    "b|0|C0:FF:EE:00:11:22|-55|247|c|coded|5010|21",
     "t|leader|0400", "n|0800|disabled|-60|3",
     "g|virt:gnss|3D  10/10 sats HDOP 0.8",
     "c|virt:cell|registered (home)  vucx telecom -73 dBm",
@@ -447,7 +447,7 @@ def test_connections_view_keeps_every_node_on_screen(server):
         page.wait_for_function(ALL_IN_VIEW, timeout=15000)
         # the details card gives the Channel Sounding age in seconds
         page.evaluate("cnSelect('b0')")
-        assert "5.01 m, 0 s ago" in page.inner_text("#cnd"), page.inner_text("#cnd")
+        assert "5.01 m, 21 s ago" in page.inner_text("#cnd"), page.inner_text("#cnd")
         page.evaluate("cnSelect('b0')")
         assert page.evaluate("CN.auto") == 1
         size = page.evaluate("[CN.vb[2], CN.vb[3]]")

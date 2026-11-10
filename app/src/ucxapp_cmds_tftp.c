@@ -654,8 +654,9 @@ static int cmdGet(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     uint32_t ms = ucxapp_platform_tick_ms() - start;
-    ucxapp_print("got %s -> %s: %ld bytes in %u ms (%ld B/s)\n", argv[2], local, total, (unsigned)ms,
-                 ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
+    char took[24];
+    ucxapp_print("got %s -> %s: %ld bytes in %s (%ld B/s)\n", argv[2], local, total,
+                 ucxapp_fmt_duration(ms, took, sizeof(took)), ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
     return UCXAPP_OK;
 }
 
@@ -706,8 +707,9 @@ static int cmdPut(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     uint32_t ms = ucxapp_platform_tick_ms() - start;
-    ucxapp_print("put %s -> %s: %ld bytes in %u ms (%ld B/s)\n", argv[2], remote, total, (unsigned)ms,
-                 ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
+    char took[24];
+    ucxapp_print("put %s -> %s: %ld bytes in %s (%ld B/s)\n", argv[2], remote, total,
+                 ucxapp_fmt_duration(ms, took, sizeof(took)), ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
     return UCXAPP_OK;
 }
 

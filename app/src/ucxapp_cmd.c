@@ -791,6 +791,18 @@ void ucxapp_print_usage_row(const char *kind, const char *name, const char *size
     ucxapp_print("%-24s %s: %-8s used: %-8s usage(%%): %s\n", label, sizeLabel, sizeText, usedText, pctText);
 }
 
+const char *ucxapp_fmt_duration(uint32_t ms, char *out, size_t size)
+{
+    if (ms < 1000) {
+        snprintf(out, size, "%u ms", (unsigned)ms);
+    } else if (ms < 60000) {
+        snprintf(out, size, "%u.%u s", (unsigned)(ms / 1000), (unsigned)(ms % 1000 / 100));
+    } else {
+        snprintf(out, size, "%u min %u s", (unsigned)(ms / 60000), (unsigned)(ms / 1000 % 60));
+    }
+    return out;
+}
+
 bool ucxapp_expand_env(const char *in, char *out, size_t size)
 {
     size_t n = 0;

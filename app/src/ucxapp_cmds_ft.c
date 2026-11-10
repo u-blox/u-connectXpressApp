@@ -1167,8 +1167,9 @@ static size_t buildPut(uint8_t *m, int blk, long size, uint32_t crc, bool resume
 static void printRate(const char *what, const char *a, const char *b, long total, uint32_t start)
 {
     uint32_t ms = ucxapp_platform_tick_ms() - start;
-    ucxapp_print("%s %s -> %s: %ld bytes in %u ms (%ld B/s), CRC-32 ok\n", what, a, b, total, (unsigned)ms,
-                 ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
+    char took[24];
+    ucxapp_print("%s %s -> %s: %ld bytes in %s (%ld B/s), CRC-32 ok\n", what, a, b, total,
+                 ucxapp_fmt_duration(ms, took, sizeof(took)), ms > 0 ? (long)((double)total * 1000.0 / ms) : total);
 }
 
 /* Drops a trailing "resume" argument; true if it was there. */

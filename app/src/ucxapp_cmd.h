@@ -71,6 +71,9 @@ void ucxapp_caps_reset(void);
 void ucxapp_print_usage_row(const char *kind, const char *name, const char *sizeLabel,
                             uint64_t size, uint64_t used);
 
+/* A duration for people: "750 ms" under a second, "12.3 s" under a minute, "2 min 5 s" beyond; returns out. */
+const char *ucxapp_fmt_duration(uint32_t ms, char *out, size_t size);
+
 /* Copy in to out with ${NAME} replaced by the environment variable; false (message printed) if one is unset
    or out is too small. Only for local input (--exec, shell), never for web commands. */
 bool ucxapp_expand_env(const char *in, char *out, size_t size);

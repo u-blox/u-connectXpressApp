@@ -1,5 +1,6 @@
 """The web page (app/web/index.html, served by ucxapp_cmds_web.c): static checks and an optional browser run."""
 
+import gzip
 import json
 import re
 import shutil
@@ -33,7 +34,10 @@ def test_page_is_a_complete_document():
 def test_page_is_ascii_and_fits_one_response():
     data = PAGE.encode("utf-8")
     assert data.isascii()
-    assert len(data) < 98304   # sent in place (body_static) in 1000-byte chunks; this caps what the app binary carries
+    # Hosts send the page in place (body_static) in 1000-byte chunks and the exe carries it raw; the boards keep it
+    # gzip-compressed in flash (embed.cmake GZIP), which is the size that counts there.
+    assert len(data) < 114688, len(data)
+    assert len(gzip.compress(data, 9)) < 40960, len(gzip.compress(data, 9))
 
 
 def test_page_is_built_into_the_app():
@@ -488,6 +492,35 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         assert page.evaluate("document.querySelector('.qr svg path').getAttribute('d').startsWith('M2 2h1v1h-1z')")
         text = page.inner_text(".blk:last-child .bb")
         assert "WIFI:T:WPA;S:Setup-1234;P:setup1234;;" in text and "\u2588" not in text and "\u2580" not in text
+        browser.close()
+
+
+def test_demo_starts_on_a_clean_page(server):
+    """Running the demo again clears the log and the events, resets the Connections graph (nodes, zoom, selection)
+    and hides the last verdict before the tour starts."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector(".blk .badge.ok")
+        page.click("#vw button[data-v='2']")
+        page.wait_for_function("() => CN.n.t && CN.n.w")
+        old_node = page.evaluate_handle("CN.n.t.nd")
+        page.evaluate("cnSelect('w');CN.vb=[0,0,500,300];CN.auto=0;cnVB();verdict(true,'old run')")   # a used page
+        assert page.locator("#ev .e").count() >= 1 and page.locator("#out .blk").count() >= 1
+        assert page.is_visible("#verdict") and page.is_visible("#cnd")
+        page.click("#demo")
+        blocks = page.locator("#out .blk")
+        assert blocks.count() == 1 and "> demo" in blocks.first.inner_text(), blocks.all_inner_texts()
+        assert page.locator("#ev .e").count() == 0
+        assert not old_node.evaluate("e => e.isConnected")
+        assert page.evaluate("[CN.auto, CN.vb, CN.sel]") == [1, [-538, -313, 1075, 625], ""]
+        assert page.is_hidden("#verdict") and page.is_hidden("#cnd") and page.is_hidden("#flt-on")
+        page.wait_for_function("() => CN.n.t && CN.n.w")   # the next tick draws the module's links again
         browser.close()
 
 

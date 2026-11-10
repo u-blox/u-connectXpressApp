@@ -418,7 +418,8 @@ $('up').onchange=async()=>{const f=$('up').files[0];if(!f)return;const buf=new U
   if(!r.ok){$('fst').textContent='upload failed: '+r.status;return}o+=UP_CHUNK;$('fst').textContent=f.name+': '+size(Math.min(o,buf.length))+' of '+size(buf.length)}
  while(o<buf.length);$('up').value='';listFiles()};
 $('files').onclick=()=>{$('fst').textContent='';$('fd').showModal();listFiles()};
-$('demo').onclick=()=>{cmd.value='demo';$('run').click()};
+/* a demo starts on a clean page: log, events, the last verdict and the Connections graph of the previous run go first */
+$('demo').onclick=()=>{clearAll();$('verdict').hidden=true;cnClear();cmd.value='demo';$('run').click()};
 let MD=null;
 function mdInline(s){s=s.replace(/\\\|/g,'|').replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
  return s.replace(/`([^`]+)`/g,(m,x)=>'<code'+(/^[a-z]+(\.[a-z0-9_.]+)?(\s|$)/.test(x)&&!x.includes('&lt;')?' class="ck"':'')+'>'+x+'</code>')
@@ -711,8 +712,11 @@ function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).
 function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
  Object.keys(CN.n).filter(k=>!CN.n[k].gone&&kinds.includes(CN.n[k].o.c)).slice(0,4).forEach((k,i)=>{const nd=CN.n[k].nd;nd.classList.remove('ping');void nd.getBBox();nd.classList.add('ping');
   for(let j=0;j<3;j++)CN.pk.push({k,t:-(i*.08+j*.07),s:.022,in:!out,e:sv('circle',{class:'pk k-'+CN.n[k].o.c,r:0},cnPk)})})}
-
+
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
+/* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
+function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';
+ CN.pk.forEach(p=>p.e.remove());CN.pk=[];cnReset();cnDetails();fltSet();if(CN.timer)cnTick()}
 /* a selected node (not the hub) filters Log and What's happening to the commands and events of its kind */
 function fltKind(){const n=CN.sel&&CN.sel!=='hub'&&CN.n[CN.sel];return n?n.o.c:''}
 function fltMark(e,g){e.dataset.g=g||'';const k=fltKind();e.classList.toggle('hit',!!k&&(CNK[g]||[]).includes(k))}

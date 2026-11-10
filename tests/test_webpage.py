@@ -388,6 +388,15 @@ def test_page_in_a_browser(server):
         assert page.locator("#steps .card").count() == 1
         page.select_option("#ucs", "tool")
         assert page.is_visible("#mb") and "on" in page.get_attribute("#n-wifi", "class")
+        # every label of every use case fits its 160 px box, and every node wears a kind colour
+        wide = page.evaluate("""() => { const out = []; for (const k in UC) { pick(k);
+          document.querySelectorAll('#dg text:not(.kt)').forEach(t => {
+            if (t.getBBox().width > 150) out.push([k, t.textContent]) });
+          document.querySelectorAll('#dg g').forEach(g => {
+            if (!/^(k-\\w+|hub)( on)?$/.test(g.getAttribute('class'))) out.push([k, g.id]) }) }
+          return out }""")
+        assert not wide, wide
+        page.select_option("#ucs", "tool")
         page.click("#vw button[data-v='0']")
         assert page.is_visible("#pc")
         browser.close()

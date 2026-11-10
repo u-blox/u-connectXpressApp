@@ -9,6 +9,7 @@
  *   t|role|rloc16                                  Thread, only when enabled
  *   n|rloc16|role|rssi|link_quality                Thread neighbour
  *   s|handle|tcp/udp|state|remote                  socket; state listen, open or conn
+ *   q|broker:port|client_id                         MQTT, only while connected
  *   g|port|status                                  GNSS receiver on the host (gnss.open)
  *   c|port|status                                  cellular modem on the host (cell.open) */
 
@@ -26,6 +27,9 @@
 #endif
 #include "u_cx_bluetooth.h"
 #include "u_cx_general.h"
+#ifndef UCXAPP_LITE
+#include "u_cx_mqtt.h"
+#endif
 #include "u_cx_socket.h"
 #include "u_cx_system.h"
 #include "u_cx_thread.h"
@@ -223,6 +227,33 @@ static void sockLines(uCxHandle_t *ucx, snap_t *s)
     }
 }
 
+static void mqttLine(uCxHandle_t *ucx, snap_t *s)
+{
+#ifndef UCXAPP_LITE
+    uCxMqttGetConnectionParams_t p;
+    char host[64] = "", id[40] = "";
+    int32_t port = 0;
+
+    if (!ucxapp_mqtt_up()) {
+        return;
+    }
+    if (uCxMqttGetConnectionParamsBegin(ucx, 0, &p)) {
+        clean(host, sizeof(host), p.hostname);
+        clean(id, sizeof(id), p.client_id);
+        port = p.port;
+    }
+    uCxEnd(ucx);
+    if (host[0] != '\0') {
+        put(s, "q|%s:%d|%s\n", host, (int)port, id);
+    } else {
+        put(s, "q||\n");
+    }
+#else
+    (void)ucx;
+    (void)s;
+#endif
+}
+
 /* GNSS receiver or cellular modem on the host, from their cached status (the module is not asked). */
 static void hostLine(snap_t *s, char tag, const char *kind, bool (*dash)(char *, size_t))
 {
@@ -293,6 +324,7 @@ size_t ucxapp_conn_snapshot(ucxapp_t *app, char *out, size_t size)
         threadLines(app, &s);
         if (ucxapp_module_has_wifi(app) || ucxapp_module_has_thread(app)) {
             sockLines(app->ucx, &s);
+            mqttLine(app->ucx, &s);
         }
     }
     hostLine(&s, 'g', "gnss", ucxapp_gnss_dash);

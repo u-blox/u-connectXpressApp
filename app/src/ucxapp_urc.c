@@ -41,6 +41,12 @@ static void evt(const char *fmt, ...)
 
 static uint32_t gBootMs;
 static bool gBootSeen;
+static volatile bool gMqttUp;
+
+bool ucxapp_mqtt_up(void)
+{
+    return gMqttUp;
+}
 
 uint32_t ucxapp_module_boot_ms(bool *exact)
 {
@@ -53,6 +59,7 @@ static void startupUrc(struct uCxHandle *h)
     (void)h;
     gBootMs = ucxapp_platform_tick_ms();
     gBootSeen = true;
+    gMqttUp = false;
     evt("device: startup");
     ucxapp_events_signal(URC_FLAG_STARTUP);
 }
@@ -85,9 +92,9 @@ static void spsDataUrc(struct uCxHandle *h, int32_t c, int32_t n)               
 #ifndef UCXAPP_LITE
 static void httpStatusUrc(struct uCxHandle *h, int32_t id, int32_t code, const char *d){ (void)h; (void)d; evt("http: request %d status %d", (int)id, (int)code); ucxapp_events_signal(URC_FLAG_HTTP_RESPONSE_READY); }
 static void httpDisconnectUrc(struct uCxHandle *h, int32_t id)                         { (void)h; evt("http: disconnected, id %d", (int)id); ucxapp_events_signal(URC_FLAG_HTTP_DISCONNECTED); }
-static void mqttConnectedUrc(struct uCxHandle *h, int32_t id)                          { (void)h; (void)id; evt("mqtt: connected"); ucxapp_events_signal(URC_FLAG_MQTT_CONNECTED); }
+static void mqttConnectedUrc(struct uCxHandle *h, int32_t id)                          { (void)h; (void)id; gMqttUp = true; evt("mqtt: connected"); ucxapp_events_signal(URC_FLAG_MQTT_CONNECTED); }
 static void mqttDataUrc(struct uCxHandle *h, int32_t id, int32_t n)                    { (void)h; (void)id; evt("mqtt: %d bytes available", (int)n); ucxapp_events_signal(URC_FLAG_MQTT_DATA); }
-static void mqttDisconnectedUrc(struct uCxHandle *h, int32_t id, int32_t reason)       { (void)h; (void)id; evt("mqtt: disconnected, reason %d", (int)reason); ucxapp_events_signal(URC_FLAG_MQTT_DISCONNECTED); }
+static void mqttDisconnectedUrc(struct uCxHandle *h, int32_t id, int32_t reason)       { (void)h; (void)id; gMqttUp = false; evt("mqtt: disconnected, reason %d", (int)reason); ucxapp_events_signal(URC_FLAG_MQTT_DISCONNECTED); }
 static void mqttSubscribedUrc(struct uCxHandle *h, int32_t id, uMqttSubscribeAction_t a)  { (void)h; (void)id; (void)a; evt("mqtt: subscribe completed"); ucxapp_events_signal(URC_FLAG_MQTT_SUBSCRIBED); }
 #endif
 static void btConnectedUrc(struct uCxHandle *h, int32_t c, uBtLeAddress_t *a)          { (void)h; (void)a; ucxapp_handle_add(UCXAPP_HANDLE_CONN, c); evt("bt: connected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_BT_CONNECTED); }

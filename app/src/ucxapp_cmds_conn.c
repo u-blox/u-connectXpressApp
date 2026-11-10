@@ -9,7 +9,7 @@
  *   t|role|rloc16                                  Thread, only when enabled
  *   n|rloc16|role|rssi|link_quality                Thread neighbour
  *   s|handle|tcp/udp|state|remote                  socket; state listen, open or conn
- *   q|broker:port|client_id                         MQTT, only while connected
+ *   q|broker:port|client_id|sub|pub                 MQTT, only while connected; last topics, empty if none
  *   g|port|status                                  GNSS receiver on the host (gnss.open)
  *   c|port|status                                  cellular modem on the host (cell.open) */
 
@@ -231,12 +231,16 @@ static void mqttLine(uCxHandle_t *ucx, snap_t *s)
 {
 #ifndef UCXAPP_LITE
     uCxMqttGetConnectionParams_t p;
-    char host[64] = "", id[40] = "";
+    char host[64] = "", id[40] = "", sub[64], pub[64];
+    const char *subT, *pubT;
     int32_t port = 0;
 
     if (!ucxapp_mqtt_up()) {
         return;
     }
+    ucxapp_mqtt_topics(&subT, &pubT);
+    clean(sub, sizeof(sub), subT);
+    clean(pub, sizeof(pub), pubT);
     if (uCxMqttGetConnectionParamsBegin(ucx, 0, &p)) {
         clean(host, sizeof(host), p.hostname);
         clean(id, sizeof(id), p.client_id);
@@ -244,9 +248,9 @@ static void mqttLine(uCxHandle_t *ucx, snap_t *s)
     }
     uCxEnd(ucx);
     if (host[0] != '\0') {
-        put(s, "q|%s:%d|%s\n", host, (int)port, id);
+        put(s, "q|%s:%d|%s|%s|%s\n", host, (int)port, id, sub, pub);
     } else {
-        put(s, "q||\n");
+        put(s, "q|||%s|%s\n", sub, pub);
     }
 #else
     (void)ucx;

@@ -26,6 +26,14 @@
 #define MQTT_MODULE_MAX_PUBLISH 5000
 #define MQTT_MAX_MESSAGES  10
 
+static char gSubTopic[64], gPubTopic[64];
+
+void ucxapp_mqtt_topics(const char **sub, const char **pub)
+{
+    *sub = gSubTopic;
+    *pub = gPubTopic;
+}
+
 static bool parseQos(const char *s, uMqttQos_t *qos)
 {
     int32_t v;
@@ -141,6 +149,7 @@ static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: timeout waiting for the broker\n");
         return UCXAPP_ERR_FAILED;
     }
+    gSubTopic[0] = gPubTopic[0] = '\0';
     ucxapp_print("connected to %s:%d as %s%s%s%s\n", o.host, (int)o.port, o.id, o.user != NULL ? ", user " : "",
                  o.user != NULL ? o.user : "", o.cert != NULL ? ", TLS with client certificate"
                                                : o.ca != NULL ? ", TLS" : o.tls ? ", TLS (server not verified)" : "");
@@ -182,6 +191,7 @@ static int cmdMqttSubscribe(ucxapp_t *app, int argc, char *argv[])
     if (!ucxapp_events_wait(URC_FLAG_MQTT_SUBSCRIBED, MQTT_SUBSCRIBE_WAIT_S)) {
         ucxapp_print("WARNING: no subscribe confirmation from the broker\n");
     }
+    snprintf(gSubTopic, sizeof(gSubTopic), "%s", argv[1]);
     ucxapp_print("subscribed to %s\n", argv[1]);
     return UCXAPP_OK;
 }
@@ -201,6 +211,9 @@ static int cmdMqttUnsubscribe(ucxapp_t *app, int argc, char *argv[])
     if (result != 0) {
         ucxapp_print("ERROR: unsubscribe failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
+    }
+    if (strcmp(gSubTopic, argv[1]) == 0) {
+        gSubTopic[0] = '\0';
     }
     ucxapp_print("unsubscribed from %s\n", argv[1]);
     return UCXAPP_OK;
@@ -274,6 +287,7 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_stats_add(UCXAPP_STATS_MQTT, len, 0);
+    snprintf(gPubTopic, sizeof(gPubTopic), "%s", argv[1]);
     ucxapp_print("published %d bytes to %s (qos %d%s)\n", (int)len, argv[1], (int)qos, retain == U_MQTT_RETAIN_YES ? ", retained" : "");
     return UCXAPP_OK;
 }

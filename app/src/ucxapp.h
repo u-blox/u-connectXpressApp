@@ -106,5 +106,6 @@ void ucxapp_events_clear(uint32_t flags);
 bool ucxapp_events_wait(uint32_t flag, uint32_t timeoutS);   /* consumes the flag */
 bool ucxapp_events_take(uint32_t flag);   /* consumes the flag without waiting; true when it was set */
 bool ucxapp_mqtt_up(void);   /* from +UEMQC / +UEMQDC */
+void ucxapp_mqtt_topics(const char **sub, const char **pub);   /* last subscribed and published, "" if none */
 
 #endif /* UCXAPP_H */

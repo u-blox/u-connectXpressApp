@@ -30,7 +30,8 @@ body.uc main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.uc #p
 body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #pn{grid-row:span 2}body.cn #pc,body:not(.cn) #pn{display:none}
 .cnw{display:flex;flex-direction:column;gap:.4rem}.cnh{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap}#cnst{font-size:.8rem}
 .cnleg{display:flex;gap:.7rem;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}.cnleg i{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.25rem;background:var(--k);box-shadow:0 0 6px var(--k)}
-.k-wifi{--k:var(--ac)}.k-ap,.k-sta{--k:var(--ok)}.k-ble{--k:var(--ble)}.k-thr,.k-nbr{--k:var(--pu)}.k-sock{--k:var(--warm)}.k-mqtt{--k:#f06292}.k-gnss{--k:#4dd0c8}.k-cell{--k:#ff8a65}
+:root{--c-wifi:var(--ac);--c-ap:var(--ok);--c-ble:var(--ble);--c-thr:var(--pu);--c-sock:var(--warm);--c-mqtt:#f06292;--c-gnss:#4dd0c8;--c-cell:#ff8a65}
+.k-wifi{--k:var(--c-wifi)}.k-ap,.k-sta{--k:var(--c-ap)}.k-ble{--k:var(--c-ble)}.k-thr,.k-nbr{--k:var(--c-thr)}.k-sock{--k:var(--c-sock)}.k-mqtt{--k:var(--c-mqtt)}.k-gnss{--k:var(--c-gnss)}.k-cell{--k:var(--c-cell)}
 #cnv{flex:1;position:relative;display:flex;min-height:18rem}
 #cn{flex:1;width:100%;min-height:18rem;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}#cn.drag{cursor:grabbing}
 #cnz{position:absolute;right:.4rem;bottom:.4rem;display:flex;gap:.25rem}#cnz button{width:2rem;height:2rem;padding:0;font-size:1.05rem;font-weight:800;border-radius:.5rem;opacity:.75}#cnz button:hover{opacity:1}
@@ -72,7 +73,7 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 .e{display:flex;gap:.5rem;align-items:baseline;padding:.12rem .25rem;border-radius:4px;font-size:.82rem}.e .t{color:var(--mut);font-variant-numeric:tabular-nums}
 .e .g{font:700 .62rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:0 .3rem;border:1px solid currentColor;border-radius:4px;min-width:3rem;text-align:center;color:var(--mut)}
 .e .x{flex:1;color:#b7c0cd;word-break:break-word}.e.n{animation:gl 1.2s ease-out}@keyframes gl{from{background:#a07cff40}}
-.e.wifi .g,.e.net .g{color:var(--ac)}.e.bt .g,.e.gatt .g,.e.sps .g{color:var(--ble)}.e.mqtt .g{color:var(--pu)}.e.sock .g{color:var(--ok)}.e.http .g,.e.ping .g{color:#4fc3f7}
+.e.wifi .g,.e.net .g,.e.http .g,.e.ping .g{color:var(--c-wifi)}.e.ap .g{color:var(--c-ap)}.e.bt .g,.e.gatt .g,.e.sps .g,.e.hid .g{color:var(--c-ble)}.e.thread .g{color:var(--c-thr)}.e.sock .g,.e.tls .g{color:var(--c-sock)}.e.mqtt .g{color:var(--c-mqtt)}.e.gnss .g{color:var(--c-gnss)}.e.cell .g{color:var(--c-cell)}
 footer{padding:0 .7rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
 #cmd,#flt,#mb{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:8px}
 #flt{flex:none;margin-bottom:.35rem;padding:.3rem .5rem}#mb{flex:none;min-width:0;width:5rem;padding:.3rem}
@@ -596,15 +597,16 @@ function cnParse(t){const L=[],by={};let port='',mod=null;
  const ss=by.s||[],sp=has('w')?'w':has('t')?'t':'',sa=sp==='w'?-145:sp==='t'?180:-8;
  ss.forEach((f,i)=>add({k:'s'+f[2]+f[1],c:'sock',ic:f[2].toUpperCase(),p:sp,a:sa+spread(i,ss.length,-60,60),r:sp?120:170,small:1,lb:f[2]+' '+f[1],sb:[f[4]||f[3]],
   info:[['Handle',f[1]],['Protocol',f[2]],['State',f[3]],['Remote',f[4]]],act:[['Close','sock.close',[f[1]],1]]}));
- (by.q||[]).forEach(f=>add({k:'q',c:'mqtt',ic:'MQTT',p:sp,a:sa+(ss.length?75:0),r:sp?130:170,small:1,lb:'mqtt',sb:[f[1]||'connected'],
-  info:[['Broker',f[1]],['Client ID',f[2]]],act:[['Read','mqtt.read'],['Disconnect','mqtt.disconnect',null,1]]}));
+ (by.q||[]).forEach(f=>add({k:'q',c:'mqtt',ic:'MQTT',p:sp,a:sa+(ss.length?75:0),r:sp?140:170,mid:1,lb:f[1]||'mqtt',
+  sb:[f[3]?'sub '+f[3]:'',f[4]?'pub '+f[4]:''].filter(Boolean).concat(f[3]||f[4]?[]:['connected']),
+  info:[['Broker',f[1]],['Client ID',f[2]],['Subscribed',f[3]],['Published',f[4]]],act:[['Read','mqtt.read'],['Disconnect','mqtt.disconnect',null,1]]}));
  (by.g||[]).forEach(f=>{const m=f[2].match(/(\d+)\/(\d+) sats/);add({k:'g',c:'gnss',ic:'GNSS',host:1,a:12,r:195,lb:f[2].split('  ')[0],sb:[f[2].split('  ').slice(1).join('  '),f[1]],
   sats:m?+m[1]:0,info:[['Port',f[1]],['Status',f[2]]],act:[['Status','gnss.status'],['Satellites','gnss.sats']]})});
  (by.c||[]).forEach(f=>{const m=f[2].match(/(-\d+) dBm/),r=m?+m[1]:null;add({k:'c',c:'cell',ic:'CELL',host:1,a:-18,r:200,q:r==null?undefined:clamp(1-(-r-51)/62,0,1),
   lb:f[2].split('  ')[0],sb:[f[2].split('  ').slice(1).join('  '),f[1]],tower:1,info:[['Port',f[1]],['Status',f[2]]],act:[['Status','cell.status']]})});
  return {port,mod,L}}
 
-function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{class:'nd k-'+o.c},pos),R=o.small?16:26,
+function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{class:'nd k-'+o.c},pos),R=o.small?16:o.mid?21:26,
   n={pos,nd,R,x:p?p.x:0,y:p?p.y:0,ph:Math.random()*6.28,
    ln:sv('path',{class:'ln k-'+o.c+(o.host?' host':'')},cnLinks),fl:sv('path',{class:'fl k-'+o.c},cnLinks)};
  if(o.tower)[0,1,2].forEach(i=>sv('path',{class:'wave',d:'M-'+(R+6+i*7)+' -'+(6+i*4)+'A'+(R+6+i*7)+' '+(R+6+i*7)+' 0 0 1 '+(R+6+i*7)+' -'+(6+i*4),style:'animation-delay:'+(i*.3)+'s'},nd));

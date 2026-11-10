@@ -599,7 +599,7 @@ function cnParse(t){const L=[],by={};let port='',mod=null;
    act:[['GATT services','gatt.services',[f[1]]],['Range 10 s (CS)','bt.cs.range',[f[1],'10']],['Disconnect','bt.disconnect',[f[1]],1]]})});
  /* Thread sits lower left: straight left is where the sockets hanging off Wi-Fi land, and the two then push each other
     around for seconds before the layout settles */
- (by.t||[]).forEach(f=>{add({k:'t',c:'thr',ic:'THREAD',a:135,r:170,lb:'Thread '+f[1],sb:['rloc16 '+f[2]],
+ (by.t||[]).forEach(f=>{add({k:'t',c:'thr',ic:'THREAD',big:1,a:135,r:170,lb:'Thread '+f[1],sb:['rloc16 '+f[2]],
   info:[['Role',f[1]],['RLOC16',f[2]]],act:[['Status','thread.status'],['Neighbours','thread.neighbors']]});
   const ns=by.n||[];ns.forEach((g,i)=>{const r=+g[3];add({k:'n'+g[1],c:'nbr',ic:'TH',p:'t',a:135+spread(i,ns.length,-60,60),r:120,small:1,q:qq(r),lb:g[1],sb:[g[2]+'  '+r+' dBm'],
    info:[['RLOC16',g[1]],['Role',g[2]],['RSSI',r+' dBm'],['Link quality',g[4]+' / 3']],act:[]})})});
@@ -615,7 +615,7 @@ function cnParse(t){const L=[],by={};let port='',mod=null;
   lb:f[2].split('  ')[0],sb:[f[2].split('  ').slice(1).join('  '),f[1]],tower:1,info:[['Port',f[1]],['Status',f[2]]],act:[['Status','cell.status']]})});
  return {port,mod,L}}
 
-function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{class:'nd k-'+o.c},pos),R=o.small?16:o.mid?21:26,
+function cnMake(o){const p=o.p&&CN.n[o.p],pos=sv('g',{},cnNodes),nd=sv('g',{class:'nd k-'+o.c},pos),R=o.small?16:o.mid?23:o.big?31:26,
   n={pos,nd,R,x:p?p.x:0,y:p?p.y:0,ph:Math.random()*6.28,
    ln:sv('path',{class:'ln k-'+o.c+(o.host?' host':'')},cnLinks),fl:sv('path',{class:'fl k-'+o.c},cnLinks)};
  if(o.tower)[0,1,2].forEach(i=>sv('path',{class:'wave',d:'M-'+(R+6+i*7)+' -'+(6+i*4)+'A'+(R+6+i*7)+' '+(R+6+i*7)+' 0 0 1 '+(R+6+i*7)+' -'+(6+i*4),style:'animation-delay:'+(i*.3)+'s'},nd));

@@ -398,6 +398,9 @@ def test_connections_view_keeps_every_node_on_screen(server):
         # the layout settles instead of exploding (pushes of 500+ before), and a node on its Channel Sounding ring
         # slides along it instead of piling up push it cannot follow
         assert page.evaluate("Math.max(...Object.values(CN.n).map(n => Math.hypot(n.px || 0, n.py || 0)))") < 300
+        # every icon text fits its circle (THREAD needed a bigger one)
+        tight = page.evaluate("Object.values(CN.n).filter(n => n.ic.getBBox().width > 2 * n.R - 2).map(n => n.o.ic)")
+        assert not tight, tight
         # the user zooms: the view is theirs; reset gives it back to the content
         box = page.locator("#cn").bounding_box()
         page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)

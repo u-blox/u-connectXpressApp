@@ -31,7 +31,7 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 .cnw{display:flex;flex-direction:column;gap:.4rem}.cnh{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap}#cnst{font-size:.8rem}
 .cnleg{display:flex;gap:.7rem;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}.cnleg i{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.25rem;background:var(--k);box-shadow:0 0 6px var(--k)}
 :root{--c-wifi:#66d17a;--c-ap:#b5e655;--c-ble:var(--ble);--c-thr:var(--pu);--c-sock:var(--warm);--c-mqtt:#f06292;--c-gnss:#4dd0c8;--c-cell:#ff8a65}
-.k-wifi{--k:var(--c-wifi)}.k-ap,.k-sta{--k:var(--c-ap)}.k-ble{--k:var(--c-ble)}.k-thr,.k-nbr{--k:var(--c-thr)}.k-sock{--k:var(--c-sock)}.k-mqtt{--k:var(--c-mqtt)}.k-gnss{--k:var(--c-gnss)}.k-cell{--k:var(--c-cell)}
+.k-wifi{--k:var(--c-wifi)}.k-ap,.k-sta{--k:var(--c-ap)}.k-ble{--k:var(--c-ble)}.k-thr,.k-nbr{--k:var(--c-thr)}.k-sock{--k:var(--c-sock)}.k-mqtt{--k:var(--c-mqtt)}.k-gnss{--k:var(--c-gnss)}.k-cell{--k:var(--c-cell)}.k-host{--k:var(--ac)}
 #cnv{flex:1;position:relative;display:flex;min-height:18rem}
 #cn{flex:1;width:100%;min-height:18rem;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}#cn.drag{cursor:grabbing}
 #cnz{position:absolute;right:.4rem;bottom:.4rem;display:flex;gap:.25rem}#cnz button{width:2rem;height:2rem;padding:0;font-size:1.05rem;font-weight:800;border-radius:.5rem;opacity:.75}#cnz button:hover{opacity:1}
@@ -97,9 +97,13 @@ details.sub{margin-left:.6rem;border-left:2px solid var(--bd);padding-left:.4rem
 .exb{margin:.3rem 0;padding:.2rem .5rem;font-size:.8rem}.ex{padding:.3rem 0;border-bottom:1px solid var(--bd)}.ex i{color:var(--mut)}
 .ex code,.card code{display:block;cursor:pointer;font:12px Consolas,monospace;color:#b7c0cd;padding:1px 4px;border-radius:3px;overflow-wrap:anywhere}.ex code:hover,.card code:hover{background:#1b2a44}.ex code.n,.card code.n{color:var(--mut);cursor:default;background:none}
 .uh{font-size:1.15rem;font-weight:800}.ud{color:var(--mut);margin:.2rem 0 .5rem;line-height:1.4}#ucs{float:right;margin-left:.5rem;padding:.45rem 2.1rem .45rem .95rem}#wsvm{padding:.4rem 2rem .4rem .9rem;margin:0 .3rem}#ucs,#wsvm{-webkit-appearance:none;appearance:none;font:inherit;font-weight:700;color:var(--tx);cursor:pointer;border:1px solid var(--ac);border-radius:999px;background:var(--bg2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2329b6f6' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right .85rem center/.7rem}#ucs:hover,#ucs:focus,#wsvm:hover,#wsvm:focus{outline:none;box-shadow:0 0 0 3px #29b6f633}#ucs option,#wsvm option{background:var(--bg2);color:var(--tx);font-weight:600}
-#dg{width:100%;max-height:15rem}#dg rect{fill:var(--bg2);stroke:var(--bd);stroke-width:2;transition:stroke .4s,fill .4s}#dg .on rect{stroke:var(--k);fill:#122033}
-#dg text{fill:var(--tx);font:700 14px 'Segoe UI',sans-serif;text-anchor:middle}#dg text+text{fill:var(--mut);font-weight:400;font-size:11px}
-#dg line{stroke:var(--bd);stroke-width:2.5;stroke-dasharray:7 7}#dg line.on{stroke:var(--k);animation:fl .9s linear infinite}@keyframes fl{to{stroke-dashoffset:-14}}
+/* the use case diagram wears the Connections look: the module hub in the accent, every node ringed in its kind's
+   colour (dimmed until the link is up, then lit and glowing) with a kind badge, links that run when they carry data */
+#dg{width:100%;max-height:15rem}#dg .hub{--k:var(--ac)}#dg rect{fill:var(--bg2);stroke:var(--k);stroke-opacity:.45;stroke-width:2;transition:stroke-opacity .4s,fill .4s,filter .4s}
+#dg .on rect{stroke-opacity:1;fill:#122033;filter:drop-shadow(0 0 7px var(--k))}#dg .hub rect{fill:#0f1a29}#dg .hub.on rect{filter:drop-shadow(0 0 10px #29b6f680)}
+#dg text{fill:var(--tx);font:700 14px 'Segoe UI',sans-serif;text-anchor:middle}#dg .sb{fill:var(--mut);font-weight:400;font-size:11px}
+#dg .kt{fill:var(--k);font:800 9px system-ui;letter-spacing:.06em;text-anchor:start;opacity:.75}#dg .on .kt{opacity:1}
+#dg line{stroke:var(--k);stroke-opacity:.25;stroke-width:2.5;stroke-dasharray:7 7;transition:stroke-opacity .4s}#dg line.on{stroke-opacity:1;animation:fl .9s linear infinite}@keyframes fl{to{stroke-dashoffset:-14}}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.6rem;margin-top:.6rem}
 .card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:.6rem .7rem;display:flex;flex-direction:column;gap:.3rem;transition:border-color .2s}.card:hover{border-color:#33415a}
 .card h3{margin:0 0 .2rem;font-size:.9rem}.card .r{display:flex;gap:.4rem;align-items:center;margin-top:auto;padding-top:.3rem}.card.cw{grid-column:1/-1}
@@ -145,6 +149,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
 <div class="pane" id="pu"><h2>Use case</h2><div class="sc"><select id="ucs" aria-label="Use case"></select><div class="uh" id="uh">Connected tool</div>
 <div class="ud" id="ud"></div>
+<span class="cnleg"><span class="k-wifi"><i></i>Wi-Fi</span><span class="k-ap"><i></i>AP</span><span class="k-ble"><i></i>BLE</span><span class="k-thr"><i></i>Thread</span><span class="k-sock"><i></i>Socket</span><span class="k-mqtt"><i></i>MQTT</span><span class="k-gnss"><i></i>GNSS</span><span class="k-cell"><i></i>Cell</span><span class="k-host"><i></i>Host</span></span>
 <svg id="dg" viewBox="0 0 660 260" role="img" aria-label="System diagram"></svg>
 <div class="cards"><div class="card cw"><h3>Fit check against the module limits</h3><div id="fit" class="fit"><span class="note" style="grid-column:1/-1">Run it to rate each requirement: ok, limit, check or gap.</span></div>
 <div class="r"><button id="fitb">Run fit check</button><input id="mb" placeholder="Mbit/s" title="Measured rate, e.g. from net.iperf; shows the 900 MB download time"></div></div></div>
@@ -443,31 +448,31 @@ const UC={
   'an HTTPS page on the host for up to 5 laptops, 900 MB of history in under 30 minutes, up to 8 socket trays, and BLE for phone setup, service and accessories.',
   h:['Tool','host + NORA-W36'],n:[['wifi','Factory network','Enterprise Wi-Fi, MES'],['ap','Laptops (5)','tool AP, HTTPS'],['sock','Socket trays (8)','UDP or BLE'],['ble','Phone, accessories','BLE']]},
  iiot:{t:'Factory machine (IIoT)',s:'Industry',d:'Enterprise Wi-Fi, TLS to the MES, CAN data, one config per line, firmware updates.',
-  h:['Machine','NORA-W36'],n:[['wifi','Plant network','EAP-TLS'],['sock','MES','TLS'],['can','Machine','CAN'],['fw','Lifecycle','cfg, firmware','pu']]},
+  h:['Machine','NORA-W36'],n:[['wifi','Plant network','EAP-TLS'],['sock','MES','TLS'],['can','Machine','CAN'],['fw','Lifecycle','cfg, firmware']]},
  medical:{t:'Medical device (IEC 62304)',s:'Industry',d:'SOUP module, bonded secure BLE to the phone app, traces and JUnit reports as evidence.',
-  h:['Device','NORA module'],n:[['ble','Phone app','secure BLE'],['soup','SOUP','dev.info'],['trace','Evidence','trace, JUnit','warm'],['cfg','Release','cfg.diff','pu']]},
+  h:['Device','NORA module'],n:[['ble','Phone app','secure BLE'],['soup','SOUP','dev.info'],['trace','Evidence','trace, JUnit'],['cfg','Release','cfg.diff']]},
  site:{t:'Construction tools',s:'Industry',d:'Phone service link over BLE, fleet found by name, site and depot Wi-Fi.',
-  h:['Tool','NORA-W36'],n:[['ble','Technician','BLE SPS'],['scan','Gateway','scan by name'],['wifi','Site Wi-Fi','office, depot'],['fw','Depot','updates','pu']]},
+  h:['Tool','NORA-W36'],n:[['ble','Technician','BLE SPS'],['scan','Gateway','scan by name'],['wifi','Site Wi-Fi','office, depot'],['fw','Depot','updates']]},
  implement:{t:'Farm implement (ISOBUS)',s:'Industry',d:'ISOBUS CAN data to the cab tablet over the module\'s AP or BLE, the work record to the cloud.',
   h:['Implement','NORA-W36'],n:[['can','ISOBUS','CAN 250k'],['ap','Cab tablet','AP, TCP'],['ble','Phone','BLE NUS'],['sock','Cloud','MQTT']]},
  condition:{t:'Motor condition monitoring',s:'Industry',d:'An IMU on the motor housing records a healthy baseline, streams vibration to the analysis PC, and the host publishes an alarm to the plant broker.',
-  h:['Motor sensor','host + NORA-W36'],n:[['imu','IMU','100 Hz vibration'],['sock','Analysis PC','TCP stream'],['wifi','Plant Wi-Fi','EAP-TLS'],['alarm','Alarms','MQTT','warm']]},
+  h:['Motor sensor','host + NORA-W36'],n:[['imu','IMU','100 Hz vibration'],['sock','Analysis PC','TCP stream'],['wifi','Plant Wi-Fi','EAP-TLS'],['alarm','Alarms','MQTT']]},
  agv:{t:'AGV or mobile robot',s:'Industry',d:'The robot roams between the hall\'s access points, the route is surveyed for coverage, latency to the fleet manager is measured while driving, and a phone reads it over BLE.',
-  h:['Robot','host + NORA-W36'],n:[['wifi','Hall Wi-Fi','roaming'],['sock','Fleet manager','latency, MQTT'],['ble','Technician','BLE SPS'],['safe','E-stop','wired, not Wi-Fi','pu']]},
+  h:['Robot','host + NORA-W36'],n:[['wifi','Hall Wi-Fi','roaming'],['sock','Fleet manager','latency, MQTT'],['ble','Technician','BLE SPS'],['safe','E-stop','wired, not Wi-Fi']]},
  eol:{t:'End-of-line test',s:'Industry',d:'Every unit on the production line is identified, gets the golden settings, passes a radio check and leaves a report under its serial number.',
-  h:['Unit','NORA module'],n:[['id','Identity','dev.info'],['cfg','Golden settings','cfg.load, cfg.diff','pu'],['ble','Radio check','bt.scan, wifi.scan'],['rep','Report','prod.test','warm']]},
+  h:['Unit','NORA module'],n:[['id','Identity','dev.info'],['cfg','Golden settings','cfg.load, cfg.diff'],['ble','Radio check','bt.scan, wifi.scan'],['rep','Report','prod.test']]},
  blegw:{t:'BLE sensor gateway',s:'Industry',d:'A gateway finds wireless sensors by name, reads them over BLE and publishes the readings to the plant broker over Wi-Fi.',
-  h:['Gateway','host + NORA-W36'],n:[['ble','BLE sensors','scan, GATT'],['wifi','Plant Wi-Fi','station'],['sock','Plant broker','MQTT'],['lim','3 links','poll in turns','pu']]},
+  h:['Gateway','host + NORA-W36'],n:[['ble','BLE sensors','scan, GATT'],['wifi','Plant Wi-Fi','station'],['sock','Plant broker','MQTT'],['lim','3 links','poll in turns']]},
  edge:{t:'Edge AI sensor (ALMA-W1)',s:'Edge AI',d:'IMU training data, I2C sensors, results to the cloud; ALMA-W161/W166 run these u-connectXpress steps, ALMA-W111/W116 run the model on their NPU.',
-  h:['Sensor','host + module'],n:[['imu','IMU','training data'],['sock','Notebook','stream'],['i2c','Sensors','I2C','pu'],['wifi','Cloud','MQTT']]},
+  h:['Sensor','host + module'],n:[['imu','IMU','training data'],['sock','Notebook','stream'],['i2c','Sensors','I2C'],['wifi','Cloud','MQTT']]},
  mesh:{t:'Thread sensor mesh',s:'Thread',d:'Battery sensors and mains-powered routers form a self-healing IPv6 mesh without a border router: one node makes the network, the others join with its dataset.',
-  h:['Node','Thread module'],n:[['lead','Leader','thread.network new'],['rt','Routers','mains powered'],['sleep','Battery nodes','sleepy, poll parent','warm'],['heal','Self-healing','new leader','pu']]},
+  h:['Node','Thread module'],n:[['lead','Leader','thread.network new'],['rt','Routers','mains powered'],['sleep','Battery nodes','sleepy, poll parent'],['heal','Self-healing','new leader']]},
  border:{t:'Home Thread network',s:'Thread',d:'Join the Thread network of an Apple TV, HomePod, Nest Hub or OpenThread Border Router, register a service with SRP and find others with DNS-SD.',
-  h:['Device','Thread module'],n:[['br','Border router','Apple, Google, OTBR'],['join','Commission','PSKd joiner','warm'],['srp','Be found','SRP service'],['dns','Find others','DNS-SD','pu']]},
+  h:['Device','Thread module'],n:[['br','Border router','Apple, Google, OTBR'],['join','Commission','PSKd joiner'],['srp','Be found','SRP service'],['dns','Find others','DNS-SD']]},
  building:{t:'Building lights and sensors',s:'Thread',d:'Every unit gets the same dataset on the production line; lights route, sensors sleep, and the counters show the network health.',
-  h:['Unit','Thread module'],n:[['ds','Production line','one dataset'],['rt','Lights','routers'],['sleep','Sensors','sleepy','warm'],['cnt','Health','thread.counters','pu']]},
+  h:['Unit','Thread module'],n:[['ds','Production line','one dataset'],['rt','Lights','routers'],['sleep','Sensors','sleepy'],['cnt','Health','thread.counters']]},
  gateway:{t:'Thread to cloud gateway (ALMA-W1)',s:'Thread',d:'Thread sensors register with an ALMA-W1 gateway, and the host relays their readings to MQTT over Wi-Fi.',
-  h:['Gateway','host + ALMA-W1'],n:[['thr','Thread sensors','SRP, DNS-SD'],['wifi','Site Wi-Fi','station'],['sock','Cloud','MQTT'],['host','Host relay','no IPv6 routing','pu']]},
+  h:['Gateway','host + ALMA-W1'],n:[['thr','Thread sensors','SRP, DNS-SD'],['wifi','Site Wi-Fi','station'],['sock','Cloud','MQTT'],['host','Host relay','no IPv6 routing']]},
  swarm:{t:'Distributed location: peers',s:'Location',d:'5-10 Thread nodes; external edge fusion.',
   h:['Edge node','fusion + Thread'],n:[['thr','Peers','UDP'],['gnss','GNSS','position'],['imu','Sensors','edge fusion'],['ble','CS anchors','ranges']]},
  recovery:{t:'Location: sensor-loss recovery',s:'Location',d:'Edge estimate from fresh peers when a sensor drops.',
@@ -475,47 +480,51 @@ const UC={
  handover:{t:'Indoor / outdoor location',s:'Location',d:'Edge-owned Wi-Fi/CS to GNSS handover with hysteresis.',
   h:['Edge tracker','source + uncertainty'],n:[['wifi','Indoor Wi-Fi','fingerprint'],['ble','Anchors','CS'],['gnss','Outdoor GNSS','valid fix'],['imu','Sensors','continuity']]},
  livestock:{t:'Livestock: geofence and finding',s:'Location',d:'Fence events start BLE finding and cellular alerts.',
-  h:['Animal tag','edge host'],n:[['gnss','Paddock','KML fence'],['ble','Finding','tag ID'],['cell','Farm server','alerts','pu'],['wifi','Barn','fingerprint']]},
+  h:['Animal tag','edge host'],n:[['gnss','Paddock','KML fence'],['ble','Finding','tag ID'],['cell','Farm server','alerts'],['wifi','Barn','fingerprint']]},
  boat:{t:'Boat or camper: GPS on the chart app',s:'Location',d:'A GNSS receiver on the host, the module as the boat\'s access point: tablets run OpenCPN or Navionics on NMEA over TCP 10110, a phone gets it over BLE, and the trip is logged to a file.',
-  h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial'],['ap','Tablets (5)','module AP, TCP 10110'],['log','Trip log','gnss.log','warm'],['ble','Phone','BLE NUS']]},
+  h:['Host','GNSS + NORA-W36'],n:[['gnss','GNSS receiver','NMEA, serial'],['ap','Tablets (5)','module AP, TCP 10110'],['log','Trip log','gnss.log'],['ble','Phone','BLE NUS']]},
  rtk:{t:'Survey pole or rover: RTK',s:'Location',d:'An RTK receiver gets corrections from an NTRIP caster over Wi-Fi and sends centimetre positions to a rover or a phone over BLE.',
   h:['Host','RTK GNSS + NORA-W36'],n:[['wifi','Wi-Fi','station'],['sock','NTRIP caster','RTCM in, GGA out'],['gnss','RTK receiver','ZED-F9P, ZED-X20P'],['ble','Rover or phone','BLE NUS']]},
  mower:{t:'Robotic lawn mower',s:'Location',d:'The owner sets the mower up from a phone over BLE, it joins the garden Wi-Fi and gets PointPerfect SPARTN corrections for its HP GNSS receiver; '+
   'the phone follows it over BLE, and past the Wi-Fi the corrections and a theft alert go over a cellular modem.',
-  h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status'],['wifi','Garden Wi-Fi','PointPerfect NTRIP'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['cell','Cellular modem','edge, theft alert','pu']]},
+  h:['Mower','HP GNSS + NORA-W36'],n:[['ble','Owner\'s phone','setup, status'],['wifi','Garden Wi-Fi','PointPerfect NTRIP'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['cell','Cellular modem','edge, theft alert']]},
  farm:{t:'Tractor or field robot: auto-steer',s:'Location',d:'An HP GNSS receiver gets PointPerfect corrections over a cellular modem in the field and sends the corrected NMEA to the guidance tablet in the cab over BLE; '+
   'the field log goes up over the farmyard Wi-Fi.',
-  h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP','pu'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['ble','Cab tablet','BLE NUS'],['wifi','Farmyard Wi-Fi','log upload']]},
+  h:['Tractor','HP GNSS + NORA-W36'],n:[['cell','Cellular modem','PointPerfect NTRIP'],['gnss','HP GNSS','ZED-F9P, ZED-X20P'],['ble','Cab tablet','BLE NUS'],['wifi','Farmyard Wi-Fi','log upload']]},
  tracker:{t:'Car, bike or pet tracker',s:'Location',d:'Positions to your own server: over Wi-Fi when at home, over a cellular modem on the road.',
-  h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','Your server','TCP, NMEA lines'],['cell','Cellular modem','on the road','pu'],['gnss','GNSS receiver','position']]},
+  h:['Tracker','GNSS + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','Your server','TCP, NMEA lines'],['cell','Cellular modem','on the road'],['gnss','GNSS receiver','position']]},
  fieldkit:{t:'Field kit: Wi-Fi to LTE relay',s:'Cellular',d:'No network on site: laptops and tablets join the module\'s own access point, and their connection to your server is relayed over a cellular modem, byte for byte. '+
   'One socket is relayed, not IP (no hotspot): the modem and the module each have their own IP stack.',
-  h:['Field kit','modem + NORA-W36'],n:[['ap','Laptops (5)','module AP, TCP 7000'],['cell','Cellular modem','LTE-M, NB-IoT, LTE','pu'],['sock','Your server','cell.connect'],['ble','Phone','or BLE NUS']]},
+  h:['Field kit','modem + NORA-W36'],n:[['ap','Laptops (5)','module AP, TCP 7000'],['cell','Cellular modem','LTE-M, NB-IoT, LTE'],['sock','Your server','cell.connect'],['ble','Phone','or BLE NUS']]},
  blecell:{t:'Phone or BLE device over LTE',s:'Cellular',d:'A phone app or BLE device talks Nordic UART to the module; the host relays it to your server over a cellular modem, with no Wi-Fi on site and no data plan on the phone.',
-  h:['Gateway','modem + NORA module'],n:[['ble','Phone or device','BLE NUS'],['cell','Cellular modem','one socket','pu'],['sock','Your server','cell.connect'],['lim','Links','one peer, one socket','warm']]},
+  h:['Gateway','modem + NORA module'],n:[['ble','Phone or device','BLE NUS'],['cell','Cellular modem','one socket'],['sock','Your server','cell.connect'],['lim','Links','one peer, one socket']]},
  vehicle:{t:'Vehicle or machine: CAN over LTE',s:'Cellular',d:'CAN frames from a vehicle or machine go to your server over a cellular modem as 17-byte records; the link reopens after a dead zone.',
-  h:['Logger','host + modem'],n:[['can','CAN bus','SocketCAN'],['cell','Cellular modem','reconnects','pu'],['sock','Your server','binary records'],['sig','Coverage','cell.signal','warm']]},
+  h:['Logger','host + modem'],n:[['can','CAN bus','SocketCAN'],['cell','Cellular modem','reconnects'],['sock','Your server','binary records'],['sig','Coverage','cell.signal']]},
  xplr:{t:'XPLR-IOT-1 kit',s:'Cellular',d:'The kit\'s SARA-R5 and MAX-M10S: positions to your server over LTE-M or NB-IoT, the modem powered and updated through the NORA-B106 shell.',
-  h:['XPLR-IOT-1','NORA-B106 shell'],n:[['cell','SARA-R5','LTE-M, NB-IoT','pu'],['gnss','MAX-M10S','position'],['sock','Your server','gnss.bridge cell'],['fw','Firmware','cell.power, EasyFlash','warm']]},
+  h:['XPLR-IOT-1','NORA-B106 shell'],n:[['cell','SARA-R5','LTE-M, NB-IoT'],['gnss','MAX-M10S','position'],['sock','Your server','gnss.bridge cell'],['fw','Firmware','cell.power, EasyFlash']]},
  home:{t:'Smart home sensor: MQTT',d:'A sensor on the home Wi-Fi publishes its state to Mosquitto in Home Assistant and takes commands back.',
   h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','MQTT broker','Home Assistant'],['imu','Sensor','IMU, door, machine'],['ble','Phone','BLE setup']]},
  provision:{t:'Wi-Fi set up from a phone',d:'A new device has no keyboard: the phone sends the network name and password over BLE (Wi-Fi Provisioning service), or joins the device\'s own AP from a QR code.',
   h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning'],['wifi','Home Wi-Fi','joined after setup'],['ap','Setup AP','QR code'],['sock','Cloud or app','after setup']]},
  hotel:{t:'Hotel or cafe Wi-Fi with a login page',d:'Guest networks hold traffic until a form is filled in: the app finds the portal page, fills in the room and surname, and checks the internet.',
-  h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2'],['portal','Login page','room, surname','warm'],['sock','Internet','after login','ok'],['ble','Phone','BLE']]},
+  h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2'],['portal','Login page','room, surname'],['sock','Internet','after login'],['ble','Phone','BLE']]},
  notify:{t:'Phone notifications',d:'Calls and messages from an iPhone (ANCS) or an Android companion app on a small display or wearable, with answer and dismiss.',
-  h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS'],['android','Android','companion app'],['disp','Display','title and text','warm'],['act','Actions','answer, dismiss','pu']]},
+  h:['Display','host + NORA module'],n:[['ble','iPhone','ANCS'],['android','Android','companion app'],['disp','Display','title and text'],['act','Actions','answer, dismiss']]},
  remote:{t:'Clicker or media remote',d:'The module is a BLE keyboard (HID over GATT): next slide, volume and play/pause on a PC, TV or phone without a driver.',
-  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID'],['slides','Slides','space, backspace','warm'],['media','Media','volume, play','pu'],['text','Text','hid.text']]},
+  h:['Remote','NORA module'],n:[['ble','PC or phone','BLE HID'],['slides','Slides','space, backspace'],['media','Media','volume, play'],['text','Text','hid.text']]},
  finder:{t:'Item finder with Channel Sounding',d:'A tag on keys, a bag or a tool answers Channel Sounding: a second module or a Bluetooth 6.0 phone measures how far away it is, to about half a metre. Ranging only runs on an authenticated, bonded link.',
-  h:['Finder','NORA-B26 initiator'],n:[['ble','Tag','reflector, bt.cs on'],['dist','Distance','bt.cs.range','warm'],['auth','Bond','authenticated link','pu'],['phone','Phone','Bluetooth 6.0']]}};
-const KC={wifi:'ac',ap:'pu',sock:'warm',ble:'ble'},XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
+  h:['Finder','NORA-B26 initiator'],n:[['ble','Tag','reflector, bt.cs on'],['dist','Distance','bt.cs.range'],['auth','Bond','authenticated link'],['phone','Phone','Bluetooth 6.0']]}};
+/* node id -> kind, the same colours as the Connections view (k-* classes); anything else is host-side (k-host) */
+const KC={wifi:'wifi',portal:'wifi',ap:'ap',ble:'ble',phone:'ble',scan:'ble',android:'ble',slides:'ble',media:'ble',text:'ble',dist:'ble',auth:'ble',lim:'ble',
+  thr:'thr',lead:'thr',rt:'thr',sleep:'thr',heal:'thr',br:'thr',join:'thr',srp:'thr',dns:'thr',ds:'thr',cnt:'thr',sock:'sock',alarm:'mqtt',gnss:'gnss',log:'gnss',cell:'cell',sig:'cell'},
+ KN={wifi:'WI-FI',ap:'AP',ble:'BLE',thr:'THREAD',sock:'SOCKET',mqtt:'MQTT',gnss:'GNSS',cell:'CELL'},XY=[[95,45],[565,45],[565,215],[95,215]],LS={};let uc=localStorage.getItem('ucxc');if(!UC[uc])uc='tool';
 {const G={};Object.keys(UC).forEach(k=>{const s=UC[k].s||'Everyday';
  if(!G[s]){G[s]=document.createElement('optgroup');G[s].label=s;$('ucs').append(G[s])}G[s].append(new Option(UC[k].t,k))})}
-function draw(){const u=UC[uc],K=n=>`style="--k:var(--${n[3]||KC[n[0]]||'ok'})"`;let dh='';
- u.n.forEach((n,i)=>dh+=`<line id="l-${n[0]}" x1="330" y1="130" x2="${XY[i][0]}" y2="${XY[i][1]}" ${K(n)}/>`);
- [['hub',u.h[0],u.h[1]]].concat(u.n).forEach((n,i)=>{const x=i?XY[i-1][0]:330,y=i?XY[i-1][1]:130;
-  dh+=`<g id="n-${n[0]}" ${K(n)}><rect x="${x-80}" y="${y-27}" width="160" height="54" rx="12"/><text x="${x}" y="${y-3}">${n[1]}</text><text x="${x}" y="${y+15}">${n[2]}</text></g>`});
+function draw(){const u=UC[uc],kind=n=>KC[n[0]]==='sock'&&/MQTT/.test(n[2])?'mqtt':KC[n[0]]||'host';let dh='';
+ u.n.forEach((n,i)=>dh+=`<line id="l-${n[0]}" class="k-${kind(n)}" x1="330" y1="130" x2="${XY[i][0]}" y2="${XY[i][1]}"/>`);
+ u.n.forEach((n,i)=>{const [x,y]=XY[i],k=kind(n);
+  dh+=`<g id="n-${n[0]}" class="k-${k}"><rect x="${x-80}" y="${y-27}" width="160" height="54" rx="12"/>${KN[k]?`<text class="kt" x="${x-72}" y="${y-17}">${KN[k]}</text>`:''}<text x="${x}" y="${y-3}">${n[1]}</text><text class="sb" x="${x}" y="${y+15}">${n[2]}</text></g>`});
+ dh+=`<g id="n-hub" class="hub"><rect x="250" y="103" width="160" height="54" rx="12"/><text x="330" y="127">${u.h[0]}</text><text class="sb" x="330" y="145">${u.h[1]}</text></g>`;
  $('dg').innerHTML=dh;Object.keys(LS).forEach(k=>lit(k,LS[k]))}
 function lit(k,on){LS[k]=!!on;['n-','l-'].forEach(p=>{const e=document.getElementById(p+k);if(e)e.classList.toggle('on',!!on)})}
 function fitTable(b){const f=$('fit');let first=1;f.textContent='';b.body.textContent.split('\n').forEach(l=>{const m=l.match(/^\s*\[(ok|limit|check|gap)\]\s+(.+?)\s{2,}(.+)$/);

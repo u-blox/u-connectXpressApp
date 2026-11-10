@@ -86,6 +86,27 @@ def test_connections_view_zooms_pans_and_drags():
     assert "#cnd[hidden]{display:none}" in page
 
 
+def test_use_case_diagram_shares_the_connections_palette():
+    """Use case nodes are coloured by kind through the k-* classes of the Connections view, never by a raw colour
+    name per node; every kind has a legend entry, and both panes show the same legend."""
+    uc = SCRIPT[SCRIPT.index("const UC={"):SCRIPT.index("const KC=")]
+    assert not re.search(r",'(warm|pu|ok|ac|ble)'\]", uc), "a raw colour on a use case node"
+    kinds = set(re.findall(r"\w+:'(\w+)'", SCRIPT[SCRIPT.index("const KC="):SCRIPT.index("KN=")]))
+    legends = re.findall(r'<span class="cnleg">(.*?)</span></span>', PAGE)
+    assert len(legends) == 2 and legends[0].startswith(legends[1]), "the same legend, Use cases adds Host"
+    legend_kinds = set(re.findall(r'class="k-(\w+)"', legends[0]))
+    assert kinds | {"host"} <= legend_kinds, kinds - legend_kinds
+    assert 'class="k-${kind(n)}"' in SCRIPT and '<g id="n-hub" class="hub">' in SCRIPT
+    # the diagram's rings and links take their colour from the kind, dimmed until lit
+    assert "#dg rect{fill:var(--bg2);stroke:var(--k);stroke-opacity:.45" in PAGE
+    assert "#dg line{stroke:var(--k);stroke-opacity:.25" in PAGE and "#dg .hub{--k:var(--ac)}" in PAGE
+    # every node id in the use cases is a known kind or host-side
+    known = set(re.findall(r"(\w+):'\w+'", SCRIPT[SCRIPT.index("const KC="):SCRIPT.index("KN=")]))
+    ids = set(re.findall(r"\['(\w+)','(?:[^'\\]|\\.)*','(?:[^'\\]|\\.)*'\]", uc))
+    host = {"can", "fw", "soup", "trace", "cfg", "imu", "safe", "id", "rep", "i2c", "host", "disp", "act"}
+    assert ids - known - host == set(), ids - known - host
+
+
 def test_cellular_card_and_status_chip():
     """The live cellular card sits next to the GNSS one, and the Cell chip of the status bar runs cell.status."""
     page = PAGE_FILE.read_text(encoding="utf-8")

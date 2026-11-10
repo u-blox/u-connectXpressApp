@@ -1074,22 +1074,42 @@ def test_bt_filter_addr_name_usage(app_exe, nora, args):
 
 
 def test_bt_phy_uses_the_typed_api(app_exe, nora):
-    entries = {"AT+UBTCS4?": ["+UBTCS4:4", "OK"], "AT+UBTCS5?": ["+UBTCS5:4", "OK"],
+    entries = {"AT+UBTCS4?": ["+UBTCS4:12", "OK"], "AT+UBTCS5?": ["+UBTCS5:4", "OK"],
                "AT+UBTPHYR=3": ["+UBTPHYR:3,4,4", "OK"], "AT+UBTCS4=*": ["OK"], "AT+UBTCS5=*": ["OK"],
                "AT+UBTPHYR=*": ["OK"]}
     rest = {k: v for k, v in nora.commands.items() if k not in entries}
     nora.commands.clear()
     nora.commands.update(entries)
     nora.commands.update(rest)
-    out = _shell(app_exe, nora.port, ["bt.phy coded", "bt.phy", "bt.phy 3", "bt.phy 3 2m"], log=nora.log)
-    assert out.returncode == 0, out.stdout + out.stderr
+    nora.urcs["AT+UBTPHYR=3,2,2"] = ["+UEBTPHYU:3,0,2,2"]       # the peer agreed to 2M
+    nora.urcs["AT+UBTPHYR=3,4,4"] = ["+UEBTPHYU:3,26,1,1"]      # HCI 0x1A: unsupported remote feature
+    out = _shell(app_exe, nora.port, ["bt.phy coded", "bt.phy", "bt.phy 3", "bt.phy 3 2m", "bt.phy 3 coded"],
+                 log=nora.log)
+    assert out.returncode != 0, out.stdout + out.stderr
     assert "preferred PHY Coded on new links, set and stored" in out.stdout, out.stdout
-    assert "preferred PHY: tx Coded, rx Coded" in out.stdout, out.stdout
+    assert "preferred PHY: tx Coded S2, rx Coded" in out.stdout, out.stdout
     assert "connection 3: tx Coded, rx Coded" in out.stdout, out.stdout
-    assert "connection 3: 2M PHY requested" in out.stdout, out.stdout
+    assert "connection 3: tx 2M, rx 2M" in out.stdout, out.stdout
+    assert "ERROR: PHY update on connection 3 failed (HCI status 0x1A: the peer does not support it)" in out.stdout, \
+        out.stdout
     sent = nora.log
     assert "AT+UBTCS4=4" in sent and "AT+UBTCS5=4" in sent and "AT&W" in sent, sent
-    assert "AT+UBTPHYR=3,2,2" in sent, sent
+    assert "AT+UBTPHYR=3,2,2" in sent and "AT+UBTPHYR=3,4,4" in sent, sent
+
+
+def test_bt_phy_without_an_update_event_says_so(app_exe, nora):
+    nora.commands["AT+UBTPHYR=*"] = ["OK"]
+    out = _shell(app_exe, nora.port, ["bt.phy 2 1m"], log=nora.log)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "connection 2: 1M PHY requested, no result from the module within 5 s" in out.stdout, out.stdout
+
+
+def test_bt_phy_coded_on_a_module_without_it_points_at_the_nora_b26(app_exe, nora):
+    nora.commands["AT+UBTCS4=4"] = ["ERROR"]
+    out = _shell(app_exe, nora.port, ["bt.phy coded"], log=nora.log)
+    assert out.returncode != 0, out.stdout + out.stderr
+    assert "ERROR: set the preferred PHY failed" in out.stdout, out.stdout
+    assert "Coded PHY needs a NORA-B26" in out.stdout, out.stdout
 
 
 @pytest.mark.parametrize("args", ["bt.phy fast", "bt.phy 3 auto", "bt.phy 3 4g", "bt.phy coded 2m", "bt.phy 1 2 3"])

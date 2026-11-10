@@ -342,6 +342,7 @@ bool ucxapp_qr_print_wifi(const char *ssid, const char *password, const char *se
 
 /* Bluetooth security (ucxapp_cmds_bt.c): URC sinks that reply themselves, and the Just Works defaults. */
 void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status);
+void ucxapp_bt_phy_update(int32_t conn, int32_t status, int32_t txPhy, int32_t rxPhy);   /* +UEBTPHYU */
 void ucxapp_bt_cs_distance(int32_t conn, int32_t mm);
 /* The newest Channel Sounding distance of conn and how old it is; false if none was reported. */
 bool ucxapp_bt_cs_last(int32_t conn, int32_t *mm, uint32_t *ageMs);

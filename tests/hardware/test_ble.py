@@ -39,6 +39,25 @@ def test_bt_addr_and_name_round_trip(app_exe, port_a):
 
 
 @pytest.mark.hardware
+def test_bt_phy_preferred_round_trip(app_exe, port_a):
+    """Preferred PHY for new links: read, set 2M, read back, restore what was there (every module has 1M and 2M)."""
+    old = _run(app_exe, port_a, "bt.phy")
+    m = re.search(r"^preferred PHY: tx (\S+), rx (\S+)$", old.stdout, re.M)
+    assert old.returncode == 0 and m, old.stdout
+    original = {"auto": "auto", "1M": "1m", "2M": "2m", "Coded": "coded"}.get(m.group(1), "auto")
+    try:
+        out = _run(app_exe, port_a, "bt.phy 2m", "bt.phy")
+        assert out.returncode == 0 and "preferred PHY 2M on new links, set and stored" in out.stdout, out.stdout
+        assert re.search(r"^preferred PHY: tx 2M, rx 2M$", out.stdout, re.M), out.stdout
+        out = _run(app_exe, port_a, "bt.phy 1m", "bt.phy")
+        assert re.search(r"^preferred PHY: tx 1M, rx 1M$", out.stdout, re.M), out.stdout
+    finally:
+        assert _run(app_exe, port_a, f"bt.phy {original}").returncode == 0
+    out = _run(app_exe, port_a, "bt.phy 7")   # no connection 7
+    assert out.returncode != 0 and "ERROR: read the PHY of connection 7 failed" in out.stdout, out.stdout
+
+
+@pytest.mark.hardware
 def test_bt_adv_custom_payload_round_trip(app_exe, port_a):
     """Set a CHIPoBLE-style service data payload and an interval, start, read back, stop; a reboot restores defaults."""
     _reboot(app_exe, port_a)

@@ -401,8 +401,16 @@ def linux_host_run(spec, forward):
     return subprocess.call(["ssh", *tty, host, cmd])
 
 
+def shown(path):
+    """A path relative to the repo when it is inside it (UCX_APP_EXE may point anywhere, e.g. a coverage build)."""
+    try:
+        return str(Path(path).relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def run_app(exe, app_args):
-    print("Starting", exe.relative_to(ROOT), *app_args)
+    print("Starting", shown(exe), *app_args)
     if not IS_WINDOWS:
         wsl_serial_hint()
         os.chdir(ROOT)
@@ -472,7 +480,7 @@ def run_virtual(exe, name, app_args):
         print(f"Simulated {name} on {port}", flush=True)
         old = signal.signal(signal.SIGINT, signal.SIG_IGN)   # the app handles Ctrl-C itself
         try:
-            print("Starting", exe.relative_to(ROOT), port, *app_args, flush=True)
+            print("Starting", shown(exe), port, *app_args, flush=True)
             return subprocess.call([str(exe), port, *app_args], cwd=ROOT)
         finally:
             signal.signal(signal.SIGINT, old)

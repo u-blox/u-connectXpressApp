@@ -75,7 +75,12 @@ def test_connections_view_zooms_pans_and_drags():
     assert '<div id="cnz">' in page and 'data-z="1.25"' in page and 'data-z="0"' in page
     for name in ("wheel", "pointerdown", "pointermove", "pointerup", "dblclick"):
         assert f"cnS.addEventListener('{name}'" in SCRIPT, name
-    assert "CN.off[k]" in SCRIPT and "cnReset=()=>{CN.vb=[-430,-250,860,500];CN.off={}" in SCRIPT
+    assert "CN.off[k]" in SCRIPT
+    # reset restores a view box centred on the origin (the default zoom may change, the centring must not)
+    vb = re.search(r"cnReset=\(\)=>\{CN\.vb=\[(-?\d+),(-?\d+),(\d+),(\d+)\];CN\.off=\{\}", SCRIPT)
+    assert vb, "cnReset must restore CN.vb and CN.off"
+    x, y, w, h = map(int, vb.groups())
+    assert abs(w + 2 * x) <= 1 and abs(h + 2 * y) <= 1, vb.group(0)   # rounding of an odd width or height
     assert "touch-action:none" in page
     # .card sets display, which would otherwise override the hidden attribute and keep Close from hiding it
     assert "#cnd[hidden]{display:none}" in page

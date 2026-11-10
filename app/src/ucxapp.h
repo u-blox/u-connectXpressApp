@@ -80,6 +80,7 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 #define URC_FLAG_THREAD_JOINER      (1 << 23)  /* +UETHJ: joiner finished */
 #define URC_FLAG_MDNS_UP            (1 << 24)  /* +UEMDU: mDNS responder answering */
 #define URC_FLAG_MDNS_DOWN          (1 << 25)  /* +UEMDD */
+#define URC_FLAG_BT_PHY_UPDATE      (1 << 26)  /* +UEBTPHYU: PHY update finished (bt.phy <conn> <phy>) */
 
 /* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
 void ucxapp_urc_register(uCxHandle_t *ucx);

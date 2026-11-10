@@ -101,6 +101,13 @@ static void btConnectedUrc(struct uCxHandle *h, int32_t c, uBtLeAddress_t *a)   
 static void btDisconnectedUrc(struct uCxHandle *h, int32_t c)                          { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_CONN, c); evt("bt: disconnected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_BT_DISCONNECTED); }
 
 static void btBondUrc(struct uCxHandle *h, uBtLeAddress_t *a, uBtBondStatus_t s)       { (void)h; evt("bt: bond status %d", (int)s); ucxapp_bt_bond_status(a, (int32_t)s); }
+static void btPhyUrc(struct uCxHandle *h, int32_t c, int32_t status, int32_t tx, int32_t rx)
+{
+    (void)h;
+    evt("bt: PHY update conn %d%s, tx %d rx %d", (int)c, status != 0 ? " failed" : "", (int)tx, (int)rx);
+    ucxapp_bt_phy_update(c, status, tx, rx);
+    ucxapp_events_signal(URC_FLAG_BT_PHY_UPDATE);
+}
 static void btConfirmUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)            { (void)h; ucxapp_bt_user_confirmation(h, a, v); }
 static void btPasskeyShowUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)        { (void)h; ucxapp_bt_passkey_display(a, v); }
 static void btPasskeyAskUrc(struct uCxHandle *h, uBtLeAddress_t *a)                    { (void)h; ucxapp_bt_passkey_request(a); }
@@ -222,6 +229,7 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
     uCxBluetoothRegisterConnect(ucx, btConnectedUrc);
     uCxBluetoothRegisterDisconnect(ucx, btDisconnectedUrc);
     uCxBluetoothRegisterBondStatus(ucx, btBondUrc);
+    uCxBluetoothRegisterPhyUpdate(ucx, btPhyUrc);
     uCxBluetoothRegisterUserConfirmation(ucx, btConfirmUrc);
     uCxBluetoothRegisterPasskeyEntry(ucx, btPasskeyShowUrc);
     uCxBluetoothRegisterPasskeyRequest(ucx, btPasskeyAskUrc);

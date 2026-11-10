@@ -1010,11 +1010,18 @@ static int cmdBtDefaults(ucxapp_t *app, int argc, char *argv[])
     }
     if (argc == 2) {
         /* Mode 3 needs authenticated bonding, so Just Works is impossible: use numeric comparison. */
-        if (uCxBluetoothSetIoCapabilities(app->ucx, U_BT_IO_CAP_DISPLAY_YES_NO) != 0 ||
-            uCxBluetoothSetSecurityMode(app->ucx, U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION) != 0 ||
-            uCxBluetoothSetPairingMode(app->ucx, U_BT_PAIRING_MODE_ENABLE) != 0) {
-            ucxapp_print("ERROR: could not apply the secure profile\n");
-            return UCXAPP_ERR_FAILED;
+        static const char *const kSteps[] = { "I/O capabilities", "security mode", "pairing mode" };
+        int32_t r[3];
+
+        r[0] = uCxBluetoothSetIoCapabilities(app->ucx, U_BT_IO_CAP_DISPLAY_YES_NO);
+        r[1] = r[0] == 0 ? uCxBluetoothSetSecurityMode(app->ucx, U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION) : 0;
+        r[2] = r[1] == 0 ? uCxBluetoothSetPairingMode(app->ucx, U_BT_PAIRING_MODE_ENABLE) : 0;
+        for (int i = 0; i < 3; i++) {
+            if (r[i] != 0) {
+                ucxapp_print("ERROR: could not apply the secure profile: %s (%d%s)\n", kSteps[i], (int)r[i],
+                             ucxapp_errname(r[i]));
+                return UCXAPP_ERR_FAILED;
+            }
         }
         gDefaultsApplied = true;
         ucxapp_print("secure connections with legacy fallback: numeric comparison, authenticated bonding, pairing enabled\n");
@@ -1240,30 +1247,45 @@ static int cmdBtName(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* PHY bits of AT+UBTCS4/5 and AT+UBTPHYR: bit 0 1M, bit 1 2M, bit 2 Coded (S8); 0 lets the peer decide */
+/* PHY bits of AT+UBTCS4/5, AT+UBTPHYR and +UEBTPHYU: bit 0 1M, bit 1 2M, bit 2 Coded, bit 3 Coded S2 instead of S8
+ * (NORA-B26; NORA-W36 has 1M and 2M only); 0 lets the peer decide */
 static int32_t phyParse(const char *s)
 {
     return !strcmp(s, "auto") ? 0 : !strcmp(s, "1m") ? 1 : !strcmp(s, "2m") ? 2 : !strcmp(s, "coded") ? 4 : -1;
 }
 
-static const char *phyName(int32_t phy)
+static const char *phyName(int32_t phy, char *out, size_t size)
 {
-    switch (phy) {
-    case 0: return "auto";
-    case 1: return "1M";
-    case 2: return "2M";
-    case 3: return "1M|2M";
-    case 4: return "Coded";
-    case 5: return "1M|Coded";
-    case 6: return "2M|Coded";
-    case 7: return "1M|2M|Coded";
-    default: return "?";
+    static const char *const kBits[] = { "1M", "2M", "Coded" };
+    size_t n = 0;
+
+    if (phy == 0) {
+        return "auto";
     }
+    out[0] = '\0';
+    for (int i = 0; i < 3; i++) {
+        if (phy & (1 << i)) {
+            n += (size_t)snprintf(out + n, size - n, "%s%s%s", n ? "|" : "", kBits[i],
+                                  i == 2 && (phy & 8) ? " S2" : "");
+        }
+    }
+    return n ? out : "?";
+}
+
+static volatile int32_t gPhyConn = -1, gPhyStatus, gPhyTx, gPhyRx;   /* last +UEBTPHYU */
+
+void ucxapp_bt_phy_update(int32_t conn, int32_t status, int32_t txPhy, int32_t rxPhy)
+{
+    gPhyStatus = status;
+    gPhyTx = txPhy;
+    gPhyRx = rxPhy;
+    gPhyConn = conn;
 }
 
 static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t r, tx = 0, rx = 0;
+    char a[24], b[24];
 
     if (argc > 3) {
         return UCXAPP_ERR_USAGE;
@@ -1275,13 +1297,26 @@ static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
             if (phy <= 0) {
                 return UCXAPP_ERR_USAGE;
             }
+            gPhyConn = -1;
+            ucxapp_events_clear(URC_FLAG_BT_PHY_UPDATE);
             r = uCxBluetoothRequestPhy(app->ucx, conn, phy, phy);
             if (r != 0) {
-                ucxapp_print("ERROR: PHY update on connection %d failed (%d%s)\n", (int)conn, (int)r, ucxapp_errname(r));
+                ucxapp_print("ERROR: PHY update on connection %d failed (%d%s)%s\n", (int)conn, (int)r, ucxapp_errname(r),
+                             phy == 4 ? "; Coded PHY needs a NORA-B26" : "");
                 return UCXAPP_ERR_FAILED;
             }
-            ucxapp_print("connection %d: %s PHY requested (bt.phy %d shows the result)\n", (int)conn, phyName(phy),
-                         (int)conn);
+            /* +UEBTPHYU tells how the negotiation ended; a few connection intervals, well under a second */
+            if (!ucxapp_events_wait(URC_FLAG_BT_PHY_UPDATE, 5) || gPhyConn != conn) {
+                ucxapp_print("connection %d: %s PHY requested, no result from the module within 5 s (bt.phy %d shows the "
+                             "PHY in use)\n", (int)conn, phyName(phy, a, sizeof(a)), (int)conn);
+                return UCXAPP_OK;
+            }
+            if (gPhyStatus != 0) {
+                ucxapp_print("ERROR: PHY update on connection %d failed (HCI status 0x%02X%s)\n", (int)conn, (unsigned)gPhyStatus,
+                             gPhyStatus == 0x1A ? ": the peer does not support it" : "");
+                return UCXAPP_ERR_FAILED;
+            }
+            ucxapp_print("connection %d: tx %s, rx %s\n", (int)conn, phyName(gPhyTx, a, sizeof(a)), phyName(gPhyRx, b, sizeof(b)));
             return UCXAPP_OK;
         }
         uCxBtGetPhy_t cur;
@@ -1290,7 +1325,7 @@ static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("ERROR: read the PHY of connection %d failed (%d%s)\n", (int)conn, (int)r, ucxapp_errname(r));
             return UCXAPP_ERR_FAILED;
         }
-        ucxapp_print("connection %d: tx %s, rx %s\n", (int)conn, phyName(cur.tx_phy), phyName(cur.rx_phy));
+        ucxapp_print("connection %d: tx %s, rx %s\n", (int)conn, phyName(cur.tx_phy, a, sizeof(a)), phyName(cur.rx_phy, b, sizeof(b)));
         return UCXAPP_OK;
     }
     if (argc == 3) {
@@ -1309,10 +1344,11 @@ static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
             r = uCxSystemStoreConfiguration(app->ucx);
         }
         if (r != 0) {
-            ucxapp_print("ERROR: set the preferred PHY failed (%d%s)\n", (int)r, ucxapp_errname(r));
+            ucxapp_print("ERROR: set the preferred PHY failed (%d%s)%s\n", (int)r, ucxapp_errname(r),
+                         phy == 4 ? "; Coded PHY needs a NORA-B26" : "");
             return UCXAPP_ERR_FAILED;
         }
-        ucxapp_print("preferred PHY %s on new links, set and stored\n", phyName(phy));
+        ucxapp_print("preferred PHY %s on new links, set and stored\n", phyName(phy, a, sizeof(a)));
         return UCXAPP_OK;
     }
     r = uCxBluetoothGetPreferredTxPhy(app->ucx, &tx);
@@ -1323,7 +1359,7 @@ static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: read the preferred PHY failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("preferred PHY: tx %s, rx %s\n", phyName(tx), phyName(rx));
+    ucxapp_print("preferred PHY: tx %s, rx %s\n", phyName(tx, a, sizeof(a)), phyName(rx, b, sizeof(b)));
     return UCXAPP_OK;
 }
 

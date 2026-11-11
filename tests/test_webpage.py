@@ -507,9 +507,14 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         page.wait_for_function("free && free.querySelector('.qr svg')")
         assert "\u2588" not in page.evaluate("free.body.textContent")
         # converted as soon as the line after it arrives, never shown as text first, not cut while it arrives
-        got = page.evaluate("""qr => {free = null; add('half\\n' + qr + '\\n'); const a = free.querySelectorAll('svg').length;
+        got = page.evaluate("""qr => {free = null; add('half\\n' + qr + '\\n'); const a = free.querySelectorAll('svg').length + /\\u2588/.test(free.body.textContent);
             add('next\\n'); return [a, free.querySelectorAll('svg').length]}""", qr)
         assert got == [0, 1], got
+        # a chunk that ends inside a QR row does not cut the picture in two
+        got = page.evaluate("""qr => {free = null; const s = 'cut\\n' + qr + '\\nnext\\n', k = 5 + qr.indexOf('\\n') * 4;
+            add(s.slice(0, k)); add(s.slice(k));
+            const p = free.querySelector('svg'); return [free.querySelectorAll('svg').length, p && p.getAttribute('viewBox')]}""", qr)
+        assert got[0] == 1 and got[1] == f"-2 -2 {len(QR_MATRIX) + 4} {len(QR_MATRIX) + 4}", got
         browser.close()
 
 

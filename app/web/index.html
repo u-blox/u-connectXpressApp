@@ -254,7 +254,8 @@ function verdict(ok,t){const v=$('verdict');v.className=ok?'':'bad';v.textConten
    where the stretched, seamed text in the log failed ---- */
 const QRL=/^[ \u2580\u2584\u2588]{7,}$/;
 function qrImage(b){b.body.normalize();   /* put() caps text nodes at 4000 chars, which can split a QR code */
- for(const x of [...b.body.childNodes]){if(x.nodeType!==3)continue;const L=x.textContent.split('\n');
+ const Q=[...b.body.childNodes];   /* the text after a converted QR goes back in: the demo prints several */
+ while(Q.length){const x=Q.shift();if(x.nodeType!==3)continue;const L=x.textContent.split('\n');
  for(let i=0;i<L.length;i++){if(!QRL.test(L[i])||!/[\u2580\u2584\u2588]/.test(L[i]))continue;
   let j=i;while(j<L.length&&QRL.test(L[j])&&L[j].length===L[i].length)j++;
   while(i>0&&/^ +$/.test(L[i-1])&&L[i-1].length===L[j-1].length)i--;   /* the blank border line above */
@@ -264,7 +265,7 @@ function qrImage(b){b.body.normalize();   /* put() caps text nodes at 4000 chars
    if(big?ch==='\u2588':ch==='\u2588'||ch===(y&1?'\u2584':'\u2580'))d+=`M${c} ${y}h1v1h-1z`}
   const img=el('div','qr'),px=7;   /* 7 px a module: a little bigger than the text was, still small on the page */
   img.innerHTML=`<svg viewBox="-2 -2 ${w+4} ${h+4}" width="${(w+4)*px}" height="${(h+4)*px}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect x="-2" y="-2" width="${w+4}" height="${h+4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
-  const before=L.slice(0,i).join('\n'),after=L.slice(j).join('\n');x.textContent=before+(before?'\n':'');x.after(img);if(after)img.after(document.createTextNode(after));break}}}
+  const before=L.slice(0,i).join('\n'),after=L.slice(j).join('\n');x.textContent=before+(before?'\n':'');x.after(img);if(after){const t=document.createTextNode(after);img.after(t);Q.unshift(t)}break}}}
 
 /* ---- ppk.measure: the "Chart:" line (min,avg,max uA per slot) drawn as a band with the average on top ---- */
 function ppkChart(b){const m=/^Chart:\s+([\d.]+) s uA avg ([-\d.]+)((?: [-\d.]+,[-\d.]+,[-\d.]+)+)\s*$/m.exec(b.body.textContent);if(!m)return;

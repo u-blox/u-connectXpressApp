@@ -497,6 +497,11 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         assert page.evaluate("document.querySelector('.qr svg path').getAttribute('d').startsWith('M2 2h1v1h-1z')")
         text = page.inner_text(".blk:last-child .bb")
         assert "WIFI:T:WPA;S:Setup-1234;P:setup1234;;" in text and "\u2588" not in text and "\u2580" not in text
+        # the demo prints several QR codes in one block: every one becomes a picture
+        qr = "\n".join("".join("\u2588" if v else " " for v in row) for row in QR_MATRIX)
+        left = page.evaluate("""qr => {const b = block('> demo'); put(b.body, 'one\\n' + qr + '\\ntwo\\n' + qr + '\\nend\\n');
+            qrImage(b); return [b.querySelectorAll('.qr svg').length, b.body.textContent]}""", qr)
+        assert left[0] == 2 and "\u2588" not in left[1] and "two" in left[1] and "end" in left[1], left
         browser.close()
 
 

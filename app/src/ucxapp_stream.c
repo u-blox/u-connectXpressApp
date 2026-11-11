@@ -111,8 +111,8 @@ struct bridge {
     ucxapp_tls_server_t *tlsSrv;   /* BR_TCP server with TLS; NULL for plain TCP */
     ucxapp_tls_conn_t *tls[MAX_CLIENTS];
     bool ntrip;                    /* BR_TCP client (or BR_UART data link) speaking NTRIP v1 to a caster */
-    bool ntripFailed;              /* caster refused: no reconnect */
-    bool ntripStreaming;           /* response header passed */
+    volatile bool ntripFailed;     /* caster refused: no reconnect */
+    volatile bool ntripStreaming;  /* response header passed */
     bool ntripBle;                 /* also send the receiver stream to a BLE Nordic UART client */
     char ntripMount[64];
     char args[96];                 /* the <kind>.bridge arguments that started it, to spot a repeat */
@@ -1727,6 +1727,10 @@ static void bridgeDescribe(const bridge_t *b)
     if (b->ntrip) {
         char where[100];
 
+        /* right after the start the caster has usually not answered yet: give it a moment */
+        for (int ms = 0; ms < 5000 && !b->ntripStreaming && !b->ntripFailed && !b->senderStop; ms += 20) {
+            ucxapp_platform_sleep_ms(20);
+        }
         if (b->bridge == BR_UART) {
             snprintf(where, sizeof(where), "over %s", b->outPort);
         } else {

@@ -506,6 +506,10 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         page.evaluate("qr => {free = null; add('free\\n' + qr + '\\nafter\\n')}", qr)
         page.wait_for_function("free && free.querySelector('.qr svg')")
         assert "\u2588" not in page.evaluate("free.body.textContent")
+        # converted as soon as the line after it arrives, never shown as text first, not cut while it arrives
+        got = page.evaluate("""qr => {free = null; add('half\\n' + qr + '\\n'); const a = free.querySelectorAll('svg').length;
+            add('next\\n'); return [a, free.querySelectorAll('svg').length]}""", qr)
+        assert got == [0, 1], got
         browser.close()
 
 

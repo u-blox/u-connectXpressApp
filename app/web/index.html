@@ -199,8 +199,9 @@ function put(tgt,x){x=x.replace(/[\x00-\x08\x0b-\x1f\x7f]/g,'');if(!x)return;tot
 function add(t){t=pend+t;pend='';const m=t.match(/\x1b(\[[0-9;?]*)?$/);if(m){pend=m[0];t=t.slice(0,m.index)}
  if(!t)return;const s=stick(out),tgt=(cur||free||(free=block(''))).body,re=/\x1b\[([0-9;?]*)([A-Za-z])/g;let i=0,r;
  while((r=re.exec(t))){put(tgt,t.slice(i,r.index));if(r[2]==='m')sgr(r[1]);i=re.lastIndex}
- put(tgt,t.slice(i));trim();if(s)out.scrollTop=out.scrollHeight;
- if(!cur&&free){const f=free;clearTimeout(add.q);add.q=setTimeout(()=>{if(f.isConnected)qrImage(f)},300)}}   /* the demo prints after its command finished */
+ put(tgt,t.slice(i));const b=cur||free;if(/[\u2580\u2584\u2588]/.test(t))b.qp=1;
+ if(b.qp){b.qp=qrImage(b);if(b.qp&&!cur){clearTimeout(add.q);add.q=setTimeout(()=>{if(b.isConnected)b.qp=qrImage(b,1)},300)}}   /* the demo prints after its command finished */
+ trim();if(s)out.scrollTop=out.scrollHeight}
 function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight}
 function addEv(t){const s=stick(ev),i=t.indexOf(':'),k=i>0&&i<9?t.slice(0,i):'',d=el('div','e n '+k);
  d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','g',k||'info'));d.appendChild(el('span','x',k?t.slice(i+1).trim():t));
@@ -244,7 +245,7 @@ function finish(rc){const b=cur;cur=null;setBusy('');if(!b)return;
  if(!rc&&/^wifi\.ap\.(en|dis)able/.test(b.cmd)){apOn=b.cmd[8]==='e';lit('ap',apOn)}
  if(/^usecase\.(tool|check)/.test(b.cmd))fitTable(b);
  if(!rc&&/^ppk\.measure/.test(b.cmd))ppkChart(b);
- qrImage(b);
+ qrImage(b,1);
  const dv=/^(?:usecase\.)?demo\b/.test(b.cmd)&&/(\d+) of (\d+) examples ran to the end/.exec(b.body.textContent);if(dv)verdict(dv[1]===dv[2],dv[0])}
 /* a short banner for commands with a pass/fail outcome (the demo) */
 function verdict(ok,t){const v=$('verdict');v.className=ok?'':'bad';v.textContent='';v.appendChild(el('span','',(ok?'\u2714 Demo passed: ':'\u2716 Demo: ')+t));
@@ -254,19 +255,20 @@ function verdict(ok,t){const v=$('verdict');v.className=ok?'':'bad';v.textConten
    "large") becomes a picture: square modules, black on white with a 4-module quiet zone, so a phone camera reads it
    where the stretched, seamed text in the log failed ---- */
 const QRL=/^[ \u2580\u2584\u2588]{7,}$/;
-function qrImage(b){b.body.normalize();   /* put() caps text nodes at 4000 chars, which can split a QR code */
+function qrImage(b,done){b.body.normalize();let wait=0;   /* returns 1 while a QR may still be arriving */   /* put() caps text nodes at 4000 chars, which can split a QR code */
  const Q=[...b.body.childNodes];   /* the text after a converted QR goes back in: the demo prints several */
  while(Q.length){const x=Q.shift();if(x.nodeType!==3)continue;const L=x.textContent.split('\n');
  for(let i=0;i<L.length;i++){if(!QRL.test(L[i])||!/[\u2580\u2584\u2588]/.test(L[i]))continue;
   let j=i;while(j<L.length&&QRL.test(L[j])&&L[j].length===L[i].length)j++;
   while(i>0&&/^ +$/.test(L[i-1])&&L[i-1].length===L[j-1].length)i--;   /* the blank border line above */
+  if(!done&&!L.slice(j).join('').trim()){wait=1;break}
   if(j-i<5){i=j;continue}
   const R=L.slice(i,j),big=R.every(r=>/^(\u2588\u2588|  )*$/.test(r)),w=big?R[0].length/2:R[0].length,h=big?R.length:Math.min(R.length*2,w);let d='';   /* QR is square: an odd size leaves a blank last half row */
   for(let y=0;y<h;y++)for(let c=0;c<w;c++){const ch=big?R[y][2*c]:R[y>>1][c];
    if(big?ch==='\u2588':ch==='\u2588'||ch===(y&1?'\u2584':'\u2580'))d+=`M${c} ${y}h1v1h-1z`}
   const img=el('div','qr'),px=7;   /* 7 px a module: a little bigger than the text was, still small on the page */
   img.innerHTML=`<svg viewBox="-2 -2 ${w+4} ${h+4}" width="${(w+4)*px}" height="${(h+4)*px}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect x="-2" y="-2" width="${w+4}" height="${h+4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
-  const before=L.slice(0,i).join('\n'),after=L.slice(j).join('\n');x.textContent=before+(before?'\n':'');x.after(img);if(after){const t=document.createTextNode(after);img.after(t);Q.unshift(t)}break}}}
+  const before=L.slice(0,i).join('\n'),after=L.slice(j).join('\n');x.textContent=before+(before?'\n':'');x.after(img);if(after){const t=document.createTextNode(after);img.after(t);Q.unshift(t)}break}}return wait}
 
 /* ---- ppk.measure: the "Chart:" line (min,avg,max uA per slot) drawn as a band with the average on top ---- */
 function ppkChart(b){const m=/^Chart:\s+([\d.]+) s uA avg ([-\d.]+)((?: [-\d.]+,[-\d.]+,[-\d.]+)+)\s*$/m.exec(b.body.textContent);if(!m)return;

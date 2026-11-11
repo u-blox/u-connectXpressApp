@@ -60,7 +60,14 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 #cnd .kv{display:grid;grid-template-columns:auto 1fr;gap:.15rem .8rem;font-size:.85rem}#cnd .kv span{color:var(--mut)}#cnd .kv b{font:600 12px Consolas,monospace;overflow-wrap:anywhere}#cnd .r{flex-wrap:wrap}#cnd .r .cx{margin-left:auto}#cnd[hidden]{display:none}
 .pane{display:flex;flex-direction:column;min-height:0}.pane h2{margin:0 0 .35rem;color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}
 #out,#ev,#side,.sc{flex:1;overflow:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.6rem}
-#gc,#cc{flex:none;margin:0 0 .4rem;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:.5rem .6rem;overflow-x:auto;cursor:pointer}
+#pet{display:flex;flex-wrap:wrap;gap:.3rem;margin:0 0 .5rem;flex:none}#pet button{font-size:.75rem;padding:.15rem .6rem;border-radius:999px;display:inline-flex;align-items:center;gap:.35rem}
+#pet button i,#cnd h3 .dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--k,var(--ac));display:inline-block}#pet button.on{border-color:var(--k,var(--ac));box-shadow:inset 0 0 0 1px var(--k,var(--ac))}
+body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{display:flex;align-items:center;gap:.5rem}
+.gv{display:grid;grid-template-columns:3.4rem 1fr;gap:.55rem .7rem;align-items:center;margin:.2rem 0 .5rem}.gv>span{color:var(--mut);font:600 11px Consolas,monospace;letter-spacing:.06em}
+.gv>div{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}.gv b{font:600 12px Consolas,monospace}.gv a{color:var(--k);font:600 12px Consolas,monospace}.gv .al b{color:var(--err,#ff6b6b)}
+.seg{display:inline-flex;gap:3px}.seg i{width:1.3rem;height:.65rem;border-radius:3px;background:var(--bd)}.seg i.on{background:var(--k)}
+.dots{display:inline-flex;flex-wrap:wrap;gap:3px}.dots i{width:.6rem;height:.6rem;border-radius:50%;border:1.5px solid var(--k);box-sizing:border-box}.dots i.on{background:var(--k)}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:1rem}.bars i{width:.35rem;background:var(--bd);border-radius:1px}.bars i.on{background:var(--k)}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
 #pl{position:relative}#atlog{position:absolute;right:1.4rem;bottom:.6rem;font:700 .7rem system-ui;letter-spacing:.06em;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--mut);cursor:pointer;opacity:.85}#atlog:hover{opacity:1}#atlog.on{color:var(--ok);border-color:var(--ok)}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
@@ -159,9 +166,9 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <span class="cnleg"><span class="k-wifi"><i></i>Wi-Fi</span><span class="k-ap"><i></i>AP</span><span class="k-ble"><i></i>BLE</span><span class="k-thr"><i></i>Thread</span><span class="k-sock"><i></i>Socket</span><span class="k-mqtt"><i></i>MQTT</span><span class="k-gnss"><i></i>GNSS</span><span class="k-cell"><i></i>Cell</span></span></div>
 <div id="cnv"><svg id="cn" viewBox="-538 -313 1075 625" role="img" aria-label="Live connections"></svg>
 <div id="cnz"><button data-z="1.25" title="Zoom in (wheel, pinch)">+</button><button data-z="0.8" title="Zoom out">&minus;</button><button data-z="0" title="Reset view and node positions (double-click the background)">&#x27F2;</button></div></div>
-<div id="cnd" class="card" hidden></div></div></div>
+</div></div>
 <div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></div>
-<div class="pane" id="pe"><h2>What's happening</h2><pre id="gc" hidden title="GNSS receiver, live (click: gnss.status)"></pre><pre id="cc" hidden title="Cellular modem, live (click: cell.status)"></pre><div id="ev"></div></div></main>
+<div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
@@ -721,27 +728,60 @@ function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
 
 
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
+/* the live GNSS and cell cards (SSE): a tab in What's happening in every view, drawn as a picture there */
+const CARD={gnss:'',cell:''};
+/* what a key shows: a graph node (Connections view only), the module, or a live card without a graph */
+function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')return cn?CN.mod:null;if(cn&&CN.n[k]&&!CN.n[k].gone)return CN.n[k].o;
+ if(k==='g'&&CARD.gnss)return{k,c:'gnss',ic:'GNSS',lb:'receiver',info:[],act:[['Status','gnss.status'],['Satellites','gnss.sats']]};
+ if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
+function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
+ ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
+ const sig=ks.join(',')+'|'+CN.sel;if(p.sig===sig)return;p.sig=sig;p.textContent='';ks.forEach(k=>{const o=k?cnItem(k):null,
+ b=el('button',(o?'k-'+(o.c||'host'):'')+(k===CN.sel?' on':''));b.setAttribute('role','tab');b.dataset.k=k;b.appendChild(el('i'));
+ b.appendChild(document.createTextNode(!k?'Events':k==='hub'?'Module':o.ic));b.title=o?o.ic+' '+o.lb:'What happened, newest last';
+ b.onclick=()=>{CN.sel=k;cnDetails();fltSet()};p.appendChild(b)})}
+function bars(on,n){const b=el('span','bars');for(let i=0;i<n;i++){const x=el('i',i<on?'on':'');x.style.height=(30+70*i/(n-1))+'%';b.appendChild(x)}return b}
+/* the TAG value lines of a GNSS / cell card as segments, dots and bars instead of block characters */
+function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{const m=/^([A-Z]{2,5})\s+(.*)$/.exec(l.trim());if(!m)return;
+ let k=m[1],v=m[2];const w=el('div','');
+ if(k==='FIX'){const f=(v.match(/\u2588/g)||[]).length,s=el('span','seg');for(let i=0;i<3;i++)s.appendChild(el('i',i<f?'on':''));w.appendChild(s);
+  v=v.replace(/^[\u2588\u2591]+\s*/,'').replace(/\s{2,}/g,'  ')}
+ else if(k==='SATS'){const u=(v.match(/\u25cf/g)||[]).length,a=u+(v.match(/\u25cb/g)||[]).length,s=el('span','dots');
+  for(let i=0;i<a;i++)s.appendChild(el('i',i<u?'on':''));w.appendChild(s);v=v.replace(/^[\u25cf\u25cb+]+\s*/,'')}
+ else if(k==='HDOP'){w.appendChild(bars((v.match(/[\u2581-\u2587]/g)||[]).length,5));v=v.replace(/[\u2581-\u2587 ]+/,' ')}
+ else if(k==='SIG'){const r=/RSRP\s*(-\d+)/.exec(v),s=/(-\d+)\s*dBm/.exec(v),q=r?(+r[1]+125)/45:s?(+s[1]+113)/62:-1;
+  if(q>=0||r||s)w.appendChild(bars(Math.ceil(clamp(q,0,1)*4),4))}
+ else if(k==='POS'){const p=/([\d.]+) ([NS])\s+([\d.]+) ([EW])/.exec(v);if(p){const la=(p[2]==='S'?'-':'')+p[1],lo=(p[4]==='W'?'-':'')+p[3],
+  a=el('a','',v);a.href='https://www.openstreetmap.org/?mlat='+la+'&mlon='+lo+'#map=17/'+la+'/'+lo;a.target='_blank';a.rel='noopener';
+  a.title='Show on a map';w.appendChild(a);v=''}}
+ else if(k==='ALERT')w.className='al';
+ if(v.trim())w.appendChild(el('b','',v.trim()));g.appendChild(el('span','',k));g.appendChild(w)});return g}
+petDraw();
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
 function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';
  CN.pk.forEach(p=>p.e.remove());CN.pk=[];cnReset();cnDetails();fltSet();if(CN.timer)cnTick()}
 /* a selected node (not the hub) filters Log and What's happening to the commands and events of its kind */
-function fltKind(){const n=CN.sel&&CN.sel!=='hub'&&CN.n[CN.sel];return n?n.o.c:''}
+function fltKind(){const o=CN.sel&&CN.sel!=='hub'&&cnItem(CN.sel);return o?o.c:''}
 function fltMark(e,g){e.dataset.g=g||'';const k=fltKind();e.classList.toggle('hit',!!k&&(CNK[g]||[]).includes(k))}
-function fltSet(){const k=fltKind(),n=k&&CN.n[CN.sel],bar=$('flt-on');document.body.classList.toggle('flt',!!k);bar.hidden=!k;bar.textContent='';
+function fltSet(){const k=fltKind(),n=k&&{o:cnItem(CN.sel)},bar=$('flt-on');document.body.classList.toggle('flt',!!k);bar.hidden=!k;bar.textContent='';
  document.querySelectorAll('#out>.blk,#ev>.e').forEach(e=>{if(e.dataset.g!==undefined)fltMark(e,e.dataset.g)});
  if(!k)return;bar.appendChild(el('span','','Showing only '+n.o.ic+' '+n.o.lb));const x=el('button','','Show all');x.onclick=()=>{CN.sel='';cnDetails();fltSet()};bar.appendChild(x)}
-function cnDetails(){const d=$('cnd'),n=CN.sel==='hub'?(CN.mod&&{o:CN.mod}):CN.n[CN.sel];Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));cnHub.classList.toggle('sel',CN.sel==='hub');d.hidden=!n;if(!n){d.sig='';return}
- const o=n.o,sig=JSON.stringify([o.k,o.info,o.act]);if(d.sig===sig)return;d.sig=sig;d.textContent='';
- d.appendChild(el('h3','',o.ic+'  '+o.lb));const g=el('div','kv');o.info.forEach(x=>{g.appendChild(el('span','',x[0]));g.appendChild(el('b','',x[1]||'-'))});d.appendChild(g);
+function cnDetails(){const d=$('cnd'),o=CN.sel?cnItem(CN.sel):null;if(!o)CN.sel='';Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));
+ cnHub.classList.toggle('sel',CN.sel==='hub');petDraw();d.hidden=!o;document.body.classList.toggle('det',!!o);if(!o){d.sig='';return}
+ const card=CARD[o.c]||'',sig=JSON.stringify([o.k,o.info,o.act,card,o.q]);if(d.sig===sig)return;d.sig=sig;d.textContent='';
+ const h=el('h3','k-'+(o.c||'host'));h.appendChild(el('i','dot'));h.appendChild(el('span','',o.ic+'  '+o.lb));
+ if(typeof o.q==='number')h.appendChild(bars(Math.ceil(clamp(o.q,0,1)*4),4));d.appendChild(h);if(card)d.appendChild(cardView(card,o.c));
+ const g=el('div','kv');o.info.filter(x=>!card||x[0]!=='Status').forEach(x=>{g.appendChild(el('span','',x[0]));g.appendChild(el('b','',x[1]||'-'))});
+ if(g.childElementCount)d.appendChild(g);
  const r=el('div','r');o.act.forEach(x=>{const b=el('button',x[3]?'dg':'',x[0]);b.title=x[1]+(x[2]?' '+x[2].join(' '):'');b.onclick=()=>run(x[1],x[2]||null);r.appendChild(b)});
- const cx=el('button','cx','Close');cx.title='Hide the details (click a node to show them again)';cx.onclick=()=>{CN.sel='';cnDetails();fltSet()};r.appendChild(cx);d.appendChild(r)}
+ const cx=el('button','cx','Close');cx.title='Back to the events';cx.onclick=()=>{CN.sel='';cnDetails();fltSet()};r.appendChild(cx);d.appendChild(r)}
 
 function cnTick(){if(document.hidden)return;api('/api/conn').then(r=>r.json()).then(j=>cnUpdate(j.t)).catch(()=>{$('cnst').textContent='no answer from the app'})}
 function cnRun(on){if(on&&!CN.timer){cnTick();CN.timer=setInterval(cnTick,5000);if(!CN.raf)CN.raf=requestAnimationFrame(cnFrame)}
  else if(!on&&CN.timer){clearInterval(CN.timer);CN.timer=0;cancelAnimationFrame(CN.raf);CN.raf=0;CN.pk.forEach(p=>p.e.remove());CN.pk=[]}}
 
 function view(v){v=+v||0;document.body.classList.toggle('uc',v===1);document.body.classList.toggle('cn',v===2);localStorage.setItem('ucxv',String(v));
- document.querySelectorAll('#vw button').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));if(v===1)steps();cnRun(v===2);if(v!==2&&CN.sel){CN.sel='';cnDetails();fltSet()}}
+ document.querySelectorAll('#vw button').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));if(v===1)steps();cnRun(v===2);cnDetails();fltSet()}
 document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset.v));
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
@@ -765,8 +805,7 @@ function events(){const es=new EventSource('/events');
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>{const t=JSON.parse(e.data);addEv(t);cnPulse(t.slice(0,Math.max(0,t.indexOf(':'))),0)});
- es.addEventListener('gnss',e=>{const g=$('gc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('gnss.status')});
- es.addEventListener('cell',e=>{const g=$('cc'),t=JSON.parse(e.data);g.textContent=t;g.hidden=!t;g.onclick=()=>run('cell.status')});
+ ['gnss','cell'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';cnDetails();if(s!==CN.sel)fltSet()}));
  es.addEventListener('conn',e=>{if(CN.timer)cnUpdate(JSON.parse(e.data))});
  const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
  es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
@@ -799,7 +838,7 @@ api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access t
    Object.keys(subs).filter(k=>subs[k]>=3).forEach(k=>{const sd=el('details','sub'),ss=el('summary','',k.split('.')[1]+' ('+subs[k]+')');
     sd.appendChild(ss);d.appendChild(sd);open[k]=sd});
    cs.forEach(c=>{const k=sub(c);if(open[k])open[k].appendChild(mk(c))})})}};
-  side.appendChild(d)});const sv0=+localStorage.getItem('ucxv')||0;if(sv0)view(sv0)}).catch(()=>{});
+  side.appendChild(d)});const sv0=+localStorage.getItem('ucxv')||0;view(sv0)}).catch(()=>{});
 
 /* ---- keyboard ---- */
 function tab(p){if(p==='pc'||p==='pu'||p==='pn')view(p==='pu'?1:p==='pn'?2:0);document.querySelectorAll('.pane,#tabs button').forEach(e=>e.classList.toggle('on',e.id===p||e.dataset.p===p))}

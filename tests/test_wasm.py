@@ -244,14 +244,18 @@ def test_app_runs_in_the_browser(site):
         page.press("#cmd", "Tab")
         page.wait_for_function("document.getElementById('cmd').value === 'gnss.bridge ntrip '", timeout=10000)
         page.fill("#cmd", "")
-        # a GNSS receiver that sends gets a live card above the events; it goes away when the receiver closes
-        assert page.is_hidden("#gc")
+        # a GNSS receiver that sends gets a tab in What's happening, drawn as a picture; it goes when it closes
+        assert page.locator("#pet button[data-k='g']").count() == 0
         run(page, "gnss.virtual 55.5 13.25 20")
-        page.wait_for_function("document.getElementById('gc').textContent.includes('POS   55.5000000 N  "
-                               "13.2500000 E  alt 20.0 m')", timeout=30000)
-        assert page.is_visible("#gc") and page.inner_text("#gc").startswith("FIX ")
+        page.click("#pet button[data-k='g']", timeout=30000)
+        page.wait_for_function("document.querySelector('#cnd .gv a') && "
+                               "document.querySelector('#cnd .gv a').textContent"
+                               ".includes('55.5000000 N  13.2500000 E  alt 20.0 m')", timeout=30000)
+        assert page.is_visible("#cnd") and page.is_hidden("#ev") and page.locator("#cnd .gv .seg i").count() == 3
+        assert page.inner_text("#cnd .gv span").startswith("FIX")
         run(page, "gnss.virtual off")
-        page.wait_for_selector("#gc", state="hidden", timeout=30000)
+        page.wait_for_selector("#pet button[data-k='g']", state="detached", timeout=30000)
+        assert page.is_hidden("#cnd") and page.is_visible("#ev")
         # the module over (fake) Web Serial
         page.click("#wsc")
         page.wait_for_function("window.__tx.includes('AT')", timeout=30000)

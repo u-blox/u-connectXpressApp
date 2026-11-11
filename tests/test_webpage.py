@@ -112,10 +112,48 @@ def test_use_case_diagram_shares_the_connections_palette():
 
 
 def test_cellular_card_and_status_chip():
-    """The live cellular card sits next to the GNSS one, and the Cell chip of the status bar runs cell.status."""
+    """The live GNSS and cellular cards are tabs of What's happening (not text above the events), and the Cell chip
+    of the status bar runs cell.status."""
     page = PAGE_FILE.read_text(encoding="utf-8")
-    assert '<pre id="gc" hidden' in page and '<pre id="cc" hidden' in page
-    assert "addEventListener('cell'" in SCRIPT and "Cell:'cell.status'" in SCRIPT
+    assert 'id="gc"' not in page and 'id="cc"' not in page and '<div id="pet"' in page
+    assert "['gnss','cell'].forEach(c=>es.addEventListener(c," in SCRIPT and "Cell:'cell.status'" in SCRIPT
+    # the details card lives in What's happening, leaving the Connections pane to the graph
+    pn = page[page.index('id="pn"'):page.index('id="pl"')]
+    assert 'id="cnd"' not in pn and page.index('id="cnd"') > page.index('id="pe"')
+
+
+def test_whats_happening_tabs_draw_the_cards(server):
+    """A node of the graph and a tab select the same thing: the tab is lit, the events give way to a graphical card
+    (segments, dots and bars instead of block characters) and the log shows only that kind; Events goes back."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector("#st.ok")
+        assert page.inner_text("#pet button.on") == "Events"
+        page.click("#vw button[data-v='2']")
+        page.wait_for_function("() => CN.n.w && document.querySelector(\"#pet button[data-k='w']\")")
+        page.click("#pet button[data-k='w']")
+        assert page.evaluate("CN.sel") == "w" and page.is_visible("#cnd") and page.is_hidden("#ev")
+        assert page.is_visible("#flt-on") and page.locator("#cnd h3 .bars i").count() == 4
+        card = ("FIX   \u2588\u2588\u2591 2D  TTFF 3 s\nSATS  \u25cf\u25cf\u25cb 2 used / 3 seen\n"
+                "HDOP  1.5 \u2581\u2582\u2583\u2585  excellent\nPOS   55.5000000 N  13.2500000 E  alt 20.0 m")
+        page.evaluate("t => {CARD.gnss = t; CN.sel = 'g'; cnDetails(); fltSet()}", card)
+        assert page.locator("#cnd .seg i.on").count() == 2 and page.locator("#cnd .dots i").count() == 3
+        assert page.locator("#cnd .dots i.on").count() == 2 and page.locator("#cnd .gv .bars i.on").count() == 4
+        assert "mlat=55.5000000&mlon=13.2500000" in page.get_attribute("#cnd .gv a", "href")
+        assert "\u2588" not in page.inner_text("#cnd") and "\u25cf" not in page.inner_text("#cnd")
+        page.click("#pet button[data-k='']")
+        assert page.evaluate("CN.sel") == "" and page.is_hidden("#cnd") and page.is_visible("#ev")
+        assert page.is_hidden("#flt-on")
+        browser.close()
+    assert not js_errors, js_errors
 
 
 def test_header_overflow_menu_keeps_the_main_buttons_visible():
@@ -499,7 +537,8 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         assert "WIFI:T:WPA;S:Setup-1234;P:setup1234;;" in text and "\u2588" not in text and "\u2580" not in text
         # the demo prints several QR codes in one block: every one becomes a picture
         qr = "\n".join("".join("\u2588" if v else " " for v in row) for row in QR_MATRIX)
-        left = page.evaluate("""qr => {const b = block('> demo'); put(b.body, 'one\\n' + qr + '\\ntwo\\n' + qr + '\\nend\\n');
+        left = page.evaluate("""qr => {const b = block('> demo');
+            put(b.body, 'one\\n' + qr + '\\ntwo\\n' + qr + '\\nend\\n');
             qrImage(b); return [b.querySelectorAll('.qr svg').length, b.body.textContent]}""", qr)
         assert left[0] == 2 and "\u2588" not in left[1] and "two" in left[1] and "end" in left[1], left
         # demo output arrives after the demo command finished, in a block no finish() sees
@@ -507,13 +546,16 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         page.wait_for_function("free && free.querySelector('.qr svg')")
         assert "\u2588" not in page.evaluate("free.body.textContent")
         # converted as soon as the line after it arrives, never shown as text first, not cut while it arrives
-        got = page.evaluate("""qr => {free = null; add('half\\n' + qr + '\\n'); const a = free.querySelectorAll('svg').length + /\\u2588/.test(free.body.textContent);
+        got = page.evaluate("""qr => {free = null; add('half\\n' + qr + '\\n');
+            const a = free.querySelectorAll('svg').length + /\\u2588/.test(free.body.textContent);
             add('next\\n'); return [a, free.querySelectorAll('svg').length]}""", qr)
         assert got == [0, 1], got
         # a chunk that ends inside a QR row does not cut the picture in two
-        got = page.evaluate("""qr => {free = null; const s = 'cut\\n' + qr + '\\nnext\\n', k = 5 + qr.indexOf('\\n') * 4;
+        got = page.evaluate("""qr => {free = null;
+            const s = 'cut\\n' + qr + '\\nnext\\n', k = 5 + qr.indexOf('\\n') * 4;
             add(s.slice(0, k)); add(s.slice(k));
-            const p = free.querySelector('svg'); return [free.querySelectorAll('svg').length, p && p.getAttribute('viewBox')]}""", qr)
+            const p = free.querySelector('svg');
+            return [free.querySelectorAll('svg').length, p && p.getAttribute('viewBox')]}""", qr)
         assert got[0] == 1 and got[1] == f"-2 -2 {len(QR_MATRIX) + 4} {len(QR_MATRIX) + 4}", got
         browser.close()
 

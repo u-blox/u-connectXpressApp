@@ -199,7 +199,8 @@ function put(tgt,x){x=x.replace(/[\x00-\x08\x0b-\x1f\x7f]/g,'');if(!x)return;tot
 function add(t){t=pend+t;pend='';const m=t.match(/\x1b(\[[0-9;?]*)?$/);if(m){pend=m[0];t=t.slice(0,m.index)}
  if(!t)return;const s=stick(out),tgt=(cur||free||(free=block(''))).body,re=/\x1b\[([0-9;?]*)([A-Za-z])/g;let i=0,r;
  while((r=re.exec(t))){put(tgt,t.slice(i,r.index));if(r[2]==='m')sgr(r[1]);i=re.lastIndex}
- put(tgt,t.slice(i));trim();if(s)out.scrollTop=out.scrollHeight}
+ put(tgt,t.slice(i));trim();if(s)out.scrollTop=out.scrollHeight;
+ if(!cur&&free){const f=free;clearTimeout(add.q);add.q=setTimeout(()=>{if(f.isConnected)qrImage(f)},300)}}   /* the demo prints after its command finished */
 function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight}
 function addEv(t){const s=stick(ev),i=t.indexOf(':'),k=i>0&&i<9?t.slice(0,i):'',d=el('div','e n '+k);
  d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','g',k||'info'));d.appendChild(el('span','x',k?t.slice(i+1).trim():t));

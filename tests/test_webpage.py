@@ -502,6 +502,10 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
         left = page.evaluate("""qr => {const b = block('> demo'); put(b.body, 'one\\n' + qr + '\\ntwo\\n' + qr + '\\nend\\n');
             qrImage(b); return [b.querySelectorAll('.qr svg').length, b.body.textContent]}""", qr)
         assert left[0] == 2 and "\u2588" not in left[1] and "two" in left[1] and "end" in left[1], left
+        # demo output arrives after the demo command finished, in a block no finish() sees
+        page.evaluate("qr => {free = null; add('free\\n' + qr + '\\nafter\\n')}", qr)
+        page.wait_for_function("free && free.querySelector('.qr svg')")
+        assert "\u2588" not in page.evaluate("free.body.textContent")
         browser.close()
 
 

@@ -1669,6 +1669,12 @@ def matter_fetch():
         check([*sdk, "sparse-checkout", "set", "--cone", *MATTER_SDK_DIRS], "Matter SDK fetch")
         check([*sdk, "fetch", "--depth", "1", "--filter=blob:none", "origin", commit], "Matter SDK fetch")
         check([*sdk, "checkout", "-q", "--detach", "FETCH_HEAD"], "Matter SDK fetch")
+        # the release tag of the commit, which one commit deep does not bring: the plug-in's version (git describe)
+        for line in git_out("-C", str(MATTER_SDK), "ls-remote", "--tags", "origin").splitlines():
+            sha, _, ref = line.partition("\t")
+            if sha == commit and ref.startswith("refs/tags/"):
+                check([*sdk, "tag", ref.removeprefix("refs/tags/").removesuffix("^{}"), commit], "Matter SDK tag")
+                break
     for part in MATTER_SDK_PARTS:
         if not (MATTER_SDK / "third_party" / part / "repo" / ".git").exists():
             check(["git", "submodule", "update", "--init", "--depth", "1", f"third_party/{part}/repo"],

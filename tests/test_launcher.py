@@ -192,13 +192,15 @@ def test_matter_sdk_fetch_is_one_commit_of_the_folders_the_node_needs(tmp_path, 
     sdk = tmp_path / "connectedhomeip"
     monkeypatch.setattr(ucxapp, "MATTER_SDK", sdk)
     monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    tags = f"{'b' * 40}\trefs/tags/v1.5.0.0\n{'c' * 40}\trefs/tags/v1.6.0.0\n{'a' * 40}\trefs/tags/v1.6.0.0^{{}}"
     monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: "160000 " + "a" * 40 + " 0\tmatter/connectedhomeip"
-                        if "ls-files" in cmd else "https://example.invalid/sdk.git")
+                        if "ls-files" in cmd else tags if "ls-remote" in cmd else "https://example.invalid/sdk.git")
     calls = []
     monkeypatch.setattr(ucxapp, "check", lambda cmd, what, **kw: calls.append([str(c) for c in cmd]))
     ucxapp.matter_fetch()
     fetch = next(c for c in calls if "fetch" in c)
     assert "--depth" in fetch and "--filter=blob:none" in fetch and fetch[-1] == "a" * 40
+    assert next(c for c in calls if "tag" in c)[-2:] == ["v1.6.0.0", "a" * 40]
     sparse = next(c for c in calls if "sparse-checkout" in c)
     assert "examples" not in sparse and "docs" not in sparse and "third_party" not in sparse
     assert "src" in sparse and "third_party/pigweed" in sparse

@@ -18,6 +18,9 @@ chip_crypto_keystore = "psa"
 
 chip_build_tests = false
 
+# No tracing: the SDK's Linux default backend is perfetto, a part that is never fetched
+matter_trace_config = "//connectedhomeip/src/tracing/none"
+
 # The size platform/ucxclient/CHIPPlatformConfig.h sets; the SDK's default is 1708 on Linux, which redefines it
 chip_log_message_max_size = 256
 

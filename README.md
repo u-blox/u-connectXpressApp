@@ -5,13 +5,14 @@
 **[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial (Firefox, Safari and phones: Virtual module only). No EVK? Click **Virtual module** and pick Wi-Fi + BLE + Thread, Wi-Fi + BLE, BLE + Thread or BLE only. Install it from the address bar to use it offline. The same simulated modules run in the native app too, on Windows and Linux: `.\ucxapp --virtual nora-b26` (or `nora-w36`, `nora-b26-thread`, `alma-w1`; needs `pip install pyyaml`).
 
 ```powershell
-ucxapp wifi.connect MySsid MyPassword
-ucxapp mqtt.publish test/ucx hello
-ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor on any phone
+.\ucxapp wifi.connect MySsid MyPassword
+.\ucxapp mqtt.publish test/ucx hello
+.\ucxapp gatt.server.hrs 60             # your module is now a heart rate sensor on any phone
 ```
 
 - **One command set, everywhere**: interactive shell, `--exec` scripts, CI, the browser, the module's own web UI and STM32 firmware (FreeRTOS and Zephyr).
 - **Batteries included**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, multicast, mDNS, TLS, HTTP, MQTT, certificates, firmware update.
+- **Matter**: `matter.start` turns the module into a Matter light, temperature and contact sensor that a phone's home app commissions over Bluetooth LE and controls over Wi-Fi (optional plug-in, see [Matter](#matter)).
 - **Built for testing**: `--json`, `--script` with `expect`, JUnit reports, AT traces with Wireshark export, `dev.diagnose` with PASS/FAIL verdicts.
 - **Ready to run**: signed Windows `.exe`, single Linux binary and STM32 images on the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases).
 
@@ -51,7 +52,7 @@ The app asks the module what it can do (`dev.caps`) and shows a short summary on
 ## Try it in 30 seconds
 
 ```powershell
-ucxapp
+.\ucxapp
 ```
 
 No port needed: the app finds your EVK, shows the module, firmware and radios, and opens the shell. Type `help`, or `wifi.example` for ready-to-copy recipes. The first Wi-Fi command asks once where you are (regulatory domain); CI sets `UCX_REGDOMAIN`.
@@ -62,24 +63,27 @@ Pick a goal, run the recipe, read the verdict. No radio background needed.
 
 | Your goal | Run | What you get |
 |---|---|---|
-| Will my product work on the Wi-Fi where it is installed? | `ucxapp --script examples/use-cases/wifi-site-check.ucx` | Signal and stability over 30 s, internet check, a verdict (EXCELLENT, GOOD, FAIR, POOR) with advice |
-| Send sensor readings to the cloud and get commands back | `ucxapp --script examples/use-cases/sensor-to-cloud.ucx` | A proven MQTT round trip through a public broker |
-| Show live data in a phone app, with no app of my own | `ucxapp --script examples/use-cases/phone-heart-rate.ucx` | The module acts as a standard heart rate sensor that nRF Connect and fitness apps read |
-| Replace a serial cable with Bluetooth LE | `ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
-| **New:** give laptops on a site without Wi-Fi a link to your server over LTE | `ucxapp --exec "usecase.check fieldkit" --exec "examples uc-fieldkit"` | The module's own access point, relayed socket by socket through a cellular modem (`cell.bridge`). More cellular ideas in `usecase.list`: a phone or BLE device over LTE, CAN data over LTE, the XPLR-IOT-1 kit |
-| Something does not work | `ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
+| Will my product work on the Wi-Fi where it is installed? | `.\ucxapp --script examples/use-cases/wifi-site-check.ucx` | Signal and stability over 30 s, internet check, a verdict (EXCELLENT, GOOD, FAIR, POOR) with advice |
+| Send sensor readings to the cloud and get commands back | `.\ucxapp --script examples/use-cases/sensor-to-cloud.ucx` | A proven MQTT round trip through a public broker |
+| Show live data in a phone app, with no app of my own | `.\ucxapp --script examples/use-cases/phone-heart-rate.ucx` | The module acts as a standard heart rate sensor that nRF Connect and fitness apps read |
+| Replace a serial cable with Bluetooth LE | `.\ucxapp --script examples/use-cases/phone-serial-link.ucx` | Text from a phone terminal app printed by the module |
+| **New:** give laptops on a site without Wi-Fi a link to your server over LTE | `.\ucxapp --exec "usecase.check fieldkit" --exec "examples uc-fieldkit"` | The module's own access point, relayed socket by socket through a cellular modem (`cell.bridge`). More cellular ideas in `usecase.list`: a phone or BLE device over LTE, CAN data over LTE, the XPLR-IOT-1 kit |
+| Add my product to Apple Home, Google Home or Alexa with Matter | `.\ucxapp --exec "matter.start"` | A QR code to scan in the home app; the light then switches from the phone (`matter.card` shows the node) |
+| Something does not work | `.\ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
 
 ## Wow in one line
 
 ```powershell
-ucxapp --exec "wifi.connect MySsid ${UCX_WIFI_PASS}" --exec "http.get https://example.com"   # online in seconds
-ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"                   # newest firmware, SHA256 checked
-ucxapp COM13 --web                                                                           # the module serves its own web UI
-ucxapp --script examples/automation/production-test.ucx --junit production.xml               # production test with a CI report
-ucxapp --json dev.info                                                                       # machine-readable for your tools
+.\ucxapp --exec "wifi.connect MySsid ${UCX_WIFI_PASS}" --exec "http.get https://example.com"   # online in seconds
+.\ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"                   # newest firmware, SHA256 checked
+.\ucxapp COM13 --web                                                                           # the module serves its own web UI
+.\ucxapp --script examples/automation/production-test.ucx --junit production.xml               # production test with a CI report
+.\ucxapp --json dev.info                                                                       # machine-readable for your tools
 ```
 
-Something not working? `ucxapp dev.diagnose` checks module, Wi-Fi, DNS, internet and certificates and tells you what to try next.
+In PowerShell type `.\ucxapp` (or `.\ucxapp.exe` in a release folder); on Linux `./ucxapp`.
+
+Something not working? `.\ucxapp dev.diagnose` checks module, Wi-Fi, DNS, internet and certificates and tells you what to try next.
 
 Every command, with arguments: [COMMANDS.md](COMMANDS.md), or `help` in the shell.
 
@@ -92,6 +96,19 @@ cd u-connectXpressApp
 ```
 
 Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm`. Details: [BUILDING.md](BUILDING.md).
+
+## Matter
+
+The Matter node is an optional plug-in (`ucxmatter.dll`, `libucxmatter.so` on Linux) next to the app: ucxapp keeps the UART and every other command keeps working while the node runs. It needs a module with Bluetooth LE and Wi-Fi (NORA-W36; Thread on NORA-B26 and ALMA-W1 follows).
+
+```powershell
+.\ucxapp --matter --build        # fetches only the Matter SDK parts it needs, builds app\bin\ucxmatter.dll (needs MinGW GCC)
+.\ucxapp COM75                   # then in the shell:
+matter.start                     # light, temperature and contact sensor; shows the QR and manual pairing code
+matter.set light 40              # act as the device; the home app sees the change
+```
+
+The web page (`--web`) gets a Matter tab with the node's state, the commissioning steps and a control per endpoint. How-to, layout and tests: [the ucx-matter-plugin skill](.github/skills/ucx-matter-plugin/SKILL.md) and [BUILDING.md](BUILDING.md).
 
 ## Small enough for a microcontroller
 

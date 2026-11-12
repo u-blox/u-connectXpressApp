@@ -12,13 +12,20 @@ copy of every URC, so every other command, `at.trace`, the TUI and the web page 
 **Today:** the Matter server runs in the plug-in on the device layer `matter/platform/ucxclient`, with the data
 model `matter/data_model/ucxmatter.zap` (root node, dimmable light, temperature sensor, contact sensor). It defines
 the Matter GATT service (FFF6, C1 and C2) on the module, opens a commissioning window, advertises and shows the QR
-and manual codes; discriminator and passcode come from the module's Bluetooth address. A commissioner connects and
+and manual codes. Discriminator, passcode, SPAKE2+ salt and the UniqueID are the node's own: drawn at random the
+first time it starts and kept sealed as `matter.factory.key` (as the i.MX 93 kit does for its end nodes), so
+nothing can be worked out from the module's address. `matter.reset` keeps them, like the label on a product;
+`matter.reset all` draws new ones. A commissioner connects and
 pairs over Bluetooth LE (BTP, PASE), installs its fabric and gives the node a Wi-Fi network: the Wi-Fi driver
 (`NetworkCommissioningDriver.cpp`) scans, joins it with the module and reports back when the module has an
 address. From then on the node talks UDP through a socket on the module and is announced by the module's mDNS.
-A module that is on Wi-Fi already (`wifi.connect`) is used as it is. Checked so far: the Bluetooth LE transport
-over the air between two modules, and a pairing request over UDP on the virtual module; a whole commissioning
-with a phone or chip-tool has not been run yet. **Not yet:** the endpoints of `matter.set`
+A module that is on Wi-Fi already (`wifi.connect`) is used as it is. To a controller the node is the product
+`u-connectXpressApp` of vendor `u-blox` (Basic Information, `DeviceInstanceInfoProviderImpl.h` from
+`support/DeviceConfig.h`): the module's type code is its hardware version and part number, the module's serial
+number its own and the module's firmware version its software version (`matter.status` shows them). Checked so
+far: a whole commissioning with a phone over Bluetooth LE and Wi-Fi (the light then switches from the home app),
+the Bluetooth LE transport over the air between two modules, and a pairing request over UDP on the virtual
+module. **Not yet:** the endpoints of `matter.set`
 are not tied to the data model's attributes (a controller's change shows as an event); the module's mDNS has no
 subtypes, so a commissioner cannot browse for the discriminator over the network. Thread waits for a module with
 Thread firmware.
@@ -64,6 +71,7 @@ matter.set light 40            # act as the device: light on|off|0..100, temp -4
 matter.open                    # commissioning window for 15 minutes again, with the codes
 matter.log detail              # how much of the SDK's log is printed: error, info, detail
 matter.stop                    # also done when the app leaves; matter.reset forgets what the node stored
+matter.reset all               # as matter.reset, and new setup codes (QR and manual code)
 ```
 
 The module needs Bluetooth LE with a peripheral role, and Wi-Fi or Thread (`dev.caps`). `matter.example` shows worked examples.
@@ -82,7 +90,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 |---|---|
 | `app/src/ucxapp_matter.h` | The whole interface between app and plug-in, plain C: AT client calls, URC copy, print, log, event, QR, sealed store, tick; from the plug-in: start, stop, urc, command, card |
 | `app/src/ucxapp_cmds_matter.c` | Loads the plug-in, `matter.*` commands, the URC tap, the live card (`ucxapp_matter_card`, sent to the page by `ucxapp_cmds_web.c` as the `matter` event) |
-| `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.h` (discriminator and passcode from the address), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
+| `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.cpp` (the node's random setup codes, kept in the store), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
 | `matter/platform/ucxclient/` | The Matter device layer from u-connectMatter: `BLEManagerImpl` (GATT service, advertising), `NetworkCommissioningDriver` (Wi-Fi scan and join for the commissioner), `UcxNetwork.cpp` (Wi-Fi state from the module's URCs, the UDP sockets and their data), `DnssdImpl` and `UcxMdns.cpp` (mDNS on the module), configuration and key-value store (through the app's sealed store, `UcxStore.h`), `PlatformManagerImpl` (the Matter thread). `UcxClientManager` here is a small facade: the handle, the URC queue and which URCs are the node's alone |
 | `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` |
@@ -94,7 +102,10 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 ## Rules
 
 - Nothing in the plug-in bypasses `ucxapp_matter.h`: no UART, no files, no sockets of the PC, no console. Storage goes
-  through `storeSave`/`storeLoad` (sealed by the secure store as `matter.<name>.key`), never a plain file.
+  through `storeSave`/`storeLoad` (sealed by the secure store as `matter.<name>.key`), never a plain file. The
+  blob `factory` is what the node is made with (its setup codes): `matter.reset` removes every blob but that one.
+  Random numbers come from the SDK's `Crypto::DRBG_get_bytes` (the system's entropy on a PC; a board needs its
+  hardware generator as the entropy source before the node may draw codes there).
 - The interface is versioned (`UCXAPP_MATTER_ABI`): raise it when a struct changes; add fields at the end.
 - Windows is the reference platform. Keep Linux (`.so`), STM32 (the same sources linked into the firmware, ucxapp
   calling the entry directly) and WebAssembly possible: Windows-only code stays in `matter/compat/windows`.

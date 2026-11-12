@@ -16,9 +16,9 @@ from harness.matter import (
     PAIRING_NODE,
     PBKDF_PARAM_RESPONSE,
     at_burst,
-    manual_code,
+    codes_allowed,
+    manual_decode,
     pairing_request,
-    setup_codes,
     unsecured_message,
 )
 from hwutil import _args, _finish, _has_wifi, _reboot, _run, _stop, _wifi_connect_command
@@ -58,11 +58,14 @@ def _start_node(app_exe, port, plugin, cwd, *before):
 def test_matter_node_is_found_by_a_second_module(app_exe, port_a, port_b, plugin, tmp_path):
     _reboot(app_exe, port_a, port_b)
     address = re.search(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}", _run(app_exe, port_a, "bt.addr").stdout, re.M | re.I).group(0)
-    discriminator, passcode = setup_codes(address)
     node, seen, _ = _start_node(app_exe, port_a, plugin, tmp_path)
     try:
-        assert f"discriminator {discriminator}" in seen and "QR payload: MT:" in seen, seen
-        assert f"manual code: {manual_code(discriminator, passcode)}" in seen, seen
+        # a new node draws its own codes: the log has the discriminator, the manual code its top bits and the passcode
+        discriminator = int(re.search(r"discriminator (\d+)", seen)[1])
+        manual = re.search(r"manual code: ([\d-]{13})\n", seen)
+        assert manual and "QR payload: MT:" in seen, seen
+        short, passcode = manual_decode(manual[1])
+        assert short == discriminator >> 8 and codes_allowed(discriminator, passcode), seen
         # only advertisers with the Matter service data (AD type 0x16, UUID FFF6) pass the filter
         out = _run(app_exe, port_b, "bt.filter clear", "bt.filter 0 0x16 F6FF", "bt.scan full filter")
         assert out.returncode == 0 and address.upper() in out.stdout.upper(), out.stdout

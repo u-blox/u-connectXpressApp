@@ -4,6 +4,7 @@ virtual module. The plug-in needs the Matter SDK, so these tests run only where 
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from harness.matter import (
     PAIRING_NODE,
     PBKDF_PARAM_RESPONSE,
     at_burst,
+    codes_allowed,
     manual_code,
     pairing_request,
     setup_codes,
@@ -50,15 +52,15 @@ def _run(exe, module, plugin, cwd, *commands):
 
 
 def test_start_runs_the_matter_service_on_the_module_and_shows_the_setup_codes(app_exe, module, plugin, tmp_path):
-    discriminator, passcode = setup_codes("C0FFEE001144")
-    assert discriminator == 0x145   # the forbidden values aside, every module has its own
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status")
     assert out.returncode == 0, out.stdout
+    discriminator, passcode = setup_codes(out.stdout)
+    assert codes_allowed(discriminator, passcode), out.stdout
     assert "matter: node started (Matter SDK v" in out.stdout, out.stdout
     assert re.search(r"node: NORA-\S+ over Wi-Fi, 3 endpoint\(s\)", out.stdout), out.stdout
     # the virtual module connects a host as soon as a GATT service is activated
     assert "state: Bluetooth LE link up, not commissioned" in out.stdout, out.stdout
-    assert f"discriminator 325, vendor 0xFFF1, product 0x8001, passcode {passcode:08d}" in out.stdout, out.stdout
+    assert f"discriminator {discriminator}, vendor 0xFFF1, product 0x8001, passcode {passcode:08d}" in out.stdout
     # the Matter stack defines its GATT service: C1 for the commissioner's writes, C2 for the node's indications
     sent = "\n".join(module.log)
     assert "AT+UBTGS=FFF6" in module.log, module.log
@@ -66,7 +68,8 @@ def test_start_runs_the_matter_service_on_the_module_and_shows_the_setup_codes(a
     assert "AT+UBTGHCC=18EE2EF5263D4559959F4F9C429F9D12,22" in sent, sent
     assert "AT+UBTGSA" in module.log, module.log
     # service UUID FFF6, then its service data: commissionable, discriminator, vendor, product (as the QR code has)
-    assert "AT+UBTADL=0303F6FF0B16F6FF004501F1FF018000" in module.log, sent
+    data = f"00{discriminator & 0xFF:02X}{discriminator >> 8:02X}F1FF018000"
+    assert f"AT+UBTADL=0303F6FF0B16F6FF{data}" in module.log, sent
     assert "AT+UBTAL" in module.log, sent
     # from the SDK's own generators
     assert re.search(rf"manual code: {manual_code(discriminator, passcode)}\d\n", out.stdout), out.stdout
@@ -84,6 +87,69 @@ def test_the_modules_bonds_mode_and_name_stay_as_the_user_set_them(app_exe, modu
     assert "AT+UBTGS=FFF6" in sent, sent   # the node did come up
     for command in ("AT+UBTUB", "AT+UBTM=", "AT+UBTLN=", "AT+USYFR", "AT&W"):
         assert command not in sent, sent
+
+
+def test_setup_codes_are_random_for_each_node_and_kept_sealed_in_its_store(app_exe, module, plugin, tmp_path):
+    first = tmp_path / "first"
+    first.mkdir()
+    codes = setup_codes(_run(app_exe, module, plugin, first, "matter.start", "matter.status").stdout)
+    # the same node again: the codes on its label
+    assert setup_codes(_run(app_exe, module, plugin, first, "matter.start", "matter.status").stdout) == codes
+    stored = list(first.rglob("matter.factory.key"))
+    assert len(stored) == 1, list(first.rglob("*"))
+    sealed = stored[0].read_bytes()
+    assert sealed.startswith(b"UCXS") and codes[1].to_bytes(4, "little") not in sealed, sealed[:16]
+    # another node on the same module (its address is the same): other codes, nothing comes from the address
+    second = tmp_path / "second"
+    second.mkdir()
+    other = setup_codes(_run(app_exe, module, plugin, second, "matter.start", "matter.status").stdout)
+    assert other != codes and codes_allowed(*other), (codes, other)
+
+
+def test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status", "matter.reset", "matter.status")
+    assert out.returncode == 0 and "commission the node again\n" in out.stdout, out.stdout
+    before, after = out.stdout.split("matter: reset")
+    codes = setup_codes(before)
+    assert setup_codes(after) == codes and "commissioning window: open" in after, out.stdout
+    # new codes: the node advertises them at once, and has them at its next start
+    sent = len(module.log)
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.reset all", "matter.status")
+    assert out.returncode == 0 and "again with its new setup codes" in out.stdout, out.stdout
+    new = setup_codes(out.stdout)
+    assert new != codes and codes_allowed(*new), (codes, new)
+    assert re.search(rf"manual code: {manual_code(*new)}\d\n", out.stdout), out.stdout
+    data = [f"AT+UBTADL=0303F6FF0B16F6FF00{d & 0xFF:02X}{d >> 8:02X}F1FF018000" for d in (codes[0], new[0])]
+    log = module.log[sent:]
+    assert data[0] in log and data[1] in log[log.index(data[0]):], log
+    assert setup_codes(_run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status").stdout) == new
+    # without a running node the codes go with the rest of the store
+    out = _run(app_exe, module, plugin, tmp_path, "matter.reset all", "matter.start", "matter.status")
+    assert out.returncode == 0 and setup_codes(out.stdout) not in (codes, new), out.stdout
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.reset codes")
+    assert out.returncode != 0, out.stdout
+
+
+def test_node_says_which_product_it_is(app_exe, module, plugin, tmp_path):
+    from harness.vucx import Vucx, load
+
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status")
+    assert out.returncode == 0, out.stdout
+    # what the Basic Information cluster gives a controller: the module is the hardware, its firmware the software
+    assert "product: u-blox u-connectXpressApp, hardware NORA-W36, serial VUCX0123456789, software 3.5.0-0\n" \
+        in out.stdout, out.stdout
+    # a commissioner that looks on the network sees the name before it pairs
+    assert 'AT+UMDTRA=0,"DN","u-connectXpressApp-001144"' in module.log, module.log
+    # a module that gives its type code: that is the hardware version and the part number
+    profile = load("nora-w36.yaml")
+    profile["commands"]["ATI0"] = ['"NORA-W361-00B"', "OK"]
+    typed = Vucx(profile)
+    typed.start()
+    try:
+        out = _run(app_exe, typed, plugin, tmp_path, "matter.start", "matter.status")
+    finally:
+        typed.stop()
+    assert "hardware NORA-W361-00B, serial VUCX0123456789" in out.stdout, out.stdout
 
 
 def test_detail_log_shows_the_matter_stack(app_exe, module, plugin, tmp_path):
@@ -141,6 +207,33 @@ def test_app_commands_run_beside_the_matter_thread(app_exe, module, plugin, tmp_
     assert "timeout" not in out.stdout.lower() and "matter: running" in out.stdout, out.stdout
 
 
+def test_an_idle_node_leaves_the_processor_and_the_module_alone(app_exe, module, plugin, tmp_path):
+    psutil = pytest.importorskip("psutil")
+    args = [str(app_exe), module.port]
+    for command in ("matter.start", "gatt.listen 9"):
+        args += ["--exec", command]
+    app = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                           stdin=subprocess.DEVNULL, cwd=tmp_path,
+                           env=dict(os.environ, UCX_MATTER_PLUGIN=str(plugin)))
+    try:
+        deadline = time.monotonic() + 30
+        while "AT+UBTAL" not in module.log and time.monotonic() < deadline:
+            time.sleep(0.05)
+        time.sleep(3)   # the virtual host's handshake is answered, the node waits for a commissioner
+        process = psutil.Process(app.pid)
+        before, sent = process.cpu_times(), len(module.log)
+        time.sleep(4)
+        after, commands = process.cpu_times(), module.log[sent:]
+    finally:
+        out = app.communicate(timeout=60)[0]
+    assert app.returncode == 0 and "matter: node started" in out, out
+    used = (after.user + after.system) - (before.user + before.system)
+    print(f"idle node: {used:.2f} s of processor in 4 s, AT commands: {commands}")
+    # a node that polls would keep the app's own commands and the TUI waiting behind it
+    assert used < 0.2, (used, out)
+    assert len(commands) <= 2, commands
+
+
 def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, plugin, tmp_path):
     # the virtual module is on Wi-Fi already, as after wifi.connect
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status")
@@ -151,7 +244,8 @@ def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, pl
     assert "AT+USOCR=17,1" in module.log and "AT+USOB=0,5540" in module.log, sent
     # commissionable over the network as well: the module answers the queries, the host has no multicast socket
     assert re.search(r'AT\+UMDSA="_matterc",1,5540,"[0-9A-F]{16}"', sent), sent
-    assert 'AT+UMDTRA=0,"D","325"' in sent and 'AT+UMDTRA=0,"VP","65521+32769"' in sent, sent
+    discriminator = setup_codes(out.stdout)[0]
+    assert f'AT+UMDTRA=0,"D","{discriminator}"' in sent and 'AT+UMDTRA=0,"VP","65521+32769"' in sent, sent
     # stopping: the node's service goes; the responder and its host name are again as the user had them
     assert sent.index("AT+UMDSR=0") > sent.index("AT+UMDSA="), sent
     assert sent.rindex('AT+UMDHN="vucx"') > sent.index('AT+UMDHN="C0FFEE001144"'), sent
@@ -184,10 +278,10 @@ def test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered(ap
 
 
 def test_card_shows_the_node_its_codes_and_endpoints(app_exe, module, plugin, tmp_path):
-    discriminator, passcode = setup_codes("C0FFEE001144")
-    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "gatt.listen 1", "matter.set light 40",
-               "matter.card")
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status", "gatt.listen 1",
+               "matter.set light 40", "matter.card")
     assert out.returncode == 0, out.stdout
+    discriminator, passcode = setup_codes(out.stdout)
     card = out.stdout[out.stdout.rindex("NODE  "):]
     assert re.match(r"NODE  NORA-\S+ over Wi-Fi, 3 endpoint\(s\)\nSTATE not commissioned\n", card), card
     # the virtual module's host has connected and the window is open; the module is on Wi-Fi

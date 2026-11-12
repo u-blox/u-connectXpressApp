@@ -1,4 +1,4 @@
-"""What the Matter plug-in derives from a module, for the tests to check against."""
+"""What the Matter plug-in shows of a node's setup codes and traffic, for the tests to check against."""
 
 import re
 
@@ -21,17 +21,19 @@ def at_burst(trace, first, last):
     return lines[done][0] - lines[start][0], gap, [lines[i][2] for i in sent]
 
 
-def setup_codes(address):
-    """Discriminator and passcode of a module, from the last three bytes of its Bluetooth address
-    (matter/src/UbloxCommissionableDataProvider.h)."""
-    mac = int(address.replace(":", "")[-6:], 16)
-    discriminator = (mac ^ (mac >> 12)) & 0xFFF
-    discriminator = {0x000: 0x001, 0xFFF: 0xFFE, 0xF00: 0xF01}.get(discriminator, discriminator)
-    h = (mac * 2654435761) & 0xFFFFFFFF
-    h ^= h >> 16
-    h = (h * 2246822519) & 0xFFFFFFFF
-    h ^= h >> 13
-    return discriminator, h % 99999998 + 1
+def setup_codes(status):
+    """Discriminator and passcode of a node, from what matter.status prints. They are the node's own, drawn at
+    random on its first start and kept in its store (matter/src/UbloxCommissionableDataProvider.h)."""
+    found = re.search(r"setup: discriminator (\d+), vendor 0x[0-9A-F]{4}, product 0x[0-9A-F]{4}, passcode (\d{8})\n",
+                      status)
+    assert found, status
+    return int(found[1]), int(found[2])
+
+
+def codes_allowed(discriminator, passcode):
+    """Neither a passcode Matter forbids nor what every SDK example has (3840 to 3842, 20202021)."""
+    return (0 <= discriminator <= 0xFFF and discriminator not in (3840, 3841, 3842) and 1 <= passcode <= 99999998
+            and passcode % 11111111 != 0 and passcode not in (12345678, 87654321, 20202021))
 
 
 def manual_code(discriminator, passcode):
@@ -39,6 +41,13 @@ def manual_code(discriminator, passcode):
     short = discriminator >> 8
     digits = f"{short >> 2}{((short & 3) << 14) | (passcode & 0x3FFF):05d}{passcode >> 14:04d}"
     return f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
+
+
+def manual_decode(code):
+    """(the upper four bits of the discriminator, passcode) of a manual pairing code as matter.qr prints it."""
+    digits = code.replace("-", "")
+    low = int(digits[1:6])
+    return (int(digits[0]) << 2) | (low >> 14), (int(digits[6:10]) << 14) | (low & 0x3FFF)
 
 
 PAIRING_NODE = bytes.fromhex("8877665544332211")

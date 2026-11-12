@@ -539,6 +539,8 @@ const UC={
   h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','MQTT broker','Home Assistant'],['imu','Sensor','IMU, door, machine'],['ble','Phone','BLE setup']]},
  provision:{t:'Wi-Fi set up from a phone',d:'A new device has no keyboard: the phone sends the network name and password over BLE (Wi-Fi Provisioning service), or joins the device\'s own AP from a QR code.',
   h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning'],['wifi','Home Wi-Fi','joined after setup'],['ap','Setup AP','QR code'],['sock','Cloud or app','after setup']]},
+ matter:{t:'Matter smart home device',d:'A Matter light, temperature sensor and contact sensor on the host: a home app scans the setup QR code, commissions the node over Bluetooth LE and sends it the network.',
+  h:['Device','host + NORA module'],n:[['phone','Home app','Apple, Google, HA'],['ble','Commissioning','Bluetooth LE'],['wifi','Network','Wi-Fi or Thread'],['id','Setup codes','QR, manual code']]},
  hotel:{t:'Hotel or cafe Wi-Fi with a login page',d:'Guest networks hold traffic until a form is filled in: the app finds the portal page, fills in the room and surname, and checks the internet.',
   h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2'],['portal','Login page','room, surname'],['sock','Internet','after login'],['ble','Phone','BLE']]},
  notify:{t:'Phone notifications',d:'Calls and messages from an iPhone (ANCS) or an Android companion app on a small display or wearable, with answer and dismiss.',

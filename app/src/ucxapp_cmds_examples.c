@@ -724,6 +724,15 @@ static const example_t kExamples[] = {
       "bt.cs.filter 1 500\nbt.cs.range 0 10\nbt.cs.filter off" },
 #endif
 #if UCXAPP_HOST
+    { "uc-matter", "Start the node with its setup codes",
+      "matter.start\nmatter.qr" },
+    { "uc-matter", "Commission it from a home app",
+      "# Apple Home, Google Home, Home Assistant or SmartThings: add a Matter device, scan the QR code\n"
+      "# the phone connects over Bluetooth LE and sends the network; the card follows each step\nmatter.card\nmatter.status" },
+    { "uc-matter", "Commission it again from a second home app",
+      "matter.open 180\nmatter.card" },
+    { "uc-matter", "Done: stop the node",
+      "matter.stop" },
     { "utils", "Handy tools",
       "utils.qr.wifi MyNetwork MyPassword\nutils.qr.wifi GuestNet nopass large\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
 #endif
@@ -930,6 +939,7 @@ static int cmdExamples(ucxapp_t *app, int argc, char *argv[])
 static int runCases(ucxapp_t *app, const char *const *ids, size_t idCount)
 {
     char failed[512] = "";
+    const char *skipped = NULL;
     int ran = 0, ok = 0, cases = 0;
 
     if (!ucxapp_module_is_virtual(app)) {
@@ -955,6 +965,15 @@ static int runCases(ucxapp_t *app, const char *const *ids, size_t idCount)
         if (!wanted || seen) {
             continue;
         }
+#if UCXAPP_HOST
+        char card[64];
+
+        if (strcmp(g, "uc-matter") == 0 && !ucxapp_matter_card(card, sizeof(card))) {
+            ucxapp_print("\n=== matter: skipped, the Matter plug-in is not installed (ucxapp --matter --build) ===\n");
+            skipped = g + 3;
+            continue;
+        }
+#endif
         for (size_t k = i; k < EX_COUNT; k++) {
             count += strcmp(kExamples[k].group, g) == 0;
         }
@@ -970,6 +989,9 @@ static int runCases(ucxapp_t *app, const char *const *ids, size_t idCount)
         }
     }
     gDemoFast = false;
+    if (cases == 0 && skipped != NULL) {
+        return UCXAPP_ERR_FAILED;
+    }
     if (cases == 0) {
         ucxapp_print("ERROR: no use case %s (see usecase.list)\n", idCount > 0 ? ids[0] : "");
         return UCXAPP_ERR_USAGE;
@@ -977,6 +999,9 @@ static int runCases(ucxapp_t *app, const char *const *ids, size_t idCount)
     ucxapp_print("\ndemo: %d use case%s, %d of %d examples ran to the end\n", cases, cases == 1 ? "" : "s", ok, ran);
     if (failed[0] != '\0') {
         ucxapp_print("stopped early:%s\n", failed);
+    }
+    if (skipped != NULL) {
+        ucxapp_print("skipped: %s (no Matter plug-in)\n", skipped);
     }
     return ok == ran ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
@@ -995,7 +1020,7 @@ static int cmdDemo(ucxapp_t *app, int argc, char *argv[])
 /* demo [all]: a short tour of the highlights (or every use case) on a virtual module. */
 static int cmdTour(ucxapp_t *app, int argc, char *argv[])
 {
-    static const char *const kTour[] = { "provision", "home", "hotel", "boat", "fieldkit", "blegw", "notify",
+    static const char *const kTour[] = { "provision", "matter", "home", "hotel", "boat", "fieldkit", "blegw", "notify",
                                          "remote", "finder", "mesh", "border", "condition" };
 
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "all") != 0)) {
@@ -1005,7 +1030,7 @@ static int cmdTour(ucxapp_t *app, int argc, char *argv[])
         return runCases(app, NULL, 0);
     }
     if (ucxapp_module_is_virtual(app)) {
-        ucxapp_print("u-connectXpress tour: Wi-Fi (phone setup, MQTT, hotel portal), GNSS to a chart app, a Wi-Fi to LTE "
+        ucxapp_print("u-connectXpress tour: Wi-Fi (phone setup, a Matter node, MQTT, hotel portal), GNSS to a chart app, a Wi-Fi to LTE "
                      "relay, BLE (sensor gateway, phone notifications, remote, Channel Sounding distance), a Thread mesh and border router, and an "
                      "IMU vibration monitor (demo all runs every use case)\n");
     }

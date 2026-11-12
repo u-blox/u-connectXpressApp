@@ -102,7 +102,8 @@ Release builds of all five boards are published with each tag.
 The app runs without it; `matter.start` loads `ucxmatter.dll` (`libucxmatter.so` on Linux) from next to the app.
 The plug-in is built from `matter/` with gn and ninja (`matter/tools`) and GCC: on Windows install MSYS2 and, in it,
 `pacman -S mingw-w64-ucrt-x86_64-gcc` (the Matter SDK does not build with MSVC). The first build fetches the Matter SDK
-into `matter/connectedhomeip` (about 1.5 GB); no other command fetches that submodule. Today the plug-in advertises a
+into `matter/connectedhomeip`: one commit, only the folders and SDK submodules the plug-in builds from; no other
+command fetches that submodule. Today the plug-in advertises a
 commissionable node over Bluetooth LE and shows its QR and manual codes; commissioning itself is not in yet.
 
 ## File structure

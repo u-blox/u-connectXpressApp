@@ -397,6 +397,18 @@ static const ucRow_t kProvision[] = {
     { 0, "[ok]", "QR instead", "or join the device's own AP from a QR code: wifi.ap.enable", NULL },
 };
 
+#if UCXAPP_HOST
+static const ucRow_t kMatter[] = {
+    { 0, "[ok]", "Node", "a Matter light, temperature sensor and contact sensor on the host: matter.start", "matter.start" },
+    { 0, "[ok]", "Setup codes", "QR code and manual pairing code, random per node and sealed in the store: matter.qr", "matter.qr" },
+    { 0, "[ok]", "Commission", "Apple Home, Google Home, Home Assistant or SmartThings over Bluetooth LE", "matter.card" },
+    { 0, "[ok]", "Network", "NORA-W36 joins the Wi-Fi the home app sends; NORA-B26 and ALMA-W1 join Thread", NULL },
+    { 0, "[ok]", "Another app", "open the commissioning window again for a second home app: matter.open", "matter.open" },
+    { 0, "[check]", "Plug-in", "the Matter plug-in next to the app: ucxapp --matter --build", NULL },
+    { 0, "[limit]", "Product", "test vendor ID and attestation: a product needs its own and CSA certification", NULL },
+};
+#endif
+
 static const ucRow_t kHotel[] = {
     { 'w', "[ok]", "Guest Wi-Fi", "open or WPA2-Personal: wifi.connect <ssid> [password]", NULL },
     { 0, "[ok]", "Login page", "wifi.portal check finds it, wifi.portal login fills in and submits the form", "wifi.portal" },
@@ -463,6 +475,9 @@ static const ucCase_t kCases[] = {
 #endif
     CASE("home", "Smart home sensor: MQTT to Home Assistant", kHome),
     CASE("provision", "New smart device: Wi-Fi set up from a phone over BLE", kProvision),
+#if UCXAPP_HOST
+    CASE("matter", "Matter smart home device: commissioned from a home app over BLE", kMatter),
+#endif
     CASE("hotel", "Hotel or cafe Wi-Fi with a login page", kHotel),
     CASE("notify", "Phone notifications on a small display or wearable", kNotify),
     CASE("remote", "Presentation clicker or media remote (BLE keyboard)", kRemote),

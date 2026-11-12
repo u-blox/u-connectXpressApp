@@ -46,8 +46,11 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
   `g++` on Linux. Git and this Python; the launcher installs the SDK's build modules with pip the first time.
 - `gn.exe` and `ninja.exe` are in `matter/tools`: the binaries u-connectMatter uses (gn is signed by u-blox and
   accepted by IT). Use these, do not download others. Linux takes `gn` and `ninja` from `../u-connectMatter/tools` or PATH.
-- The first build fetches the Matter SDK into `matter/connectedhomeip` (about 1.5 GB). It is an opt-in submodule
-  (`update = none`): nothing else fetches it, and the app builds and tests without it.
+- The first build fetches the Matter SDK into `matter/connectedhomeip`: only the pinned commit (`--depth 1`,
+  `--filter=blob:none`), only the folders in `MATTER_SDK_DIRS` (sparse checkout) and only the parts in
+  `MATTER_SDK_PARTS` (nlassert, nlio, uriparser, pigweed), each one commit deep. It is an opt-in submodule
+  (`update = none`): nothing else fetches it, and the app builds and tests without it. A full checkout from before
+  can be dropped (delete `matter/connectedhomeip` and `.git/modules/matter/connectedhomeip`) and fetched again small.
 - On Windows the SDK's build scripts run in a Python environment the launcher makes in `build/matter-python`
   (pip, once): the SDK's build fails when Python and the build folder are on different drives. The build's own
   actions run in `build/matter/python-venv` (`build_venv` in `matter/BUILD.gn`), which holds only what the SDK's
@@ -87,6 +90,7 @@ matter.set light 40            # act as the device: light on|off|0..100, temp -4
 matter.open                    # commissioning window for 15 minutes again, with the codes
 matter.bridge tcp              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
 matter.bridge mqtt             # after mqtt.connect: ucxapp/matter/<endpoint> (retained), ucxapp/matter/<endpoint>/set
+usecase.demo matter            # on a virtual module: start, codes, card, second window, stop (also part of demo)
 matter.log detail              # how much of the SDK's log is printed: error, info, detail
 matter.stop                    # also done when the app leaves
 matter.reset                   # forget what the node stored, leave Wi-Fi, reboot the module, start the node again

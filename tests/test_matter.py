@@ -396,6 +396,18 @@ def test_bridge_mqtt_publishes_the_endpoints_and_takes_sets(app_exe, stub, tmp_p
     assert sum(cmd.startswith("AT+UMQS=") for cmd in module.log) == 2, module.log   # subscribe, unsubscribe
 
 
+def test_demo_skips_matter_without_the_plugin(app_exe, module, stub, tmp_path):
+    out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "usecase.demo matter")
+    assert out.returncode != 0, out.stdout
+    assert "=== matter: skipped, the Matter plug-in is not installed (ucxapp --matter --build) ===" in out.stdout, \
+        out.stdout
+    assert "Running uc-matter" not in out.stdout and "no use case" not in out.stdout, out.stdout
+    # with a plug-in the steps run: the stand-in has no matter.open, so the second window is where it stops
+    out = _run(app_exe, module, stub, tmp_path, "usecase.demo matter")
+    assert "demo: 1 use case, 3 of 4 examples ran to the end\nstopped early: matter/3" in out.stdout, out.stdout
+    assert "manual code: 0000-000-0000" in out.stdout and "STATE not commissioned" in out.stdout, out.stdout
+
+
 def test_card_without_the_plugin(app_exe, module, tmp_path):
     out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "matter.card")
     assert out.returncode != 0 and "the plug-in is not installed" in out.stdout, out.stdout

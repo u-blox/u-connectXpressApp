@@ -165,6 +165,26 @@ def test_matter_patches_refuse_another_sdk_version(tmp_path, monkeypatch, capsys
     assert "matter/patches is made for aaaaaaaaaa" in capsys.readouterr().err
 
 
+def test_matter_sdk_fetch_is_one_commit_of_the_folders_the_node_needs(tmp_path, monkeypatch):
+    sdk = tmp_path / "connectedhomeip"
+    monkeypatch.setattr(ucxapp, "MATTER_SDK", sdk)
+    monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: "160000 " + "a" * 40 + " 0\tmatter/connectedhomeip"
+                        if "ls-files" in cmd else "https://example.invalid/sdk.git")
+    calls = []
+    monkeypatch.setattr(ucxapp, "check", lambda cmd, what, **kw: calls.append([str(c) for c in cmd]))
+    ucxapp.matter_fetch()
+    fetch = next(c for c in calls if "fetch" in c)
+    assert "--depth" in fetch and "--filter=blob:none" in fetch and fetch[-1] == "a" * 40
+    sparse = next(c for c in calls if "sparse-checkout" in c)
+    assert "examples" not in sparse and "docs" not in sparse and "third_party" not in sparse
+    assert "src" in sparse and "third_party/pigweed" in sparse
+    parts = [c[-1] for c in calls if "submodule" in c]
+    assert parts == [f"third_party/{p}/repo" for p in ucxapp.MATTER_SDK_PARTS]
+    assert all("--depth" in c and "--recursive" not in c for c in calls if "submodule" in c)
+    assert not any(p in ucxapp.MATTER_SDK_PARTS for p in ("jsoncpp", "mbedtls", "boringssl"))
+
+
 def test_detect_force_probes_unnamed_ports(monkeypatch):
     """--detect-force finds a module behind a plain 'USB Serial Port' and skips ports marked skip."""
     asked = []

@@ -1573,9 +1573,15 @@ MATTER_WASM_LIB = MATTER_WASM / "libucxmatter.a"
 MATTER_WASM_SYMBOLS = MATTER_DIR / "compat" / "wasm" / "ucxm_symbols.h"
 # names the SDK tests with #ifndef to let a platform replace them: a macro for one hides its declaration
 MATTER_WASM_HOOKS = {"chipAbort", "chipDie"}
-# The SDK's own submodules the plug-in builds with (pigweed with its submodules); the rest is never fetched.
+# The folders of the SDK the node is built from (gn files, sources, headers, the code generators), for Windows,
+# Linux and the browser alike; the rest (examples, docs, other vendors' platforms) is never downloaded.
+# third_party/jsoncpp: only its BUILD.gn, which gn reads; its sources are not built into the node.
+MATTER_SDK_DIRS = ("build", "config", "examples/common", "scripts", "src", "zzz_generated",
+                   *(f"third_party/{p}" for p in ("nlassert", "nlio", "nlfaultinjection", "uriparser", "pigweed",
+                                                  "jsoncpp")))
+# The SDK's own submodules the plug-in builds with; the rest is never fetched.
 # Not its mbedTLS: the node uses the app's (third-party/mbedtls, matter/mbedtls/BUILD.gn).
-MATTER_SDK_PARTS = ("nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
+MATTER_SDK_PARTS = ("nlassert", "nlio", "uriparser", "pigweed")
 MATTER_MODEL = MATTER_DIR / "data_model" / "ucxmatter.zap"
 MINGW_DIRS = (r"C:\msys64\ucrt64\bin", r"C:\msys64\mingw64\bin", r"C:\mingw64\bin", r"C:\mingw-w64\mingw64\bin")
 
@@ -1585,15 +1591,25 @@ def matter_plugin():
 
 
 def matter_fetch():
-    """The Matter SDK: .gitmodules says update = none, so only this fetches it."""
+    """The Matter SDK: .gitmodules says update = none, so only this fetches it. Only the pinned commit (no history)
+    and only MATTER_SDK_DIRS of it, then MATTER_SDK_PARTS, each one commit deep: about 150 MB instead of 1.5 GB."""
     require("git", "Install Git from https://git-scm.com/downloads")
     if not (MATTER_SDK / ".git").exists():
-        print("Fetching the Matter SDK (about 1.5 GB, once) ...", flush=True)
-        check(["git", "submodule", "update", "--init", "--checkout", "matter/connectedhomeip"], "Matter SDK fetch")
+        commit = git_out("ls-files", "-s", "matter/connectedhomeip").split()[1]
+        url = git_out("config", "-f", ".gitmodules", "--get", "submodule.matter/connectedhomeip.url")
+        print(f"Fetching the Matter SDK {commit[:10]} (one commit, only the folders the plug-in builds from) ...",
+              flush=True)
+        MATTER_SDK.mkdir(parents=True, exist_ok=True)
+        sdk = ["git", "-C", MATTER_SDK]
+        check([*sdk, "init", "-q"], "Matter SDK fetch")
+        check([*sdk, "remote", "add", "origin", url], "Matter SDK fetch")
+        check([*sdk, "sparse-checkout", "set", "--cone", *MATTER_SDK_DIRS], "Matter SDK fetch")
+        check([*sdk, "fetch", "--depth", "1", "--filter=blob:none", "origin", commit], "Matter SDK fetch")
+        check([*sdk, "checkout", "-q", "--detach", "FETCH_HEAD"], "Matter SDK fetch")
     for part in MATTER_SDK_PARTS:
         if not (MATTER_SDK / "third_party" / part / "repo" / ".git").exists():
-            check(["git", "submodule", "update", "--init", *(["--recursive"] if part == "pigweed" else []),
-                   f"third_party/{part}/repo"], f"Matter SDK {part} fetch", cwd=MATTER_SDK)
+            check(["git", "submodule", "update", "--init", "--depth", "1", f"third_party/{part}/repo"],
+                  f"Matter SDK {part} fetch", cwd=MATTER_SDK)
 
 
 def matter_patch():

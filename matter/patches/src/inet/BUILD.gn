@@ -1,0 +1,249 @@
+# Copyright (c) 2020-2021 Project CHIP Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build_overrides/build.gni")
+import("//build_overrides/chip.gni")
+import("//build_overrides/nlfaultinjection.gni")
+
+import("${chip_root}/build/chip/buildconfig_header.gni")
+import("${chip_root}/build/chip/tests.gni")
+import("${chip_root}/src/platform/device.gni")
+import("inet.gni")
+
+if (chip_system_config_use_openthread_inet_endpoints &&
+    current_os != "zephyr") {
+  import("//build_overrides/openthread.gni")
+}
+
+if (chip_system_config_use_lwip) {
+  import("//build_overrides/lwip.gni")
+}
+
+if (chip_device_platform == "darwin") {
+  import("${chip_root}/src/platform/Darwin/inet/darwin_sources.gni")
+}
+
+declare_args() {
+  # Extra header to include in SystemConfig.h for project.
+  chip_inet_project_config_include = ""
+}
+
+buildconfig_header("inet_buildconfig") {
+  header = "InetBuildConfig.h"
+  header_dir = "inet"
+
+  defines = [
+    "INET_CONFIG_TEST=${chip_build_tests}",
+    "INET_CONFIG_ENABLE_IPV4=${chip_inet_config_enable_ipv4}",
+    "INET_CONFIG_ENABLE_TCP_ENDPOINT=${chip_inet_config_enable_tcp_endpoint}",
+    "INET_CONFIG_ENABLE_UDP_ENDPOINT=${chip_inet_config_enable_udp_endpoint}",
+    "HAVE_LWIP_RAW_BIND_NETIF=true",
+  ]
+
+  if (chip_inet_project_config_include != "") {
+    defines +=
+        [ "INET_PROJECT_CONFIG_INCLUDE=${chip_inet_project_config_include}" ]
+  }
+  if (chip_inet_platform_config_include != "") {
+    defines +=
+        [ "INET_PLATFORM_CONFIG_INCLUDE=${chip_inet_platform_config_include}" ]
+  }
+
+  defines += [ "INET_TCP_END_POINT_IMPL_CONFIG_FILE=<inet/TCPEndPointImpl${chip_system_config_inet}.h>" ]
+  defines += [ "INET_UDP_END_POINT_IMPL_CONFIG_FILE=<inet/UDPEndPointImpl${chip_system_config_inet}.h>" ]
+
+  visibility = [ ":inet_config_header" ]
+}
+
+source_set("inet_config_header") {
+  sources = [ "InetConfig.h" ]
+
+  public_configs = [ "${chip_root}/src:includes" ]
+
+  public_deps = [ "${chip_root}/src/system:system_config_header" ]
+
+  deps = [ ":inet_buildconfig" ]
+}
+
+source_set("impl_header") {
+  sources = [ "InetInterfaceImpl.h" ]
+  public_configs = [ "${chip_root}/src:includes" ]
+  public_deps = [ "${chip_root}/src/system:system_config_header" ]
+}
+
+source_set("inet_zephyr_socket") {
+  sources = [ "ZephyrSocket.h" ]
+  public_configs = [ "${chip_root}/src:includes" ]
+  public_deps = [ "${chip_root}/src/system:system_config_header" ]
+}
+
+# ucxclient include paths for UDP/TCP endpoint implementations using NORA-W36
+# This config provides include paths for u_cx_at_client.h and other ucxclient headers
+# u-connectXpressApp: the app's u-connectClient (MERGED API) and matter/platform/ucxclient.
+config("ucxclient_inet_config") {
+  include_dirs = [
+    "${chip_root}/../../u-connectClient/inc",
+    "${chip_root}/../../u-connectClient/ucx_api",
+    "${chip_root}/../../u-connectClient/ucx_api/generated/MERGED",
+    "${chip_root}/../../u-connectClient/ports",
+    "${chip_root}/../../app/src",
+    "${chip_root}/../src",
+    "${chip_root}/../platform/ucxclient",
+  ]
+
+  defines = []
+  if (target_os == "win") {
+    defines += [ "U_PORT_WINDOWS" ]
+  } else {
+    defines += [ "U_PORT_POSIX" ]
+  }
+}
+
+# Standalone inet argument parser - include this explicitly in targets that need it.
+# Provides ParseIPAddress for command-line parsing utilities.
+source_set("inet_arg_parser") {
+  sources = [
+    "InetArgParser.cpp",
+    "InetArgParser.h",
+  ]
+
+  public_deps = [
+    ":inet",
+    "${chip_root}/src/lib/support:arg_parser",
+  ]
+
+  public_configs = [ "${chip_root}/src:includes" ]
+}
+
+static_library("inet") {
+  output_name = "libInetLayer"
+
+  # EndpointState header is one of:
+  #   - src/inet/EndPointStateLwIP.h
+  #   - src/inet/EndPointStateNetworkFramework.h
+  #   - src/inet/EndPointStateOpenThread.h
+  #   - src/inet/EndPointStateSockets.h
+  sources = [
+    "EndPointBasis.h",
+    "IANAConstants.h",
+    "IPAddress-StringFuncts.cpp",
+    "IPAddress.cpp",
+    "IPAddress.h",
+    "IPPacketInfo.cpp",
+    "IPPacketInfo.h",
+    "IPPrefix.cpp",
+    "IPPrefix.h",
+    "Inet.h",
+    "InetError.cpp",
+    "InetError.h",
+    "InetInterface.cpp",
+    "InetInterface.h",
+    "InetLayer.h",
+    "arpa-inet-compatibility.h",
+  ]
+
+  if (!chip_system_config_use_network_framework) {
+    sources += [ "EndPointState${chip_system_config_inet}.h" ]
+  }
+
+  public_deps = [
+    ":impl_header",
+    ":inet_config_header",
+    "${chip_root}/src/lib/core:types",
+    "${chip_root}/src/lib/support",
+    "${chip_root}/src/platform:platform_config_header",
+    "${chip_root}/src/system",
+  ]
+
+  # Apply ucxclient include paths when using ucx inet implementation
+  if (chip_system_config_use_ucx) {
+    public_configs = [ ":ucxclient_inet_config" ]
+  }
+
+  if (chip_system_config_use_lwip) {
+    sources += [ "EndPointStateLwIP.cpp" ]
+    public_deps += [ "${lwip_root}:lwip" ]
+  }
+
+  if (chip_system_config_use_openthread_inet_endpoints &&
+      current_os != "zephyr") {
+    public_deps += [ "${chip_root}/third_party/openthread" ]
+  }
+
+  if (chip_inet_config_enable_tcp_endpoint) {
+    # Possible TCPEndpointImpl files:
+    #  - TCPEndPointImplLwIP.cpp
+    #  - TCPEndPointImplLwIP.h
+    #  - TCPEndPointImplOpenThread.cpp
+    #  - TCPEndPointImplOpenThread.h
+    #  - TCPEndPointImplSockets.cpp
+    #  - TCPEndPointImplSockets.h
+    sources += [
+      "TCPEndPoint.cpp",
+      "TCPEndPoint.h",
+      "TCPEndPointImpl${chip_system_config_inet}.h",
+      "TCPEndPointImpl.h",
+    ]
+    sources += [ "TCPEndPointImpl${chip_system_config_inet}.cpp" ]
+  }
+
+  if (chip_inet_config_enable_udp_endpoint) {
+    # Possible UDPEndpointImpl files:
+    #  - UDPEndPointImplLwIP.cpp
+    #  - UDPEndPointImplLwIP.h
+    #  - UDPEndPointImplNetworkFramework.cpp
+    #  - UDPEndPointImplNetworkFramework.h
+    #  - UDPEndPointImplOpenThread.cpp
+    #  - UDPEndPointImplOpenThread.h
+    #  - UDPEndPointImplSockets.cpp
+    #  - UDPEndPointImplSockets.h
+    sources += [
+      "BasicPacketFilters.h",
+      "EndpointQueueFilter.h",
+      "UDPEndPoint.cpp",
+      "UDPEndPoint.h",
+      "UDPEndPointImpl${chip_system_config_inet}.h",
+      "UDPEndPointImpl.h",
+    ]
+
+    if (!chip_system_config_use_network_framework) {
+      sources += [ "UDPEndPointImpl${chip_system_config_inet}.cpp" ]
+    }
+  }
+
+  if (current_os == "zephyr") {
+    public_deps += [ ":inet_zephyr_socket" ]
+  }
+
+  if (chip_with_nlfaultinjection) {
+    sources += [
+      "InetFaultInjection.cpp",
+      "InetFaultInjection.h",
+    ]
+    public_deps += [ "${nlfaultinjection_root}:nlfaultinjection" ]
+  }
+
+  if (current_os == "android") {
+    public_deps += [ "${chip_root}/src/platform/android:inet" ]
+  } else {
+    sources += [ "InetInterfaceImplDefault.cpp" ]
+  }
+
+  cflags = [ "-Wconversion" ]
+  if (current_os == "nuttx") {
+    cflags -= [ "-Wconversion" ]
+  } else if (chip_system_config_use_network_framework) {
+    sources += darwin_sources
+  }
+}

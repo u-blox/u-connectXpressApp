@@ -181,6 +181,9 @@ void ucxapp_register_app_cmds(void);     /* app.* (ucxapp_cmds_app.c) */
 bool ucxappLogEventsEnabled(void);   /* app.log.events.on: URC events are also printed to the log */
 void ucxapp_register_mqtt_cmds(void);
 void ucxapp_register_mdns_cmds(void);    /* mdns.* responder and DNS-SD services (not in UCXAPP_LITE builds) */
+void ucxapp_register_matter_cmds(void);  /* matter.* Matter node run by the ucxmatter plug-in (host only) */
+void ucxapp_matter_stop(void);           /* before the module's AT client closes: the node uses it */
+bool ucxapp_matter_running(void);
 void ucxapp_register_thread_cmds(void);
 const char *ucxapp_thread_role_name(int32_t role);
 /* Store files shared between command packs */

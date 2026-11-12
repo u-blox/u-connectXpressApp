@@ -426,6 +426,26 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "perf.latency udp xplorer 7000" -
 ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.phone echo 10"
 ```
 
+### Matter
+
+A Matter node on the connected module. The node itself (the Matter SDK) is an optional plug-in next to the app, `ucxmatter.dll` (`libucxmatter.so` on Linux), built with `ucxapp --matter --build`; without it `matter.start` says so and everything else works as before. The plug-in uses the app's connection to the module, so the other commands, `at.trace`, the events and the web page keep working while the node runs. What the node stores (fabrics, keys) is sealed in the secure store as `matter.*.key`.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `matter.start` | `[endpoint...]` | Load the plug-in and start the node on the module. Endpoints are named as `matter.endpoints` lists the kinds (`light temp contact`); none builds the default set |
+| `matter.stop` | | Stop the node and unload the plug-in (leaving the app or disconnecting the module does the same) |
+| `matter.status` | | Stopped or running, the plug-in and its file, the module's radios, the URCs passed on to the node, and what the node says about itself |
+| `matter.endpoints` | | Endpoints of the running node with their values, and the kinds the plug-in can build |
+| `matter.set` | `<endpoint> <value...>` | Change an endpoint from this side, as a button or a sensor would: `matter.set light on`, `matter.set temp 23.5`, `matter.set contact open` |
+| `matter.qr` | | Setup QR code and manual pairing code |
+| `matter.open` | `[seconds]` | Open the commissioning window again |
+| `matter.reset` | | Forget every fabric and remove what the node stored; it must be commissioned again |
+| `matter.log` | `[error\|info\|detail]` | Show or set how much of the Matter SDK's log is printed (default `info`) |
+
+```powershell
+ucxapp COM13 --exec "matter.start" --exec "matter.qr" --exec "matter.status"
+```
+
 ### MQTT
 
 | Command | Arguments | Description |

@@ -10,6 +10,9 @@
 
 #include <arpa/inet.h>
 #include <dirent.h>
+#ifndef __EMSCRIPTEN__
+#include <dlfcn.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -442,6 +445,65 @@ void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
         *(lastSlash + 1) = '\0';
     }
 }
+
+#ifdef __EMSCRIPTEN__
+bool ucxapp_platform_lib_file(const char *base, char *out, size_t size)
+{
+    (void)base;
+    (void)out;
+    (void)size;
+    return false;
+}
+
+void *ucxapp_platform_lib_open(const char *path)
+{
+    (void)path;
+    return NULL;
+}
+
+ucxapp_lib_fn_t ucxapp_platform_lib_symbol(void *lib, const char *name)
+{
+    (void)lib;
+    (void)name;
+    return NULL;
+}
+
+void ucxapp_platform_lib_close(void *lib)
+{
+    (void)lib;
+}
+#else
+bool ucxapp_platform_lib_file(const char *base, char *out, size_t size)
+{
+    char dir[PATH_MAX];
+
+    ucxapp_platform_exe_dir(dir, sizeof(dir));
+    snprintf(out, size, "%slib%s.so", dir, base);
+    return true;
+}
+
+void *ucxapp_platform_lib_open(const char *path)
+{
+    /* dlopen searches the library path for a bare name: only ever load the file that was asked for */
+    char full[PATH_MAX];
+
+    return realpath(path, full) != NULL ? dlopen(full, RTLD_NOW | RTLD_LOCAL) : NULL;
+}
+
+ucxapp_lib_fn_t ucxapp_platform_lib_symbol(void *lib, const char *name)
+{
+    ucxapp_lib_fn_t fn = NULL;
+
+    /* dlsym gives an object pointer; ISO C has no cast from it to a function pointer */
+    *(void **)(&fn) = dlsym(lib, name);
+    return fn;
+}
+
+void ucxapp_platform_lib_close(void *lib)
+{
+    dlclose(lib);
+}
+#endif
 
 static void readSysfsFile(const char *path, char *out, size_t outSize)
 {

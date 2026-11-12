@@ -120,6 +120,7 @@ static void disconnectModule(void)
     if (!gConnected) {
         return;
     }
+    ucxapp_matter_stop();
     ucxapp_events_deinit();
     uCxAtClientClose(&gAtClient);
     uCxAtClientDeinit(&gAtClient);
@@ -533,6 +534,7 @@ int main(int argc, char *argv[])
     ucxapp_register_net_cmds();
     ucxapp_register_sock_cmds();
     ucxapp_register_mdns_cmds();
+    ucxapp_register_matter_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_certfile_cmds();

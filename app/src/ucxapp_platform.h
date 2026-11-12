@@ -92,6 +92,14 @@ bool ucxapp_platform_location(double *lat, double *lon, double *alt);
 /** Directory of the running executable, with a trailing path separator. */
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize);
 
+/** Plug-in libraries (ucxapp_cmds_matter.c). lib_file: where the plug-in <base> belongs, next to the executable
+    (ucxmatter.dll, libucxmatter.so); false where plug-ins cannot be loaded. lib_open: NULL if it does not load. */
+typedef void (*ucxapp_lib_fn_t)(void);
+bool ucxapp_platform_lib_file(const char *base, char *out, size_t size);
+void *ucxapp_platform_lib_open(const char *path);
+ucxapp_lib_fn_t ucxapp_platform_lib_symbol(void *lib, const char *name);
+void ucxapp_platform_lib_close(void *lib);
+
 /**
  * Lists serial ports, sorted as the OS reports them.
  * @return number of entries written (at most maxPorts).

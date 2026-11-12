@@ -174,6 +174,15 @@ static const example_t kExamples[] = {
       "mdns.on\nmdns.add _matterc._udp 5540 A1B2C3D4E5F60718 VP=65521+32769 D=3840 CM=1 DT=257 DN=Light\n"
       "mdns.status\n# change a record later, then stop advertising\nmdns.txt 0 CM 0\nmdns.remove all" },
 
+#if UCXAPP_HOST
+    { "matter", "A Matter node on the module (needs the plug-in: ucxapp --matter --build)",
+      "matter.start\nmatter.qr\n# scan the code with the home app, then watch it join\nmatter.status\nconn.status" },
+    { "matter", "Act as the device: flip the light and trip the contact sensor from this side",
+      "matter.endpoints\nmatter.set light on\nmatter.set contact open\nmatter.set temp 23.5" },
+    { "matter", "Only some endpoints, more of the SDK's log, and a clean slate",
+      "matter.stop\nmatter.log detail\nmatter.start light temp\n# forget every fabric: the node must be commissioned again\nmatter.reset" },
+#endif
+
     { "mqtt", "Publish and subscribe on a public broker",
       "mqtt.connect\nmqtt.subscribe ucx/demo/#\nmqtt.publish ucx/demo/hello \"hi from NORA\"\nmqtt.read 10" },
     { "mqtt", "Own broker",

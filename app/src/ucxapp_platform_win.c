@@ -567,6 +567,37 @@ void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
     }
 }
 
+bool ucxapp_platform_lib_file(const char *base, char *out, size_t size)
+{
+    char dir[MAX_PATH];
+
+    ucxapp_platform_exe_dir(dir, sizeof(dir));
+    snprintf(out, size, "%s%s.dll", dir, base);
+    return true;
+}
+
+void *ucxapp_platform_lib_open(const char *path)
+{
+    char full[MAX_PATH];
+    DWORD n = GetFullPathNameA(path, sizeof(full), full, NULL);
+
+    if (n == 0 || n >= sizeof(full)) {
+        return NULL;
+    }
+    /* The DLLs it needs come from its own folder and the system, never from the current directory */
+    return (void *)LoadLibraryExA(full, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+}
+
+ucxapp_lib_fn_t ucxapp_platform_lib_symbol(void *lib, const char *name)
+{
+    return (ucxapp_lib_fn_t)GetProcAddress((HMODULE)lib, name);
+}
+
+void ucxapp_platform_lib_close(void *lib)
+{
+    FreeLibrary((HMODULE)lib);
+}
+
 static char *winHttpGet(const char *host, const char *path, bool binary, size_t *outSize)
 {
     wchar_t wHost[256];

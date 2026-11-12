@@ -106,6 +106,22 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/mbedtls.cmake)
 
+# Stand-in for the Matter plug-in (src/ucxapp_matter.h), built next to the app: the offline tests load it through
+# UCX_MATTER_PLUGIN. The real plug-in, ucxmatter, is built by "ucxapp --matter" from matter/.
+function(ucxapp_matter_stub)
+  add_library(ucxmatter_stub MODULE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/matter_stub/ucxmatter_stub.c)
+  target_include_directories(ucxmatter_stub PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  set_target_properties(ucxmatter_stub PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden
+                        LIBRARY_OUTPUT_DIRECTORY $<TARGET_FILE_DIR:ucxapp>)
+  if(MSVC)
+    target_compile_options(ucxmatter_stub PRIVATE /W4)
+    target_compile_definitions(ucxmatter_stub PRIVATE _CRT_SECURE_NO_WARNINGS)
+  else()
+    target_compile_options(ucxmatter_stub PRIVATE -Wall -Wextra)
+  endif()
+  add_dependencies(ucxapp ucxmatter_stub)
+endfunction()
+
 # Non-Windows hosts (Linux): command-line app built from the portable command layer only
 
 if(NOT WIN32)
@@ -187,6 +203,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_gnss.c
     src/ucxapp_cmds_imu.c
     src/ucxapp_cmds_ppk.c
+    src/ucxapp_cmds_matter.c
     src/ucxapp_cmds_hw.c
     src/ucxapp_hwcfg.c
     src/ucxapp_cmds_cell.c
@@ -251,6 +268,10 @@ if(NOT WIN32)
   )
 
   target_link_libraries(ucxapp PRIVATE Threads::Threads m ${UCXAPP_MBEDTLS_LIBS})
+  if(NOT EMSCRIPTEN)
+    target_link_libraries(ucxapp PRIVATE ${CMAKE_DL_LIBS})
+    ucxapp_matter_stub()
+  endif()
 
   # Browser build: build/wasm/site is a static web site (the page, the app as WebAssembly, Web Serial shim).
   if(EMSCRIPTEN)
@@ -363,6 +384,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_gnss.c
   src/ucxapp_cmds_imu.c
   src/ucxapp_cmds_ppk.c
+  src/ucxapp_cmds_matter.c
   src/ucxapp_cmds_hw.c
   src/ucxapp_hwcfg.c
   src/ucxapp_cmds_cell.c
@@ -413,6 +435,7 @@ target_include_directories(ucxapp PUBLIC
 )
 
 target_link_libraries(ucxapp PRIVATE setupapi psapi ws2_32 ${UCXAPP_MBEDTLS_LIBS})
+ucxapp_matter_stub()
 
 # Set different output names for Debug and Release builds
 set_target_properties(ucxapp PROPERTIES

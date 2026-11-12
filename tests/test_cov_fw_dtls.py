@@ -56,12 +56,12 @@ def _fw_module(modes, **identity):
                 conn.settimeout(0.1)
                 mode = self.modes.pop(0) if self.modes else "at"
                 if mode.startswith(("xmodem", "bootloader")):
+                    if mode == "xmodem-close":   # before the last ACK, or the app's reopen lands in the backlog
+                        self._listen.close()
                     if mode.startswith("bootloader"):
                         self.prompted = self._prompt(conn)
                     self._xmodem(conn, cancel=mode.endswith("-cancel"))
                     conn.close()
-                    if mode == "xmodem-close":
-                        self._listen.close()
                     continue
                 self._conn, buf = conn, b""
                 if mode == "startup":

@@ -33,6 +33,8 @@ extern "C" {
 #endif
 
 #include <mbedtls/version.h>
+#include <psa/crypto.h>
+#include <tf-psa-crypto/build_info.h>
 
 // One component of app.sbom (ucxapp_matter.h)
 #define UCXM_PART(name, version, licence, use, source) name " " version "  [" licence "]\n  " use "\n  " source "\n\n"
@@ -271,6 +273,12 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     }
     gHost    = host;
     gStarted = false;
+    // the node's crypto is PSA (the app's mbedTLS 4): ready before the setup codes are drawn; again is a no-op
+    if (psa_crypto_init() != PSA_SUCCESS)
+    {
+        Print("ERROR: the crypto library did not start (no random source)\n");
+        return UCXAPP_MATTER_ERR_FAILED;
+    }
     if (!BuildEndpoints(argc, argv))
     {
         return UCXAPP_MATTER_ERR_USAGE;
@@ -533,8 +541,10 @@ int Command(int argc, const char * const argv[])
 const char kSbom[] =
     UCXM_PART("Matter SDK", UCXM_SDK_VERSION " commit " UCXM_SDK_COMMIT, "Apache-2.0",
               "the Matter node of the plug-in ucxmatter (matter.*)", "https://github.com/project-chip/connectedhomeip")
-    UCXM_PART("mbedTLS (Matter SDK)", MBEDTLS_VERSION_STRING " commit " UCXM_MBEDTLS_COMMIT, "Apache-2.0",
-              "crypto of the Matter node", "https://github.com/Mbed-TLS/mbedtls")
+    UCXM_PART("mbedTLS (Matter node)", MBEDTLS_VERSION_STRING " commit " UCXM_MBEDTLS_COMMIT, "Apache-2.0",
+              "X.509 of the Matter node (the app's mbedTLS)", "https://github.com/Mbed-TLS/mbedtls")
+    UCXM_PART("TF-PSA-Crypto (Matter node)", TF_PSA_CRYPTO_VERSION_STRING, "Apache-2.0",
+              "PSA crypto of the Matter node (the app's mbedTLS)", "https://github.com/Mbed-TLS/TF-PSA-Crypto")
     UCXM_PART("Pigweed", "commit " UCXM_PIGWEED_COMMIT, "Apache-2.0", "support library of the Matter SDK",
               "https://pigweed.googlesource.com/pigweed/pigweed")
     UCXM_PART("nlassert", "commit " UCXM_NLASSERT_COMMIT, "Apache-2.0", "assertions of the Matter SDK",

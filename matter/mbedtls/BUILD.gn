@@ -1,0 +1,124 @@
+# mbedTLS 4 for the Matter node: the app's own third-party/mbedtls (one mbedTLS in the product, a supported
+# version) with the app's config (app/mbedtls_user_config.h) and its vendored generated files
+# (app/third-party/mbedtls-gen). The SDK's crypto uses it through its PSA backend (args.gni: chip_crypto = "psa").
+
+import("//build_overrides/build.gni")
+import("${build_root}/config/compiler/compiler.gni")
+
+_mbedtls = "../../third-party/mbedtls"
+_tf = "${_mbedtls}/tf-psa-crypto"
+_gen = "../../app/third-party/mbedtls-gen"
+
+config("mbedtls_config") {
+  include_dirs = [
+    "${_mbedtls}/include",
+    "${_tf}/include",
+    "${_tf}/drivers/builtin/include",
+    "${_tf}/drivers/everest/include",
+    "${_tf}/drivers/p256-m",
+    "${_tf}/drivers/pqcp/include",
+  ]
+
+  # Everything that includes an mbedTLS header must see the config the library was built with
+  defines = [ "TF_PSA_CRYPTO_USER_CONFIG_FILE=\"" +
+              rebase_path("../../app/mbedtls_user_config.h") + "\"" ]
+}
+
+config("mbedtls_private") {
+  # as mbedTLS's own CMake build: generated headers first, then the internal headers of every part
+  include_dirs = [
+    "${_gen}/library",
+    "${_gen}/tf-psa-crypto/core",
+    "${_mbedtls}/library",
+    "${_tf}/core",
+    "${_tf}/dispatch",
+    "${_tf}/extras",
+    "${_tf}/platform",
+    "${_tf}/utilities",
+    "${_tf}/drivers/builtin/src",
+    "${_tf}/drivers/pqcp/src",
+  ]
+  cflags = [
+    "-Wno-conversion",
+    "-Wno-sign-conversion",
+    "-Wno-undef",
+    "-Wno-unused-parameter",
+    "-Wno-missing-field-initializers",
+    "-Wno-implicit-fallthrough",
+    "-Wno-format-nonliteral",
+  ]
+  if (is_clang) {
+    cflags += [ "-Wno-shorten-64-to-32" ]
+  }
+}
+
+_files = exec_script("sources.py",
+                     [
+                       rebase_path(_mbedtls),
+                       "library",
+                       "tf-psa-crypto/core",
+                       "tf-psa-crypto/drivers/builtin/src",
+                       "tf-psa-crypto/extras",
+                       "tf-psa-crypto/platform",
+                       "tf-psa-crypto/utilities",
+                     ],
+                     "list lines")
+
+source_set("everest") {
+  sources = [
+    "${_tf}/drivers/everest/library/Hacl_Curve25519_joined.c",
+    "${_tf}/drivers/everest/library/x25519.c",
+  ]
+  include_dirs = [
+    "${_tf}/drivers/everest/include/tf-psa-crypto/private/everest",
+    "${_tf}/drivers/everest/include/tf-psa-crypto/private/everest/kremlib",
+  ]
+  configs += [ ":mbedtls_private" ]
+  public_configs = [ ":mbedtls_config" ]
+}
+
+source_set("pqcp") {
+  sources = rebase_path(exec_script("sources.py",
+                                    [
+                                      rebase_path("${_tf}/drivers/pqcp"),
+                                      "src",
+                                    ],
+                                    "list lines"),
+                        ".",
+                        "${_tf}/drivers/pqcp")
+  include_dirs = [ "${_tf}/drivers/pqcp/mldsa-native/mldsa" ]
+  configs += [ ":mbedtls_private" ]
+  public_configs = [ ":mbedtls_config" ]
+}
+
+static_library("mbedtls_lib") {
+  sources = rebase_path(_files, ".", _mbedtls)
+  sources += [
+    "${_gen}/library/error.c",
+    "${_gen}/library/ssl_debug_helpers_generated.c",
+    "${_gen}/library/version_features.c",
+    "${_gen}/tf-psa-crypto/core/psa_crypto_driver_wrappers_no_static.c",
+    "${_tf}/drivers/p256-m/p256-m/p256-m.c",
+    "${_tf}/drivers/p256-m/p256-m_driver_entrypoints.c",
+  ]
+  deps = [
+    ":everest",
+    ":pqcp",
+  ]
+  configs += [ ":mbedtls_private" ]
+  public_configs = [ ":mbedtls_config" ]
+  if (current_os == "win") {
+    libs = [ "bcrypt" ]   # the platform's random source (platform_util.c)
+  }
+  output_name = "libmbedtls"
+  output_dir = "${root_out_dir}/lib"
+}
+
+group("mbedtls") {
+  public_configs = [ ":mbedtls_config" ]
+
+  # in the browser the node is linked into the app, which brings this mbedTLS already
+  if (current_os != "emscripten") {
+    public_deps = [ ":mbedtls_lib" ]
+  }
+}

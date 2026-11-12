@@ -44,6 +44,11 @@
 
 // ==================== Memory Configuration ====================
 
+// The SHA-256 context is a psa_hash_operation_t of the app's mbedTLS 4 (chip_crypto = "psa"): a union of every hash
+// the app's config builds in (232 bytes on 64-bit), larger than the SDK's default for mbedTLS 2's SHA-256 alone
+#define CHIP_CONFIG_SHA256_CONTEXT_SIZE 256
+#define CHIP_CONFIG_SHA256_CONTEXT_ALIGN uint64_t
+
 #ifndef CHIP_CONFIG_MAX_UNSOLICITED_MESSAGE_HANDLERS
 #define CHIP_CONFIG_MAX_UNSOLICITED_MESSAGE_HANDLERS 8
 #endif

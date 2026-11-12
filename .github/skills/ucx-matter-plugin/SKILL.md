@@ -102,6 +102,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
 | `matter/platform/ucxclient/` | The Matter device layer from u-connectMatter: `BLEManagerImpl` (GATT service, advertising), `NetworkCommissioningDriver` (Wi-Fi scan and join for the commissioner), `UcxNetwork.cpp` (Wi-Fi state from the module's URCs, the UDP sockets and their data), `DnssdImpl` and `UcxMdns.cpp` (mDNS on the module), configuration and key-value store (through the app's sealed store, `UcxStore.h`), `PlatformManagerImpl` (the Matter thread). `UcxClientManager` here is a small facade: the handle, the URC queue and which URCs are the node's alone |
 | `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` |
+| `matter/mbedtls/` | The app's mbedTLS 4 (`third-party/mbedtls`, app config and `app/third-party/mbedtls-gen`) as gn target `//mbedtls`; the SDK's crypto uses it through its PSA backend (`chip_crypto = "psa"`, raw keystore). The SDK's own mbedTLS 2.28 (end of life) is never fetched |
 | `matter/patches/` | Whole Matter SDK files from u-connectMatter, copied over the SDK before every build |
 | `matter/compat/windows/` | POSIX headers the SDK includes and MinGW lacks |
 | `matter/tools/` | `gn.exe`, `ninja.exe` |
@@ -113,7 +114,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   through `storeSave`/`storeLoad` (sealed by the secure store as `matter.<name>.key`), never a plain file. The
   blob `factory` is what the node is made with (its setup codes): `matter.reset` (done by the app, not the
   plug-in) removes every blob but that one.
-  Random numbers come from the SDK's `Crypto::DRBG_get_bytes` (the system's entropy on a PC; a board needs its
+  Random numbers come from the SDK's `Crypto::DRBG_get_bytes` (`psa_generate_random` of the app's mbedTLS: the system's entropy on a PC; a board needs its
   hardware generator as the entropy source before the node may draw codes there).
 - The interface is versioned (`UCXAPP_MATTER_ABI`, now 4): raise it when a struct changes; add fields at the end.
 - Windows is the reference platform. Keep Linux (`.so`), STM32 (the same sources linked into the firmware, ucxapp

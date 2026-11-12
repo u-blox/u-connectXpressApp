@@ -87,14 +87,15 @@ NUCLEO-G071RB), whose 128 KB flash has no room for the message: this section is 
 
 The Matter node (`matter.*`) is the optional plug-in `ucxmatter.dll` / `libucxmatter.so`, built from `matter/`
 with the Matter SDK. It is not part of the app's releases; whoever builds and hands it on ships the components
-`app.sbom` lists for it (the plug-in reports them itself: Matter SDK, its mbedTLS, Pigweed, nlassert, nlio and on
+`app.sbom` lists for it (the plug-in reports them itself: Matter SDK, the mbedTLS and TF-PSA-Crypto it links, Pigweed, nlassert, nlio and on
 Windows the GCC and MinGW-w64 runtime, with versions and commits). The points below are pinned to tests in
 `tests/test_cra.py`.
 
 | Point | How the node meets it |
 |---|---|
 | Setup codes | Discriminator, passcode, SPAKE2+ salt and UniqueID are drawn at random the first time a node starts, never the SDK's test codes (3840, 20202021) and never from the module's address. A failed draw is an error: the node does not start, and there are no stand-in codes. `matter.reset all` draws new ones |
-| Random numbers | The Matter SDK's generator: CTR_DRBG of the SDK's mbedTLS, seeded by the operating system (`CryptGenRandom` on Windows, `getrandom()` on Linux). It also makes the session keys and the operational key pair |
+| Crypto library | The app's own mbedTLS 4 (`third-party/mbedtls`, built for the plug-in by `matter/mbedtls/BUILD.gn` with the app's config), through the SDK's PSA backend (`chip_crypto = "psa"`). The SDK's end-of-life mbedTLS 2.28 is neither fetched nor built, so one supported mbedTLS covers app and node |
+| Random numbers | `psa_generate_random` of that mbedTLS, seeded by the operating system (`BCryptGenRandom` on Windows, `getrandom()` on Linux), as for the app. It also makes the session keys and the operational key pair |
 | Stored secrets | Fabric keys and certificates, the Wi-Fi password a commissioner gave, the setup codes: all in the app's secure store (`matter.kvs.key`, `matter.config.key`, `matter.factory.key`), sealed as described under Secure store. The plug-in has no file access of its own |
 | Log and trace | The passcode is shown by `matter.status`, `matter.qr` and the card to the user who asks, and is in neither the log (`matter.log detail` included) nor an AT trace. The Wi-Fi password is hidden in the AT trace like the app's own |
 | Communication | Commissioning runs over PASE (SPAKE2+ with the passcode), everything after over CASE sessions with the fabric's certificates; AES-CCM on every message. The Bluetooth LE link itself is unpaired, as Matter defines it: the Matter session inside protects the data |
@@ -109,9 +110,8 @@ Limitations:
 - **Attestation certificates are the Matter SDK's test ones** (vendor 0xFFF1). Their private key is public, so
   attestation proves nothing and home apps show the node as a test device. A product needs its own vendor ID,
   DAC and PAI, with the DAC key in the secure store.
-- **The SDK's mbedTLS is 2.28**, the version the Matter SDK pins; `app.sbom` shows the exact one. It is a
-  long-term-support branch of its own, older than the app's mbedTLS: check it against the Mbed TLS security
-  advisories before handing a plug-in on.
+- **mbedTLS updates** reach the node with the app's: update `third-party/mbedtls` (and `app/third-party/mbedtls-gen`)
+  and rebuild both. `app.sbom` shows the version and commit the plug-in was built with.
 - **Key log builds.** `ucxapp --matter --keylog --build` makes a debug plug-in that writes the node's session
   keys to the file `UCX_KEYLOG_FILE` names, for Wireshark. `matter.status` and the log say `KEY LOG BUILD`.
   A plug-in built without `--keylog` contains no such code. Never hand a key log build on.

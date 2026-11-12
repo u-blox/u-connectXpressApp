@@ -21,6 +21,7 @@
  */
 
 #include "CHIPCryptoPAL.h"
+#include <crypto/CryptoBuildConfig.h>
 
 #include "SessionKeystore.h"
 
@@ -1323,11 +1324,13 @@ CHIP_ERROR P256Keypair::HazardousOperationLoadKeypairFromRaw(ByteSpan private_ke
 // u-connect-matter patch: MinGW/PE does not honor __attribute__((weak)) in static
 // archives, causing undefined references at link. These are the default
 // implementations (mbedTLS backend does not override them), so make them strong.
+#if !CHIP_CRYPTO_PSA // the PSA backend defines its own
 CHIP_ERROR P256Keypair::InitializeFromBitsOrReject(FixedByteSpan<kP256_PrivateKey_Length> privateKeyBits)
 {
     IgnoreUnusedVariable(privateKeyBits);
     return CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE;
 }
+#endif
 
 CHIP_ERROR P256Keypair::ECDSA_sign_msg_det(const uint8_t * msg, size_t msg_length,
                                            P256ECDSASignature & out_signature) const

@@ -1444,10 +1444,12 @@ def emsdk_env(required=True):
 def wasm_build():
     emsdk_env()
     require("ninja", "Install Ninja (winget install Ninja-build.Ninja)")
+    # the Matter node is linked in when it has been built for the browser (--wasm --matter)
+    node = MATTER_WASM_LIB.as_posix() if MATTER_WASM_LIB.exists() else ""
     check([shutil.which("emcmake"), "cmake", "-S", "app", "-B", WASM_DIR, "-G", "Ninja",
-           "-DCMAKE_BUILD_TYPE=Release"], "emcmake")
+           "-DCMAKE_BUILD_TYPE=Release", f"-DUCXAPP_MATTER_LIB={node}"], "emcmake")
     check(["cmake", "--build", WASM_DIR], "WebAssembly build")
-    print("Built", (WASM_DIR / "site").relative_to(ROOT))
+    print("Built", (WASM_DIR / "site").relative_to(ROOT), "with the Matter node" if node else "")
 
 
 def wasm_server(site, port):
@@ -1487,8 +1489,14 @@ def wasm(args, extra):
     if args.clean or args.rebuild:
         shutil.rmtree(WASM_DIR, ignore_errors=True)
         print("Cleaned", WASM_DIR.relative_to(ROOT))
+        if args.matter:
+            shutil.rmtree(MATTER_WASM, ignore_errors=True)
+            print("Cleaned", MATTER_WASM.relative_to(ROOT))
+    if args.matter and (args.build or args.rebuild or not args.clean):
+        matter_wasm_build()
     page = max(f.stat().st_mtime for f in [ROOT / "app" / "web" / "index.html", *(ROOT / "app" / "wasm").iterdir(),
-                                           *(ROOT / "app" / "web" / "public").iterdir()])
+                                           *(ROOT / "app" / "web" / "public").iterdir(),
+                                           *([MATTER_WASM_LIB] if MATTER_WASM_LIB.exists() else [])])
     built = site / "ucxapp.wasm"
     if args.build or args.rebuild or (not args.clean and (not built.exists()
                                                          or max(newest_source(), page) > built.stat().st_mtime)):
@@ -1503,8 +1511,13 @@ def wasm(args, extra):
 MATTER_DIR = ROOT / "matter"
 MATTER_SDK = MATTER_DIR / "connectedhomeip"
 MATTER_BUILD = ROOT / "build" / "matter"
+# The node for the browser ("ucxapp --wasm --matter"): a static library and the list of its C names
+MATTER_WASM = ROOT / "build" / "matter-wasm"
+MATTER_WASM_LIB = MATTER_WASM / "libucxmatter.a"
+MATTER_WASM_SYMBOLS = MATTER_DIR / "compat" / "wasm" / "ucxm_symbols.h"
 # The SDK's own submodules the plug-in builds with (pigweed with its submodules); the rest is never fetched.
-MATTER_SDK_PARTS = ("mbedtls", "nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
+# Not its mbedTLS: the node uses the app's (third-party/mbedtls, matter/mbedtls/BUILD.gn).
+MATTER_SDK_PARTS = ("nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
 MATTER_MODEL = MATTER_DIR / "data_model" / "ucxmatter.zap"
 MINGW_DIRS = (r"C:\msys64\ucrt64\bin", r"C:\msys64\mingw64\bin", r"C:\mingw64\bin", r"C:\mingw-w64\mingw64\bin")
 
@@ -1615,43 +1628,96 @@ def matter_zap():
     print("Generated", out.relative_to(ROOT))
 
 
+def matter_ninja(out, gn_args, cflags, env, what):
+    """gn (when its arguments changed) and ninja for the node in the build folder out."""
+    gn, ninja = matter_tool("gn"), matter_tool("ninja")
+    python = matter_python()   # ninja runs the SDK's build scripts with it too
+    sdk = git_out("-C", str(MATTER_SDK), "describe", "--tags", "--always") or "unknown"
+    # the data model code is checked in next to its .zap file (matter_zap), which is where the SDK looks with
+    # its own folder as the directory of pre-generated code
+    gn_args = f'ucxm_sdk_version="{sdk}" chip_code_pre_generated_directory="{MATTER_SDK.as_posix()}" {gn_args}'
+    # what the plug-in is made of, for app.sbom: the commits of the SDK and of its parts that are linked in
+    for name, repo in (("sdk", MATTER_SDK), ("mbedtls", ROOT / "third-party" / "mbedtls"),
+                       *((p, MATTER_SDK / "third_party" / p / "repo") for p in ("pigweed", "nlassert", "nlio"))):
+        commit = git_out("-C", str(repo), "rev-parse", "--short=12", "HEAD") or "unknown"
+        gn_args += f' ucxm_{name}_commit="{commit}"'
+    gn_args += f" target_cflags={json.dumps(cflags)}"
+    stamp = out / "ucxapp_args.txt"
+    if not (out / "build.ninja").exists() or not stamp.exists() or stamp.read_text() != gn_args:
+        check([gn, "gen", out, f"--root={MATTER_DIR}", f"--script-executable={python}", f"--args={gn_args}"],
+              "gn", env=env)
+        stamp.write_text(gn_args)
+    check([ninja, "-C", out, "ucxmatter"], what, env=env)
+
+
 def matter_build(keylog=False):
     matter_fetch()
     matter_patch()
-    gn, ninja, env = matter_tool("gn"), matter_tool("ninja"), matter_env()
-    python = matter_python()   # ninja runs the SDK's build scripts with it too
-    sdk = git_out("-C", str(MATTER_SDK), "describe", "--tags", "--always") or "unknown"
     # for every SDK source: it tests macros of platforms this build does not have, and its log callback type
     # carries a format attribute that std::atomic<> cannot keep
     cflags = ["-Wno-undef", "-Wno-ignored-attributes"]
     if keylog:
         cflags.append("-DUCX_KEYLOG=1")   # matter/patches/src/crypto/RawKeySessionKeystore.cpp
-    # the data model code is checked in next to its .zap file (matter_zap), which is where the SDK looks with
-    # its own folder as the directory of pre-generated code
-    gn_args = f'ucxm_sdk_version="{sdk}" chip_code_pre_generated_directory="{MATTER_SDK.as_posix()}"'
-    # what the plug-in is made of, for app.sbom: the commits of the SDK and of its parts that are linked in
-    for name, repo in (("sdk", MATTER_SDK), *((p, MATTER_SDK / "third_party" / p / "repo")
-                                               for p in ("mbedtls", "pigweed", "nlassert", "nlio"))):
-        commit = git_out("-C", str(repo), "rev-parse", "--short=12", "HEAD") or "unknown"
-        gn_args += f' ucxm_{name}_commit="{commit}"'
+    gn_args = ""
     if IS_WINDOWS:
         # matter/compat/windows: the POSIX headers the SDK includes and MinGW lacks, for every SDK source
         compat = Path(os.path.relpath(MATTER_DIR / "compat" / "windows", MATTER_BUILD)).as_posix()
         cflags.append(f"-I{compat}")
-        gn_args += ' target_os="win" target_cpu="x64"'
-    gn_args += f" target_cflags={json.dumps(cflags)}"
-    stamp = MATTER_BUILD / "ucxapp_args.txt"
-    if not (MATTER_BUILD / "build.ninja").exists() or not stamp.exists() or stamp.read_text() != gn_args:
-        check([gn, "gen", MATTER_BUILD, f"--root={MATTER_DIR}", f"--script-executable={python}",
-               f"--args={gn_args}"], "gn", env=env)
-        stamp.write_text(gn_args)
-    check([ninja, "-C", MATTER_BUILD, "ucxmatter"], "Matter plug-in build", env=env)
+        gn_args = 'target_os="win" target_cpu="x64"'
+    matter_ninja(MATTER_BUILD, gn_args, cflags, matter_env(), "Matter plug-in build")
     built = MATTER_BUILD / matter_plugin().name
     plugin = matter_plugin()
     if not plugin.exists() or plugin.stat().st_mtime < built.stat().st_mtime:
         BIN.mkdir(exist_ok=True)
         shutil.copy2(built, plugin)
     print("Built", plugin.relative_to(ROOT))
+
+
+def matter_wasm_names(lib):
+    """The C names (functions and data, nothing C++ mangles) the node's library defines."""
+    out = subprocess.run([shutil.which("emnm"), "--defined-only", "--extern-only", "--format=just-symbols",
+                          str(lib)], capture_output=True, text=True)
+    if out.returncode != 0:
+        fail(f"emnm {lib.name} failed: {out.stderr.strip()}")
+    return {n for n in out.stdout.split() if re.fullmatch(r"[A-Za-z]\w*", n)}
+
+
+def matter_wasm_build():
+    """The node for the browser, build/matter-wasm/libucxmatter.a: the plug-in's sources and the Matter SDK built
+    by Emscripten, for the app's WebAssembly build to link in (a browser loads no library at run time).
+    The node uses the app's mbedTLS (the same source and config, linked once). The app has a u-connectXpress API
+    of its own, of another version: every C name the node defines
+    gets the prefix ucxm_ (matter/compat/wasm/ucxm_symbols.h, included into every source), so that neither side
+    ever calls the other's code. The list is checked in; it is brought up to date here when the node's names
+    changed, and the node then builds once more."""
+    emsdk_env()
+    matter_fetch()
+    matter_patch()
+    tools = {n: Path(shutil.which(n)).as_posix() for n in ("emcc", "em++", "emar")}
+    gn_args = ('custom_toolchain="custom" target_os="emscripten" target_cpu="wasm32" is_clang=true '
+               f'target_cc="{tools["emcc"]}" target_cxx="{tools["em++"]}" target_ar="{tools["emar"]}"')
+    # threads in the browser are shared memory: every object must be built for it
+    cflags = ["-pthread", "-include", Path(os.path.relpath(MATTER_WASM_SYMBOLS, MATTER_WASM)).as_posix()]
+    for final in (False, True):
+        matter_ninja(MATTER_WASM, gn_args, cflags, dict(os.environ), "Matter node build for the browser")
+        defined = matter_wasm_names(MATTER_WASM_LIB)
+        new = {n for n in defined if not n.startswith("ucxm")}
+        known = set(re.findall(r"^#define (\w+) ucxm_\1$", MATTER_WASM_SYMBOLS.read_text(encoding="ascii"), re.M))
+        # a name the node no longer defines must lose its prefix, or the node calls a ucxm_ name nobody has
+        stale = {n for n in known if "ucxm_" + n not in defined}
+        if not new and not stale:
+            break
+        if final:
+            fail(f"the node's names do not match {MATTER_WASM_SYMBOLS.name}: "
+                 f"{', '.join(sorted(new | stale)[:8])}")
+        names = sorted(new | (known - stale))
+        head, _, tail = MATTER_WASM_SYMBOLS.read_text(encoding="ascii").partition("#define UCXM_SYMBOLS_H\n")
+        MATTER_WASM_SYMBOLS.write_text(head + "#define UCXM_SYMBOLS_H\n\n"
+                                       + "".join(f"#define {n} ucxm_{n}\n" for n in names)
+                                       + "\n#endif /* UCXM_SYMBOLS_H */\n", encoding="ascii", newline="\n")
+        print(f"{MATTER_WASM_SYMBOLS.relative_to(ROOT)}: {len(new)} new and {len(stale)} stale name(s), "
+              f"{len(names)} in all; building the node with them (commit the file)", flush=True)
+    print("Built", MATTER_WASM_LIB.relative_to(ROOT))
 
 
 def matter(args, extra):

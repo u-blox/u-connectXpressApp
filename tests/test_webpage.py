@@ -555,7 +555,9 @@ def test_connections_view_keeps_every_node_on_screen(server):
         assert page.evaluate("CN.auto") == 1
         size = page.evaluate("[CN.vb[2], CN.vb[3]]")
         assert size[0] >= 1075 and size[1] >= 625, size   # never closer than the default view
-        page.wait_for_timeout(1500)   # and stays in view once the layout has settled
+        # and stays in view once the layout has settled; the layout steps per frame, so wait frames, not seconds
+        page.evaluate("() => new Promise(r => { let k = 90; const f = () => --k ? requestAnimationFrame(f) : r();"
+                      " requestAnimationFrame(f) })")
         assert page.evaluate(ALL_IN_VIEW)
         # the layout settles instead of exploding (pushes of 500+ before), and a node on its Channel Sounding ring
         # slides along it instead of piling up push it cannot follow

@@ -1,6 +1,7 @@
-# The mbedTLS the Matter SDK brings along, inside the plug-in only: the app itself links its own mbedTLS 4.
+# The mbedTLS of the Matter node: the app's own mbedTLS 4 (third-party/mbedtls), built by //mbedtls, so the
+# product carries one supported mbedTLS and not the SDK's end-of-life 2.28.
 
 declare_args() {
-  mbedtls_root = "//connectedhomeip/third_party/mbedtls"
-  mbedtls_repo = "//connectedhomeip/third_party/mbedtls"
+  mbedtls_root = "//mbedtls"
+  mbedtls_repo = "//../third-party/mbedtls"
 }

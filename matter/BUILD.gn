@@ -1,5 +1,7 @@
 # The Matter plug-in of u-connectXpressApp: ucxmatter.dll / libucxmatter.so, loaded by the app's matter.* commands
 # (app/src/ucxapp_matter.h). Built by "ucxapp --matter"; the Matter SDK in connectedhomeip/ is used as it is.
+# For the browser ("ucxapp --wasm --matter", Emscripten) it is the static library libucxmatter.a, which the
+# app's WebAssembly build links in: a browser loads no library at run time.
 
 import("//build_overrides/chip.gni")
 import("//build_overrides/pigweed.gni")
@@ -83,7 +85,13 @@ chip_data_model("ucxmatter-data-model") {
   is_server = true
 }
 
-shared_library("ucxmatter") {
+if (current_os == "emscripten") {
+  _ucxmatter_type = "static_library"
+} else {
+  _ucxmatter_type = "shared_library"
+}
+
+target(_ucxmatter_type, "ucxmatter") {
   sources = [
     "src/UbloxCommissionableDataProvider.cpp",
     "src/UbloxCommissionableDataProvider.h",
@@ -125,6 +133,11 @@ shared_library("ucxmatter") {
 
     # One file next to the app: the GCC runtime is linked in, only Windows' own DLLs are needed
     ldflags = [ "-static" ]
+  }
+  if (current_os == "emscripten") {
+    # One archive with the SDK's objects in it, for the app's link
+    complete_static_lib = true
+    output_name = "libucxmatter"
   }
 }
 

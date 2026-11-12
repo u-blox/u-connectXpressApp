@@ -127,6 +127,20 @@ def test_matter_setup_codes_come_only_from_the_random_generator():
     assert "## Matter node" in doc and "matter.factory.key" in doc and "--keylog" in doc, "docs/SECURITY.md"
 
 
+def test_matter_node_uses_the_apps_mbedtls():
+    # one supported mbedTLS for app and node, never the SDK's end-of-life 2.28 (its submodule is not even fetched)
+    matter = TESTS.parent / "matter"
+    args = (matter / "args.gni").read_text(encoding="utf-8")
+    assert re.search(r'^chip_crypto = "psa"$', args, re.M), "args.gni: chip_crypto"
+    assert re.search(r'^\s*mbedtls_root = "//mbedtls"$',
+                     (matter / "build_overrides" / "mbedtls.gni").read_text(encoding="utf-8"), re.M)
+    build = (matter / "mbedtls" / "BUILD.gn").read_text(encoding="utf-8")
+    assert '"../../third-party/mbedtls"' in build and "app/mbedtls_user_config.h" in build, build
+    launcher = (TESTS.parent / "ucxapp.py").read_text(encoding="utf-8")
+    parts = re.search(r"^MATTER_SDK_PARTS = \((.*)\)$", launcher, re.M).group(1)
+    assert "mbedtls" not in parts, parts
+
+
 @pytest.mark.app
 def test_sbom_lists_every_component(app_exe, tmp_path):
     out = subprocess.run([str(app_exe), "COM255", "--exec", "app.sbom"], capture_output=True, text=True, timeout=30,

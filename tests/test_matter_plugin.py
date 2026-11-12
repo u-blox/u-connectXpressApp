@@ -194,8 +194,13 @@ def test_sbom_lists_the_matter_sdk_and_its_parts(app_exe, module, plugin, tmp_pa
     blocks = dict(re.findall(r"^(\S.*?)  \[(.+?)\]\n  .+\n  https://\S+$", out.stdout, re.M))
     sdk = next(name for name in blocks if name.startswith("Matter SDK "))
     assert re.fullmatch(r"Matter SDK v\d+\.\d+\.\d+\.\d+ commit [0-9a-f]{12}", sdk), sdk
-    tls = next(name for name in blocks if name.startswith("mbedTLS (Matter SDK) "))
-    assert re.fullmatch(r"mbedTLS \(Matter SDK\) \d+\.\d+\.\d+ commit [0-9a-f]{12}", tls), tls
+    # the node runs on the app's own mbedTLS 4, never the SDK's end-of-life 2.28 (CRA)
+    tls = next(name for name in blocks if name.startswith("mbedTLS (Matter node) "))
+    m = re.fullmatch(r"mbedTLS \(Matter node\) (\d+)\.\d+\.\d+ commit [0-9a-f]{12}", tls)
+    assert m and int(m.group(1)) >= 4, tls
+    app_tls = re.search(r"^mbedTLS (\d+\.\d+\.\d+)  \[", out.stdout, re.M)
+    assert app_tls and tls.split()[3] == app_tls.group(1), out.stdout
+    assert any(name.startswith("TF-PSA-Crypto (Matter node) ") for name in blocks), out.stdout
     for part in ("Pigweed", "nlassert", "nlio"):
         assert any(re.fullmatch(rf"{part} commit [0-9a-f]{{12}}", name) for name in blocks), (part, out.stdout)
     if os.name == "nt":   # linked into the DLL; on Linux they are the system's

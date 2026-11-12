@@ -8,8 +8,9 @@
 
 namespace ucxm {
 
-// Filled by NodeStart. Discriminator and passcode are the module's own, derived from its address; vendor and
-// product are what the node advertises and reports.
+// Filled by NodeStart. Discriminator and passcode are the node's own, drawn at random on its first start and
+// kept in the store (UbloxCommissionableDataProvider.h); vendor and product are what the node advertises and
+// reports.
 struct NodeSetup
 {
     uint16_t vendorId;
@@ -18,13 +19,23 @@ struct NodeSetup
     uint32_t passcode;
 };
 
+// What the module says about itself, for the Basic Information cluster; "" where it says nothing
+struct NodeModule
+{
+    const char * macSuffix; // the last three bytes of its Bluetooth address as six hex digits
+    const char * model;     // "NORA-W36"
+    const char * typeCode;  // "NORA-W361-00B"
+    const char * serial;
+    const char * firmware;  // "3.5.0-120"
+};
+
 // One line for the app's Events pane; called on the Matter thread
 typedef void (*NodeEvent)(const char * line);
 
 // Brings the Matter server up on the module; without a fabric it opens a commissioning window and advertises.
-// macSuffix: the last three bytes of the module's Bluetooth address as six hex digits; wifi: the module has Wi-Fi,
-// the network a commissioner then gives the node. nullptr when the node runs, else what failed.
-const char * NodeStart(const char * macSuffix, bool wifi, NodeEvent event, NodeSetup & setup);
+// wifi: the module has Wi-Fi, the network a commissioner then gives the node. nullptr when the node runs, else
+// what failed.
+const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, NodeSetup & setup);
 void NodeStop();
 
 // On the AT client's thread: queues the URC for the Matter thread. True when it is the node's alone.
@@ -35,7 +46,9 @@ int NodeLinks();   // Bluetooth LE links to the node
 int NodeFabrics(); // 0: not commissioned
 bool NodeWindowOpen();
 bool NodeOpenWindow(unsigned seconds = 900); // commissioning window, 180 to 900 s; false when the node refuses
-void NodeForget();     // drops every fabric and what the node holds for its store; it is commissionable again
+// Drops every fabric and what the node holds for its store; it is commissionable again, with new setup codes
+// (then in setup) when newCodes. False when the node made no new codes or opened no window.
+bool NodeForget(bool newCodes, NodeSetup & setup);
 void NodeNetwork(char * out, size_t size); // one line for matter.status: the node's network on the module
 
 // The node for the live card, without waiting for the Matter thread: false when that thread is busy (the caller

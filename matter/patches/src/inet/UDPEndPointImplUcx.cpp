@@ -784,6 +784,7 @@ static CHIP_ERROR DoSyncSend(uCxHandle_t * ucxHandle,
 
     // Send via ucxclient with retry on transient NORA-W36 errors.
     int32_t result = -1;
+    uint32_t sendStartMs = 0;
     for (int32_t attempt = 0; attempt <= kMaxSendRetries; attempt++)
     {
         if (attempt > 0)
@@ -796,12 +797,14 @@ static CHIP_ERROR DoSyncSend(uCxHandle_t * ucxHandle,
             chip::Platform::SleepMs(kRetryDelayMs);
         }
 
+        sendStartMs = chip::Platform::GetTickMs();
         result = uCxSocketSendTo(ucxHandle, socket, &destAddr, destPort,
                                  data, dataLen);
 
         if (result >= 0)
             break;  // Success
     }
+    const uint32_t sendTookMs = chip::Platform::GetTickMs() - sendStartMs;
 
     sTxPacketCount++;
 
@@ -831,7 +834,11 @@ static CHIP_ERROR DoSyncSend(uCxHandle_t * ucxHandle,
     // Reliability duplicate for large packets (Sigma2/Sigma3/large ReportData).
     // See the big comment block at the top of this file. Failure of the
     // duplicate is non-fatal — the original send already succeeded.
-    if (dataLen > kLargePacketThreshold)
+    // u-connectXpressApp: only where it is the cheap insurance that comment counts on. At 115200 baud a 1.2 kB
+    // report takes 110 ms on the UART; its copy kept the AT client from the app's own commands for as long
+    // again, and the peer's acknowledgement waited behind it. MRP repeats a lost message there.
+    static constexpr uint32_t kDupMaxSendMs = 40;
+    if (dataLen > kLargePacketThreshold && sendTookMs <= kDupMaxSendMs)
     {
         // Brief gap so NORA-W36's WiFi MAC has time to push the first frame
         // out of its TX descriptor ring before the duplicate hits it.

@@ -15,6 +15,7 @@
 #include <platform/DeviceInstanceInfoProvider.h>
 #include <platform/internal/BLEManager.h>
 
+#include <platform/ucxclient/BLEManagerImpl.h>
 #include <platform/ucxclient/DeviceInstanceInfoProviderImpl.h>
 #include <platform/ucxclient/KeyValueStoreManagerImpl.h>
 #include <platform/ucxclient/NetworkCommissioningDriver.h>
@@ -27,6 +28,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <string>
 #include <thread>
 
 using namespace chip;
@@ -167,9 +169,36 @@ const char * ServerStart()
     return nullptr;
 }
 
+// The codes of gCommissionableData, for the caller and for what the platform files read (DeviceConfig.h)
+void SetupTake(NodeSetup & setup)
+{
+    ucxmatter::DeviceConfig & config = ucxmatter::GetDeviceConfig();
+    char unique[2 * ucxmatter::UbloxCommissionableDataProvider::kUniqueIdLen + 1];
+
+    gCommissionableData.UniqueId(unique, sizeof(unique));
+    setup.discriminator  = gCommissionableData.Discriminator();
+    setup.passcode       = gCommissionableData.Passcode();
+    config.discriminator = setup.discriminator;
+    config.uniqueId      = unique;
+}
+
+// "3.5.0-120" as 0x03050078: a newer firmware has the larger number
+uint32_t FirmwareNumber(const char * text)
+{
+    unsigned part[4] = { 0, 0, 0, 0 };
+    uint32_t number  = 0;
+
+    (void) sscanf(text, "%u.%u.%u-%u", &part[0], &part[1], &part[2], &part[3]);
+    for (unsigned p : part)
+    {
+        number = (number << 8) | (p < 255 ? p : 255);
+    }
+    return number != 0 ? number : 1;
+}
+
 } // namespace
 
-const char * NodeStart(const char * macSuffix, bool wifi, NodeEvent event, NodeSetup & setup)
+const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, NodeSetup & setup)
 {
     ucxmatter::DeviceConfig & config = ucxmatter::GetDeviceConfig();
     const char * failed;
@@ -180,23 +209,30 @@ const char * NodeStart(const char * macSuffix, bool wifi, NodeEvent event, NodeS
     {
         return "the Matter SDK got no memory";
     }
-    if (gCommissionableData.Init(macSuffix) != CHIP_NO_ERROR)
+    if (gCommissionableData.Init() != CHIP_NO_ERROR)
     {
-        return "the Matter SDK made no passcode verifier";
+        return "the Matter SDK made no setup codes (no random numbers, or no passcode verifier)";
     }
     SetCommissionableDataProvider(&gCommissionableData);
     SetDeviceInstanceInfoProvider(&DeviceInstanceInfoProviderMgrImpl());
-    setup.discriminator = gCommissionableData.Discriminator();
-    setup.passcode      = gCommissionableData.Passcode();
+    SetupTake(setup);
     if (GetDeviceInstanceInfoProvider()->GetVendorId(setup.vendorId) != CHIP_NO_ERROR ||
         GetDeviceInstanceInfoProvider()->GetProductId(setup.productId) != CHIP_NO_ERROR)
     {
         return "the Matter SDK gave no vendor and product";
     }
-    config.macSuffix     = macSuffix;
-    config.vendorId      = setup.vendorId;
-    config.productId     = setup.productId;
-    config.discriminator = setup.discriminator;
+    config.macSuffix = module.macSuffix;
+    config.vendorId  = setup.vendorId;
+    config.productId = setup.productId;
+    // Basic Information: the module is the node's hardware and its firmware the node's software
+    config.serialNumber          = std::string(module.serial).substr(0, 32);
+    config.partNumber            = std::string(module.typeCode).substr(0, 32);
+    config.hardwareVersionString = config.partNumber.empty() ? std::string(module.model).substr(0, 64) : config.partNumber;
+    if (module.firmware[0] != '\0')
+    {
+        config.softwareVersionString = std::string(module.firmware).substr(0, 64);
+        config.softwareVersion       = FirmwareNumber(module.firmware);
+    }
 
     // Defines the Matter service on the module's GATT server
     if (PlatformMgr().InitChipStack() != CHIP_NO_ERROR)
@@ -304,14 +340,19 @@ bool NodeOpenWindow(unsigned seconds)
         window.OpenBasicCommissioningWindow(System::Clock::Seconds16(static_cast<uint16_t>(seconds))) == CHIP_NO_ERROR;
 }
 
-void NodeForget()
+bool NodeForget(bool newCodes, NodeSetup & setup)
 {
     {
         StackLock lock;
 
         if (!gServerUp)
         {
-            return;
+            return false;
+        }
+        if (newCodes)
+        {
+            // An open window still pairs with the old passcode
+            Server::GetInstance().GetCommissioningWindowManager().CloseCommissioningWindow();
         }
         Server::GetInstance().GetFabricTable().DeleteAllFabrics();
         ConfigurationMgr().InitiateFactoryReset(); // clears the store and its copies in memory, not the module
@@ -320,8 +361,17 @@ void NodeForget()
             // Its network went with the store; the module stays on the Wi-Fi it has, that is the user's
             (void) WiFiDriver::GetInstance().RevertConfiguration();
         }
+        if (newCodes)
+        {
+            if (gCommissionableData.Init(true) != CHIP_NO_ERROR)
+            {
+                return false;
+            }
+            SetupTake(setup);
+            Internal::BLEManagerImpl::sInstance.RefreshAdvertisement(); // it has the old discriminator
+        }
     }
-    (void) NodeOpenWindow();
+    return NodeOpenWindow();
 }
 
 // With the stack lock

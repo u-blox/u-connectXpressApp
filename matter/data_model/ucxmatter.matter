@@ -1716,6 +1716,11 @@ endpoint 0 {
     callback attribute hardwareVersionString;
     callback attribute softwareVersion;
     callback attribute softwareVersionString;
+    callback attribute partNumber;
+    callback attribute productURL;
+    callback attribute productLabel;
+    callback attribute serialNumber;
+    callback attribute uniqueID;
     callback attribute capabilityMinima;
     callback attribute featureMap;
     callback attribute clusterRevision;

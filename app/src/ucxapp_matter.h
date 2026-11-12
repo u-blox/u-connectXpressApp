@@ -62,7 +62,8 @@ typedef struct {
     void (*log)(int level, const char *line);   /* one line without newline; shown up to the level of matter.log */
     void (*event)(const char *line);            /* one line for the Events pane */
     void (*qr)(const char *payload);            /* draws the payload as a QR code */
-    /* Named blobs (a to z, 0 to 9, at most 16 characters) in the host's secure store, sealed on disk. */
+    /* Named blobs (a to z, 0 to 9, at most 16 characters) in the host's secure store, sealed on disk.
+     * "factory" is what the node is made with (its setup codes): matter.reset removes every blob but that one. */
     bool (*storeSave)(const char *name, const void *data, size_t length);
     int32_t (*storeLoad)(const char *name, void *buffer, size_t size);   /* length stored, -1 if there is none */
     bool (*storeRemove)(const char *name);
@@ -81,7 +82,8 @@ typedef struct {
      * and return, AT commands belong on the plug-in's own thread. True when the URC is the node's alone (a write
      * to its GATT characteristic, data on its socket): the app's own handlers then do not see it. */
     bool (*urc)(char *line, size_t length, const uint8_t *binary, size_t binaryLength);
-    /* matter.<argv[0]> with its arguments (status, endpoints, set, qr, open, reset); prints with host->print. */
+    /* matter.<argv[0]> with its arguments (status, endpoints, set, qr, open, reset [all]); prints with
+     * host->print. */
     int (*command)(int argc, const char *const argv[]);
     /* The node for the app's live card (matter.card, the web page): lines "TAG   value" with a tag of 2 to 5
      * capitals, '\n' between them; returns the length. An endpoint is "EP    <id> <name> = <value>  [<what

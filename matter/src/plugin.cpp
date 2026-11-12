@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 #include "endpoints.h"
 #include "node.h"
@@ -38,7 +39,11 @@ using namespace ucxm;
 const ucxapp_matter_host_t * gHost;
 uCxHandle_t * gUcx;
 Onboarding gOnboarding;
+std::mutex gCodesLock; // gOnboarding, between the card's thread and matter.reset all
 char gModel[32];
+char gType[40];
+char gSerial[40];
+char gFirmware[40];
 const char * gNetwork;
 bool gStarted;
 std::atomic<bool> gCardReady{ false };
@@ -144,6 +149,39 @@ void ShowCodes()
     Print("QR payload: %s\n", gOnboarding.qr);
 }
 
+// QR and manual code for the node's setup codes
+bool TakeSetup(const NodeSetup & setup)
+{
+    Onboarding codes = Onboarding();
+
+    codes.vendorId      = setup.vendorId;
+    codes.productId     = setup.productId;
+    codes.passcode      = setup.passcode;
+    codes.discriminator = setup.discriminator;
+    if (!OnboardingCodes(codes))
+    {
+        Print("ERROR: the Matter SDK made no setup codes\n");
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(gCodesLock);
+
+    gOnboarding = codes;
+    return true;
+}
+
+// One text answer of the module; "" when it gives none
+void Ask(bool (*begin)(uCxHandle_t *, const char **), char * out, size_t size)
+{
+    const char * text = nullptr;
+
+    out[0] = '\0';
+    if (begin(gUcx, &text) && text != nullptr)
+    {
+        snprintf(out, size, "%s", text);
+    }
+    (void) uCxEnd(gUcx);
+}
+
 size_t CardLine(char * out, size_t size, size_t n, const char * format, ...)
 {
     va_list args;
@@ -191,8 +229,12 @@ size_t Card(char * out, size_t size)
     n = CardLine(out, size, n, "BLE   %s\nWIN   %s\nNET   %s\n",
                  gCardState.links > 0 ? "link up" : gCardState.advertising ? "advertising" : "off",
                  gCardState.windowOpen ? "open" : "closed", gCardState.network);
-    ManualText(text, sizeof(text));
-    n = CardLine(out, size, n, "CODE  %s\nQR    %s\n", text, gOnboarding.qr);
+    {
+        std::lock_guard<std::mutex> lock(gCodesLock);
+
+        ManualText(text, sizeof(text));
+        n = CardLine(out, size, n, "CODE  %s\nQR    %s\n", text, gOnboarding.qr);
+    }
     for (int i = 0; i < EndpointCount(); i++)
     {
         const Endpoint & e = EndpointAt(i);
@@ -252,11 +294,17 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     // An advertisement the module still runs (bt.adv, a profile) would keep its own data; no error if there is none
     (void) uCxBluetoothLegacyAdvertisementStop(gUcx);
 
-    // The same module always gets the same discriminator and passcode: both come from its Bluetooth address.
-    // Vendor and product are the Matter SDK's test ones, which every commissioner accepts as a test device.
+    // What a controller shows for the node: the module is its hardware
+    Ask(uCxGeneralGetTypeCodeBegin, gType, sizeof(gType));
+    Ask(uCxGeneralGetSerialNumberBegin, gSerial, sizeof(gSerial));
+    Ask(uCxGeneralGetSoftwareVersionBegin, gFirmware, sizeof(gFirmware));
+
+    // Vendor and product are the Matter SDK's test ones, which every commissioner accepts as a test device
     snprintf(suffix, sizeof(suffix), "%02X%02X%02X", address.address[3], address.address[4], address.address[5]);
+    const NodeModule module = { suffix, gModel, gType, gSerial, gFirmware };
+
     gStarted = true;
-    failed   = NodeStart(suffix, (host->radios & UCXAPP_MATTER_RADIO_WIFI) != 0,
+    failed   = NodeStart(module, (host->radios & UCXAPP_MATTER_RADIO_WIFI) != 0,
                          [](const char * line) { gHost->event(line); }, setup);
     if (failed != nullptr)
     {
@@ -265,14 +313,8 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
         gStarted = false;
         return UCXAPP_MATTER_ERR_FAILED;
     }
-    gOnboarding               = Onboarding();
-    gOnboarding.vendorId      = setup.vendorId;
-    gOnboarding.productId     = setup.productId;
-    gOnboarding.passcode      = setup.passcode;
-    gOnboarding.discriminator = setup.discriminator;
-    if (!OnboardingCodes(gOnboarding))
+    if (!TakeSetup(setup))
     {
-        Print("ERROR: the Matter SDK made no setup codes\n");
         NodeStop();
         gStarted = false;
         return UCXAPP_MATTER_ERR_FAILED;
@@ -317,6 +359,8 @@ int Status()
         : NodeAdvertising() ? "advertising over Bluetooth LE" : "not advertising";
 
     Print("node: %s over %s, %d endpoint(s)\n", gModel, gNetwork, EndpointCount());
+    Print("product: u-blox u-connectXpressApp, hardware %s, serial %s, software %s\n", gType[0] != '\0' ? gType : gModel,
+          gSerial[0] != '\0' ? gSerial : "-", gFirmware[0] != '\0' ? gFirmware : "-");
     if (fabrics > 0)
     {
         Print("state: commissioned (%d fabric(s)), %s\n", fabrics, ble);
@@ -417,7 +461,27 @@ int Command(int argc, const char * const argv[])
     }
     if (strcmp(argv[0], "reset") == 0)
     {
-        NodeForget(); // the app then removes the stored files
+        // the app then removes the stored files; "all": new setup codes as well
+        const bool all  = argc == 2 && strcmp(argv[1], "all") == 0;
+        NodeSetup setup = { gOnboarding.vendorId, gOnboarding.productId, 0, 0 };
+
+        if (argc > 2 || (argc == 2 && !all))
+        {
+            return UCXAPP_MATTER_ERR_USAGE;
+        }
+        if (!NodeForget(all, setup))
+        {
+            Print("ERROR: the node is not commissionable again; matter.stop and matter.start bring it back\n");
+            return UCXAPP_MATTER_ERR_FAILED;
+        }
+        if (all)
+        {
+            if (!TakeSetup(setup))
+            {
+                return UCXAPP_MATTER_ERR_FAILED;
+            }
+            ShowCodes();
+        }
         return UCXAPP_MATTER_OK;
     }
     return UCXAPP_MATTER_ERR_UNSUPPORTED;

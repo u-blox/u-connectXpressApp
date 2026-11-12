@@ -37,10 +37,12 @@ chip_inet_config_enable_tcp_endpoint = false
 # the module and wakes the host for every query on the network
 chip_mdns = "platform"
 
-# A device, not a controller: it reads no other node. Its subscriptions survive a restart, so a controller
-# keeps getting reports without subscribing again.
+# A device, not a controller: it reads no other node. It does not keep its subscriptions over a restart either:
+# to take one up again the node has to find the controller, and the module's mDNS answers queries but sends
+# none (ChipDnssdResolve). Every start of a commissioned node then logged "Failed to establish CASE for
+# subscription-resumption" and tried again. The controller subscribes anew when it sees the node.
 chip_enable_read_client = false
-chip_persist_subscriptions = true
+chip_persist_subscriptions = false
 
 # Lets the SDK's cluster code see the node's data model
 chip_app_data_model_target = "//:ucxmatter-data-model"

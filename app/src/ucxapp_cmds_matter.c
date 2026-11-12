@@ -24,6 +24,7 @@
 #define PLUGIN_ENV     "UCX_MATTER_PLUGIN"   /* another plug-in file (the tests' stand-in); never set from a command */
 #define STORE_PREFIX   "matter."
 #define STORE_SUFFIX   ".key"                /* sealed by the secure store */
+#define STORE_FACTORY  STORE_PREFIX "factory" STORE_SUFFIX   /* the setup codes: matter.reset keeps them */
 #define STORE_NAME_MAX 16
 #define STORE_FILES    16
 
@@ -457,14 +458,17 @@ static void collectFile(const char *name, uint64_t size, void *ctx)
     }
 }
 
-/* Forgets every fabric: the node drops what it holds, then what it stored goes too. */
+/* Forgets every fabric: the node drops what it holds, then what it stored goes too. Its setup codes stay, as
+   the label on a product does; "all" draws new ones (a running node does that itself and stores them). */
 static int cmdReset(ucxapp_t *app, int argc, char *argv[])
 {
     char files[STORE_FILES][48];
+    bool all = argc == 2 && strcmp(argv[1], "all") == 0;
+    bool keepCodes = !all || gRunning;
     int removed = 0;
 
     (void)app;
-    if (argc != 1) {
+    if (argc > 2 || (argc == 2 && !all)) {
         return UCXAPP_ERR_USAGE;
     }
     if (gRunning) {
@@ -476,9 +480,13 @@ static int cmdReset(ucxapp_t *app, int argc, char *argv[])
     memset(files, 0, sizeof(files));
     ucxapp_store_list(collectFile, files);
     for (int i = 0; i < STORE_FILES && files[i][0] != '\0'; i++) {
+        if (keepCodes && strcmp(files[i], STORE_FACTORY) == 0) {
+            continue;
+        }
         removed += ucxapp_store_remove(files[i]) ? 1 : 0;
     }
-    ucxapp_print("matter: reset, %d stored file(s) removed; commission the node again\n", removed);
+    ucxapp_print("matter: reset, %d stored file(s) removed; commission the node again%s\n", removed,
+                 all ? " with its new setup codes" : "");
     return UCXAPP_OK;
 }
 
@@ -507,7 +515,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.set", "<endpoint> <value...>", "Change an endpoint from this side, as a button or sensor would (matter.endpoints shows the values each takes)", 0, cmdSet },
     { "matter.qr", "", "Setup QR code and manual pairing code of the node", 0, cmdForward },
     { "matter.open", "[seconds]", "Open the commissioning window again", 0, cmdForward },
-    { "matter.reset", "", "Forget every fabric and remove what the node stored", UCXAPP_CMD_DANGER, cmdReset },
+    { "matter.reset", "[all]", "Forget every fabric and remove what the node stored; all: draw new setup codes (QR and manual code) as well", UCXAPP_CMD_DANGER, cmdReset },
     { "matter.log", "[error|info|detail]", "How much of the Matter SDK's log is printed", 0, cmdLog },
 };
 

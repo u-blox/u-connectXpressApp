@@ -22,9 +22,12 @@ inline constexpr AttributeId kEndpoint0EnabledAttributes[] = {
     Attributes::DataModelRevision::Id, Attributes::FeatureMap::Id,
     Attributes::HardwareVersion::Id,   Attributes::HardwareVersionString::Id,
     Attributes::Location::Id,          Attributes::NodeLabel::Id,
-    Attributes::ProductID::Id,         Attributes::ProductName::Id,
+    Attributes::PartNumber::Id,        Attributes::ProductID::Id,
+    Attributes::ProductLabel::Id,      Attributes::ProductName::Id,
+    Attributes::ProductURL::Id,        Attributes::SerialNumber::Id,
     Attributes::SoftwareVersion::Id,   Attributes::SoftwareVersionString::Id,
-    Attributes::VendorID::Id,          Attributes::VendorName::Id,
+    Attributes::UniqueID::Id,          Attributes::VendorID::Id,
+    Attributes::VendorName::Id,
 };
 } // namespace detail
 
@@ -57,10 +60,15 @@ IsAttributeEnabledOnSomeEndpoint(AttributeId attributeId) {
   case Attributes::HardwareVersionString::Id:
   case Attributes::Location::Id:
   case Attributes::NodeLabel::Id:
+  case Attributes::PartNumber::Id:
   case Attributes::ProductID::Id:
+  case Attributes::ProductLabel::Id:
   case Attributes::ProductName::Id:
+  case Attributes::ProductURL::Id:
+  case Attributes::SerialNumber::Id:
   case Attributes::SoftwareVersion::Id:
   case Attributes::SoftwareVersionString::Id:
+  case Attributes::UniqueID::Id:
   case Attributes::VendorID::Id:
   case Attributes::VendorName::Id:
     return true;

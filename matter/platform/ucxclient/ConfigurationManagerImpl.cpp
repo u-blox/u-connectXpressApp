@@ -110,7 +110,7 @@ CHIP_ERROR ConfigurationManagerImpl::Init()
         size_t outLen = 0;
         char buf[11];
         CHIP_ERROR err = ReadConfigValueStr(Internal::UcxclientConfig::kConfigKey_ManufacturingDate, buf, sizeof(buf), outLen);
-        if (err == CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND)
+        if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND)
         {
             (void) WriteConfigValueStr(Internal::UcxclientConfig::kConfigKey_ManufacturingDate, mfgDate.c_str(), mfgDate.size());
             ChipLogProgress(DeviceLayer, "[Config] Seeded ManufacturingDate: %s", mfgDate.c_str());
@@ -234,7 +234,7 @@ CHIP_ERROR ConfigurationManagerImpl::ReadConfigValue(Key key, bool & val)
     if (it == sConfigCache.end())
     {
         ChipLogDetail(DeviceLayer, "[Config] Key %s not found (bool)", keyStr.c_str());
-        return CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND;
+        return CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND;
     }
     
     if (it->second.size() != sizeof(uint8_t))
@@ -256,7 +256,7 @@ CHIP_ERROR ConfigurationManagerImpl::ReadConfigValue(Key key, uint32_t & val)
     if (it == sConfigCache.end())
     {
         ChipLogDetail(DeviceLayer, "[Config] Key %s not found (uint32)", keyStr.c_str());
-        return CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND;
+        return CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND;
     }
     
     if (it->second.size() != sizeof(uint32_t))
@@ -278,7 +278,7 @@ CHIP_ERROR ConfigurationManagerImpl::ReadConfigValue(Key key, uint64_t & val)
     if (it == sConfigCache.end())
     {
         ChipLogDetail(DeviceLayer, "[Config] Key %s not found (uint64)", keyStr.c_str());
-        return CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND;
+        return CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND;
     }
     
     if (it->second.size() != sizeof(uint64_t))
@@ -301,7 +301,7 @@ CHIP_ERROR ConfigurationManagerImpl::ReadConfigValueStr(Key key, char * buf, siz
     {
         outLen = 0;
         ChipLogDetail(DeviceLayer, "[Config] Key %s not found (string)", keyStr.c_str());
-        return CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND;
+        return CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND;
     }
     
     outLen = it->second.size();
@@ -325,7 +325,7 @@ CHIP_ERROR ConfigurationManagerImpl::ReadConfigValueBin(Key key, uint8_t * buf, 
     {
         outLen = 0;
         ChipLogDetail(DeviceLayer, "[Config] Key %s not found (binary)", keyStr.c_str());
-        return CHIP_ERROR_PERSISTED_STORAGE_VALUE_NOT_FOUND;
+        return CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND;
     }
     
     outLen = it->second.size();
@@ -573,8 +573,14 @@ CHIP_ERROR GenericConfigurationManagerImpl<UcxclientConfig>::StoreCountryCode(co
 
 template<>
 CHIP_ERROR GenericConfigurationManagerImpl<UcxclientConfig>::GetUniqueId(char * buf, size_t bufSize) {
-    char id[32];
-    snprintf(id, sizeof(id), "UCX-MATTER-%s", UcxClientManager::GetInstance().GetMacSuffix());
+    // u-connectXpressApp: random, drawn with the setup codes; it must not give away the address or serial number
+    const std::string & unique = ucxmatter::GetDeviceConfig().uniqueId;
+    char id[40];
+    if (!unique.empty()) {
+        snprintf(id, sizeof(id), "%.32s", unique.c_str());
+    } else {
+        snprintf(id, sizeof(id), "UCX-MATTER-%s", UcxClientManager::GetInstance().GetMacSuffix());
+    }
     size_t len = strlen(id);
     if (bufSize > len) {
         memcpy(buf, id, len + 1);

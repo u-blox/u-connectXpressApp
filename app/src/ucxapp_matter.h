@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define UCXAPP_MATTER_ABI 1
+#define UCXAPP_MATTER_ABI 2
 
 /* The symbol the host looks up in the plug-in. */
 #define UCXAPP_MATTER_ENTRY "ucxmatter_plugin"
@@ -77,9 +77,10 @@ typedef struct {
     /* Starts the node; argv holds the words after matter.start (the endpoints to build, none for the default). */
     int (*start)(const ucxapp_matter_host_t *host, int argc, const char *const argv[]);
     void (*stop)(void);
-    /* A private copy of one URC line ("+UEWSNU:0", may be changed in place) on the AT client's thread: note it
-     * and return, AT commands belong on the plug-in's own thread. */
-    void (*urc)(char *line, size_t length, const uint8_t *binary, size_t binaryLength);
+    /* A private copy of one URC line ("+UEWSNU:0", may be changed in place) on the AT client's thread: queue it
+     * and return, AT commands belong on the plug-in's own thread. True when the URC is the node's alone (a write
+     * to its GATT characteristic, data on its socket): the app's own handlers then do not see it. */
+    bool (*urc)(char *line, size_t length, const uint8_t *binary, size_t binaryLength);
     /* matter.<argv[0]> with its arguments (status, endpoints, set, qr, open, reset); prints with host->print. */
     int (*command)(int argc, const char *const argv[]);
 } ucxapp_matter_plugin_t;

@@ -36,6 +36,7 @@ static U_CX_MUTEX_HANDLE gLock;
 static bool gLockMade;
 static int gLogLevel = UCXAPP_MATTER_LOG_INFO;
 static uint32_t gUrcCount;
+static uint32_t gUrcKept;
 static char gPath[260];
 
 static const char *const kLevels[] = { "error", "info", "detail" };
@@ -145,6 +146,7 @@ static void urcTap(struct uCxAtClient *client, void *tag, char *line, size_t len
 {
     /* The app's parser cuts the line up in place, so the plug-in gets its own copy */
     char *copy = gRunning ? (char *)malloc(length + 1) : NULL;
+    bool kept = false;
 
     if (copy != NULL) {
         memcpy(copy, line, length);
@@ -152,12 +154,15 @@ static void urcTap(struct uCxAtClient *client, void *tag, char *line, size_t len
         U_CX_MUTEX_LOCK(gLock);
         if (gRunning) {
             gUrcCount++;
-            gPlugin->urc(copy, length, binary, binaryLength);
+            kept = gPlugin->urc(copy, length, binary, binaryLength);
+            gUrcKept += kept ? 1u : 0u;
         }
         U_CX_MUTEX_UNLOCK(gLock);
         free(copy);
     }
-    gNextUrc(client, tag, line, length, binary, binaryLength);
+    if (!kept) {
+        gNextUrc(client, tag, line, length, binary, binaryLength);
+    }
 }
 
 /* ---- loading -------------------------------------------------------------- */
@@ -298,6 +303,7 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
     gHost.radios = UCXAPP_MATTER_RADIO_BLE | (ucxapp_module_has_wifi(app) ? UCXAPP_MATTER_RADIO_WIFI : 0u) |
                    (ucxapp_module_has_thread(app) ? UCXAPP_MATTER_RADIO_THREAD : 0u);
     gUrcCount = 0;
+    gUrcKept = 0;
     /* URCs flow before start() returns: the node waits for some of them while it comes up */
     gNextUrc = gClient->urcCallback;
     gRunning = true;
@@ -345,10 +351,10 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
         }
         return UCXAPP_OK;
     }
-    ucxapp_print("matter: running\nplug-in: %s (%s)\nradios: BLE%s%s\nURCs passed on: %u\nlog: %s\n", gPlugin->name,
-                 gPath, (gHost.radios & UCXAPP_MATTER_RADIO_WIFI) ? ", Wi-Fi" : "",
+    ucxapp_print("matter: running\nplug-in: %s (%s)\nradios: BLE%s%s\nURCs passed on: %u, kept by the node: %u\nlog: %s\n",
+                 gPlugin->name, gPath, (gHost.radios & UCXAPP_MATTER_RADIO_WIFI) ? ", Wi-Fi" : "",
                  (gHost.radios & UCXAPP_MATTER_RADIO_THREAD) ? ", Thread" : "", (unsigned)gUrcCount,
-                 kLevels[gLogLevel]);
+                 (unsigned)gUrcKept, kLevels[gLogLevel]);
     return forward(argc, argv);
 }
 

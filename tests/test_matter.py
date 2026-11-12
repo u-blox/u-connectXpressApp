@@ -79,6 +79,17 @@ def test_urcs_reach_the_plugin_and_still_the_app(app_exe, module, stub, tmp_path
     assert "192.168.1.50" in out.stdout, out.stdout   # the stub cut its copy at the ':', the app's line was whole
 
 
+def test_a_urc_the_node_keeps_does_not_reach_the_app(app_exe, module, stub, tmp_path):
+    commands = ("app.log.events.on", "matter.start", "wifi.connect vucx-net secret123", "wifi.disconnect",
+                "matter.status")
+    out = _run(app_exe, module, stub, tmp_path, *commands)
+    assert "wifi: link down (0)" in out.stdout and "kept by the node: 0" in out.stdout, out.stdout
+    # as the node does for writes to its own GATT characteristics: the app's handlers do not see them
+    out = _run(app_exe, module, stub, tmp_path, *commands, env={"UCX_STUB_KEEP": "+UEWLD"})
+    assert "wifi: link down" not in out.stdout and "kept by the node: 1" in out.stdout, out.stdout
+    assert "last +UEWLD" in out.stdout, out.stdout
+
+
 def test_default_and_chosen_endpoints(app_exe, module, stub, tmp_path):
     out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.endpoints")
     assert re.search(r"1  light  off\n2  temp  21.5\n3  contact  closed\nkinds: light temp contact", out.stdout), \

@@ -101,8 +101,11 @@ static void stop(void)
     gHost->log(UCXAPP_MATTER_LOG_INFO, "stub node stopped");
 }
 
-static void urc(char *line, size_t length, const uint8_t *binary, size_t binaryLength)
+static bool urc(char *line, size_t length, const uint8_t *binary, size_t binaryLength)
 {
+    /* UCX_STUB_KEEP: a URC name the stub claims for itself, as the node does for its own GATT writes */
+    const char *keep = getenv("UCX_STUB_KEEP");
+
     (void)binary;
     (void)binaryLength;
     /* cut at the ':' as the real parser does: the app must still see the whole line */
@@ -113,6 +116,7 @@ static void urc(char *line, size_t length, const uint8_t *binary, size_t binaryL
     }
     snprintf(gLastUrc, sizeof(gLastUrc), "%s", line);
     gUrcs++;
+    return keep != NULL && strcmp(keep, line) == 0;
 }
 
 static int command(int argc, const char *const argv[])

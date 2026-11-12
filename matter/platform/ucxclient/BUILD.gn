@@ -1,0 +1,116 @@
+# The Matter device layer of the plug-in: u-connectMatter's platform/ucxclient on the app's AT client
+# (UcxClientManager.h). The module does Bluetooth LE, the sockets and mDNS; nothing here opens a socket on the host.
+
+import("//build_overrides/chip.gni")
+import("${chip_root}/build/chip/buildconfig_header.gni")
+import("${chip_root}/src/platform/device.gni")
+
+assert(chip_device_platform == "external")
+
+# mDNS answers come from the module (AT+UMD*). The SDK's own responder would need multicast sockets through the
+# module and wake the host for every query on the network.
+assert(chip_mdns == "platform", "the node uses the module's mDNS: chip_mdns must be \"platform\"")
+
+buildconfig_header("ucxclient_buildconfig") {
+  header = "CHIPDeviceBuildConfig.h"
+  header_dir = "platform"
+
+  defines = [
+    "CHIP_DEVICE_PLATFORM_CONFIG_INCLUDE=<platform/ucxclient/CHIPDevicePlatformConfig.h>",
+    "CHIP_PLATFORM_CONFIG_INCLUDE=<platform/ucxclient/CHIPPlatformConfig.h>",
+    "CHIP_SYSTEM_PLATFORM_CONFIG_INCLUDE=<platform/ucxclient/SystemPlatformConfig.h>",
+    "CHIP_INET_PLATFORM_CONFIG_INCLUDE=<platform/ucxclient/InetPlatformConfig.h>",
+    "BLE_PLATFORM_CONFIG_INCLUDE=<platform/ucxclient/BlePlatformConfig.h>",
+    "CHIP_DEVICE_LAYER_TARGET=ucxclient",
+    "CHIP_DEVICE_LAYER_TARGET_UCXCLIENT=1",
+    "UCX_MDNS_PLATFORM=1",
+  ]
+}
+
+group("platform_buildconfig") {
+  public_deps = [ ":ucxclient_buildconfig" ]
+}
+
+config("ucxclient_config") {
+  include_dirs = [ "${root_gen_dir}/include" ]
+
+  cflags_cc = [
+    "-Wno-unused-parameter",
+    "-Wno-sign-compare",
+    "-Wno-unused-variable",
+
+    # SDK headers test platform macros that only other platforms define
+    "-Wno-undef",
+
+    # The platform's configuration before any SDK header
+    "-include",
+    rebase_path("${root_gen_dir}/include/platform/CHIPDeviceBuildConfig.h",
+                root_build_dir),
+  ]
+}
+
+static_library("ucxclient") {
+  sources = [
+    "${chip_root}/src/platform/SingletonConfigurationManager.cpp",
+    "BLEManagerImpl.cpp",
+    "BLEManagerImpl.h",
+    "BlePlatformConfig.h",
+    "CHIPDevicePlatformConfig.h",
+    "CHIPDevicePlatformEvent.h",
+    "CHIPPlatformConfig.h",
+    "ConfigurationManagerImpl.cpp",
+    "ConfigurationManagerImpl.h",
+    "ConnectivityManagerImpl.cpp",
+    "ConnectivityManagerImpl.h",
+    "DeviceInstanceInfoProviderImpl.cpp",
+    "DeviceInstanceInfoProviderImpl.h",
+    "DiagnosticDataProviderImpl.cpp",
+    "DiagnosticDataProviderImpl.h",
+    "DnssdImpl.cpp",
+    "GenericConnectivityManagerImpl_UDP.cpp",
+    "InetPlatformConfig.h",
+    "KeyValueStoreManagerImpl.cpp",
+    "KeyValueStoreManagerImpl.h",
+    "NetworkCommissioningDriver.cpp",
+    "NetworkCommissioningDriver.h",
+    "PlatformAbstraction.h",
+    "PlatformManagerImpl.cpp",
+    "PlatformManagerImpl.h",
+    "SystemPlatformConfig.h",
+    "SystemTimeSupport.cpp",
+    "UcxClientManager.cpp",
+    "UcxClientManager.h",
+    "UcxMdns.cpp",
+    "UcxNetwork.cpp",
+    "UcxRamTier.h",
+    "UcxStore.h",
+    "UcxclientConfig.h",
+    "VerboseLogging.h",
+    "WakeEventUcxclient.cpp",
+    "support/DeviceConfig.h",
+  ]
+
+  if (current_os == "win") {
+    # What the SDK's interface code calls and MinGW lacks; both report that there is no interface
+    sources += [
+      "../../compat/windows/ifaddrs.cpp",
+      "../../compat/windows/net/if.cpp",
+    ]
+  }
+
+  public_deps = [
+    ":ucxclient_buildconfig",
+    "${chip_root}/src/platform:platform_base",
+    "//:ucx_api",
+  ]
+
+  public_configs = [ ":ucxclient_config" ]
+
+  if (current_os == "win") {
+    # Byte order and address text (htonl, inet_pton) and interface names for the SDK's inet code; no socket is opened
+    libs = [
+      "ws2_32",
+      "iphlpapi",
+    ]
+  }
+}

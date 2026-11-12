@@ -26,9 +26,9 @@ void LogV(const char * module, uint8_t category, const char * msg, va_list v)
     {
         vsnprintf(line + n, sizeof(line) - static_cast<size_t>(n), msg, v);
     }
-    host->log(category == kLogCategory_Error ? UCXAPP_MATTER_LOG_ERROR
-                  : category == kLogCategory_Progress ? UCXAPP_MATTER_LOG_INFO : UCXAPP_MATTER_LOG_DETAIL,
-              line);
+    // The SDK's progress lines are many and written for its developers: detail. The node's own milestones are
+    // the info lines (plugin.cpp).
+    host->log(category == kLogCategory_Error ? UCXAPP_MATTER_LOG_ERROR : UCXAPP_MATTER_LOG_DETAIL, line);
 }
 
 } // namespace Platform

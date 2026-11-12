@@ -2,6 +2,9 @@
 # (app/src/ucxapp_matter.h). Built by "ucxapp --matter"; the Matter SDK in connectedhomeip/ is used as it is.
 
 import("//build_overrides/chip.gni")
+import("//build_overrides/pigweed.gni")
+import("$dir_pw_build/python_venv.gni")
+import("${chip_root}/src/app/chip_data_model.gni")
 
 declare_args() {
   # Shown by matter.status; "ucxapp --matter" passes the tag of the SDK checkout.
@@ -34,9 +37,14 @@ config("ucx_config") {
 source_set("ucx_api") {
   sources = [
     "${_api}/u_cx_bluetooth.c",
+    "${_api}/u_cx_error_codes.c",
+    "${_api}/u_cx_gatt_server.c",
     "${_api}/u_cx_general.c",
+    "${_api}/u_cx_mdns.c",
+    "${_api}/u_cx_socket.c",
     "${_api}/u_cx_system.c",
     "${_api}/u_cx_urc.c",
+    "${_api}/u_cx_wifi.c",
     "${_client}/src/u_cx_at_params.c",
     "${_client}/src/u_cx_at_util.c",
     "src/ucxm_at.h",
@@ -50,18 +58,48 @@ source_set("ucx_api") {
   public_configs = [ ":ucx_config" ]
 }
 
+# The Python environment of the SDK's build actions (args.gni points the build at it). They only copy the
+# checked-in data model code, so it has what the SDK's code generator package asks for (click, jinja2, lark):
+# the SDK's default one installs dozens more from the network, and some of those do not build on a new Python.
+pw_python_venv("build_venv") {
+  path = "$root_build_dir/python-venv"
+  constraints = [ "python_constraints.txt" ]
+  requirements = []
+  source_packages = [ "${chip_root}/scripts/py_matter_idl:matter-idl" ]
+}
+
+# The node's data model: root node, dimmable light, temperature sensor, contact sensor. The code generated from
+# it is checked in under data_model/ucxmatter ("ucxapp --matter --zap" makes it), so a build needs no ZAP tool.
+chip_data_model("ucxmatter-data-model") {
+  zap_file = "data_model/ucxmatter.zap"
+  is_server = true
+}
+
 shared_library("ucxmatter") {
   sources = [
+    "src/UbloxCommissionableDataProvider.h",
+    "src/callbacks.cpp",
     "src/endpoints.cpp",
     "src/endpoints.h",
     "src/logging.cpp",
+    "src/node.cpp",
+    "src/node.h",
     "src/onboarding.cpp",
     "src/onboarding.h",
     "src/plugin.cpp",
+    "src/progress.cpp",
+    "src/progress.h",
   ]
   defines = [ "UCXM_SDK_VERSION=\"${ucxm_sdk_version}\"" ]
   deps = [
     ":ucx_api",
+    ":ucxmatter-data-model",
+    "${chip_root}/src/app/clusters/boolean-state-server",
+    "${chip_root}/src/app/server",
+    "${chip_root}/src/crypto",
+    "${chip_root}/src/lib",
+    "${chip_root}/src/lib/support",
+    "${chip_root}/src/platform",
     "${chip_root}/src/platform/logging:headers",
     "${chip_root}/src/setup_payload",
   ]

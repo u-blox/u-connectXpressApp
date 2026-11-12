@@ -1,14 +1,15 @@
 /* ucxmatter: the Matter node of u-connectXpressApp, loaded by the app's matter.* commands (app/src/ucxapp_matter.h).
  * The node reaches the module through the app's AT client and sees a copy of every URC, so it never owns the UART.
  *
- * This file is the module side: the plug-in entry, the commands and Bluetooth LE advertising. What needs the Matter
- * SDK sits in its own files (onboarding.cpp), see the note in onboarding.h. */
-#include <atomic>
+ * This file is the module side: the plug-in entry and the commands. What needs the Matter SDK sits in its own
+ * files (node.cpp, onboarding.cpp), see the note in onboarding.h. */
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "endpoints.h"
+#include "node.h"
 #include "onboarding.h"
 #include "ucxm_host.h"
 
@@ -32,18 +33,12 @@ namespace {
 
 using namespace ucxm;
 
-// Identity and passcode of the Matter SDK's examples: accepted by every commissioner as a test device.
-constexpr uint16_t kVendorId  = 0xFFF1;
-constexpr uint16_t kProductId = 0x8000;
-constexpr uint32_t kPasscode  = 20202021;
-
 const ucxapp_matter_host_t * gHost;
 uCxHandle_t * gUcx;
 Onboarding gOnboarding;
 char gModel[32];
 const char * gNetwork;
-bool gAdvertising;
-std::atomic<int> gBleLink{ -1 };
+bool gStarted;
 
 void Print(const char * format, ...) __attribute__((format(gnu_printf, 1, 2)));
 void Log(int level, const char * format, ...) __attribute__((format(gnu_printf, 2, 3)));
@@ -82,20 +77,14 @@ void Event(const char * format, ...)
     gHost->event(line);
 }
 
-// On the AT client's thread (ucxapp_matter.h): note it and return
-void OnBleUp(struct uCxHandle *, int32_t link, uBtLeAddress_t *)
+// On the AT client's thread (ucxapp_matter.h): "+UEBTC:<link>,<address>" and "+UEBTDC:<link>" for the Events pane
+void NoteLink(const char * line, size_t length)
 {
-    gBleLink = static_cast<int>(link);
-    Event("matter: Bluetooth LE link %d up", static_cast<int>(link));
-}
+    const bool up = length > 7 && strncmp(line, "+UEBTC:", 7) == 0;
 
-void OnBleDown(struct uCxHandle *, int32_t link)
-{
-    int mine = static_cast<int>(link);
-
-    if (gBleLink.compare_exchange_strong(mine, -1))
+    if (up || (length > 8 && strncmp(line, "+UEBTDC:", 8) == 0))
     {
-        Event("matter: Bluetooth LE link %d down", static_cast<int>(link));
+        Event("matter: Bluetooth LE link %d %s", atoi(line + (up ? 7 : 8)), up ? "up" : "down");
     }
 }
 
@@ -125,40 +114,6 @@ bool BuildEndpoints(int argc, const char * const argv[])
     return true;
 }
 
-// CHIPoBLE advertisement: the Matter service UUID and its service data (discriminator, vendor, product).
-// The module adds the flags itself.
-bool Advertise()
-{
-    const uint8_t data[] = {
-        0x03, 0x03, 0xF6, 0xFF,
-        0x0B, 0x16, 0xF6, 0xFF,
-        0x00, // opcode: commissionable
-        static_cast<uint8_t>(gOnboarding.discriminator & 0xFF),
-        static_cast<uint8_t>((gOnboarding.discriminator >> 8) & 0x0F), // high nibble: advertisement version 0
-        static_cast<uint8_t>(kVendorId & 0xFF),
-        static_cast<uint8_t>(kVendorId >> 8),
-        static_cast<uint8_t>(kProductId & 0xFF),
-        static_cast<uint8_t>(kProductId >> 8),
-        0x00, // no additional data
-    };
-    int32_t result;
-
-    // An advertisement the module still runs (bt.adv, a profile) would keep its own data; no error if there is none
-    (void) uCxBluetoothLegacyAdvertisementStop(gUcx);
-    result = uCxBluetoothSetLegacyAdvertiseDataAndType1(gUcx, data, static_cast<int32_t>(sizeof(data)));
-    if (result == 0)
-    {
-        result = uCxBluetoothLegacyAdvertisementStart(gUcx);
-    }
-    if (result != 0)
-    {
-        Print("ERROR: the module does not advertise the Matter service (%d)\n", static_cast<int>(result));
-        return false;
-    }
-    gAdvertising = true;
-    return true;
-}
-
 void ShowCodes()
 {
     const char * m = gOnboarding.manual;
@@ -178,6 +133,9 @@ void ShowCodes()
 int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[])
 {
     const char * model = nullptr;
+    const char * failed;
+    char suffix[8];
+    NodeSetup setup = {};
     uMacAddress_t address;
     uBtMode_t mode;
 
@@ -185,9 +143,8 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     {
         return UCXAPP_MATTER_ERR_FAILED;
     }
-    gHost        = host;
-    gAdvertising = false;
-    gBleLink     = -1;
+    gHost    = host;
+    gStarted = false;
     if (!BuildEndpoints(argc, argv))
     {
         return UCXAPP_MATTER_ERR_USAGE;
@@ -201,8 +158,6 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     }
 
     gUcx = ucxm_host_open(host);
-    uCxBluetoothRegisterConnect(gUcx, OnBleUp);
-    uCxBluetoothRegisterDisconnect(gUcx, OnBleDown);
 
     snprintf(gModel, sizeof(gModel), "module");
     if (uCxGeneralGetDeviceModelIdentificationBegin(gUcx, &model) && model != nullptr)
@@ -221,60 +176,81 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
         return UCXAPP_MATTER_ERR_FAILED;
     }
 
-    // The same module always gets the same discriminator: the low 12 bits of its Bluetooth address
+    // An advertisement the module still runs (bt.adv, a profile) would keep its own data; no error if there is none
+    (void) uCxBluetoothLegacyAdvertisementStop(gUcx);
+
+    // The same module always gets the same discriminator and passcode: both come from its Bluetooth address.
+    // Vendor and product are the Matter SDK's test ones, which every commissioner accepts as a test device.
+    snprintf(suffix, sizeof(suffix), "%02X%02X%02X", address.address[3], address.address[4], address.address[5]);
+    gStarted = true;
+    failed   = NodeStart(suffix, (host->radios & UCXAPP_MATTER_RADIO_WIFI) != 0,
+                         [](const char * line) { gHost->event(line); }, setup);
+    if (failed != nullptr)
+    {
+        Print("ERROR: %s\n", failed);
+        NodeStop();
+        gStarted = false;
+        return UCXAPP_MATTER_ERR_FAILED;
+    }
     gOnboarding               = Onboarding();
-    gOnboarding.vendorId      = kVendorId;
-    gOnboarding.productId     = kProductId;
-    gOnboarding.passcode      = kPasscode;
-    gOnboarding.discriminator = static_cast<uint16_t>(((address.address[4] << 8) | address.address[5]) & 0x0FFF);
+    gOnboarding.vendorId      = setup.vendorId;
+    gOnboarding.productId     = setup.productId;
+    gOnboarding.passcode      = setup.passcode;
+    gOnboarding.discriminator = setup.discriminator;
     if (!OnboardingCodes(gOnboarding))
     {
         Print("ERROR: the Matter SDK made no setup codes\n");
-        return UCXAPP_MATTER_ERR_FAILED;
-    }
-    if (!Advertise())
-    {
+        NodeStop();
+        gStarted = false;
         return UCXAPP_MATTER_ERR_FAILED;
     }
     Log(UCXAPP_MATTER_LOG_INFO, "%s over %s, %d endpoint(s), discriminator %u", gModel, gNetwork, EndpointCount(),
         static_cast<unsigned>(gOnboarding.discriminator));
-    Event("matter: advertising over Bluetooth LE, discriminator %u", static_cast<unsigned>(gOnboarding.discriminator));
-    ShowCodes();
+    if (NodeFabrics() == 0)
+    {
+        ShowCodes();
+    }
     return UCXAPP_MATTER_OK;
 }
 
 void Stop()
 {
-    if (gAdvertising)
+    if (gStarted)
     {
-        (void) uCxBluetoothLegacyAdvertisementStop(gUcx);
-        gAdvertising = false;
+        NodeStop();
+        gStarted = false;
     }
     Log(UCXAPP_MATTER_LOG_INFO, "node stopped");
 }
 
-void Urc(char * line, size_t length, const uint8_t *, size_t)
+bool Urc(char * line, size_t length, const uint8_t *, size_t)
 {
-    ucxm_host_urc(line, length);
+    NoteLink(line, length);
+    return NodeUrc(line, length);
 }
 
 int Status()
 {
-    int link = gBleLink;
+    const int fabrics = NodeFabrics();
+    char network[160];
+    const char * ble  = NodeLinks() > 0 ? "Bluetooth LE link up"
+        : NodeAdvertising() ? "advertising over Bluetooth LE" : "not advertising";
 
     Print("node: %s over %s, %d endpoint(s)\n", gModel, gNetwork, EndpointCount());
-    if (link >= 0)
+    if (fabrics > 0)
     {
-        Print("state: Bluetooth LE link %d up, not commissioned\n", link);
+        Print("state: commissioned (%d fabric(s)), %s\n", fabrics, ble);
     }
     else
     {
-        Print("state: advertising over Bluetooth LE, not commissioned\n");
+        Print("state: %s, not commissioned\n", ble);
     }
-    Print("setup: discriminator %u, vendor 0x%04X, product 0x%04X, passcode %u (the SDK's test device)\n",
-          static_cast<unsigned>(gOnboarding.discriminator), static_cast<unsigned>(kVendorId),
-          static_cast<unsigned>(kProductId), static_cast<unsigned>(kPasscode));
-    Print("commissioning: not in this plug-in yet; it advertises and shows the setup codes\n");
+    Print("commissioning window: %s\n", NodeWindowOpen() ? "open" : "closed (matter.open opens it again)");
+    Print("setup: discriminator %u, vendor 0x%04X, product 0x%04X, passcode %08u\n",
+          static_cast<unsigned>(gOnboarding.discriminator), static_cast<unsigned>(gOnboarding.vendorId),
+          static_cast<unsigned>(gOnboarding.productId), static_cast<unsigned>(gOnboarding.passcode));
+    NodeNetwork(network, sizeof(network));
+    Print("network: %s\n", network);
     return UCXAPP_MATTER_OK;
 }
 
@@ -345,9 +321,24 @@ int Command(int argc, const char * const argv[])
         ShowCodes();
         return UCXAPP_MATTER_OK;
     }
+    if (strcmp(argv[0], "open") == 0)
+    {
+        if (argc > 2)
+        {
+            return UCXAPP_MATTER_ERR_USAGE;
+        }
+        if (!NodeOpenWindow(argc == 2 ? static_cast<unsigned>(atoi(argv[1])) : 900))
+        {
+            Print("ERROR: the node did not open a commissioning window (180 to 900 seconds)\n");
+            return UCXAPP_MATTER_ERR_FAILED;
+        }
+        ShowCodes();
+        return UCXAPP_MATTER_OK;
+    }
     if (strcmp(argv[0], "reset") == 0)
     {
-        return UCXAPP_MATTER_OK; // nothing is stored yet; the app removes the files
+        NodeForget(); // the app then removes the stored files
+        return UCXAPP_MATTER_OK;
     }
     return UCXAPP_MATTER_ERR_UNSUPPORTED;
 }

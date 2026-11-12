@@ -15,6 +15,9 @@ extern const ucxapp_matter_host_t *gUcxmHost;
 /* The handle for the uCx* calls, with no URC callbacks registered yet. */
 uCxHandle_t *ucxm_host_open(const ucxapp_matter_host_t *host);
 
+/* The handle of ucxm_host_open, NULL before it. */
+uCxHandle_t *ucxm_host_handle(void);
+
 /* One URC line to the callbacks registered on the handle; the line is cut up in place. */
 void ucxm_host_urc(char *line, size_t length);
 

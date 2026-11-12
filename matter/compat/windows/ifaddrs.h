@@ -8,18 +8,27 @@
 extern "C" {
 #endif
 
-// Interface flags (from BSD net/if.h)
+// Interface flags (from BSD net/if.h). The Windows headers have some of them with other values; getifaddrs()
+// lists no interface here, so no flag is ever compared.
+#ifndef IFF_UP
 #define IFF_UP          0x1     /* Interface is up */
+#endif
+#ifndef IFF_BROADCAST
 #define IFF_BROADCAST   0x2     /* Broadcast address valid */
+#endif
 #define IFF_DEBUG       0x4     /* Turn on debugging */
+#ifndef IFF_LOOPBACK
 #define IFF_LOOPBACK    0x8     /* Is a loopback net */
+#endif
 #define IFF_POINTOPOINT 0x10    /* Interface is point-to-point link */
 #define IFF_NOTRAILERS  0x20    /* Avoid use of trailers */
 #define IFF_RUNNING     0x40    /* Resources allocated */
 #define IFF_NOARP       0x80    /* No address resolution protocol */
 #define IFF_PROMISC     0x100   /* Receive all packets */
 #define IFF_ALLMULTI    0x200   /* Receive all multicast packets */
+#ifndef IFF_MULTICAST
 #define IFF_MULTICAST   0x8000  /* Supports multicast */
+#endif
 
 struct ifaddrs {
     struct ifaddrs  *ifa_next;    /* Next item in list */

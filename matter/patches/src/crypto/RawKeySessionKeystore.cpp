@@ -33,7 +33,7 @@
 #include <cstdint>
 
 // Only on host builds — no file I/O or getenv on embedded RTOS targets.
-#if defined(_WIN32) || defined(__unix__) || defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__)
 #define UCX_KEYLOG_SUPPORTED 1
 #include <chrono>
 #include <cstdio>

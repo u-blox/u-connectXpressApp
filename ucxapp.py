@@ -134,6 +134,9 @@ def parse(argv):
                    help="the Matter plug-in (ucxmatter) behind matter.*: fetches the Matter SDK on first use (about "
                         "1.5 GB), builds it with gn, ninja and GCC (MinGW-w64 on Windows) in build/matter and puts it "
                         "next to the app; then starts the app unless only --build/--clean")
+    g.add_argument("--zap", action="store_true",
+                   help="with --matter: regenerate the data model code in matter/data_model from ucxmatter.zap (after "
+                        "editing it with the ZAP tool; ZAP_INSTALL_PATH or ../u-connectMatter/tools/zap-*)")
     g = p.add_argument_group("build")
     g.add_argument("--build", action="store_true", help="build, then stop (add --run to start the app)")
     g.add_argument("--clean", action="store_true", help="remove build output")
@@ -1498,6 +1501,7 @@ MATTER_SDK = MATTER_DIR / "connectedhomeip"
 MATTER_BUILD = ROOT / "build" / "matter"
 # The SDK's own submodules the plug-in builds with (pigweed with its submodules); the rest is never fetched.
 MATTER_SDK_PARTS = ("mbedtls", "nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
+MATTER_MODEL = MATTER_DIR / "data_model" / "ucxmatter.zap"
 MINGW_DIRS = (r"C:\msys64\ucrt64\bin", r"C:\msys64\mingw64\bin", r"C:\mingw64\bin", r"C:\mingw-w64\mingw64\bin")
 
 
@@ -1564,26 +1568,70 @@ def matter_env():
 
 
 def matter_python():
-    """This Python with the modules the SDK's build scripts import; installs them the first time."""
-    if subprocess.call([sys.executable, "-c", "import python_path, jinja2, lark"], stderr=subprocess.DEVNULL) != 0:
-        check([sys.executable, "-m", "pip", "install", "-r",
+    """The Python that runs the SDK's build scripts, with the modules they import (installed the first time).
+    On Windows it is a virtual environment in build/: the SDK's build makes an environment of its own from this
+    Python and fails when the two are on different drives."""
+    python = sys.executable
+    if IS_WINDOWS:
+        venv = ROOT / "build" / "matter-python"
+        python = str(venv / "Scripts" / "python.exe")
+        if not Path(python).is_file():
+            check([sys.executable, "-m", "venv", venv], "Python environment for the Matter SDK build")
+    if subprocess.call([python, "-c", "import python_path, jinja2, lark, setuptools"], stderr=subprocess.DEVNULL) != 0:
+        # setuptools: the SDK's own build environment is made with it, and a fresh environment has none
+        check([python, "-m", "pip", "install", "setuptools", "-r",
                MATTER_SDK / "scripts" / "setup" / "requirements.build.txt"], "Matter SDK build modules")
-    return sys.executable
+    return python
+
+
+def matter_zap():
+    """The node's data model: ucxmatter.zap (edited with the ZAP tool) becomes ucxmatter.matter and the generated
+    code under matter/data_model/ucxmatter. All of it is checked in, so a build needs no ZAP tool; it is laid out
+    as the SDK's chip_code_pre_generated_directory expects it, with the SDK folder given as that directory."""
+    matter_fetch()
+    matter_patch()
+    zap = os.environ.get("ZAP_INSTALL_PATH") or next(
+        (str(d) for d in (ROOT.parent / "u-connectMatter" / "tools" / n for n in ("zap-win-x64", "zap-linux-x64"))
+         if (d / ("zap-cli.exe" if IS_WINDOWS else "zap-cli")).is_file()), None)
+    if zap is None:
+        fail("the ZAP tool was not found: set ZAP_INSTALL_PATH to the folder with zap-cli "
+             "(https://github.com/project-chip/zap/releases)")
+    env = dict(matter_env(), ZAP_INSTALL_PATH=zap)
+    python = matter_python()
+    out = MATTER_MODEL.with_suffix("")
+    shutil.rmtree(out, ignore_errors=True)
+    generated = out / "zap" / "app-templates" / "zap-generated"
+    generated.mkdir(parents=True)
+    generate = [python, MATTER_SDK / "scripts" / "tools" / "zap" / "generate.py", "--no-prettify-output"]
+    check([*generate, MATTER_MODEL], "ZAP: ucxmatter.matter", env=env)
+    check([*generate, "-t", "src/app/zap-templates/app-templates.json", "-o", generated, MATTER_MODEL],
+          "ZAP: generated code", env=env)
+    check([python, MATTER_SDK / "scripts" / "codegen.py", "--generator", "cpp-app", "--output-dir",
+           out / "codegen" / "cpp-app", MATTER_MODEL.with_suffix(".matter")], "data model code", env=env)
+    print("Generated", out.relative_to(ROOT))
 
 
 def matter_build():
     matter_fetch()
     matter_patch()
     gn, ninja, env = matter_tool("gn"), matter_tool("ninja"), matter_env()
+    python = matter_python()   # ninja runs the SDK's build scripts with it too
     sdk = git_out("-C", str(MATTER_SDK), "describe", "--tags", "--always") or "unknown"
-    gn_args = f'ucxm_sdk_version="{sdk}"'
+    # for every SDK source: it tests macros of platforms this build does not have, and its log callback type
+    # carries a format attribute that std::atomic<> cannot keep
+    cflags = ["-Wno-undef", "-Wno-ignored-attributes"]
+    # the data model code is checked in next to its .zap file (matter_zap), which is where the SDK looks with
+    # its own folder as the directory of pre-generated code
+    gn_args = f'ucxm_sdk_version="{sdk}" chip_code_pre_generated_directory="{MATTER_SDK.as_posix()}"'
     if IS_WINDOWS:
         # matter/compat/windows: the POSIX headers the SDK includes and MinGW lacks, for every SDK source
         compat = Path(os.path.relpath(MATTER_DIR / "compat" / "windows", MATTER_BUILD)).as_posix()
-        gn_args += f' target_os="win" target_cpu="x64" target_cflags=["-I{compat}"]'
+        cflags.append(f"-I{compat}")
+        gn_args += ' target_os="win" target_cpu="x64"'
+    gn_args += f" target_cflags={json.dumps(cflags)}"
     stamp = MATTER_BUILD / "ucxapp_args.txt"
     if not (MATTER_BUILD / "build.ninja").exists() or not stamp.exists() or stamp.read_text() != gn_args:
-        check([gn, "gen", MATTER_BUILD, f"--root={MATTER_DIR}", f"--script-executable={matter_python()}",
+        check([gn, "gen", MATTER_BUILD, f"--root={MATTER_DIR}", f"--script-executable={python}",
                f"--args={gn_args}"], "gn", env=env)
         stamp.write_text(gn_args)
     check([ninja, "-C", MATTER_BUILD, "ucxmatter"], "Matter plug-in build", env=env)
@@ -1596,13 +1644,15 @@ def matter_build():
 
 
 def matter(args, extra):
+    if args.zap:
+        matter_zap()
     if args.clean or args.rebuild:
         shutil.rmtree(MATTER_BUILD, ignore_errors=True)
         matter_plugin().unlink(missing_ok=True)
         print("Cleaned", MATTER_BUILD.relative_to(ROOT))
     if args.build or args.rebuild or not args.clean:
         matter_build()
-    if (args.build or args.clean or args.rebuild) and not args.run:
+    if (args.build or args.clean or args.rebuild or args.zap) and not args.run:
         return 0
     return host(argparse.Namespace(**{**vars(args), "build": False, "clean": False, "rebuild": False}), extra)
 

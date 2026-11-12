@@ -50,6 +50,11 @@
 namespace chip {
 namespace System {
 
+#if defined(CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT) && CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT
+// u-connectXpressApp, matter/platform/ucxclient/WakeEventUcxclient.cpp: true when woken before the time is up
+bool UcxWakeWait(uint32_t timeoutMs);
+#endif
+
 constexpr Clock::Seconds64 kDefaultMinSleepPeriod = Clock::Seconds64(60 * 60 * 24 * 30); // Month [sec]
 
 CriticalFailure LayerImplSelect::Init()
@@ -588,7 +593,7 @@ void LayerImplSelect::PrepareEvents()
     FD_ZERO(&mSelected.mErrorSet);
     // NOLINTEND(clang-analyzer-security.insecureAPI.bzero)
 
-#if !CHIP_SYSTEM_CONFIG_USE_LIBEV
+#if !CHIP_SYSTEM_CONFIG_USE_LIBEV && !(defined(CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT) && CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT)
     FD_SET(mWakeEvent.GetReadFD(), &mSelected.mReadSet);
     mMaxFd = mWakeEvent.GetReadFD();
 #endif
@@ -622,24 +627,15 @@ void LayerImplSelect::PrepareEvents()
 
 void LayerImplSelect::WaitForEvents()
 {
-#if defined(_WIN32) && CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT
-    // ucxclient platform: no host sockets, all networking via NORA-W36.
-    // Windows select() requires at least one valid socket in fd_sets (WSAEINVAL otherwise).
-    // When mMaxFd == -1 (no FDs), sleep for timeout but cap at 10ms so ProcessUrcs()
-    // and the app loop callback run frequently for responsive NORA-W36 communication.
+#if defined(CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT) && CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT
+    // u-connectXpressApp: the node has no descriptor on the host (all networking is on the module), and select()
+    // on Windows fails without one. Wait for the wake event (a posted event, a URC from the module) or the next
+    // timer, at most 10 ms so the platform's loop callbacks run often.
     if (mMaxFd < 0)
     {
         unsigned long sleepMs = static_cast<unsigned long>(mNextTimeout.tv_sec) * 1000 +
                                 static_cast<unsigned long>(mNextTimeout.tv_usec) / 1000;
-        // Cap to 10ms - the event loop needs to run ProcessUrcs() frequently
-        if (sleepMs > 10)
-        {
-            sleepMs = 10;
-        }
-        if (sleepMs > 0)
-        {
-            Sleep(sleepMs);
-        }
+        (void) UcxWakeWait(sleepMs > 10 ? 10 : static_cast<uint32_t>(sleepMs));
         mSelectResult = 0; // No events, but no error
         return;
     }
@@ -658,7 +654,7 @@ void LayerImplSelect::HandleEvents()
         return;
     }
 
-#if !CHIP_SYSTEM_CONFIG_USE_LIBEV
+#if !CHIP_SYSTEM_CONFIG_USE_LIBEV && !(defined(CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT) && CHIP_SYSTEM_CONFIG_USE_UCXCLIENT_WAKE_EVENT)
     if (mSelectResult > 0 && FD_ISSET(mWakeEvent.GetReadFD(), &mSelected.mReadSet))
     {
         mWakeEvent.Confirm();

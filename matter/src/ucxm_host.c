@@ -17,6 +17,11 @@ uCxHandle_t *ucxm_host_open(const ucxapp_matter_host_t *host)
     return &gHandle;
 }
 
+uCxHandle_t *ucxm_host_handle(void)
+{
+    return gUcxmHost != NULL ? &gHandle : NULL;
+}
+
 void ucxm_host_urc(char *line, size_t length)
 {
     char *params = memchr(line, ':', length);

@@ -1,0 +1,2 @@
+# Version limits for the Python modules of the Matter plug-in's build environment (build_venv in BUILD.gn).
+# None: the SDK's own list pins versions that do not build on a new Python. Pigweed wants one file here.

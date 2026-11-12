@@ -12,3 +12,38 @@ treat_warnings_as_errors = false
 chip_crypto = "mbedtls"
 
 chip_build_tests = false
+
+# The device layer is platform/ucxclient: the module is the radio and the IP stack
+chip_device_platform = "external"
+chip_platform_target = "//platform/ucxclient"
+chip_external_platform_include_dir = "//"
+chip_device_platform_config_include =
+    "<platform/ucxclient/CHIPDevicePlatformConfig.h>"
+chip_platform_config_include = "<platform/ucxclient/CHIPPlatformConfig.h>"
+chip_system_platform_config_include =
+    "<platform/ucxclient/SystemPlatformConfig.h>"
+chip_inet_platform_config_include = "<platform/ucxclient/InetPlatformConfig.h>"
+
+# Commissioning over Bluetooth LE
+chip_enable_ble = true
+chip_config_network_layer_ble = true
+
+# UDP through the module's sockets; no TCP (the node needs none and the module has six sockets)
+chip_system_config_use_ucx = true
+chip_system_config_use_lwip = false
+chip_inet_config_enable_tcp_endpoint = false
+
+# mDNS on the module (AT+UMD*), never the SDK's responder on the host: that one needs multicast sockets through
+# the module and wakes the host for every query on the network
+chip_mdns = "platform"
+
+# A device, not a controller: it reads no other node. Its subscriptions survive a restart, so a controller
+# keeps getting reports without subscribing again.
+chip_enable_read_client = false
+chip_persist_subscriptions = true
+
+# Lets the SDK's cluster code see the node's data model
+chip_app_data_model_target = "//:ucxmatter-data-model"
+
+# The Python environment of the build actions: BUILD.gn
+pw_build_PYTHON_BUILD_VENV = "//:build_venv"

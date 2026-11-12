@@ -13,6 +13,9 @@
 
 #include <mswsock.h>  // For WSAMSG
 
+// POSIX socket() gives an int and the SDK keeps it in one; Winsock's SOCKET is 64 bits wide (-Wconversion)
+#define socket(af, type, protocol) ((int) socket(af, type, protocol))
+
 // Undefine Windows SAL annotation macros that conflict with Matter SDK enum values
 // minwindef.h defines IN and OUT as empty macros, breaking mdns::Minimal::QClass::IN
 #ifdef IN

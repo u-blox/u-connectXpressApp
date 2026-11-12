@@ -182,6 +182,11 @@ static const example_t kExamples[] = {
       "# the node at a glance; the web page shows the same card, with buttons, under What's happening\nmatter.card" },
     { "matter", "Only some endpoints, more of the SDK's log, and a clean slate",
       "matter.stop\nmatter.log detail\nmatter.start light temp\n# forget every fabric, leave Wi-Fi and reboot the module: the node starts again, ready to be commissioned\nmatter.reset\nmatter.selftest" },
+    { "matter", "The node over TCP, UDP, BLE and MQTT: changes go out, 'set light on' comes back",
+      "matter.start\n# a TCP client on port 7540 gets EP light = on, STATE ... and EVT lines; it sends set light on or get\n"
+      "matter.bridge tcp\nmatter.bridge udp 192.168.1.10 7541\nmatter.bridge ble nus\n"
+      "# MQTT: retained values on ucxapp/matter/<endpoint>, commands on ucxapp/matter/<endpoint>/set\n"
+      "mqtt.connect\nmatter.bridge mqtt\nmatter.bridge status\nmatter.bridge off" },
 #endif
 
     { "mqtt", "Publish and subscribe on a public broker",

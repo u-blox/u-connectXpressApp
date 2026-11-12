@@ -303,6 +303,99 @@ def test_web_page_gets_the_card_and_every_change_of_it(app_exe, stub, tmp_path):
         module.stop()
 
 
+def _shell(app_exe, module, stub, cwd):
+    return subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=cwd,
+                            env=dict(os.environ, UCX_MATTER_PLUGIN=str(stub)))
+
+
+def _until(check, timeout=20):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and not check():
+        time.sleep(0.05)
+    return check()
+
+
+def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_path):
+    """matter.bridge tcp: a client gets every change of the card and the node's events as lines, and sets and gets
+    the endpoints with lines of its own."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    # a client: it connects as soon as the bridge listens, and sends its lines
+    profile["sockets"]["requests"] = {7540: ["get\nset light on\nset oven on\nset light\nhello\n"]}
+    module = Vucx(profile)
+    proc = _shell(app_exe, module, stub, tmp_path)
+
+    def got():
+        return bytes(module.net.replies[0]).decode("latin-1") if module.net.replies else ""
+
+    try:
+        proc.stdin.write("matter.start\nmatter.bridge tcp\n")
+        proc.stdin.flush()
+        assert _until(lambda: "ERR unknown command 'hello'" in got() and "EP light = on\n" in got()), got()
+        text = got()
+        assert ("NODE stub on NORA-W36, 3 endpoint(s)\nSTATE not commissioned\nSTEP 2/6 fabric installed\n"
+                "EP light = off\nEP temp = 21.5\nEP contact = closed\nOK\n") in text, text
+        assert "ERR no endpoint oven\n" in text and "ERR usage: set <endpoint> <value...>\n" in text, text
+        assert "ERR unknown command 'hello' (set <endpoint> <value...> | get)\n" in text, text
+        assert "LOG" not in text, text   # the app's own line
+        # a change made in the app reaches the client as well, and so do the node's events
+        proc.stdin.write("matter.set temp 30\n")
+        proc.stdin.flush()
+        assert _until(lambda: "EP temp = 30\n" in got()), got()
+        proc.stdin.write("matter.stop\nmatter.start\n")
+        proc.stdin.flush()
+        assert _until(lambda: "EVT matter: stub node started\n" in got()), got()
+        proc.stdin.write("matter.bridge status\nmatter.bridge off\nmatter.bridge status\n")
+        proc.stdin.close()
+        out = proc.stdout.read()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert "7540" in out and "bridge: off" in out, out
+
+
+def test_bridge_mqtt_publishes_the_endpoints_and_takes_sets(app_exe, stub, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    # one message on <prefix>/light/set, then none
+    profile["commands"]["AT+UMQRB=*"] = [["+UMQRB:0,\"ucxapp/matter/light/set\"\x01on", "OK"], ["ERROR"]]
+    module = Vucx(profile)
+    proc = _shell(app_exe, module, stub, tmp_path)
+
+    def published(topic, data):
+        return any(f'"{topic}"' in cmd and bytes(payload) == data for cmd, payload in list(module.payloads))
+
+    try:
+        proc.stdin.write("matter.start\nmatter.bridge mqtt\nmqtt.connect broker.local\nmatter.bridge mqtt\n")
+        proc.stdin.flush()
+        assert _until(lambda: published("ucxapp/matter/light", b"on")), (module.log, module.payloads)
+        assert published("ucxapp/matter/light", b"off"), module.payloads   # the whole card first
+        assert published("ucxapp/matter/temp", b"21.5"), module.payloads
+        assert published("ucxapp/matter/node/state", b"not commissioned"), module.payloads
+        assert any(cmd.startswith("AT+UMQS=") and "ucxapp/matter/+/set" in cmd for cmd in module.log), module.log
+        proc.stdin.write("matter.endpoints\nmatter.bridge status\nmatter.bridge mqtt off\nmatter.bridge status\n"
+                         "matter.bridge mqtt bad#\nmatter.bridge off 3\n")
+        proc.stdin.close()
+        out = proc.stdout.read()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert "ERROR: not connected to an MQTT broker (mqtt.connect first)" in out, out
+    assert "matter.bridge mqtt: endpoints on ucxapp/matter/" in out and "1  light  on" in out, out
+    assert "mqtt: ucxapp/matter/#" in out and "matter.bridge mqtt stopped" in out, out
+    assert "bridge: off" in out and "without + # or a closing /" in out, out
+    assert sum(cmd.startswith("AT+UMQS=") for cmd in module.log) == 2, module.log   # subscribe, unsubscribe
+
+
 def test_card_without_the_plugin(app_exe, module, tmp_path):
     out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "matter.card")
     assert out.returncode != 0 and "the plug-in is not installed" in out.stdout, out.stdout

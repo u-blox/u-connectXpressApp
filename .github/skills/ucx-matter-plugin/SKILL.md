@@ -85,6 +85,8 @@ matter.card                    # the node at a glance; the web page's Matter tab
 matter.endpoints               # endpoints of the node and the kinds the plug-in can build
 matter.set light 40            # act as the device: light on|off|0..100, temp -40..125, contact open|closed
 matter.open                    # commissioning window for 15 minutes again, with the codes
+matter.bridge tcp              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
+matter.bridge mqtt             # after mqtt.connect: ucxapp/matter/<endpoint> (retained), ucxapp/matter/<endpoint>/set
 matter.log detail              # how much of the SDK's log is printed: error, info, detail
 matter.stop                    # also done when the app leaves
 matter.reset                   # forget what the node stored, leave Wi-Fi, reboot the module, start the node again

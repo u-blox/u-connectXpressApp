@@ -125,7 +125,7 @@ def package(tree, archive, root=None):
     if root is None:
         missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
         missing += [f"zephyr_{b}" for b in ZEPHYR_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
-        for f in ("windows/ucxapp.exe", "linux/ucxapp", "wasm/ucxapp.wasm"):
+        for f in ("windows/ucxapp.exe", "linux/ucxapp", "linux/libucxmatter.so", "wasm/ucxapp.wasm"):
             if not (tree / f).is_file():
                 missing.append(f)
         if missing:

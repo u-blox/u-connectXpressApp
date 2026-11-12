@@ -98,6 +98,7 @@ static void startupUrc(struct uCxHandle *h)
     gBootMs = ucxapp_platform_tick_ms();
     gBootSeen = true;
     gMqttUp = false;
+    ucxapp_sock_set_leftovers(0);   /* a reboot closed every socket */
     evt("device: startup");
     ucxapp_power_set(gPowerSaveLevel ? UCXAPP_POWER_SAVE : UCXAPP_POWER_ACTIVE);
     ucxapp_events_signal(URC_FLAG_STARTUP);
@@ -207,12 +208,23 @@ static void pingCompleteUrc(struct uCxHandle *h, int32_t sent, int32_t received,
 void ucxapp_adopt_connections(uCxHandle_t *ucx)
 {
     uCxBtListConnections_t conn;
+    uCxSocketListStatus_t sock;
+    uint32_t leftovers = 0;
 
     uCxBluetoothListConnectionsBegin(ucx);
     while (uCxBluetoothListConnectionsGetNext(ucx, &conn)) {
         ucxapp_handle_add(UCXAPP_HANDLE_CONN, conn.conn_handle);
     }
     uCxEnd(ucx);
+    uCxSocketListStatusBegin(ucx);
+    while (uCxSocketListStatusGetNext(ucx, &sock)) {
+        if (sock.protocol == U_SOCKET_PROTOCOL_UDP && sock.status == 1 && sock.socket_handle >= 0 &&
+            sock.socket_handle < 32) {
+            leftovers |= 1u << sock.socket_handle;
+        }
+    }
+    uCxEnd(ucx);
+    ucxapp_sock_set_leftovers(leftovers);
 }
 
 #ifndef UCXAPP_LITE

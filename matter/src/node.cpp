@@ -231,19 +231,21 @@ const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, No
     // Basic Information: the module is the node's hardware and its firmware the node's software
     config.serialNumber          = std::string(module.serial).substr(0, 32);
     config.partNumber            = std::string(module.typeCode).substr(0, 32);
-    config.hardwareVersionString = config.partNumber.empty() ? std::string(module.model).substr(0, 64) : config.partNumber;
+    config.hardwareVersionString = module.typeCode[0] == '\0' ? std::string(module.model).substr(0, 64)
+                                                              : std::string(module.typeCode).substr(0, 64);
     if (module.firmware[0] != '\0')
     {
         config.softwareVersionString = std::string(module.firmware).substr(0, 64);
         config.softwareVersion       = FirmwareNumber(module.firmware);
     }
 
-    // Defines the Matter service on the module's GATT server
+    // Defines the Matter service on the module's GATT server. A stack that fails halfway (the module's GATT table
+    // full) is shut down by NodeStop as well: its system layer, left up, aborts when the plug-in is unloaded
+    gStackUp = true;
     if (PlatformMgr().InitChipStack() != CHIP_NO_ERROR)
     {
         return "the Matter stack did not start on the module (matter.log detail shows why)";
     }
-    gStackUp = true;
     PlatformMgrImpl().SetAppLoopCallback([]() { PersistedStorage::KeyValueStoreManagerImpl::MaybeFlush(); });
     failed = ServerStart();
     if (failed != nullptr)
@@ -264,6 +266,11 @@ const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, No
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return NodeAdvertising() ? nullptr : "the module does not advertise the Matter service (matter.log detail shows why)";
+}
+
+bool NodeGattFull()
+{
+    return Internal::BLEMgrImpl().GattFull();
 }
 
 void NodeStop()

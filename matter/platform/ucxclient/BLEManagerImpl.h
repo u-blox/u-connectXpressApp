@@ -58,6 +58,10 @@ public:
     // BleApplicationDelegate interface
     void NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId) override;
 
+    // u-connectXpressApp: the last Init failed because the module refused the CHIPoBLE service (its GATT server
+    // keeps every service defined until it reboots)
+    bool GattFull() const { return mGattFull; }
+
 private:
     struct BLEConnection
     {
@@ -89,6 +93,7 @@ private:
     int32_t mC1CharHandle = -1; // CHIPoBLE C1 characteristic (write)
     int32_t mC2CharHandle = -1; // CHIPoBLE C2 characteristic (indicate)
     int32_t mC2CccdHandle = -1; // C2 CCCD for indication subscriptions
+    bool mGattFull = false;
 
     // Helper methods - state machine
     static void DriveBLEState(intptr_t arg);  // Static callback for ScheduleWork

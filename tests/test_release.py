@@ -35,9 +35,10 @@ def test_every_board_is_released_on_freertos_and_zephyr(jobs):
 
 def test_bundle_collects_every_build(jobs):
     bundle = jobs["bundle"]
-    assert set(bundle["needs"]) == {"windows", "linux", "stm32", "zephyr", "wasm"}
+    assert set(bundle["needs"]) == {"windows", "linux", "stm32", "zephyr", "wasm", "matter"}
+    assert jobs["matter"]["uses"] == "./.github/workflows/matter.yml"
     pattern = bundle["steps"][0]["with"]["pattern"]
-    for name in ("linux", "stm32-*", "zephyr-*", "wasm"):
+    for name in ("linux", "matter-linux", "stm32-*", "zephyr-*", "wasm"):
         assert name in pattern
 
 
@@ -71,8 +72,9 @@ def test_launcher_skips_the_browser_build_without_emsdk(monkeypatch, tmp_path):
         ucxapp.emsdk_env()
 
 
-def make_tree(tree, boards, wasm=True):
-    for f in ("windows/ucxapp.exe", "linux/ucxapp", *(["wasm/ucxapp.wasm", "wasm/index.html"] if wasm else [])):
+def make_tree(tree, boards, wasm=True, matter=True):
+    for f in ("windows/ucxapp.exe", "linux/ucxapp", *(["linux/libucxmatter.so"] if matter else []),
+              *(["wasm/ucxapp.wasm", "wasm/index.html"] if wasm else [])):
         (tree / f).parent.mkdir(parents=True, exist_ok=True)
         (tree / f).write_bytes(b"x")
     for b in boards:
@@ -90,6 +92,13 @@ def test_package_refuses_an_incomplete_tree(tmp_path):
 def test_package_refuses_a_tree_without_the_browser_app(tmp_path):
     rel = release_py()
     make_tree(tmp_path / "t", rel.STM32_BOARDS, wasm=False)
+    with pytest.raises(SystemExit):
+        rel.package(tmp_path / "t", tmp_path / "a.zip")
+
+
+def test_package_refuses_a_tree_without_the_matter_plugin(tmp_path):
+    rel = release_py()
+    make_tree(tmp_path / "t", rel.STM32_BOARDS, matter=False)
     with pytest.raises(SystemExit):
         rel.package(tmp_path / "t", tmp_path / "a.zip")
 

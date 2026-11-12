@@ -25,6 +25,7 @@
 #include "u_port.h"
 #include "u_cx_bluetooth.h"
 #include "u_cx_mqtt.h"
+#include "u_cx_socket.h"
 #include "u_cx_wifi.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -254,6 +255,13 @@ static bool pluginPath(void)
 
 static void unload(void)
 {
+    /* The AT client may still point at the plug-in's last expected response prefix, a string in the library */
+    if (gClient != NULL && gLib != NULL) {
+        U_CX_MUTEX_LOCK(gClient->cmdMutex);
+        gClient->pExpectedRsp = NULL;
+        gClient->pExpectedRspLen = 0;
+        U_CX_MUTEX_UNLOCK(gClient->cmdMutex);
+    }
     if (gLib != NULL) {
         ucxapp_platform_lib_close(gLib);
     }
@@ -415,13 +423,89 @@ static int forward(int argc, char *argv[])
     return rc;
 }
 
+/* The node binds UDP 5540, which a socket an earlier session left bound would hold; the module cannot say which
+   port a socket has, so every bound UDP socket from before this session is closed. */
+static void closeLeftoverSockets(ucxapp_t *app)
+{
+    uCxSocketListStatus_t status;
+    uint32_t leftovers = ucxapp_sock_leftovers();
+    int32_t handles[32];
+    int count = 0;
+
+    if (leftovers == 0) {
+        return;
+    }
+    uCxSocketListStatusBegin(app->ucx);
+    while (uCxSocketListStatusGetNext(app->ucx, &status) && count < 32) {
+        if (status.protocol == U_SOCKET_PROTOCOL_UDP && status.socket_handle >= 0 && status.socket_handle < 32 &&
+            (leftovers & (1u << status.socket_handle)) != 0) {
+            handles[count++] = status.socket_handle;
+        }
+    }
+    uCxEnd(app->ucx);
+    for (int i = 0; i < count; i++) {
+        if (uCxSocketClose(app->ucx, handles[i]) == 0) {
+            ucxapp_print("matter: closed UDP socket %d, left bound on the module by an earlier session\n",
+                         (int)handles[i]);
+        }
+        ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, handles[i]);
+    }
+    ucxapp_sock_set_leftovers(0);
+}
+
+/* The module's GATT server cannot remove a service: every start defines the Matter service once more, until the
+   module reboots. A module that has the service from a start in this boot is rebooted first (a second service
+   with the same UUID would leave a commissioner talking to the stale one); one that refuses it (filled by an
+   earlier session) is rebooted and the node started once more. */
+static uint32_t gServiceBootMs;
+static bool gServiceDefined;
+
+static void rebootForService(ucxapp_t *app, const char *why)
+{
+    bool exact;
+
+    ucxapp_print("matter: rebooting the module, %s (a GATT service cannot be removed)\n", why);
+    if (ucxapp_module_reboot(app)) {
+        gServiceBootMs = ucxapp_module_boot_ms(&exact);
+        gServiceDefined = false;
+    }
+}
+
+static int startNodeOnce(ucxapp_t *app, int count, const char *const words[]);
+
 static int startNode(ucxapp_t *app, int count, const char *const words[])
 {
+    bool exact;
+    int rc;
+
+    if (gServiceDefined && ucxapp_module_boot_ms(&exact) == gServiceBootMs) {
+        rebootForService(app, "its GATT server has the Matter service of the last start");
+    }
+    rc = startNodeOnce(app, count, words);
+    if (rc == UCXAPP_MATTER_ERR_GATT_FULL) {
+        rebootForService(app, "its GATT server has no room for the Matter service");
+        rc = startNodeOnce(app, count, words);
+        if (rc == UCXAPP_MATTER_ERR_GATT_FULL) {
+            ucxapp_print("ERROR: the module refused the Matter GATT service after a reboot as well "
+                         "(matter.log detail shows why)\n");
+        }
+    }
+    if (rc != UCXAPP_MATTER_ERR_GATT_FULL) {
+        return rc;
+    }
+    gServiceDefined = false;
+    return UCXAPP_ERR_FAILED;
+}
+
+static int startNodeOnce(ucxapp_t *app, int count, const char *const words[])
+{
+    bool exact;
     int rc;
 
     if (!load()) {
         return UCXAPP_ERR_FAILED;
     }
+    closeLeftoverSockets(app);
     if (!gLockMade) {
         U_CX_MUTEX_CREATE(gLock);
         gLockMade = true;
@@ -437,6 +521,8 @@ static int startNode(ucxapp_t *app, int count, const char *const words[])
     gNextUrc = gClient->urcCallback;
     gRunning = true;
     uCxAtClientSetUrcCallback(gClient, urcTap, gClient->pUrcCallbackTag);
+    gServiceBootMs = ucxapp_module_boot_ms(&exact);
+    gServiceDefined = true;
     rc = gPlugin->start(&gHost, count, words);
     if (rc != UCXAPP_MATTER_OK) {
         uCxAtClientSetUrcCallback(gClient, gNextUrc, gClient->pUrcCallbackTag);
@@ -444,9 +530,11 @@ static int startNode(ucxapp_t *app, int count, const char *const words[])
         gRunning = false;
         U_CX_MUTEX_UNLOCK(gLock);
         U_CX_MUTEX_UNLOCK(gCmdLock);
-        ucxapp_print("ERROR: the Matter node did not start (%s)\n", ucxapp_err_code(rc));
+        if (rc != UCXAPP_MATTER_ERR_GATT_FULL) {
+            ucxapp_print("ERROR: the Matter node did not start (%s)\n", ucxapp_err_code(rc));
+        }
         unload();
-        return UCXAPP_ERR_FAILED;
+        return rc == UCXAPP_MATTER_ERR_GATT_FULL ? rc : UCXAPP_ERR_FAILED;
     }
     U_CX_MUTEX_UNLOCK(gCmdLock);
     ucxapp_print("matter: node started (%s)\n", gPlugin->name);
@@ -1197,7 +1285,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gMatterCmds[] = {
-    { "matter.start", "[endpoint...]", "Start a Matter node on the module with the ucxmatter plug-in; endpoints as matter.endpoints lists them, none for the default set", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
+    { "matter.start", "[endpoint...=light temp contact]", "Start a Matter node on the module with the ucxmatter plug-in; endpoints as matter.endpoints lists them, none given: light temp contact", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
     { "matter.stop", "", "Stop the Matter node and unload the plug-in", 0, cmdStop },
     { "matter.status", "", "Is a node running, with which plug-in, and what the node says about itself", 0, cmdStatus },
     { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },

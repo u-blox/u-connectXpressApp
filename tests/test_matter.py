@@ -147,6 +147,26 @@ def test_second_start_is_refused_and_stop_ends_the_node(app_exe, module, stub, t
     assert "matter: node stopped" in out.stdout and "matter: stopped" in out.stdout, out.stdout
 
 
+def test_start_closes_a_udp_socket_an_earlier_session_left_bound(app_exe, stub, tmp_path):
+    """A reloaded web page never runs matter.stop: its node's socket keeps 5540, and the next node cannot bind it."""
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")   # sockets with state, kept from one run of the app to the next
+    module.start()
+    try:
+        out = _run(app_exe, module, stub, tmp_path, "sock.open udp", "sock.bind 0 5540")
+        assert "socket 0 bound to port 5540" in out.stdout, out.stdout
+        out = _run(app_exe, module, stub, tmp_path, "matter.start", "sock.list")
+        assert out.returncode == 0, out.stdout
+        assert "closed UDP socket 0, left bound on the module by an earlier session" in out.stdout, out.stdout
+        assert "0 socket(s)" in out.stdout, out.stdout
+        # a socket of this session is the user's: it stays
+        out = _run(app_exe, module, stub, tmp_path, "sock.open udp", "sock.bind 5541", "matter.start", "sock.list")
+        assert out.returncode == 0, out.stdout
+        assert "closed UDP socket" not in out.stdout and "1 socket(s)" in out.stdout, out.stdout
+    finally:
+        module.stop()
+
 def test_state_is_sealed_on_disk_and_survives_a_restart(app_exe, module, stub, tmp_path):
     _run(app_exe, module, stub, tmp_path, "matter.start")
     out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.status")

@@ -139,6 +139,9 @@ target(_ucxmatter_type, "ucxmatter") {
     # One archive with the SDK's objects in it, for the app's link
     complete_static_lib = true
     output_name = "libucxmatter"
+  } else if (current_os != "win") {
+    # the name the app loads (the SDK's toolchain adds no lib prefix)
+    output_name = "libucxmatter"
   }
 }
 

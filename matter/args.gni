@@ -18,6 +18,9 @@ chip_crypto_keystore = "psa"
 
 chip_build_tests = false
 
+# The size platform/ucxclient/CHIPPlatformConfig.h sets; the SDK's default is 1708 on Linux, which redefines it
+chip_log_message_max_size = 256
+
 # The device layer is platform/ucxclient: the module is the radio and the IP stack
 chip_device_platform = "external"
 chip_platform_target = "//platform/ucxclient"

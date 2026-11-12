@@ -45,7 +45,12 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
 - Needs GCC: MSYS2 with `pacman -S mingw-w64-ucrt-x86_64-gcc` on Windows (the Matter SDK does not build with MSVC),
   `g++` on Linux. Git and this Python; the launcher installs the SDK's build modules with pip the first time.
 - `gn.exe` and `ninja.exe` are in `matter/tools`: the binaries u-connectMatter uses (gn is signed by u-blox and
-  accepted by IT). Use these, do not download others. Linux takes `gn` and `ninja` from `../u-connectMatter/tools` or PATH.
+  accepted by IT). Use these, do not download others. Linux takes `gn` and `ninja` from `../u-connectMatter/tools` or
+  PATH; without a gn there, the launcher builds gn from its source at the same version (`GN_COMMIT`, gn 2322, one
+  commit deep) into `build/gn` once.
+- CI: `.github/workflows/matter.yml` builds the plug-in on Windows, Linux and in the browser with zero warnings and
+  runs the Matter tests. It runs by hand (`workflow_dispatch`) and from `release.yml` (the release ships
+  `linux/libucxmatter.so`), never on every push. Its checkout is minimal: `u-connectClient` and mbedTLS only.
 - The first build fetches the Matter SDK into `matter/connectedhomeip`: only the pinned commit (`--depth 1`,
   `--filter=blob:none`), only the folders in `MATTER_SDK_DIRS` (sparse checkout) and only the parts in
   `MATTER_SDK_PARTS` (nlassert, nlio, uriparser, pigweed), each one commit deep. It is an opt-in submodule
@@ -156,7 +161,19 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   service) lasts until the module reboots. Wi-Fi is shared with the app: the node joins the network a
   commissioner gives it (as `wifi.connect` would) and uses a network that is up already. When the node stops, its mDNS service is removed and the
   responder and its host name are put back as they were. Its UDP socket is made in buffered read mode, and the
-  read mode the app had is restored right after.
+  read mode the app had is restored right after. A session that ends without `matter.stop` (a reloaded web page)
+  leaves that socket bound to 5540 and the next node's bind fails (`socket last error = 9`): `matter.start` first
+  closes the bound UDP sockets that were on the module when the app connected (`ucxapp_sock_leftovers`).
+- A GATT service cannot be removed (NORA-W36 has no command for it): only a reboot clears the GATT server, and
+  two Matter services would leave a commissioner talking to the stale one. So the app reboots the module before
+  a second `matter.start` in the same module boot, and when the plug-in reports `UCXAPP_MATTER_ERR_GATT_FULL`
+  (the module refused the service: no room) it reboots and starts once more. A service left by another app
+  session in a table that still has room cannot be seen.
+- The plug-in is unloaded on every stop and failed start: no pointer into it may outlive it (`unload()` clears
+  the AT client's response prefix, which may be a string of the plug-in). A failed `NodeStart` still shuts the
+  half-made stack down. Crash recipes: `docs/DEBUGGING.md`.
+- A type code the module cannot print (an engineering sample's erased one) is the hardware version as hex
+  (`0xFFFF…`), not as garbage.
 - URCs reach the plug-in on the AT client's thread: it queues them for the Matter thread and returns true for the
   ones that are the node's alone (its GATT handles, data on its sockets), which the app's own handlers then do
   not see. Wi-Fi URCs go to both. The URC handlers run on the Matter thread without the stack lock: what they

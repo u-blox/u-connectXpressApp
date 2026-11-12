@@ -26,8 +26,9 @@ extern "C" {
 #include "u_cx_gatt_server.h"
 #include "u_cx_system.h"
 #include "u_cx_error_codes.h"  // For uCxGetErrorName() - decode GATT/AT error codes
-#include "u_port.h"  // For U_CX_PORT_SLEEP_MS
 }
+
+#include "PlatformAbstraction.h"
 
 // BLE commissioning flow counters (used for logging on all platforms).
 // uint32_t (was uint16_t): a busy 1-hour soak with frequent Apple Home commands
@@ -187,10 +188,12 @@ CHIP_ERROR BLEManagerImpl::InitGattServer()
     // Define CHIPoBLE service (0xFFF6)
     // NORA-W36 expects 16-bit UUID in big-endian (network byte order)
     uint8_t serviceUuid[] = {0xFF, 0xF6}; // 16-bit UUID 0xFFF6 in big-endian
+    mGattFull = false;
     result = uCxGattServerServiceDefine(mUcxHandle, serviceUuid, 2, &mCHIPoBLEServiceHandle);
     if (result < 0)
     {
         ChipLogError(DeviceLayer, "[BLE] Failed to define CHIPoBLE service: %d", result);
+        mGattFull = true;
         return CHIP_ERROR_INTERNAL;
     }
     ChipLogProgress(DeviceLayer, "[BLE] CHIPoBLE service defined (handle: %d)", mCHIPoBLEServiceHandle);
@@ -805,7 +808,7 @@ CHIP_ERROR BLEManagerImpl::SendIndication(BLE_CONNECTION_OBJECT conId, const Ble
         {
             // Wait between retries - gives time for phone's CCCD subscription
             // to arrive at NORA-W36 over the BLE air interface
-            U_CX_PORT_SLEEP_MS(kRetryDelayMs);
+            chip::Platform::SleepMs(kRetryDelayMs);
         }
     }
     
@@ -862,7 +865,7 @@ void BLEManagerImpl::NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId)
             ChipLogProgress(DeviceLayer, "[BLE] Executing deferred disconnect for conn %u", static_cast<unsigned>(ConIdToUInt(connId)));
             
             // Small delay to ensure AT command buffer is clear
-            U_CX_PORT_SLEEP_MS(50);
+            chip::Platform::SleepMs(50);
             
             (void)BLEMgrImpl().CloseConnection(connId);
 #if defined(U_PORT_FREERTOS) || defined(__ZEPHYR__)

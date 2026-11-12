@@ -31,6 +31,29 @@ def test_a_u_connect_client_change_needs_a_rebuild(tmp_path, monkeypatch):
     assert ucxapp.stale(exe)
 
 
+@pytest.mark.skipif(not (ucxapp.IS_WINDOWS and ucxapp.host_exe(True).with_suffix(".pdb").exists()),
+                    reason="needs the Windows Debug build (.\\ucxapp --debug --build)")
+def test_symbolize_names_the_function_of_an_absolute_address_or_an_offset(capsys):
+    exe = ucxapp.host_exe(True)
+    pe = exe.read_bytes()
+    nt = int.from_bytes(pe[0x3C:0x40], "little")
+    u16, u32 = (lambda o: int.from_bytes(pe[o:o + 2], "little")), (lambda o: int.from_bytes(pe[o:o + 4], "little"))
+    sections = nt + 24 + u16(nt + 20)
+
+    def at(rva):   # file offset of an address in the exe
+        for s in range(sections, sections + 40 * u16(nt + 6), 40):
+            if u32(s + 12) <= rva < u32(s + 12) + u32(s + 16):
+                return rva - u32(s + 12) + u32(s + 20)
+
+    entry = u32(nt + 40)   # AddressOfEntryPoint: a jump (incremental linking) to mainCRTStartup
+    if pe[at(entry)] == 0xE9:
+        entry = (entry + 5 + int.from_bytes(pe[at(entry) + 1:at(entry) + 5], "little", signed=True)) & 0xFFFFFFFF
+    assert ucxapp.symbolize(exe, 0x140000000, [0x140000000 + entry, entry, 0x7FFFFFF0]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split()[1] == lines[1].split()[1] == "mainCRTStartup+0x0"
+    assert lines[2] == "0x7ffffff0  ?"
+
+
 def test_vendor_trees_the_host_build_does_not_compile_are_ignored(tmp_path, monkeypatch):
     monkeypatch.setattr(ucxapp, "ROOT", tmp_path)
     exe = _tree(tmp_path)
@@ -183,6 +206,32 @@ def test_matter_sdk_fetch_is_one_commit_of_the_folders_the_node_needs(tmp_path, 
     assert parts == [f"third_party/{p}/repo" for p in ucxapp.MATTER_SDK_PARTS]
     assert all("--depth" in c and "--recursive" not in c for c in calls if "submodule" in c)
     assert not any(p in ucxapp.MATTER_SDK_PARTS for p in ("jsoncpp", "mbedtls", "boringssl"))
+
+
+def test_linux_gn_is_built_from_one_commit_of_its_source_at_the_version_of_the_windows_gn(tmp_path, monkeypatch):
+    monkeypatch.setattr(ucxapp, "GN_SOURCE", tmp_path / "gn")
+    monkeypatch.setattr(ucxapp, "ROOT", tmp_path)
+    monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    monkeypatch.setattr(ucxapp, "matter_tool", lambda name: "ninja")
+    calls = []
+
+    def check(cmd, what, **kw):
+        calls.append([str(c) for c in cmd])
+        (tmp_path / "gn" / "out").mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(ucxapp, "check", check)
+    assert ucxapp.matter_gn_from_source() == tmp_path / "gn" / "out" / "gn"
+    fetch = next(c for c in calls if "fetch" in c)
+    assert fetch[-3:] == ["1", "origin", ucxapp.GN_COMMIT] and "--depth" in fetch
+    assert any("--no-last-commit-position" in c for c in calls)
+    header = (tmp_path / "gn" / "out" / "last_commit_position.h").read_text()
+    assert f'"{ucxapp.GN_POSITION} ({ucxapp.GN_COMMIT[:12]})"' in header
+
+
+@pytest.mark.skipif(not ucxapp.IS_WINDOWS, reason="matter/tools/gn.exe runs on Windows")
+def test_linux_gn_is_the_version_of_matter_tools_gn():
+    out = subprocess.run([ucxapp.MATTER_DIR / "tools" / "gn.exe", "--version"], capture_output=True, text=True)
+    assert out.stdout.strip() == f"{ucxapp.GN_POSITION} ({ucxapp.GN_COMMIT[:12]})"
 
 
 def test_detect_force_probes_unnamed_ports(monkeypatch):

@@ -232,6 +232,13 @@ def parse(argv):
                    help="run a command script (one command per line, 'expect <regex>', 'expect-fail') and report "
                         "PASS/FAIL per step; ${NAME} takes environment variables")
     g.add_argument("--junit", metavar="FILE", help="with --script: also write a JUnit XML report")
+    g.add_argument("--symbolize", nargs="+", metavar="ADDR",
+                   help="function, file and line of addresses in app/bin/ucxapp-debug.exe from its PDB (Windows): "
+                        "the app's frames of a gdb backtrace (with --base, the exe's load address) or fault "
+                        "offsets from the Windows event log")
+    g.add_argument("--base", default="0x140000000", metavar="ADDR",
+                   help="with --symbolize: where the exe was loaded (default 0x140000000); smaller addresses are "
+                        "offsets into the exe")
     g.add_argument("--update", action="store_true", help=f"update u-connectClient to {SUBMODULE_BRANCH}")
     g.add_argument("--sign", metavar="THUMBPRINT", help="sign the Release exe into app/release (Windows)")
     g.add_argument("--release", action="store_true", help="run scripts/release.py with the remaining arguments")
@@ -258,6 +265,58 @@ def host_exe(debug):
     if not IS_WINDOWS:
         return BIN / "ucxapp"
     return BIN / ("ucxapp-debug.exe" if debug else "ucxapp.exe")
+
+
+def symbolize(exe, base, addrs):
+    """Prints function, file and line of each address in exe from its PDB through dbghelp. gdb reads the plug-in's
+    DWARF but not MSVC's PDB, so the app's own frames of a gdb backtrace are bare addresses."""
+    if not IS_WINDOWS:
+        print("--symbolize: Windows only (on Linux gdb reads the app's symbols itself)")
+        return 1
+    if not exe.with_suffix(".pdb").exists():
+        print(f"--symbolize: no {exe.with_suffix('.pdb').name}; build it with: .\\ucxapp --debug --build")
+        return 1
+    import ctypes
+    from ctypes import wintypes as w
+
+    class SymbolInfo(ctypes.Structure):
+        _fields_ = [("SizeOfStruct", w.ULONG), ("TypeIndex", w.ULONG), ("Reserved", ctypes.c_uint64 * 2),
+                    ("Index", w.ULONG), ("Size", w.ULONG), ("ModBase", ctypes.c_uint64), ("Flags", w.ULONG),
+                    ("Value", ctypes.c_uint64), ("Address", ctypes.c_uint64), ("Register", w.ULONG),
+                    ("Scope", w.ULONG), ("Tag", w.ULONG), ("NameLen", w.ULONG), ("MaxNameLen", w.ULONG),
+                    ("Name", ctypes.c_char * 256)]
+
+    class Line(ctypes.Structure):
+        _fields_ = [("SizeOfStruct", w.DWORD), ("Key", ctypes.c_void_p), ("LineNumber", w.DWORD),
+                    ("FileName", ctypes.c_char_p), ("Address", ctypes.c_uint64)]
+
+    dbg, proc = ctypes.WinDLL("dbghelp"), ctypes.c_void_p(-1)
+    dbg.SymLoadModuleEx.restype = ctypes.c_uint64
+    dbg.SymLoadModuleEx.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+                                    ctypes.c_uint64, w.DWORD, ctypes.c_void_p, w.DWORD]
+    dbg.SymFromAddr.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
+    dbg.SymGetLineFromAddr64.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
+    dbg.SymSetOptions(0x12)   # SYMOPT_UNDNAME | SYMOPT_LOAD_LINES
+    dbg.SymInitialize(proc, None, False)
+    if not dbg.SymLoadModuleEx(proc, None, str(exe).encode(), None, base, 0, None, 0):
+        print(f"--symbolize: dbghelp cannot load {exe}")
+        return 1
+    for addr in addrs:
+        at = addr if addr >= base else base + addr
+        sym = SymbolInfo(SizeOfStruct=88, MaxNameLen=255)   # 88: sizeof(SYMBOL_INFO)
+        line, disp, disp64 = Line(SizeOfStruct=ctypes.sizeof(Line)), w.DWORD(), ctypes.c_uint64()
+        if not dbg.SymFromAddr(proc, at, ctypes.byref(disp64), ctypes.byref(sym)):
+            print(f"{addr:#x}  ?")
+            continue
+        where = ""
+        if dbg.SymGetLineFromAddr64(proc, at, ctypes.byref(disp), ctypes.byref(line)) and line.FileName:
+            where = f"  {Path(line.FileName.decode()).name}:{line.LineNumber}"
+        if not where and not disp64.value < sym.Size:   # past the nearest symbol (__ImageBase, padding)
+            print(f"{addr:#x}  ?")
+            continue
+        print(f"{addr:#x}  {sym.Name.decode()}+{disp64.value:#x}{where}")
+    dbg.SymCleanup(proc)
+    return 0
 
 
 def newest_source():
@@ -1584,6 +1643,10 @@ MATTER_SDK_DIRS = ("build", "config", "examples/common", "scripts", "src", "zzz_
 MATTER_SDK_PARTS = ("nlassert", "nlio", "uriparser", "pigweed")
 MATTER_MODEL = MATTER_DIR / "data_model" / "ucxmatter.zap"
 MINGW_DIRS = (r"C:\msys64\ucrt64\bin", r"C:\msys64\mingw64\bin", r"C:\mingw64\bin", r"C:\mingw-w64\mingw64\bin")
+# gn for Linux, built from source (matter_gn_from_source): the version of matter/tools/gn.exe
+GN_COMMIT = "7498ca2e5e24b509ce679604ff46768f12098d48"
+GN_POSITION = 2322
+GN_SOURCE = ROOT / "build" / "gn"
 
 
 def matter_plugin():
@@ -1633,14 +1696,46 @@ def matter_patch():
 
 
 def matter_tool(name):
-    """gn and ninja: matter/tools first, then the u-connectMatter checkout next to this one, then PATH."""
+    """gn and ninja: matter/tools first, then the u-connectMatter checkout next to this one, then PATH; gn for
+    Linux is built from its source when none is found (matter/tools has the Windows binaries only)."""
     exe = name + (".exe" if IS_WINDOWS else "")
-    for d in (MATTER_DIR / "tools", ROOT.parent / "u-connectMatter" / "tools"):
+    for d in (MATTER_DIR / "tools", ROOT.parent / "u-connectMatter" / "tools", GN_SOURCE / "out"):
         if (d / exe).is_file():
             return d / exe
     if shutil.which(name) is None:
+        if name == "gn" and not IS_WINDOWS:
+            return matter_gn_from_source()
         fail(f"{name} not found: put {exe} into matter/tools or on PATH")
     return Path(shutil.which(name))
+
+
+def matter_gn_from_source():
+    """gn built from its source at the commit of matter/tools/gn.exe, once, into build/gn: the same gn on every
+    platform and no downloaded binary. Needs git, g++ and ninja."""
+    require("git", "Install Git (sudo apt install git)")
+    require("g++", "Install GCC (sudo apt install g++)")
+    ninja = matter_tool("ninja")
+    print(f"Building gn {GN_POSITION} ({GN_COMMIT[:12]}) from source into {GN_SOURCE.relative_to(ROOT)} (once) ...",
+          flush=True)
+    if not (GN_SOURCE / ".git").exists():
+        GN_SOURCE.mkdir(parents=True, exist_ok=True)
+        gn = ["git", "-C", GN_SOURCE]
+        check([*gn, "init", "-q"], "gn fetch")
+        check([*gn, "remote", "add", "origin", "https://gn.googlesource.com/gn"], "gn fetch")
+        check([*gn, "fetch", "--depth", "1", "origin", GN_COMMIT], "gn fetch")
+        check([*gn, "checkout", "-q", "--detach", "FETCH_HEAD"], "gn fetch")
+    env = dict(os.environ, CXX=os.environ.get("CXX", "g++"), LD=os.environ.get("LD", "g++"),
+               AR=os.environ.get("AR", "ar"))
+    # gen.py reads the version from the history, which a one-commit clone does not have: the header is written here
+    check([sys.executable, GN_SOURCE / "build" / "gen.py", "--no-last-commit-position"], "gn configure",
+          cwd=GN_SOURCE, env=env)
+    (GN_SOURCE / "out" / "last_commit_position.h").write_text(
+        "#ifndef OUT_LAST_COMMIT_POSITION_H_\n#define OUT_LAST_COMMIT_POSITION_H_\n"
+        f"#define LAST_COMMIT_POSITION_NUM {GN_POSITION}\n"
+        f'#define LAST_COMMIT_POSITION "{GN_POSITION} ({GN_COMMIT[:12]})"\n'
+        "#endif  // OUT_LAST_COMMIT_POSITION_H_\n")
+    check([ninja, "-C", GN_SOURCE / "out", "gn"], "gn build", env=env)
+    return GN_SOURCE / "out" / "gn"
 
 
 def matter_env():
@@ -2197,6 +2292,8 @@ def main(argv):
         return update()
     if args.selftest:
         return selftest()
+    if args.symbolize:
+        return symbolize(host_exe(True), int(args.base, 16), [int(a, 16) for a in args.symbolize])
     if args.doctor:
         return doctor()
     if args.publish_web is not None:

@@ -422,6 +422,31 @@ def test_node_stops_and_starts_again_in_one_session(app_exe, module, plugin, tmp
     assert "matter: stopped" in out.stdout and "matter: running" in out.stdout, out.stdout
     # the Matter thread is gone with the node: each stop took the advertisement down
     assert module.log.count("AT+UBTAL") == 2 and module.log.count("AT+UBTALD") >= 3, module.log
+    # the module cannot remove a GATT service: it is rebooted before the second start defines the service again
+    assert "matter: rebooting the module, its GATT server has the Matter service of the last start" in out.stdout
+    assert module.log.count("AT+UBTGS=FFF6") == 2 and module.log.count("AT+CPWROFF") == 1, module.log
+
+
+def test_a_module_with_no_room_for_the_matter_service_is_rebooted_and_the_node_started(app_exe, plugin, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["gatt_services"] = 1
+    # an engineering sample: its type code field is erased (ATI0 gives the bytes 0xFF, escaped as the module does)
+    profile["commands"]["ATI0"] = ['"\\xFF\\xFF\\xFF\\xFF"', "OK"]
+    module = Vucx(profile)
+    module.start()
+    module.gatt.services = 1   # an earlier session filled the GATT table
+    try:
+        out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status", "matter.stop", "at ATI9")
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout
+    assert "matter: rebooting the module, its GATT server has no room for the Matter service" in out.stdout
+    assert "matter: node started (Matter SDK v" in out.stdout and "ERROR" not in out.stdout, out.stdout
+    assert module.log.count("AT+UBTGS=FFF6") == 2 and module.log.count("AT+CPWROFF") == 1, module.log
+    assert "hardware 0xFFFFFFFF," in out.stdout, out.stdout
 
 
 def test_endpoints_are_chosen_at_start_and_set_from_the_app(app_exe, module, plugin, tmp_path):

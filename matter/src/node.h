@@ -37,6 +37,7 @@ typedef void (*NodeEvent)(const char * line);
 // what failed.
 const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, NodeSetup & setup);
 void NodeStop();
+bool NodeGattFull(); // after a failed NodeStart: the module refused the Matter GATT service
 
 // On the AT client's thread: queues the URC for the Matter thread. True when it is the node's alone.
 bool NodeUrc(const char * line, size_t length);

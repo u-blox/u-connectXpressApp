@@ -182,7 +182,9 @@ bool TakeSetup(const NodeSetup & setup)
     return true;
 }
 
-// One text answer of the module; "" when it gives none
+// One text answer of the module; "" when it gives none. An engineering sample can have an erased field (ATI0 gives
+// 16 bytes 0xFF): an answer with bytes outside printable ASCII is given in hex ("0xFFFF..."), as a controller can
+// only show UTF-8 in the Basic Information strings
 void Ask(bool (*begin)(uCxHandle_t *, const char **), char * out, size_t size)
 {
     const char * text = nullptr;
@@ -190,7 +192,23 @@ void Ask(bool (*begin)(uCxHandle_t *, const char **), char * out, size_t size)
     out[0] = '\0';
     if (begin(gUcx, &text) && text != nullptr)
     {
-        snprintf(out, size, "%s", text);
+        bool printable = true;
+        for (const char * p = text; *p != '\0'; p++)
+        {
+            printable = printable && *p >= 0x20 && *p < 0x7F;
+        }
+        if (printable)
+        {
+            snprintf(out, size, "%s", text);
+        }
+        else if (size > 2)
+        {
+            size_t n = static_cast<size_t>(snprintf(out, size, "0x"));
+            for (const char * p = text; *p != '\0' && n + 2 < size; p++, n += 2)
+            {
+                snprintf(out + n, size - n, "%02X", static_cast<unsigned>(static_cast<unsigned char>(*p)));
+            }
+        }
     }
     (void) uCxEnd(gUcx);
 }
@@ -327,9 +345,15 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
                          [](const char * line) { gHost->event(line); }, setup);
     if (failed != nullptr)
     {
-        Print("ERROR: %s\n", failed);
+        bool gattFull = NodeGattFull();
+
         NodeStop();
         gStarted = false;
+        if (gattFull)
+        {
+            return UCXAPP_MATTER_ERR_GATT_FULL; // the app says it and reboots the module
+        }
+        Print("ERROR: %s\n", failed);
         return UCXAPP_MATTER_ERR_FAILED;
     }
     if (!TakeSetup(setup))

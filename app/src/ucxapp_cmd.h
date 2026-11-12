@@ -121,6 +121,10 @@ void ucxapp_handle_remove(ucxapp_handle_kind_t kind, int32_t id);
 int32_t ucxapp_handle_current(ucxapp_handle_kind_t kind);   /* -1 if none */
 uint32_t ucxapp_handle_version(void);                       /* changes whenever a handle is added or removed */
 int ucxapp_handle_list(ucxapp_handle_kind_t kind, int32_t *out, int max);   /* oldest first; returns the count */
+/* Bound UDP sockets found on the module at connect, left by an earlier session (a reloaded web page never runs
+   matter.stop); a handle drops out when this session opens, closes or sees it closed. Bit n is handle n. */
+void ucxapp_sock_set_leftovers(uint32_t mask);
+uint32_t ucxapp_sock_leftovers(void);
 
 /* NORA-W36 3.6 can list a stale "+USOST:0,0,0" (protocol 0); only TCP and UDP entries are real sockets. */
 static inline bool ucxapp_sock_listed(const uCxSocketListStatus_t *s)

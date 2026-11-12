@@ -980,10 +980,16 @@ static bool addToken(ucxapp_ui_variant_t *v, const char *t, size_t len, bool inG
 
     if (len >= 3 && (t[0] == '<' || t[0] == '[') && hasDots(t, len)) {
         ucxapp_ui_field_t *f = newField(v, opt || t[0] == '[');
+        const char *eq = memchr(t, '=', len);
         size_t end = len;
 
         if (f == NULL) {
             return false;
+        }
+        /* [name...=a b c]: what an empty field gives, shown next to it */
+        if (eq != NULL && hasDots(t, (size_t)(eq - t))) {
+            copyText(f->def, sizeof(f->def), eq + 1, (size_t)(t + len - eq - 2));
+            end = (size_t)(eq - t);
         }
         while (end > 1 && (t[end - 1] == '.' || t[end - 1] == ']' || t[end - 1] == '>' || t[end - 1] == ' ')) {
             end--;

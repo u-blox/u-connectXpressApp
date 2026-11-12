@@ -385,5 +385,12 @@ def test_matter_node_is_built_in(site):
         run(page, "app.sbom")
         page.wait_for_function("document.getElementById('out').innerText.includes('Matter node')", timeout=30000)
         assert "cannot load the Matter plug-in" not in page.inner_text("#out")
+        # The node's card follows it: the app's clock must not start again when the module connects
+        run(page, "matter.start")
+        page.wait_for_function("document.getElementById('out').innerText.includes('node started')", timeout=60000)
+        page.get_by_role("tab", name="MATTER").click()
+        page.get_by_role("heading", name="MATTER node").wait_for(timeout=10000)
+        page.get_by_role("button", name="on", exact=True).click()
+        page.get_by_text("light on 100%").wait_for(timeout=10000)
         browser.close()
     assert not js_errors, js_errors

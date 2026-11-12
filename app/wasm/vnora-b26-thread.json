@@ -1006,6 +1006,7 @@
   "OK"
  ],
  "gatt_server": true,
+ "gatt_services": null,
  "ft_peer": [
   184,
   187

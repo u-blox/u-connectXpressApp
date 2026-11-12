@@ -166,16 +166,19 @@ jobs:
           name: wasm
           path: pkg
 
-  # One tree for release.py: linux/, stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/;
+  matter:
+    uses: ./.github/workflows/matter.yml
+
+  # One tree for release.py: linux/ (with libucxmatter.so), stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/;
   # it adds the signed windows/ and publishes.
   bundle:
-    needs: [windows, linux, stm32, zephyr, wasm]
+    needs: [windows, linux, stm32, zephyr, wasm, matter]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v6
         with:
           path: tree
-          pattern: "{linux,stm32-*,zephyr-*,wasm}"
+          pattern: "{linux,matter-linux,stm32-*,zephyr-*,wasm}"
           merge-multiple: true
       - uses: actions/upload-artifact@v5
         with:

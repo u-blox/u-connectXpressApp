@@ -42,7 +42,7 @@ git submodule update --init u-connectClient
 ```powershell
 .\ucxapp                 # build if needed and run (auto-detects a NORA EVK)
 .\ucxapp COM13 --exec "dev.info"   # arguments the launcher does not know go to the app
-.\ucxapp --debug         # debug build
+.\ucxapp --debug         # debug build (crash debugging: docs/DEBUGGING.md)
 .\ucxapp --update        # update the u-connectClient submodule
 .\ucxapp --clean         # clean build artifacts
 .\ucxapp --rebuild       # rebuild from scratch
@@ -103,7 +103,9 @@ The app runs without it; `matter.start` loads `ucxmatter.dll` (`libucxmatter.so`
 The plug-in is built from `matter/` with gn and ninja (`matter/tools`) and GCC: on Windows install MSYS2 and, in it,
 `pacman -S mingw-w64-ucrt-x86_64-gcc` (the Matter SDK does not build with MSVC). The first build fetches the Matter SDK
 into `matter/connectedhomeip`: one commit, only the folders and SDK submodules the plug-in builds from; no other
-command fetches that submodule. Today the plug-in advertises a
+command fetches that submodule. On Linux without a `gn` (in `../u-connectMatter/tools` or PATH) the launcher builds
+gn 2322 from source into `build/gn` once (needs `g++`, `ninja` and `git`). CI: `.github/workflows/matter.yml` (Windows,
+Linux, browser; run it from the Actions tab), also run by `release.yml`. Today the plug-in advertises a
 commissionable node over Bluetooth LE and shows its QR and manual codes; commissioning itself is not in yet.
 
 ## File structure

@@ -450,6 +450,8 @@ int main(int argc, char *argv[])
     const char *pos[MAX_POS];
     int posCount = 0;
 
+    /* The port's clock starts here, not at the first dev.connect: times taken before it would be in the future */
+    uPortInit();
     ucxapp_platform_init();
     ucxapp_platform_args(&argc, &argv);
     ucxapp_io_set(&ucxapp_io_stdio);

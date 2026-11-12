@@ -29,6 +29,7 @@ becomes AT+UBTGPSD lines, one AT+UBTGSCD per service, AT+UBTGCDD per characteris
 value (a CCCD follows every notifiable value). Static, so the browser's virtual module has it too.
 
     gatt_server: true               # our own GATT server hands out handles per service (see GattServer)
+    gatt_services: 3                # services kept until AT+CPWROFF (a service cannot be removed; default: no limit)
 
     sockets:                        # the network behind the module (the browser's virtual module runs it too)
       servers: {2101: ntrip, 5683: coap}   # remote port -> behaviour (echo for the rest; sink drops)
@@ -159,7 +160,7 @@ def table(profile=None):
             ft = [values[FtServer.CTRL], values[FtServer.DATA]]
     return {"commands": commands, "urcs": dict(p.get("urcs") or {}), "state": dict(p.get("state") or {}),
             "data": dict(p.get("data") or {}), "default": p.get("default") or ["ERROR"],
-            "gatt_server": bool(p.get("gatt_server")), "ft_peer": ft}
+            "gatt_server": bool(p.get("gatt_server")), "gatt_services": p.get("gatt_services"), "ft_peer": ft}
 
 
 class FtServer:
@@ -260,16 +261,21 @@ class GattServer:
 
     REF = re.compile(r"\{([hc]):([0-9A-Fa-f]+)\}")
 
-    def __init__(self):
+    def __init__(self, room=None):
+        self.room = room
         self.reset()
 
     def reset(self):
         self.next = 40
         self.chars = []
         self.active = 0
+        self.services = 0
 
     def handle(self, cmd):
         if cmd.startswith("AT+UBTGS="):
+            if self.room is not None and self.services >= self.room:
+                return ["ERROR"]
+            self.services += 1
             service = -(-self.next // 20) * 20
             self.next = service + 1
             return [f"+UBTGS:{service}", "OK"]
@@ -518,7 +524,7 @@ class Vucx:
         self.setters = t["state"]
         self.data = t["data"]
         self.default = t["default"]
-        self.gatt = GattServer() if t["gatt_server"] else None
+        self.gatt = GattServer(t["gatt_services"]) if t["gatt_server"] else None
         self.state = {}
         self.log = []   # every command received, for the tests
         self.payloads = []   # (command, binary data) for commands that carried data (AT+X=... SOH len data)

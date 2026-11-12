@@ -33,6 +33,9 @@ extern "C" {
 #define UCXAPP_MATTER_ERR_USAGE       (-101)
 #define UCXAPP_MATTER_ERR_FAILED      (-103)
 #define UCXAPP_MATTER_ERR_UNSUPPORTED (-104)
+/* start() only: the module refused the Matter GATT service. Its GATT server cannot remove a service, so each
+   start adds one until the module reboots; the app reboots it and starts once more. */
+#define UCXAPP_MATTER_ERR_GATT_FULL   (-120)
 
 struct uCxAtClient;
 

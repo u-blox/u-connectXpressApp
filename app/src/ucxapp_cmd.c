@@ -849,6 +849,25 @@ typedef struct {
 
 static handleSet_t gHandles[2];
 static volatile uint32_t gHandleVersion;
+static volatile uint32_t gSockLeftovers;   /* bit per handle 0..31 */
+
+void ucxapp_sock_set_leftovers(uint32_t mask)
+{
+    gSockLeftovers = mask;
+}
+
+uint32_t ucxapp_sock_leftovers(void)
+{
+    return gSockLeftovers;
+}
+
+/* A handle this session opens, closes or sees closed is no longer one an earlier session left behind. */
+static void forgetLeftover(ucxapp_handle_kind_t kind, int32_t id)
+{
+    if (kind == UCXAPP_HANDLE_SOCK && id >= 0 && id < 32) {
+        gSockLeftovers &= ~(1u << id);
+    }
+}
 
 uint32_t ucxapp_handle_version(void)
 {
@@ -871,6 +890,7 @@ void ucxapp_handle_remove(ucxapp_handle_kind_t kind, int32_t id)
 {
     handleSet_t *s = &gHandles[kind];
 
+    forgetLeftover(kind, id);
     ucxapp_events_lock();
     for (int i = 0; i < s->count; i++) {
         if (s->ids[i] == id) {

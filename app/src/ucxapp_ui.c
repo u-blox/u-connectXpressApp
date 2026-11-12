@@ -571,6 +571,7 @@ static const groupInfo_t kModuleGroups[] = {
 
 static const groupInfo_t kHostGroups[] = {
     { "app",     "App",         "This app: status card, log, version, memory, licences, wall clock, examples" },
+    { "matter",  "App",         "Matter node on the module: start, commission over Bluetooth LE, endpoints, QR code" },
     { "usecase", "App",         "Use cases: fit check against the module limits and ready-made steps" },
     { "conn",    "App",         "Every live link: Wi-Fi, BLE (with CS distance), Thread, sockets, GNSS and cellular" },
     { "session", "App",         "Record the commands typed to a .ucx script and replay it" },

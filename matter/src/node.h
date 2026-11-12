@@ -47,6 +47,10 @@ int NodeFabrics(); // 0: not commissioned
 bool NodeWindowOpen();
 bool NodeOpenWindow(unsigned seconds = 900); // commissioning window, 180 to 900 s; false when the node refuses
 bool NodeRandomOk();                          // matter.selftest: the SDK's DRBG gives bytes, and not the same twice
+// matter.selftest: every crypto primitive the node uses against known answers, one report per primitive
+typedef void (*CryptoReport)(void * context, const char * name, bool ok, const char * detail);
+void NodeCryptoCheck(CryptoReport report, void * context); // with the stack lock
+void CryptoCheck(CryptoReport report, void * context);     // crypto_check.cpp
 bool SetupCodesAllowed(uint32_t passcode, uint16_t discriminator); // no test or forbidden code (Matter 5.1.7.1)
 void NodeNetwork(char * out, size_t size); // one line for matter.status: the node's network on the module
 

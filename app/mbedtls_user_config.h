@@ -10,3 +10,9 @@
 
 /* Built-in mbedTLS self tests, run by utils.tls.selftest. */
 #define MBEDTLS_SELF_TEST
+
+/* In the browser the Matter node is linked in: its thread and the app's share one PSA key store. */
+#if defined(__EMSCRIPTEN__)
+#define MBEDTLS_THREADING_C
+#define MBEDTLS_THREADING_PTHREAD
+#endif

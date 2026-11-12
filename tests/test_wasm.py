@@ -360,3 +360,30 @@ def test_no_web_serial_starts_the_virtual_module(site):
         assert page.input_value("#wsvm") == "valma-w1.json"
         browser.close()
     assert not js_errors, js_errors
+
+
+def test_matter_node_is_built_in(site):
+    """ucxapp --wasm --matter links the Matter node into the app: a browser loads no plug-in file."""
+    if b"Matter SDK " not in (SITE / "ucxapp.wasm").read_bytes():
+        pytest.skip("the browser build has no Matter node (ucxapp --wasm --matter --build)")
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script("delete Navigator.prototype.serial")
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(site)
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                               timeout=60000)
+        run(page, "matter.status")
+        page.wait_for_function("document.getElementById('out').innerText.includes('plug-in: built in')",
+                               timeout=30000)
+        run(page, "app.sbom")
+        page.wait_for_function("document.getElementById('out').innerText.includes('Matter node')", timeout=30000)
+        assert "cannot load the Matter plug-in" not in page.inner_text("#out")
+        browser.close()
+    assert not js_errors, js_errors

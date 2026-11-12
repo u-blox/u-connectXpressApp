@@ -1,4 +1,4 @@
-# GN root of the Matter plug-in (ucxmatter); "ucxapp --matter" runs gn and ninja on it into build/matter.
+# GN root of the Matter plug-in (ucxmatter); "ucxapp --matter" runs gn and ninja on it into build/matter (build/matter-linux, build/matter-wasm).
 
 buildconfig = "//connectedhomeip/build/config/BUILDCONFIG.gn"
 

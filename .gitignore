@@ -1,4 +1,5 @@
 build/
+tools/cmake/
 
 # Binaries and build outputs
 bin/

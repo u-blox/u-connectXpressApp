@@ -286,6 +286,13 @@ if(NOT WIN32)
       # the board profiles and example scripts at the paths the examples use (app/boards/h753.json from /)
       "SHELL:--embed-file ${CMAKE_CURRENT_SOURCE_DIR}/boards@/app/boards"
       "SHELL:--embed-file ${CMAKE_CURRENT_SOURCE_DIR}/../examples@/examples")
+    # The Matter node (ucxapp --wasm --matter), linked in: the browser cannot load a plug-in file
+    set(UCXAPP_MATTER_LIB "" CACHE FILEPATH "Static Matter node library (libucxmatter.a), empty for none")
+    if(UCXAPP_MATTER_LIB)
+      target_compile_definitions(ucxapp PRIVATE UCXAPP_MATTER_STATIC)
+      target_link_libraries(ucxapp PRIVATE ${UCXAPP_MATTER_LIB})
+      target_link_options(ucxapp PRIVATE -lc++ -lc++abi)
+    endif()
     add_custom_command(TARGET ucxapp POST_BUILD
       COMMAND ${CMAKE_COMMAND} -DPAGE=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${_ucx_site}/index.html
               -P ${CMAKE_CURRENT_SOURCE_DIR}/wasm/site.cmake

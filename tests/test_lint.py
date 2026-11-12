@@ -11,12 +11,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {"u-connectClient", "build", ".git", "node_modules", "third-party", "connectedhomeip"}
+SKIP_PATHS = {ROOT / "tools" / "cmake"}  # the pinned CMake ucxapp.py fetches
 
 
 def _files(pattern):
     found = []
     for top, dirs, names in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]  # prune: walking build/ is very slow on /mnt
+        # prune: walking build/ is very slow on /mnt
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and Path(top) / d not in SKIP_PATHS]
         found += (Path(top) / n for n in fnmatch.filter(names, pattern))
     return sorted(found)
 

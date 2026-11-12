@@ -22,6 +22,10 @@ from harness.matter import (
 
 pytestmark = pytest.mark.app
 
+# matter.selftest checks every crypto primitive the node uses against known answers, one line each
+CRYPTO = ("SHA-256", "HMAC", "HKDF", "PBKDF2", "AES-CCM", "AES-CTR", "ECDSA", "ECDH", "CSR", "SPAKE2+", "session keys",
+          "fabric ID")
+
 
 @pytest.fixture
 def plugin(app_exe):
@@ -137,8 +141,8 @@ def test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones(app_exe, modul
 def test_selftest_checks_the_node(app_exe, module, plugin, tmp_path):
     out = _run(app_exe, module, plugin, tmp_path, "matter.selftest", "matter.start", "matter.selftest")
     assert out.returncode == 0 and out.stdout.count("matter selftest: ok") == 2, out.stdout
-    for name in ("plug-in", "module", "store", "random", "setup codes", "Bluetooth LE"):
-        assert len(re.findall(rf"^  {name} +ok ", out.stdout, re.M)) == 2, (name, out.stdout)
+    for name in ("plug-in", "module", "store", "random", *CRYPTO, "setup codes", "Bluetooth LE"):
+        assert len(re.findall(rf"^  {re.escape(name)} +ok ", out.stdout, re.M)) == 2, (name, out.stdout)
 
 
 def test_node_says_which_product_it_is(app_exe, module, plugin, tmp_path):
@@ -301,6 +305,37 @@ def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, pl
     assert sent.rindex("AT+UMDE=1") > sent.rindex("AT+UMDE=0"), sent
     # and its socket is closed: nothing of the node listens on the module any more
     assert "AT+USOCL=0" in module.log[module.log.index("AT+USOB=0,5540"):], sent
+
+
+def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_exe, plugin, tmp_path):
+    """The whole data path of commissioning: PASE with the passcode, then an encrypted read of the vendor ID and
+    the node's encrypted answer. A node that pairs but cannot use its session keys (the raw session keystore with
+    the PSA crypto backend: "failed to decode/authenticate", then the failsafe expires) fails here."""
+    pytest.importorskip("yaml")
+    pytest.importorskip("cryptography")
+    from harness.pase import Commissioner
+    from harness.vucx import Vucx, load
+
+    module = Vucx("nora-w36.yaml")
+    module.start()
+    try:
+        passcode = setup_codes(_run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status").stdout)[1]
+    finally:
+        module.stop()
+    commissioner = Commissioner(passcode)
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["peers"] = {5540: commissioner}
+    module = Vucx(profile)
+    module.start()
+    try:
+        out = _run(app_exe, module, plugin, tmp_path, "app.log.events.on", "matter.start", "gatt.listen 4",
+                   "matter.status")
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout
+    assert commissioner.state == "read", (commissioner.state, out.stdout)
+    assert b"\x25\x02\xf1\xff" in commissioner.report, commissioner.report.hex()   # VendorID 0xFFF1
+    assert "failed to decode" not in out.stdout and "Failsafe timer expired" not in out.stdout, out.stdout
 
 
 def test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered(app_exe, plugin, tmp_path):

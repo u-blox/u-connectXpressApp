@@ -60,6 +60,21 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
   `ucxmatter.matter` and the code under `matter/data_model/ucxmatter` (ZAP from `ZAP_INSTALL_PATH` or
   `../u-connectMatter/tools/zap-*`). All of it is checked in, so a build needs no ZAP tool.
 
+### In the browser and on boards (linked in)
+
+```powershell
+.\ucxapp --wasm --matter --build   # build/matter-wasm/libucxmatter.a, linked into build/wasm/site
+```
+
+A browser (and a board) loads no library at run time: the node is built as a static library and linked into the
+app, which defines `UCXAPP_MATTER_STATIC` and calls `ucxmatter_plugin()` directly (`matter.status` shows
+`plug-in: built in`). Everything else (`matter.*`, the AT client, the URC copy, the store) is the same interface.
+The node builds u-connectClient into itself as the app does, so every C name it defines gets the prefix `ucxm_`
+(`matter/compat/wasm/ucxm_symbols.h`, force-included; `ucxm_at.h` includes it first). The launcher brings the
+list up to date from `emnm` and builds once more when it changed: commit it. Names the SDK tests with `#ifndef`
+(`chipAbort`, `chipDie`: `MATTER_WASM_HOOKS` in `ucxapp.py`) keep their own. The node uses the app's mbedTLS,
+linked once. Test: `tests/test_wasm.py::test_matter_node_is_built_in`.
+
 ## Run
 
 ```powershell
@@ -74,7 +89,9 @@ matter.log detail              # how much of the SDK's log is printed: error, in
 matter.stop                    # also done when the app leaves
 matter.reset                   # forget what the node stored, leave Wi-Fi, reboot the module, start the node again
 matter.reset all               # as matter.reset, new setup codes, and the module factory-reset instead of rebooted
-matter.selftest                # plug-in, module, sealed store, random generator, setup codes, Bluetooth LE, network
+matter.selftest                # plug-in, module, sealed store, random generator, crypto known answers (SHA-256, HMAC,
+                               # HKDF, PBKDF2, AES-CCM, AES-CTR, ECDSA, ECDH, CSR, SPAKE2+, session keys, fabric ID;
+                               # matter/src/crypto_check.cpp, the SDK's vectors), setup codes, Bluetooth LE, network
 ```
 
 After a reset the node (when it ran) starts again with the same endpoints and, having no fabric, opens the
@@ -101,8 +118,8 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 | `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.cpp` (the node's random setup codes, kept in the store), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
 | `matter/platform/ucxclient/` | The Matter device layer from u-connectMatter: `BLEManagerImpl` (GATT service, advertising), `NetworkCommissioningDriver` (Wi-Fi scan and join for the commissioner), `UcxNetwork.cpp` (Wi-Fi state from the module's URCs, the UDP sockets and their data), `DnssdImpl` and `UcxMdns.cpp` (mDNS on the module), configuration and key-value store (through the app's sealed store, `UcxStore.h`), `PlatformManagerImpl` (the Matter thread). `UcxClientManager` here is a small facade: the handle, the URC queue and which URCs are the node's alone |
-| `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` |
-| `matter/mbedtls/` | The app's mbedTLS 4 (`third-party/mbedtls`, app config and `app/third-party/mbedtls-gen`) as gn target `//mbedtls`; the SDK's crypto uses it through its PSA backend (`chip_crypto = "psa"`, raw keystore). The SDK's own mbedTLS 2.28 (end of life) is never fetched |
+| `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` (Windows), `build/matter-linux` (Linux, WSL included, so the two never clobber each other) and `build/matter-wasm` (`--wasm --matter`) |
+| `matter/mbedtls/` | The app's mbedTLS 4 (`third-party/mbedtls`, app config and `app/third-party/mbedtls-gen`) as gn target `//mbedtls`; the SDK's crypto uses it through its PSA backend (`chip_crypto = "psa"` with the PSA session keystore: the PSA AES-CCM takes PSA key ids, with the raw keystore every message after PASE fails to decrypt). The SDK's own mbedTLS 2.28 (end of life) is never fetched |
 | `matter/patches/` | Whole Matter SDK files from u-connectMatter, copied over the SDK before every build |
 | `matter/compat/windows/` | POSIX headers the SDK includes and MinGW lacks |
 | `matter/tools/` | `gn.exe`, `ninja.exe` |
@@ -142,7 +159,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 - Warnings: our files build with none. For SDK sources the launcher turns off `-Wundef` and
   `-Wignored-attributes` (they test macros of other platforms); fix anything else at its cause (`EnforceFormat.h`
   patch, `compat/windows`).
-- `UCX_KEYLOG_FILE` (patched `RawKeySessionKeystore.cpp`) writes the session keys of the node to that file for
+- `UCX_KEYLOG_FILE` (patched `PSASessionKeystore.cpp`) writes the session keys of the node to that file for
   Wireshark, only in a plug-in built with `ucxapp --matter --keylog --build` (`matter.status` says `KEY LOG BUILD`):
   a debug aid, never for a node that is in use. A normal build has no such code.
 - New endpoint kind: one entry in `kKinds[]` in `matter/src/endpoints.cpp` (name, device type, values, init/set/show)

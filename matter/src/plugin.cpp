@@ -461,6 +461,9 @@ int Selftest()
     const bool window = NodeWindowOpen();
 
     Check(failed, NodeRandomOk(), "random", "the SDK's DRBG gives bytes, two draws differ");
+    NodeCryptoCheck([](void * context, const char * name, bool ok, const char * detail) {
+        Check(*static_cast<int *>(context), ok, name, detail);
+    }, &failed);
 
     again.vendorId      = gOnboarding.vendorId;
     again.productId     = gOnboarding.productId;

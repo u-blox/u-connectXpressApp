@@ -9,6 +9,8 @@
 #include <credentials/DeviceAttestationCredsProvider.h>
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include <crypto/CHIPCryptoPAL.h>
+#include <crypto/DefaultSessionKeystore.h>
+#include <psa/crypto.h>
 #include <data-model-providers/codegen/CodegenDataModelProvider.h>
 #include <lib/support/CHIPMem.h>
 #include <platform/CHIPDeviceLayer.h>
@@ -350,6 +352,13 @@ bool NodeRandomOk()
 
     return Crypto::DRBG_get_bytes(a, sizeof(a)) == CHIP_NO_ERROR && Crypto::DRBG_get_bytes(b, sizeof(b)) == CHIP_NO_ERROR &&
         memcmp(a, b, sizeof(a)) != 0 && memcmp(a, kZero, sizeof(a)) != 0;
+}
+
+void NodeCryptoCheck(CryptoReport report, void * context)
+{
+    StackLock lock;
+
+    CryptoCheck(report, context);
 }
 
 // With the stack lock

@@ -71,6 +71,22 @@ def test_cache_from_an_old_source_folder_is_detected(tmp_path):
     assert mod.cache_moved(cache)
 
 
+def test_cache_made_by_another_cmake_is_detected(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("launcher", ROOT / "ucxapp.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    pinned = tmp_path / "pinned" / "cmake.exe"
+    monkeypatch.setattr(mod.shutil, "which", lambda tool: str(pinned) if tool == "cmake" else None)
+    cache = tmp_path / "CMakeCache.txt"
+    head = (f"CMAKE_CACHEFILE_DIR:INTERNAL={tmp_path.as_posix()}\n"
+            f"CMAKE_HOME_DIRECTORY:INTERNAL={(ROOT / 'app').as_posix()}\n")
+    # a system CMake made it; regenerating it with the pinned one mixes their modules and fails
+    cache.write_text(head + "CMAKE_COMMAND:INTERNAL=C:/Program Files/CMake/bin/cmake.exe\n")
+    assert mod.cache_moved(cache)
+    cache.write_text(head + f"CMAKE_COMMAND:INTERNAL={pinned.as_posix()}\n")
+    assert not mod.cache_moved(cache)
+
+
 def test_no_stale_ucxclient_paths_in_build_files():
     for rel in ("ucxapp.py", "app/CMakeLists.txt"):
         text = (ROOT / rel).read_text(encoding="utf-8")

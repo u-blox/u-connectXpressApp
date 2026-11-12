@@ -172,19 +172,33 @@ static void urcTap(struct uCxAtClient *client, void *tag, char *line, size_t len
 
 /* ---- loading -------------------------------------------------------------- */
 
+#ifdef UCXAPP_MATTER_STATIC
+/* The node is linked into the app (the browser, boards): there is no file to load */
+const ucxapp_matter_plugin_t *ucxmatter_plugin(void);
+#endif
+
 static bool fileExists(const char *path)
 {
+#ifdef UCXAPP_MATTER_STATIC
+    (void)path;
+    return true;
+#else
     FILE *f = fopen(path, "rb");
 
     if (f != NULL) {
         fclose(f);
     }
     return f != NULL;
+#endif
 }
 
 /* The plug-in file; false where this build cannot load one (the browser). */
 static bool pluginFile(char *out, size_t size)
 {
+#ifdef UCXAPP_MATTER_STATIC
+    snprintf(out, size, "built in");
+    return true;
+#else
     const char *env = getenv(PLUGIN_ENV);
 
     if (env != NULL && env[0] != '\0') {
@@ -192,6 +206,7 @@ static bool pluginFile(char *out, size_t size)
         return true;
     }
     return ucxapp_platform_lib_file(PLUGIN_BASE, out, size);
+#endif
 }
 
 static bool pluginPath(void)
@@ -221,6 +236,9 @@ static bool load(void)
                      "       build it with: ucxapp --matter --build\n", gPath);
         return false;
     }
+#ifdef UCXAPP_MATTER_STATIC
+    entry = ucxmatter_plugin;
+#else
     gLib = ucxapp_platform_lib_open(gPath);
     if (gLib == NULL) {
         ucxapp_print("ERROR: %s does not load (built for another system, or one of its own libraries is missing)\n",
@@ -228,6 +246,7 @@ static bool load(void)
         return false;
     }
     entry = (ucxapp_matter_entry_t)ucxapp_platform_lib_symbol(gLib, UCXAPP_MATTER_ENTRY);
+#endif
     gPlugin = entry != NULL ? entry() : NULL;
     if (gPlugin == NULL) {
         ucxapp_print("ERROR: %s is not a Matter plug-in (no %s)\n", gPath, UCXAPP_MATTER_ENTRY);
@@ -649,7 +668,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.qr", "", "Show the setup QR code and manual pairing code of the node (it does not advertise: matter.open does)", 0, cmdForward },
     { "matter.open", "[seconds]", "Open the commissioning window again and advertise over Bluetooth LE (180 to 900 s, default 900)", 0, cmdForward },
     { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
-    { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
+    { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, crypto known answers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
     { "matter.log", "[error|info|detail]", "How much of the Matter SDK's log is printed", 0, cmdLog },
 };
 

@@ -131,6 +131,12 @@ inline uint32_t ElapsedMs(uint32_t startTickMs)
  *
  * Provides RAII-style locking via Lock() and Unlock(), or use ScopedLock.
  */
+// Lock and Unlock are split on purpose, which clang's analysis of libc++'s annotated std::mutex cannot follow
+#if defined(__clang__)
+#define UCXM_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))
+#else
+#define UCXM_NO_THREAD_SAFETY_ANALYSIS
+#endif
 class Mutex
 {
 public:
@@ -158,7 +164,7 @@ public:
     Mutex(const Mutex &) = delete;
     Mutex & operator=(const Mutex &) = delete;
 
-    void Lock()
+    void Lock() UCXM_NO_THREAD_SAFETY_ANALYSIS
     {
 #if defined(U_PORT_FREERTOS)
         if (mMutex != nullptr)
@@ -172,7 +178,7 @@ public:
 #endif
     }
 
-    void Unlock()
+    void Unlock() UCXM_NO_THREAD_SAFETY_ANALYSIS
     {
 #if defined(U_PORT_FREERTOS)
         if (mMutex != nullptr)

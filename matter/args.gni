@@ -9,10 +9,12 @@ is_clang = false
 treat_warnings_as_errors = false
 
 # The SDK's default is OpenSSL, found with pkg-config. The PSA backend runs on the app's mbedTLS 4
-# (//mbedtls, build_overrides/mbedtls.gni) instead of the SDK's end-of-life mbedTLS 2.28. Raw keys: the
-# operational keys live in the node's storage, which goes through the app's secure store.
+# (//mbedtls, build_overrides/mbedtls.gni) instead of the SDK's end-of-life mbedTLS 2.28. Its session keys
+# must be PSA keys: the PSA AES-CCM takes the key handle as a PSA key id, so with the raw keystore every
+# message after PASE fails to decrypt. The operational keys live in the node's storage either way
+# (PersistentStorageOperationalKeystore), which goes through the app's secure store.
 chip_crypto = "psa"
-chip_crypto_keystore = "raw"
+chip_crypto_keystore = "psa"
 
 chip_build_tests = false
 

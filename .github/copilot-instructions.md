@@ -78,7 +78,7 @@ cmake --build build/windows --config Release
   - `third-party/` - FTDI DLL, QR code generator
 - `u-connectClient/` - AT command client library (git submodule)
 - `sps/` - u-blox Serial Port Service (SPS) protocol, C/Python/C# clients and servers (reference submodule, not built)
-- `matter/` - The ucxmatter plug-in: `src/` (the plug-in), `patches/` and `compat/` (Matter SDK fixes), `tools/` (gn, ninja), `connectedhomeip/` (Matter SDK, opt-in submodule); output in `build/matter`
+- `matter/` - The ucxmatter plug-in: `src/` (the plug-in), `patches/` and `compat/` (Matter SDK fixes), `tools/` (gn, ninja), `connectedhomeip/` (Matter SDK, opt-in submodule); output in `build/matter` (Windows), `build/matter-linux`, `build/matter-wasm`
 - `ucx-xmodem/` - u-blox XMODEM-1K firmware update reference in Python and C, the protocol behind `fw.flash` (reference submodule, not built)
 - `build/windows`, `build/linux`, `build/stm32_<board>`, `build/zephyr_<board>` - CMake artifacts per target (gitignored)
 

@@ -99,8 +99,10 @@ def test_matter_selftest_and_reset_on_the_module(app_exe, port_a, plugin, tmp_pa
     monkeypatch.setenv("UCX_MATTER_PLUGIN", str(plugin))
     out = _run(app_exe, port_a, "matter.selftest", "matter.status", cwd=tmp_path)
     assert out.returncode == 0 and "matter selftest: ok" in out.stdout and "matter: stopped" in out.stdout, out.stdout
-    for name in ("plug-in", "module", "store", "random", "setup codes", "Bluetooth LE", "network"):
-        assert re.search(rf"^  {name} +ok ", out.stdout, re.M), (name, out.stdout)
+    for name in ("plug-in", "module", "store", "random", "SHA-256", "HMAC", "HKDF", "PBKDF2", "AES-CCM", "AES-CTR",
+                 "ECDSA", "ECDH", "CSR", "SPAKE2+", "session keys", "fabric ID", "setup codes", "Bluetooth LE",
+                 "network"):
+        assert re.search(rf"^  {re.escape(name)} +ok ", out.stdout, re.M), (name, out.stdout)
     out = _run(app_exe, port_a, "matter.start", "matter.status", "matter.reset", "matter.selftest", "matter.status",
                cwd=tmp_path)
     assert out.returncode == 0 and "matter: module rebooted" in out.stdout, out.stdout

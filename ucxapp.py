@@ -41,6 +41,7 @@ import sys
 import tarfile
 import time
 import uuid
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -91,8 +92,56 @@ def fail(msg):
 
 
 def require(tool, hint):
+    if tool == "cmake":
+        cmake_pinned()
     if shutil.which(tool) is None:
         fail(f"{tool} not found. {hint}")
+
+
+# One CMake for every build, fetched once into tools/cmake (emsdk does not support 4.2.0 to 4.3.3)
+CMAKE_VERSION = "4.4.5"
+CMAKE_SHA256 = {   # Kitware's cmake-4.4.5-SHA-256.txt
+    "windows-x86_64.zip": "326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004",
+    "linux-x86_64.tar.gz": "ed85135c5a5135b45e50423cb406dea04ca3338da0b8ef3c9ede963559680be0",
+    "linux-aarch64.tar.gz": "301d5063ab259577c1b57ce5490b1aab9ea5c56dc4c822f73499553dab94925f",
+}
+CMAKE_DIR = ROOT / "tools" / "cmake"
+
+
+def cmake_pinned():
+    """tools/cmake first on PATH; the CMake on PATH where there is no pinned one (other systems, offline)."""
+    machine = platform.machine().lower()
+    if IS_WINDOWS and machine in ("amd64", "x86_64"):
+        kind = "windows-x86_64.zip"
+    elif platform.system() == "Linux" and machine in ("x86_64", "aarch64", "arm64"):
+        kind = "linux-x86_64.tar.gz" if machine == "x86_64" else "linux-aarch64.tar.gz"
+    else:
+        return
+    name = f"cmake-{CMAKE_VERSION}-{kind.split('.')[0]}"
+    bindir = CMAKE_DIR / name / "bin"
+    if not (bindir / ("cmake.exe" if IS_WINDOWS else "cmake")).is_file():
+        from urllib.request import urlopen
+        url = f"https://github.com/Kitware/CMake/releases/download/v{CMAKE_VERSION}/cmake-{CMAKE_VERSION}-{kind}"
+        print(f"Fetching CMake {CMAKE_VERSION} into {CMAKE_DIR.relative_to(ROOT)} (once) ...", flush=True)
+        try:
+            with urlopen(url, timeout=120) as r:
+                data = r.read()
+        except OSError as exc:
+            if shutil.which("cmake") is None:
+                fail(f"CMake {CMAKE_VERSION} could not be fetched ({exc}); install CMake from https://cmake.org/download/")
+            print(f"WARNING: CMake {CMAKE_VERSION} could not be fetched ({exc}); using the CMake on PATH")
+            return
+        if hashlib.sha256(data).hexdigest() != CMAKE_SHA256[kind]:
+            fail(f"{url} does not have the expected SHA-256")
+        CMAKE_DIR.mkdir(parents=True, exist_ok=True)
+        if kind.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                z.extractall(CMAKE_DIR)
+        else:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
+                t.extractall(CMAKE_DIR, filter="data")
+    if str(bindir) not in os.environ["PATH"].split(os.pathsep):
+        os.environ["PATH"] = str(bindir) + os.pathsep + os.environ["PATH"]
 
 
 def check(cmd, what, **kw):
@@ -247,15 +296,20 @@ def host_clean(configs):
 
 
 def cache_moved(cache, source=None):
-    """True when the CMake cache was made in another folder or for other sources (repo moved or renamed)."""
+    """True when the CMake cache was made in another folder, for other sources (repo moved or renamed) or by another
+    CMake than the one on PATH (the pinned one in tools/cmake): its regeneration would mix two CMakes' modules."""
     try:
         text = cache.read_text(errors="replace")
     except OSError:
         return False
     m = re.search(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", text, re.M)
     src = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", text, re.M)
+    made_by = re.search(r"^CMAKE_COMMAND:INTERNAL=(.*)$", text, re.M)
+    cmake = shutil.which("cmake")
     return ((m is not None and Path(m.group(1).strip()).resolve() != cache.parent.resolve())
-            or (src is not None and Path(src.group(1).strip()).resolve() != (source or ROOT / "app").resolve()))
+            or (src is not None and Path(src.group(1).strip()).resolve() != (source or ROOT / "app").resolve())
+            or (made_by is not None and cmake is not None
+                and Path(made_by.group(1).strip()).resolve() != Path(cmake).resolve()))
 
 
 def host_build(configs, fresh=False):
@@ -265,7 +319,7 @@ def host_build(configs, fresh=False):
     bd = build_dir()
     cache = bd / "CMakeCache.txt"
     if cache_moved(cache):
-        print("Build folder was configured for another path; reconfiguring")
+        print("Build folder was configured for another path or by another CMake; reconfiguring")
         fresh = True
         shutil.rmtree(bd / "CMakeFiles", ignore_errors=True)
     if fresh:
@@ -812,7 +866,7 @@ def stm32_build(board, family, hal_dir, portdir, bd):
              f"git -C u-connectClient submodule update --init ports/extra/{portdir}/{hal_dir}")
     src = ROOT / "app" / "stm32_freertos"
     if cache_moved(bd / "CMakeCache.txt", src):
-        print(f"{bd.name} was configured for another source folder; reconfiguring")
+        print(f"{bd.name} was configured for another source folder or by another CMake; reconfiguring")
         for name in ("CMakeCache.txt", "build.ninja"):
             (bd / name).unlink(missing_ok=True)
         shutil.rmtree(bd / "CMakeFiles", ignore_errors=True)
@@ -1403,6 +1457,7 @@ def zephyr(args, extra):
         # An interrupted configure leaves a tree west reuses but ninja cannot load.
         shutil.rmtree(ROOT / bd, ignore_errors=True)
     if args.build or args.rebuild:
+        require("cmake", "Install CMake from https://cmake.org/download/")
         modules = zephyr_env()
         # Relative paths: west fails when the source and the current directory are on different drives.
         check(["west", "build", "--no-sysbuild", "-p", "auto", "-b", board, "-d", bd.as_posix(), "app/zephyr",
@@ -1443,6 +1498,7 @@ def emsdk_env(required=True):
 
 def wasm_build():
     emsdk_env()
+    require("cmake", "Install CMake from https://cmake.org/download/")
     require("ninja", "Install Ninja (winget install Ninja-build.Ninja)")
     # the Matter node is linked in when it has been built for the browser (--wasm --matter)
     node = MATTER_WASM_LIB.as_posix() if MATTER_WASM_LIB.exists() else ""
@@ -1510,11 +1566,13 @@ def wasm(args, extra):
 
 MATTER_DIR = ROOT / "matter"
 MATTER_SDK = MATTER_DIR / "connectedhomeip"
-MATTER_BUILD = ROOT / "build" / "matter"
+MATTER_BUILD = ROOT / "build" / ("matter" if IS_WINDOWS else "matter-linux")
 # The node for the browser ("ucxapp --wasm --matter"): a static library and the list of its C names
 MATTER_WASM = ROOT / "build" / "matter-wasm"
 MATTER_WASM_LIB = MATTER_WASM / "libucxmatter.a"
 MATTER_WASM_SYMBOLS = MATTER_DIR / "compat" / "wasm" / "ucxm_symbols.h"
+# names the SDK tests with #ifndef to let a platform replace them: a macro for one hides its declaration
+MATTER_WASM_HOOKS = {"chipAbort", "chipDie"}
 # The SDK's own submodules the plug-in builds with (pigweed with its submodules); the rest is never fetched.
 # Not its mbedTLS: the node uses the app's (third-party/mbedtls, matter/mbedtls/BUILD.gn).
 MATTER_SDK_PARTS = ("nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
@@ -1657,7 +1715,7 @@ def matter_build(keylog=False):
     # carries a format attribute that std::atomic<> cannot keep
     cflags = ["-Wno-undef", "-Wno-ignored-attributes"]
     if keylog:
-        cflags.append("-DUCX_KEYLOG=1")   # matter/patches/src/crypto/RawKeySessionKeystore.cpp
+        cflags.append("-DUCX_KEYLOG=1")   # matter/patches/src/crypto/PSASessionKeystore.cpp
     gn_args = ""
     if IS_WINDOWS:
         # matter/compat/windows: the POSIX headers the SDK includes and MinGW lacks, for every SDK source
@@ -1679,7 +1737,7 @@ def matter_wasm_names(lib):
                           str(lib)], capture_output=True, text=True)
     if out.returncode != 0:
         fail(f"emnm {lib.name} failed: {out.stderr.strip()}")
-    return {n for n in out.stdout.split() if re.fullmatch(r"[A-Za-z]\w*", n)}
+    return {n for n in out.stdout.split() if re.fullmatch(r"[A-Za-z]\w*", n) and n not in MATTER_WASM_HOOKS}
 
 
 def matter_wasm_build():
@@ -1696,8 +1754,9 @@ def matter_wasm_build():
     tools = {n: Path(shutil.which(n)).as_posix() for n in ("emcc", "em++", "emar")}
     gn_args = ('custom_toolchain="custom" target_os="emscripten" target_cpu="wasm32" is_clang=true '
                f'target_cc="{tools["emcc"]}" target_cxx="{tools["em++"]}" target_ar="{tools["emar"]}"')
-    # threads in the browser are shared memory: every object must be built for it
-    cflags = ["-pthread", "-include", Path(os.path.relpath(MATTER_WASM_SYMBOLS, MATTER_WASM)).as_posix()]
+    # threads in the browser are shared memory: every object must be built for it; -W as in matter_build
+    cflags = ["-pthread", "-Wno-undef", "-Wno-ignored-attributes",
+              "-include", Path(os.path.relpath(MATTER_WASM_SYMBOLS, MATTER_WASM)).as_posix()]
     for final in (False, True):
         matter_ninja(MATTER_WASM, gn_args, cflags, dict(os.environ), "Matter node build for the browser")
         defined = matter_wasm_names(MATTER_WASM_LIB)

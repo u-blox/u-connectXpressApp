@@ -778,7 +778,7 @@ static CHIP_ERROR DoSyncSend(uCxHandle_t * ucxHandle,
             int32_t waitMs = requiredMs - elapsedMs;
             sStatsTxPaceWaits++;
             sStatsTxPaceMsTot += static_cast<uint32_t>(waitMs);
-            chip::Platform::SleepMs(waitMs);
+            chip::Platform::SleepMs(static_cast<uint32_t>(waitMs));
         }
     }
 

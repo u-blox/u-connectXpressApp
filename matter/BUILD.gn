@@ -96,6 +96,7 @@ target(_ucxmatter_type, "ucxmatter") {
     "src/UbloxCommissionableDataProvider.cpp",
     "src/UbloxCommissionableDataProvider.h",
     "src/callbacks.cpp",
+    "src/crypto_check.cpp",
     "src/endpoints.cpp",
     "src/endpoints.h",
     "src/logging.cpp",

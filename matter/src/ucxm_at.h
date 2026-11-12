@@ -4,6 +4,10 @@
 #ifndef UCXM_AT_H
 #define UCXM_AT_H
 
+#ifdef __EMSCRIPTEN__
+/* the node's C names get their prefix before anything here declares them (force-included after this file) */
+#include "../compat/wasm/ucxm_symbols.h"
+#endif
 #include "u_cx_at_client.h"
 #include "ucxapp_matter.h"
 

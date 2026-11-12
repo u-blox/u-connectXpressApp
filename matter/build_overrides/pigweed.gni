@@ -1,0 +1,10 @@
+# Copyright (c) 2025 u-blox
+# Pigweed build override for Matter SDK
+
+declare_args() {
+  # Location of Pigweed SDK (via Matter SDK)
+  dir_pigweed = "//connectedhomeip/third_party/pigweed/repo"
+}
+
+# Import all Pigweed module directories from the SDK
+import("$dir_pigweed/modules.gni")

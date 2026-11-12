@@ -17,3 +17,8 @@
 [submodule "ucx-xmodem"]
 	path = ucx-xmodem
 	url = https://github.com/u-blox/ucx-xmodem
+[submodule "matter/connectedhomeip"]
+	path = matter/connectedhomeip
+	url = https://github.com/project-chip/connectedhomeip.git
+	update = none
+	ignore = dirty

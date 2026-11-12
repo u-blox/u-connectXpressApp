@@ -1,0 +1,6 @@
+# The mbedTLS the Matter SDK brings along, inside the plug-in only: the app itself links its own mbedTLS 4.
+
+declare_args() {
+  mbedtls_root = "//connectedhomeip/third_party/mbedtls"
+  mbedtls_repo = "//connectedhomeip/third_party/mbedtls"
+}

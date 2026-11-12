@@ -1,0 +1,6 @@
+# Copyright (c) 2025 u-blox
+# nlio build override for Matter SDK
+
+declare_args() {
+  nlio_root = "//connectedhomeip/third_party/nlio"
+}

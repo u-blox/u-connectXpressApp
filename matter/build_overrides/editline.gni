@@ -1,0 +1,3 @@
+declare_args() {
+  editline_root = "//connectedhomeip/third_party/editline"
+}

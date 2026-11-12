@@ -1,0 +1,6 @@
+# Copyright (c) 2025 u-blox
+# nlassert build override for Matter SDK
+
+declare_args() {
+  nlassert_root = "//connectedhomeip/third_party/nlassert"
+}

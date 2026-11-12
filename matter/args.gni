@@ -1,0 +1,14 @@
+# Build arguments of the Matter plug-in; "ucxapp --matter" adds target_os and target_cpu for the host, and on
+# Windows the include path of compat/windows.
+
+is_debug = false
+symbol_level = 0
+
+# GCC (MinGW-w64 on Windows): the Matter SDK does not build with MSVC
+is_clang = false
+treat_warnings_as_errors = false
+
+# The SDK's default is OpenSSL, found with pkg-config; mbedTLS comes with the SDK
+chip_crypto = "mbedtls"
+
+chip_build_tests = false

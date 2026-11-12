@@ -9,6 +9,7 @@ and STM32.
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
+  ucxapp --matter --build                   the Matter plug-in for matter.* (fetches the Matter SDK the first time)
   ucxapp --publish-web "new look"          build and test the browser site, commit app/web + app/wasm, push (Pages)
   ucxapp --detect                           find NORA modules, GNSS receivers, IMUs, modems and PPK2
   ucxapp --detect --test tests/hardware   hardware tests on what was found
@@ -129,6 +130,10 @@ def parse(argv):
     g.add_argument("--wasm", action="store_true",
                    help="browser build: the app as WebAssembly, the module over Web Serial (emsdk: EMSDK, C:/emsdk "
                         "or ~/emsdk); build/wasm/site, served on 127.0.0.1:8098 unless only --build/--clean")
+    g.add_argument("--matter", action="store_true",
+                   help="the Matter plug-in (ucxmatter) behind matter.*: fetches the Matter SDK on first use (about "
+                        "1.5 GB), builds it with gn, ninja and GCC (MinGW-w64 on Windows) in build/matter and puts it "
+                        "next to the app; then starts the app unless only --build/--clean")
     g = p.add_argument_group("build")
     g.add_argument("--build", action="store_true", help="build, then stop (add --run to start the app)")
     g.add_argument("--clean", action="store_true", help="remove build output")
@@ -1486,6 +1491,122 @@ def wasm(args, extra):
     return wasm_serve(site, WASM_PORT)
 
 
+# ---- Matter plug-in (ucxmatter) ----
+
+MATTER_DIR = ROOT / "matter"
+MATTER_SDK = MATTER_DIR / "connectedhomeip"
+MATTER_BUILD = ROOT / "build" / "matter"
+# The SDK's own submodules the plug-in builds with (pigweed with its submodules); the rest is never fetched.
+MATTER_SDK_PARTS = ("mbedtls", "nlassert", "nlio", "jsoncpp", "uriparser", "pigweed")
+MINGW_DIRS = (r"C:\msys64\ucrt64\bin", r"C:\msys64\mingw64\bin", r"C:\mingw64\bin", r"C:\mingw-w64\mingw64\bin")
+
+
+def matter_plugin():
+    return BIN / ("ucxmatter.dll" if IS_WINDOWS else "libucxmatter.so")
+
+
+def matter_fetch():
+    """The Matter SDK: .gitmodules says update = none, so only this fetches it."""
+    require("git", "Install Git from https://git-scm.com/downloads")
+    if not (MATTER_SDK / ".git").exists():
+        print("Fetching the Matter SDK (about 1.5 GB, once) ...", flush=True)
+        check(["git", "submodule", "update", "--init", "--checkout", "matter/connectedhomeip"], "Matter SDK fetch")
+    for part in MATTER_SDK_PARTS:
+        if not (MATTER_SDK / "third_party" / part / "repo" / ".git").exists():
+            check(["git", "submodule", "update", "--init", *(["--recursive"] if part == "pigweed" else []),
+                   f"third_party/{part}/repo"], f"Matter SDK {part} fetch", cwd=MATTER_SDK)
+
+
+def matter_patch():
+    """matter/patches mirrors the SDK tree: whole files of the pinned SDK version with the fixes GCC on Windows
+    needs (from u-connectMatter). Copied over the SDK's files when they differ; every target builds through here."""
+    root = MATTER_DIR / "patches"
+    pinned = git_out("ls-files", "-s", "matter/connectedhomeip").split()
+    head = git_out("-C", str(MATTER_SDK), "rev-parse", "HEAD")
+    if len(pinned) > 1 and head != pinned[1]:
+        # whole files of one SDK version over another would silently undo that version's changes
+        fail(f"the Matter SDK checkout is {head[:10]}, matter/patches is made for {pinned[1][:10]}: run "
+             "git submodule update --checkout matter/connectedhomeip, or redo the patches for the new SDK")
+    changed = 0
+    for src in sorted(f for f in root.rglob("*") if f.is_file()):
+        dst = MATTER_SDK / src.relative_to(root)
+        if not dst.is_file() or dst.read_bytes() != src.read_bytes():
+            shutil.copyfile(src, dst)
+            changed += 1
+    if changed:
+        print(f"Patched {changed} Matter SDK file(s) from matter/patches")
+
+
+def matter_tool(name):
+    """gn and ninja: matter/tools first, then the u-connectMatter checkout next to this one, then PATH."""
+    exe = name + (".exe" if IS_WINDOWS else "")
+    for d in (MATTER_DIR / "tools", ROOT.parent / "u-connectMatter" / "tools"):
+        if (d / exe).is_file():
+            return d / exe
+    if shutil.which(name) is None:
+        fail(f"{name} not found: put {exe} into matter/tools or on PATH")
+    return Path(shutil.which(name))
+
+
+def matter_env():
+    """The environment for gn and ninja: GCC on PATH (the Matter SDK does not build with MSVC)."""
+    env = dict(os.environ)
+    if IS_WINDOWS:
+        mingw = next((d for d in MINGW_DIRS if (Path(d) / "g++.exe").is_file()), None)
+        if mingw is not None:
+            env["PATH"] = mingw + os.pathsep + env["PATH"]
+        elif shutil.which("g++") is None:
+            fail("g++ not found: install MSYS2 (https://www.msys2.org/) and in it "
+                 "pacman -S mingw-w64-ucrt-x86_64-gcc")
+    else:
+        require("g++", "Install GCC (sudo apt install g++)")
+    return env
+
+
+def matter_python():
+    """This Python with the modules the SDK's build scripts import; installs them the first time."""
+    if subprocess.call([sys.executable, "-c", "import python_path, jinja2, lark"], stderr=subprocess.DEVNULL) != 0:
+        check([sys.executable, "-m", "pip", "install", "-r",
+               MATTER_SDK / "scripts" / "setup" / "requirements.build.txt"], "Matter SDK build modules")
+    return sys.executable
+
+
+def matter_build():
+    matter_fetch()
+    matter_patch()
+    gn, ninja, env = matter_tool("gn"), matter_tool("ninja"), matter_env()
+    sdk = git_out("-C", str(MATTER_SDK), "describe", "--tags", "--always") or "unknown"
+    gn_args = f'ucxm_sdk_version="{sdk}"'
+    if IS_WINDOWS:
+        # matter/compat/windows: the POSIX headers the SDK includes and MinGW lacks, for every SDK source
+        compat = Path(os.path.relpath(MATTER_DIR / "compat" / "windows", MATTER_BUILD)).as_posix()
+        gn_args += f' target_os="win" target_cpu="x64" target_cflags=["-I{compat}"]'
+    stamp = MATTER_BUILD / "ucxapp_args.txt"
+    if not (MATTER_BUILD / "build.ninja").exists() or not stamp.exists() or stamp.read_text() != gn_args:
+        check([gn, "gen", MATTER_BUILD, f"--root={MATTER_DIR}", f"--script-executable={matter_python()}",
+               f"--args={gn_args}"], "gn", env=env)
+        stamp.write_text(gn_args)
+    check([ninja, "-C", MATTER_BUILD, "ucxmatter"], "Matter plug-in build", env=env)
+    built = MATTER_BUILD / matter_plugin().name
+    plugin = matter_plugin()
+    if not plugin.exists() or plugin.stat().st_mtime < built.stat().st_mtime:
+        BIN.mkdir(exist_ok=True)
+        shutil.copy2(built, plugin)
+    print("Built", plugin.relative_to(ROOT))
+
+
+def matter(args, extra):
+    if args.clean or args.rebuild:
+        shutil.rmtree(MATTER_BUILD, ignore_errors=True)
+        matter_plugin().unlink(missing_ok=True)
+        print("Cleaned", MATTER_BUILD.relative_to(ROOT))
+    if args.build or args.rebuild or not args.clean:
+        matter_build()
+    if (args.build or args.clean or args.rebuild) and not args.run:
+        return 0
+    return host(argparse.Namespace(**{**vars(args), "build": False, "clean": False, "rebuild": False}), extra)
+
+
 WEB_PATHS = ("app/web", "app/wasm")
 
 
@@ -1920,6 +2041,8 @@ def main(argv):
         return zephyr(args, extra)
     if args.wasm:
         return wasm(args, extra)
+    if args.matter:
+        return matter(args, extra)
     if args.coverage:
         return coverage(extra)
     found = {}

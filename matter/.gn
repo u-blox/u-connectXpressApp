@@ -1,0 +1,10 @@
+# GN root of the Matter plug-in (ucxmatter); "ucxapp --matter" runs gn and ninja on it into build/matter.
+
+buildconfig = "//connectedhomeip/build/config/BUILDCONFIG.gn"
+
+# "ucxapp --matter" passes the Python it found the SDK's build modules in with --script-executable
+script_executable = "python3"
+
+default_args = {
+  import("//args.gni")
+}

@@ -9,27 +9,44 @@ u-connectMatter (`E:\u-blox\u-connectMatter`, https://github.com/u-blox/u-connec
 (connectedhomeip, C++17, GN/ninja) on a host and uses a u-connectXpress module as its radio: NORA-W36 for
 Wi-Fi + CHIPoBLE, NORA-B26 for Thread, ALMA-W1 next. It talks to the module through u-connectClient directly,
 via its own Matter `DeviceLayer` in `platform/ucxclient/` (about 800 KB of C++, `UcxClientManager.cpp` alone
-is 208 KB, 165 distinct `uCx*` calls). ucxapp is a C11 command shell over the same library. The two share the
-library and the hardware, nothing else, and they cannot share one UART at the same time.
+is 208 KB, 165 distinct `uCx*` calls). ucxapp is a C11 command shell over the same library. As separate programs
+they cannot share one UART at the same time; inside ucxapp, Matter runs as the **ucxmatter plug-in** (below).
 
 The full comparison, the API gap list and the footprint budget are in
 [references/analysis.md](./references/analysis.md). Read it before proposing any merge or shared code.
 
+## The ucxmatter plug-in (the direction taken)
+
+ucxapp stays the main app and owns the UART; Matter is an optional plug-in, `ucxmatter.dll` / `libucxmatter.so`,
+loaded by `matter.start` and built by `.\ucxapp --matter --build` from `matter/`.
+
+- Interface: `app/src/ucxapp_matter.h`, plain C (the SDK needs GCC, ucxapp on Windows is MSVC; mbedTLS 3.6 in
+  the SDK, 4.x in ucxapp, so the two cannot be linked into one exe). The plug-in sends AT commands through the
+  app's AT client and gets a copy of every URC; storage, time, log, events and the QR code come from the app.
+- Source is copied from `E:\u-blox\u-connectMatter` (the working reference), not rewritten: its module bring-up,
+  web server, console and main loop are ucxapp's job and stay behind.
+- Build: gn + ninja (`matter/tools`, else `../u-connectMatter/tools`), MinGW-w64 GCC, SDK submodule
+  `matter/connectedhomeip` (opt-in, `update = none`), whole-file SDK patches in `matter/patches` (copied over the
+  pinned SDK by the launcher, refused for another SDK commit), POSIX headers for MinGW in `matter/compat/windows`.
+- Needs neither `uCxSessionLock` nor direct binary sockets: ucxapp's u-connectClient has the event-driven RX
+  workers and the `cmdEnd()` status fix that made both workarounds unnecessary.
+- Tests: `tests/test_matter.py` (stand-in plug-in), `tests/test_matter_plugin.py` (real plug-in on the virtual
+  module), `tests/hardware/test_hw_matter.py` (a second module finds the node's advertisement).
+- Windows is the reference platform; Linux (`.so`), STM32 (static link) and WebAssembly must stay possible.
+
 ## Short answers
 
-- **Can Matter move onto ucxapp?** Not as a process swap. ucxapp has no library target, a flag-based URC model
-  (`gUcxappEventFlags`) and polls sockets with `uCxSocketReceiveFrom`; Matter needs callbacks into its
-  `SystemLayer`, UDP payload pushed inline in `+UESODBF`, `uCxSessionLock`, mDNS and multicast, none of which
-  ucxapp has today. The realistic direction is the other way: ucxapp as a **library inside u-connectMatter**
-  (`libucxapp`: `app/src` minus `ucxapp_main.c`), Matter keeps its DeviceLayer and owns the `uCxHandle_t`.
+- **Can Matter move onto ucxapp?** Not as a process swap, and not linked into the exe (compiler and mbedTLS
+  differ). It runs inside ucxapp as the ucxmatter plug-in above: ucxapp keeps its flag-based URC model
+  (`gUcxappEventFlags`) and hands the plug-in a copy of each URC for the callbacks Matter's `SystemLayer` needs.
 - **What Matter gains:** `--detect`/`--list-modules`/`--exec` launcher, `fw.flash`/`fw.update`, `thread.*`,
   `wifi.*`, `gatt.server.*`, `at.trace`, `bridge`, the web UI and one `u_webserver.c` instead of two copies,
   the pytest hardware test framework, the store (KVS) and the STM32/Zephyr ports.
 - **What ucxapp must add first** (useful to ucxapp on its own): `mdns.*` (done: responder, host name,
   services, TXT records, `+UEMDU`/`+UEMDD` flags), `sock.mcast` (done: `uCxSocketMulticastGroup`, IPv4 and
-  IPv6 with `::`), `bt.adv` (done: custom AD payload, type, interval, start/stop). Still open: u-connectClient
-  `master` must take the binary-URC socket callbacks and `uCxSessionLock` from the `cmag_matter_support`
-  branch so both apps build from one library; the module firmware has no mDNS browse/resolve/subtype yet.
+  IPv6 with `::`), `bt.adv` (done: custom AD payload, type, interval, start/stop). Still open: the module
+  firmware has no mDNS browse/resolve/subtype yet; u-connectClient `master` gets the binary socket URC payload
+  with PR #58 (optional for Matter, buffered sockets work).
 - **Does it fit an H7?** Flash yes, RAM no. Matter on NUCLEO-H753ZI is 678 KB flash and ~440 KB BSS
   (`README_STM32.md`); ucxapp on the same board is 400 KB flash and 291 KB static RAM (Zephyr `zephyr.elf`).
   Together ~1.1 MB flash (2 MB available) but ~730 KB static RAM plus heaps, and the H753's 1 MB RAM is split

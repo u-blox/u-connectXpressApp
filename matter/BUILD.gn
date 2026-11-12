@@ -1,0 +1,79 @@
+# The Matter plug-in of u-connectXpressApp: ucxmatter.dll / libucxmatter.so, loaded by the app's matter.* commands
+# (app/src/ucxapp_matter.h). Built by "ucxapp --matter"; the Matter SDK in connectedhomeip/ is used as it is.
+
+import("//build_overrides/chip.gni")
+
+declare_args() {
+  # Shown by matter.status; "ucxapp --matter" passes the tag of the SDK checkout.
+  ucxm_sdk_version = "unknown"
+}
+
+_client = "../u-connectClient"
+_api = "${_client}/ucx_api/generated/MERGED"
+
+config("ucx_config") {
+  include_dirs = [
+    "src",
+    "../app/src",
+    "${_client}/inc",
+    "${_client}/ports",
+    "${_client}/ucx_api",
+    _api,
+  ]
+
+  # The same port as the app, so both see the same uCxAtClient_t
+  if (current_os == "win") {
+    defines = [ "U_PORT_WINDOWS" ]
+  } else {
+    defines = [ "U_PORT_POSIX" ]
+  }
+}
+
+# The u-connectXpress API of the app's own u-connectClient. Its AT client calls go to the app (src/ucxm_at.h),
+# and src/ucxm_host.c stands in for u_cx.c.
+source_set("ucx_api") {
+  sources = [
+    "${_api}/u_cx_bluetooth.c",
+    "${_api}/u_cx_general.c",
+    "${_api}/u_cx_system.c",
+    "${_api}/u_cx_urc.c",
+    "${_client}/src/u_cx_at_params.c",
+    "${_client}/src/u_cx_at_util.c",
+    "src/ucxm_at.h",
+    "src/ucxm_host.c",
+    "src/ucxm_host.h",
+  ]
+  cflags = [
+    "-include",
+    rebase_path("src/ucxm_at.h", root_build_dir),
+  ]
+  public_configs = [ ":ucx_config" ]
+}
+
+shared_library("ucxmatter") {
+  sources = [
+    "src/endpoints.cpp",
+    "src/endpoints.h",
+    "src/logging.cpp",
+    "src/onboarding.cpp",
+    "src/onboarding.h",
+    "src/plugin.cpp",
+  ]
+  defines = [ "UCXM_SDK_VERSION=\"${ucxm_sdk_version}\"" ]
+  deps = [
+    ":ucx_api",
+    "${chip_root}/src/platform/logging:headers",
+    "${chip_root}/src/setup_payload",
+  ]
+  output_dir = root_out_dir
+  if (current_os == "win") {
+    output_extension = "dll"
+
+    # One file next to the app: the GCC runtime is linked in, only Windows' own DLLs are needed
+    ldflags = [ "-static" ]
+  }
+}
+
+group("default") {
+  deps = [ ":ucxmatter" ]
+}

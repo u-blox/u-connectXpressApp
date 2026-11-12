@@ -1,0 +1,5 @@
+# Copyright (c) 2025 u-blox
+# Pigweed environment build override for Matter SDK
+
+# Note: Pigweed variables are defined by Pigweed itself in python_gn_args.gni
+# This file is intentionally minimal to avoid duplicate declarations

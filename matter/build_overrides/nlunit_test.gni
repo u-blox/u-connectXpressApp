@@ -1,0 +1,3 @@
+declare_args() {
+  nlunit_test_root = "//connectedhomeip/third_party/nlunit-test"
+}

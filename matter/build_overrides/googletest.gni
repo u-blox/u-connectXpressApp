@@ -1,0 +1,7 @@
+# Copyright (c) 2025 u-blox
+# GoogleTest build override for Matter SDK
+
+declare_args() {
+  # Location of GoogleTest library (via Matter SDK)
+  gtest_root = "//connectedhomeip/third_party/googletest"
+}

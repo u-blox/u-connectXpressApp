@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP_DIRS = {"u-connectClient", "build", ".git", "node_modules", "third-party"}
+SKIP_DIRS = {"u-connectClient", "build", ".git", "node_modules", "third-party", "connectedhomeip"}
 
 
 def _files(pattern):

@@ -1,0 +1,6 @@
+# Copyright (c) 2025 u-blox
+# nlfaultinjection build override for Matter SDK
+
+declare_args() {
+  nlfaultinjection_root = "//connectedhomeip/third_party/nlfaultinjection"
+}

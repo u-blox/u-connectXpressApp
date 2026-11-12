@@ -133,6 +133,38 @@ def test_publish_web_refuses_a_branch_pages_does_not_deploy(monkeypatch):
         ucxapp.publish_web("x")
 
 
+def _matter_tree(tmp_path, monkeypatch, head):
+    sdk, patches = tmp_path / "connectedhomeip", tmp_path / "patches"
+    (sdk / "src" / "system").mkdir(parents=True)
+    (patches / "src" / "system").mkdir(parents=True)
+    (sdk / "src" / "system" / "Layer.h").write_text("sdk")
+    (sdk / "src" / "system" / "Same.h").write_text("same")
+    (patches / "src" / "system" / "Layer.h").write_text("patched")
+    (patches / "src" / "system" / "Same.h").write_text("same")
+    monkeypatch.setattr(ucxapp, "MATTER_DIR", tmp_path)
+    monkeypatch.setattr(ucxapp, "MATTER_SDK", sdk)
+    monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: head if "rev-parse" in cmd
+                        else "160000 " + "a" * 40 + " 0\tmatter/connectedhomeip")
+    return sdk / "src" / "system" / "Layer.h"
+
+
+def test_matter_patches_are_copied_over_the_pinned_sdk(tmp_path, monkeypatch, capsys):
+    target = _matter_tree(tmp_path, monkeypatch, "a" * 40)
+    ucxapp.matter_patch()
+    assert target.read_text() == "patched"
+    assert "Patched 1 Matter SDK file(s)" in capsys.readouterr().out   # the file that already matched is left alone
+    ucxapp.matter_patch()
+    assert "Patched" not in capsys.readouterr().out
+
+
+def test_matter_patches_refuse_another_sdk_version(tmp_path, monkeypatch, capsys):
+    target = _matter_tree(tmp_path, monkeypatch, "b" * 40)
+    with pytest.raises(SystemExit):
+        ucxapp.matter_patch()
+    assert target.read_text() == "sdk"
+    assert "matter/patches is made for aaaaaaaaaa" in capsys.readouterr().err
+
+
 def test_detect_force_probes_unnamed_ports(monkeypatch):
     """--detect-force finds a module behind a plain 'USB Serial Port' and skips ports marked skip."""
     asked = []

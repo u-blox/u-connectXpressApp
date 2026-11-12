@@ -1,0 +1,7 @@
+# Copyright (c) 2025 u-blox
+# JsonCpp build override for Matter SDK
+
+declare_args() {
+  # Location of JsonCpp library (via Matter SDK)
+  jsoncpp_root = "//connectedhomeip/third_party/jsoncpp"
+}

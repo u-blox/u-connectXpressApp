@@ -1,0 +1,7 @@
+# Copyright (c) 2025 u-blox
+# Matter SDK build override
+
+declare_args() {
+  # Location of Matter SDK
+  chip_root = "//connectedhomeip"
+}

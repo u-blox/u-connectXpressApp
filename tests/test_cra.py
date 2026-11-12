@@ -38,7 +38,35 @@ EVIDENCE = {
         "test_certfile.py::test_bad_input",
         "test_crypt.py::test_decrypt_bad_input_and_usage"],
     "Keys and tokens from a true random source, no weak fallback (EN 18031 CCK; CRA I(2)(e))": [
-        "test_cra.py::test_boards_take_entropy_only_from_the_hardware_trng"],
+        "test_cra.py::test_boards_take_entropy_only_from_the_hardware_trng",
+        "test_cra.py::test_matter_setup_codes_come_only_from_the_random_generator"],
+    # The Matter node (the optional plug-in ucxmatter, docs/SECURITY.md "Matter node")
+    "Matter: SBOM of the plug-in's components (CRA I part II(1))": [
+        "test_matter.py::test_sbom_lists_the_components_of_an_installed_plugin",
+        "test_matter_plugin.py::test_sbom_lists_the_matter_sdk_and_its_parts"],
+    "Matter: no default setup codes, a code of its own for each node (EN 18031 AUM; CRA I(2)(b)(d))": [
+        "test_matter_plugin.py::test_setup_codes_are_random_for_each_node_and_kept_sealed_in_its_store",
+        "test_matter_plugin.py::test_open_shows_the_codes_again_and_keeps_the_window_open"],
+    "Matter: fabric keys, Wi-Fi password and setup codes sealed in the store (EN 18031 SSM; CRA I(2)(e))": [
+        "test_matter.py::test_state_is_sealed_on_disk_and_survives_a_restart",
+        "test_matter_plugin.py::test_setup_codes_are_random_for_each_node_and_kept_sealed_in_its_store",
+        "test_matter_plugin.py::test_plugin_has_no_code_that_writes_session_keys_to_a_file"],
+    "Matter: secrets kept out of the log and the AT trace (EN 18031 SSM; CRA I(2)(e))": [
+        "test_matter_plugin.py::test_log_and_at_trace_do_not_have_the_passcode"],
+    "Matter: commissioning and operation over authenticated, encrypted sessions (EN 18031 SCM; CRA I(2)(e)(f))": [
+        "test_matter_plugin.py::test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered",
+        "test_matter_plugin.py::test_a_commissioner_opens_the_matter_transport_over_bluetooth"],
+    "Matter: robust against malformed input (EN 18031 RLM; CRA I(2)(h)(i))": [
+        "test_matter_plugin.py::test_malformed_datagrams_do_not_stop_the_node",
+        "test_matter.py::test_files_that_are_no_plugin_are_refused",
+        "test_matter.py::test_plugin_for_another_app_version_is_refused"],
+    "Matter: nothing left open on the module when the node stops (CRA I(2)(j))": [
+        "test_matter_plugin.py::test_a_node_on_wifi_is_announced_by_the_modules_own_mdns",
+        "test_matter_plugin.py::test_node_stops_and_starts_again_in_one_session",
+        "test_matter_plugin.py::test_the_modules_bonds_mode_and_name_stay_as_the_user_set_them"],
+    "Matter: the user can remove all data and settings (CRA I(2)(m))": [
+        "test_matter.py::test_reset_removes_what_the_node_stored_and_reboots_the_module",
+        "test_matter_plugin.py::test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones"],
 }
 
 
@@ -67,6 +95,36 @@ def test_every_item_has_its_tests(item):
     missing = [ref for ref in EVIDENCE[item]
                if ref.split("::")[1] not in _functions(TESTS / ref.split("::")[0])]
     assert not missing, f"{item}: evidence tests are gone: {missing}"
+
+
+def test_matter_setup_codes_come_only_from_the_random_generator():
+    matter = TESTS.parent / "matter"
+    provider = (matter / "src" / "UbloxCommissionableDataProvider.cpp").read_text(encoding="utf-8")
+    draw = provider.split("::Draw()")[1].split("::Init(")[0]
+    # every value of a new node is drawn, and a failed draw is an error: no stand-in codes
+    assert draw.count("chip::Crypto::DRBG_get_bytes(") == 4 and draw.count("ReturnErrorOnFailure(") == 3, draw
+    assert "ReturnErrorOnFailure(Draw());" in provider, provider
+    assert "mPasscode      = 0;" in (matter / "src" / "UbloxCommissionableDataProvider.h").read_text(encoding="utf-8")
+    sources = [f for d in ("src", "platform") for f in (matter / d).rglob("*") if f.suffix in (".cpp", ".h", ".c")]
+    assert len(sources) > 40, sources
+    for source in sources:
+        text = source.read_text(encoding="utf-8", errors="replace")
+        assert not re.search(r"\b(rand|srand|random)\s*\(", text), f"{source.name}: a weak random source"
+        # the code every SDK example ships with (the provider names it, to refuse it), and u-connectMatter's
+        # stand-ins for a module without an address
+        if not source.name.startswith("UbloxCommissionableDataProvider"):
+            assert "20202021" not in text, source.name
+        assert "36363636" not in text and "kFallback" not in text, source.name
+    # without codes the node does not start, and it never advertises with another discriminator
+    assert "the Matter SDK made no setup codes" in (matter / "src" / "node.cpp").read_text(encoding="utf-8")
+    config = (matter / "platform" / "ucxclient" / "ConfigurationManagerImpl.cpp").read_text(encoding="utf-8")
+    assert "SetDeviceDiscriminator(config.discriminator)" not in config, "a stand-in discriminator"
+    # the SDK's generator is seeded by the system; its build may not turn that off
+    for name in ("args.gni", "BUILD.gn"):
+        assert not re.search(r"NO_PLATFORM_ENTROPY|TEST_NULL_ENTROPY|ENTROPY_NV_SEED",
+                             (matter / name).read_text(encoding="utf-8")), name
+    doc = (TESTS.parent / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    assert "## Matter node" in doc and "matter.factory.key" in doc and "--keylog" in doc, "docs/SECURITY.md"
 
 
 @pytest.mark.app

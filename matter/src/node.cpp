@@ -8,6 +8,7 @@
 #include <app/server/Server.h>
 #include <credentials/DeviceAttestationCredsProvider.h>
 #include <credentials/examples/DeviceAttestationCredsExample.h>
+#include <crypto/CHIPCryptoPAL.h>
 #include <data-model-providers/codegen/CodegenDataModelProvider.h>
 #include <lib/support/CHIPMem.h>
 #include <platform/CHIPDeviceLayer.h>
@@ -28,6 +29,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <thread>
 
@@ -340,38 +342,14 @@ bool NodeOpenWindow(unsigned seconds)
         window.OpenBasicCommissioningWindow(System::Clock::Seconds16(static_cast<uint16_t>(seconds))) == CHIP_NO_ERROR;
 }
 
-bool NodeForget(bool newCodes, NodeSetup & setup)
+bool NodeRandomOk()
 {
-    {
-        StackLock lock;
+    static const uint8_t kZero[16] = {};
+    uint8_t a[16]                  = {};
+    uint8_t b[16]                  = {};
 
-        if (!gServerUp)
-        {
-            return false;
-        }
-        if (newCodes)
-        {
-            // An open window still pairs with the old passcode
-            Server::GetInstance().GetCommissioningWindowManager().CloseCommissioningWindow();
-        }
-        Server::GetInstance().GetFabricTable().DeleteAllFabrics();
-        ConfigurationMgr().InitiateFactoryReset(); // clears the store and its copies in memory, not the module
-        if (gWiFiUp)
-        {
-            // Its network went with the store; the module stays on the Wi-Fi it has, that is the user's
-            (void) WiFiDriver::GetInstance().RevertConfiguration();
-        }
-        if (newCodes)
-        {
-            if (gCommissionableData.Init(true) != CHIP_NO_ERROR)
-            {
-                return false;
-            }
-            SetupTake(setup);
-            Internal::BLEManagerImpl::sInstance.RefreshAdvertisement(); // it has the old discriminator
-        }
-    }
-    return NodeOpenWindow();
+    return Crypto::DRBG_get_bytes(a, sizeof(a)) == CHIP_NO_ERROR && Crypto::DRBG_get_bytes(b, sizeof(b)) == CHIP_NO_ERROR &&
+        memcmp(a, b, sizeof(a)) != 0 && memcmp(a, kZero, sizeof(a)) != 0;
 }
 
 // With the stack lock

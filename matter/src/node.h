@@ -46,9 +46,8 @@ int NodeLinks();   // Bluetooth LE links to the node
 int NodeFabrics(); // 0: not commissioned
 bool NodeWindowOpen();
 bool NodeOpenWindow(unsigned seconds = 900); // commissioning window, 180 to 900 s; false when the node refuses
-// Drops every fabric and what the node holds for its store; it is commissionable again, with new setup codes
-// (then in setup) when newCodes. False when the node made no new codes or opened no window.
-bool NodeForget(bool newCodes, NodeSetup & setup);
+bool NodeRandomOk();                          // matter.selftest: the SDK's DRBG gives bytes, and not the same twice
+bool SetupCodesAllowed(uint32_t passcode, uint16_t discriminator); // no test or forbidden code (Matter 5.1.7.1)
 void NodeNetwork(char * out, size_t size); // one line for matter.status: the node's network on the module
 
 // The node for the live card, without waiting for the Matter thread: false when that thread is busy (the caller

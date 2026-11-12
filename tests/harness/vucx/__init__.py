@@ -321,6 +321,8 @@ class Network:
         self.accept = {int(p) for p in cfg.get("accept") or []}
         # listening port -> requests; each is a client that connects, sends it and keeps what comes back in replies
         self.requests = {int(k): list(v) for k, v in (cfg.get("requests") or {}).items()}
+        # bound UDP port -> datagrams the scripted client sends at once, without waiting for an answer in between
+        self.bursts = {int(k): list(v) for k, v in (cfg.get("bursts") or {}).items()}
         self.replies = []
         self.udp_replies = None        # what the module sent the scripted UDP client (port 50000)
         self.followups = []
@@ -438,6 +440,12 @@ class Network:
                 self.udp_replies = []
                 self.replies.append(self.udp_replies)
                 self.socks[int(m[1])]["rx"] = [("192.168.1.10", 50000, first)]
+                return ["OK"], {"after": 0.3, "lines": self._avail(m[1])}
+            if cmd.startswith("AT+USOB") and self.socks[int(m[1])]["proto"] == 17 and port in self.bursts:
+                self.udp_replies = []
+                self.replies.append(self.udp_replies)
+                self.socks[int(m[1])]["rx"] = [("192.168.1.10", 50000, r.encode() if isinstance(r, str) else bytes(r))
+                                                for r in self.bursts[port]]
                 return ["OK"], {"after": 0.3, "lines": self._avail(m[1])}
             if cmd.startswith("AT+USOL") and port in self.accept:
                 return ["OK"], [f"+UESOIC:{self._new(6, port)},192.168.1.10,{m[1]}"]

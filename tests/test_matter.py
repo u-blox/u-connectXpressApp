@@ -156,14 +156,77 @@ def test_state_is_sealed_on_disk_and_survives_a_restart(app_exe, module, stub, t
     assert files[0].read_bytes().startswith(b"UCXS"), files[0].read_bytes()[:16]
 
 
-def test_reset_removes_what_the_node_stored(app_exe, module, stub, tmp_path):
-    out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.reset")
+def test_reset_removes_what_the_node_stored_and_reboots_the_module(app_exe, stub, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")   # answers the factory reset (AT+USYFR, AT&W)
+    module.start()
+    try:
+        _check_reset(app_exe, module, stub, tmp_path)
+    finally:
+        module.stop()
+
+
+def _check_reset(app_exe, module, stub, tmp_path):
+    out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.set light on", "matter.reset", "matter.status",
+               "matter.endpoints")
     assert out.returncode == 0 and "1 stored file(s) removed" in out.stdout, out.stdout
-    assert not list(tmp_path.rglob("matter.stub.key")), list(tmp_path.rglob("*"))
-    out = _run(app_exe, module, stub, tmp_path, "matter.reset", "matter.start", "matter.status")
-    assert "0 stored file(s) removed" in out.stdout and "started 1 time(s)" in out.stdout, out.stdout
+    # off the Wi-Fi network for real, then a reboot: no factory reset
+    sent = "\n".join(module.log)
+    assert "AT+UWSDC" in module.log and "AT+CPWROFF" in module.log[module.log.index("AT+UWSDC"):], sent
+    assert "AT+USYFR" not in sent, sent
+    assert "matter: left Wi-Fi network vucx-net\nmatter: module rebooted\n" in out.stdout, out.stdout
+    # the node that ran starts again with the same endpoints, from an empty store
+    after = out.stdout.split("matter: module rebooted")[1]
+    assert "matter: node started (stub)" in after and "commission the node again\n" in after, out.stdout
+    assert "started 1 time(s)" in after and "1  light  off" in after, out.stdout
+    out = _run(app_exe, module, stub, tmp_path, "matter.start contact", "matter.reset all", "matter.endpoints")
+    assert out.returncode == 0 and "with its new setup codes" in out.stdout, out.stdout
+    assert "matter: module reset to factory settings and rebooted" in out.stdout, out.stdout
+    assert "1  contact  closed\nkinds:" in out.stdout, out.stdout
+    log = module.log[module.log.index("AT+USYFR"):]
+    assert log.index("AT&W") < log.index("AT+CPWROFF"), log
+    out = _run(app_exe, module, stub, tmp_path, "matter.reset", "matter.status")
+    assert "removed\n" in out.stdout and "matter: stopped" in out.stdout, out.stdout
+    assert "matter.start, then commission the node again" in out.stdout, out.stdout
     out = _run(app_exe, module, stub, tmp_path, "matter.reset now")
     assert out.returncode != 0, out.stdout
+
+
+def test_selftest_checks_the_plugin_module_store_and_node(app_exe, stub, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    nora = Vucx("nora-w36.yaml")
+    nora.start()
+    try:
+        out = _run(app_exe, nora, stub, tmp_path, "matter.selftest", "matter.status")
+        running = _run(app_exe, nora, stub, tmp_path, "matter.start", "matter.selftest", "matter.status")
+        failing = _run(app_exe, nora, stub, tmp_path, "matter.selftest", env={"UCX_STUB_SELFTEST_FAIL": "1"})
+    finally:
+        nora.stop()
+    assert out.returncode == 0 and "matter selftest: ok" in out.stdout, out.stdout
+    for name in ("plug-in", "module", "store", "stub"):
+        assert re.search(rf"^  {name} +ok ", out.stdout, re.M), (name, out.stdout)
+    # a node started for the test only is stopped again; the store keeps no probe
+    assert "matter: node started (stub)" in out.stdout and "matter: stopped" in out.stdout, out.stdout
+    assert not list(tmp_path.rglob("matter.selftest.key")), list(tmp_path.rglob("*"))
+    after = running.stdout.split("matter selftest: ok")[1]
+    assert running.returncode == 0 and "matter: running" in after, running.stdout
+    assert failing.returncode != 0 and "ERROR: matter selftest: 1 check(s) failed" in failing.stdout, failing.stdout
+    # a module without the peripheral role: no node is started for it
+    profile = load("nora-w36.yaml")
+    profile["commands"]["AT+UBTM?"] = ["+UBTM:1", "OK"]
+    central = Vucx(profile)
+    central.start()
+    try:
+        out = _run(app_exe, central, stub, tmp_path, "matter.selftest")
+    finally:
+        central.stop()
+    assert out.returncode != 0, out.stdout
+    assert re.search(r"^  module +FAILED  Bluetooth LE mode 1, needs 2 or 3", out.stdout, re.M), out.stdout
+    assert "node started" not in out.stdout, out.stdout
 
 
 def test_log_level_filters_the_plugins_log(app_exe, module, stub, tmp_path):
@@ -251,6 +314,16 @@ def test_plugin_for_another_app_version_is_refused(app_exe, module, stub, tmp_pa
     out = _run(app_exe, module, stub, tmp_path, "matter.start", env={"UCX_STUB_ABI": "99"})
     assert out.returncode != 0, out.stdout
     assert "another version of the app (interface 99" in out.stdout, out.stdout
+
+
+def test_sbom_lists_the_components_of_an_installed_plugin(app_exe, module, stub, tmp_path):
+    # asked of the plug-in itself, running or not; in the form of the app's own components
+    block = "Matter stub 1.2.3  [MIT]\n  stand-in for the Matter SDK in the offline tests\n  https://github.com/"
+    out = _run(app_exe, module, stub, tmp_path, "app.sbom", "matter.start", "app.sbom", "matter.status")
+    assert out.returncode == 0 and out.stdout.count(block) == 2, out.stdout
+    assert "matter: running" in out.stdout, out.stdout   # asking did not unload the running node
+    out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "app.sbom")
+    assert out.returncode == 0 and "u-connectClient" in out.stdout and "Matter" not in out.stdout, out.stdout
 
 
 def test_files_that_are_no_plugin_are_refused(app_exe, module, tmp_path):

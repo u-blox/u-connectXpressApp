@@ -16,7 +16,9 @@
  */
 
 // u-connect-matter patch: key-logging for Wireshark decryption.
-// Enabled at RUNTIME only when the environment variable UCX_KEYLOG_FILE is set
+// u-connectXpressApp: only in a plug-in built for it ("ucxapp --matter --keylog --build" defines UCX_KEYLOG):
+// the plug-in everybody else builds and ships has no code that writes a key to a file. In that build it is
+// enabled at RUNTIME only when the environment variable UCX_KEYLOG_FILE is set
 // to a writable path (e.g. run/matter-keys.log). Writes derived I2R/R2I AES-CCM
 // session keys plus the HKDF salt/info so tools can decrypt captured traffic.
 //
@@ -33,7 +35,7 @@
 #include <cstdint>
 
 // Only on host builds — no file I/O or getenv on embedded RTOS targets.
-#if defined(_WIN32) || defined(__linux__)
+#if (defined(_WIN32) || defined(__linux__)) && defined(UCX_KEYLOG) && UCX_KEYLOG
 #define UCX_KEYLOG_SUPPORTED 1
 #include <chrono>
 #include <cstdio>

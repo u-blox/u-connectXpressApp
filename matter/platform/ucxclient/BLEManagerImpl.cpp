@@ -345,15 +345,6 @@ CHIP_ERROR BLEManagerImpl::_SetAdvertisingMode(BLEAdvertisingMode mode)
     return CHIP_NO_ERROR;
 }
 
-void BLEManagerImpl::RefreshAdvertisement()
-{
-    if (mAdvertising)
-    {
-        (void) StopAdvertising();
-        (void) StartAdvertising();
-    }
-}
-
 CHIP_ERROR BLEManagerImpl::StartAdvertising()
 {
     ChipLogProgress(DeviceLayer, "[BLE] ==== StartAdvertising ENTRY ====");

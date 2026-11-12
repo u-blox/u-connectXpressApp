@@ -47,9 +47,6 @@ public:
     void _OnPlatformEvent(const ChipDeviceEvent * event);
     Ble::BleLayer * _GetBleLayer();
 
-    // u-connectXpressApp: a running advertisement again from the setup codes of now; with the stack lock
-    void RefreshAdvertisement();
-
     // BlePlatformDelegate interface
     CHIP_ERROR SubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId) override;
     CHIP_ERROR UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId) override;

@@ -184,6 +184,7 @@ void ucxapp_register_mdns_cmds(void);    /* mdns.* responder and DNS-SD services
 void ucxapp_register_matter_cmds(void);  /* matter.* Matter node run by the ucxmatter plug-in (host only) */
 void ucxapp_matter_stop(void);           /* before the module's AT client closes: the node uses it */
 bool ucxapp_matter_running(void);
+void ucxapp_matter_sbom(void);           /* the plug-in's components, when it is installed (app.sbom) */
 /* Matter live card (node, commissioning, network, codes, endpoints), or "stopped" when the plug-in is installed;
    false when there is nothing to show. From any thread, no AT commands. */
 bool ucxapp_matter_card(char *out, size_t size);
@@ -250,6 +251,7 @@ void ucxapp_register_examples_cmds(void);   /* <group>.example and examples [gro
 
 /* Reboots the module and restores the session settings (dev.reboot). */
 bool ucxapp_module_reboot(ucxapp_t *app);
+bool ucxapp_module_factory_reset(ucxapp_t *app);   /* AT+USYFR, AT&W, reboot */
 
 /* AT+USORFB that adapts to the module's read limit (FW 3.2 allows 1000 bytes, newer firmware 1460). */
 int32_t ucxapp_udp_recvfrom(uCxHandle_t *ucx, int32_t sock, int32_t len, uint8_t *buf, uCxSocketReceiveFrom_t *from);

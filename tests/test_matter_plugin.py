@@ -112,10 +112,14 @@ def test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones(app_exe, modul
     before, after = out.stdout.split("matter: reset")
     codes = setup_codes(before)
     assert setup_codes(after) == codes and "commissioning window: open" in after, out.stdout
+    # the module left its network and rebooted, and the node defined its service again on the fresh GATT server
+    log = module.log[module.log.index("AT+UWSDC"):]
+    assert "AT+UBTGS=FFF6" in log[log.index("AT+CPWROFF"):] and "AT+USYFR" not in log, log
     # new codes: the node advertises them at once, and has them at its next start
     sent = len(module.log)
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.reset all", "matter.status")
     assert out.returncode == 0 and "again with its new setup codes" in out.stdout, out.stdout
+    assert "AT+USYFR" in module.log[sent:], module.log[sent:]
     new = setup_codes(out.stdout)
     assert new != codes and codes_allowed(*new), (codes, new)
     assert re.search(rf"manual code: {manual_code(*new)}\d\n", out.stdout), out.stdout
@@ -128,6 +132,13 @@ def test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones(app_exe, modul
     assert out.returncode == 0 and setup_codes(out.stdout) not in (codes, new), out.stdout
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.reset codes")
     assert out.returncode != 0, out.stdout
+
+
+def test_selftest_checks_the_node(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "matter.selftest", "matter.start", "matter.selftest")
+    assert out.returncode == 0 and out.stdout.count("matter selftest: ok") == 2, out.stdout
+    for name in ("plug-in", "module", "store", "random", "setup codes", "Bluetooth LE"):
+        assert len(re.findall(rf"^  {name} +ok ", out.stdout, re.M)) == 2, (name, out.stdout)
 
 
 def test_node_says_which_product_it_is(app_exe, module, plugin, tmp_path):
@@ -157,6 +168,39 @@ def test_detail_log_shows_the_matter_stack(app_exe, module, plugin, tmp_path):
     assert out.returncode == 0, out.stdout
     assert "[matter] [DL] [BLE] CHIPoBLE service activated" in out.stdout, out.stdout
     assert "Select failed" not in out.stdout, out.stdout
+
+
+def test_log_and_at_trace_do_not_have_the_passcode(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "at.trace t.trace", "matter.log detail", "matter.start",
+               "gatt.listen 1", "matter.status", "at.trace.stop")
+    assert out.returncode == 0, out.stdout
+    passcode = setup_codes(out.stdout)[1]
+    # matter.status and the QR code show it to who asks; the SDK's log at its fullest and the AT trace do not
+    log = [line for line in out.stdout.splitlines() if line.startswith("[matter]")]
+    assert len(log) > 50, out.stdout
+    for text in ("\n".join(log), (tmp_path / "storage" / "t.trace").read_text()):
+        assert not re.search(rf"(?<!\d)0*{passcode}(?!\d)", text), text
+
+
+def test_plugin_has_no_code_that_writes_session_keys_to_a_file(plugin):
+    # the key log for Wireshark is in a plug-in built with "ucxapp --matter --keylog" only, which says so
+    assert b"UCX_KEYLOG_FILE" not in plugin.read_bytes()
+    assert b"KEY LOG BUILD" not in plugin.read_bytes()
+
+
+def test_sbom_lists_the_matter_sdk_and_its_parts(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "app.sbom")
+    assert out.returncode == 0, out.stdout
+    blocks = dict(re.findall(r"^(\S.*?)  \[(.+?)\]\n  .+\n  https://\S+$", out.stdout, re.M))
+    sdk = next(name for name in blocks if name.startswith("Matter SDK "))
+    assert re.fullmatch(r"Matter SDK v\d+\.\d+\.\d+\.\d+ commit [0-9a-f]{12}", sdk), sdk
+    tls = next(name for name in blocks if name.startswith("mbedTLS (Matter SDK) "))
+    assert re.fullmatch(r"mbedTLS \(Matter SDK\) \d+\.\d+\.\d+ commit [0-9a-f]{12}", tls), tls
+    for part in ("Pigweed", "nlassert", "nlio"):
+        assert any(re.fullmatch(rf"{part} commit [0-9a-f]{{12}}", name) for name in blocks), (part, out.stdout)
+    if os.name == "nt":   # linked into the DLL; on Linux they are the system's
+        assert any(name.startswith("GCC runtime libraries ") for name in blocks), out.stdout
+        assert any(re.match(r"MinGW-w64 runtime \d+\.", name) for name in blocks), out.stdout
 
 
 def test_a_commissioner_opens_the_matter_transport_over_bluetooth(app_exe, module, plugin, tmp_path):
@@ -250,6 +294,8 @@ def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, pl
     assert sent.index("AT+UMDSR=0") > sent.index("AT+UMDSA="), sent
     assert sent.rindex('AT+UMDHN="vucx"') > sent.index('AT+UMDHN="C0FFEE001144"'), sent
     assert sent.rindex("AT+UMDE=1") > sent.rindex("AT+UMDE=0"), sent
+    # and its socket is closed: nothing of the node listens on the module any more
+    assert "AT+USOCL=0" in module.log[module.log.index("AT+USOB=0,5540"):], sent
 
 
 def test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered(app_exe, plugin, tmp_path):
@@ -275,6 +321,33 @@ def test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered(ap
     # the data on the node's socket was the node's alone: the app's socket handler did not see it
     assert re.search(r"kept by the node: [2-9]", out.stdout), out.stdout
     assert "matter: pairing with the passcode" in out.stdout, out.stdout
+
+
+def test_malformed_datagrams_do_not_stop_the_node(app_exe, plugin, tmp_path):
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    # each with a message counter and an exchange of its own: a repeat would be dropped as one, not parsed
+    junk = [b"\x00", bytes(range(256)) * 4, b"\xff" * 1200,
+            pairing_request(1, 0x2001)[:11],                        # ends inside the message header
+            pairing_request(2, 0x2002)[:8] + b"\xff" * 40,          # a header that promises more than there is
+            bytes([0x04, 0x34, 0x12, 0]) + pairing_request(3, 0x2003)[4:],   # a secure session the node never made
+            pairing_request(4, 0x2004)[:-9]]                        # the request itself, cut off
+    request = pairing_request()
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["bursts"] = {5540: [*junk, request]}
+    module = Vucx(profile)
+    module.start()
+    try:
+        out = _run(app_exe, module, plugin, tmp_path, "matter.start", "gatt.listen 4", "matter.status")
+        replies = [bytes(r) for r in (module.net.replies[0] if module.net.replies else [])]
+    finally:
+        module.stop()
+    # the node is still there, and the real request after the junk got its answer
+    assert out.returncode == 0 and "matter: running" in out.stdout, out.stdout
+    assert "commissioning window: open" in out.stdout, out.stdout
+    answer = (PAIRING_NODE, PBKDF_PARAM_RESPONSE, PAIRING_EXCHANGE)
+    assert answer in [unsecured_message(r) for r in replies if len(r) > 20], (replies, out.stdout)
 
 
 def test_card_shows_the_node_its_codes_and_endpoints(app_exe, module, plugin, tmp_path):

@@ -32,6 +32,17 @@ extern "C" {
 #define UCXM_SDK_VERSION "unknown"
 #endif
 
+#include <mbedtls/version.h>
+
+// One component of app.sbom (ucxapp_matter.h)
+#define UCXM_PART(name, version, licence, use, source) name " " version "  [" licence "]\n  " use "\n  " source "\n\n"
+
+#if defined(UCX_KEYLOG) && UCX_KEYLOG
+#define UCXM_BUILD ", KEY LOG BUILD"
+#else
+#define UCXM_BUILD ""
+#endif
+
 namespace {
 
 using namespace ucxm;
@@ -39,7 +50,7 @@ using namespace ucxm;
 const ucxapp_matter_host_t * gHost;
 uCxHandle_t * gUcx;
 Onboarding gOnboarding;
-std::mutex gCodesLock; // gOnboarding, between the card's thread and matter.reset all
+std::mutex gCodesLock; // gOnboarding, between the card's thread and matter.start
 char gModel[32];
 char gType[40];
 char gSerial[40];
@@ -321,6 +332,9 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     }
     Log(UCXAPP_MATTER_LOG_INFO, "%s over %s, %d endpoint(s), discriminator %u", gModel, gNetwork, EndpointCount(),
         static_cast<unsigned>(gOnboarding.discriminator));
+#if defined(UCX_KEYLOG) && UCX_KEYLOG
+    Log(UCXAPP_MATTER_LOG_ERROR, "KEY LOG BUILD: the node writes its session keys to the file UCX_KEYLOG_FILE names");
+#endif
     gCardState.fabrics     = NodeFabrics();
     gCardState.links       = NodeLinks();
     gCardState.advertising = NodeAdvertising();
@@ -422,6 +436,55 @@ int Set(int argc, const char * const argv[])
     return UCXAPP_MATTER_OK;
 }
 
+void Check(int & failed, bool ok, const char * name, const char * detail)
+{
+    Print("  %-12s %s  %s\n", name, ok ? "ok    " : "FAILED", detail);
+    failed += ok ? 0 : 1;
+}
+
+// matter.selftest, the node's part; the app checked the plug-in, the module and the store
+int Selftest()
+{
+    char text[160];
+    Onboarding again  = Onboarding();
+    int failed        = 0;
+    const int fabrics = NodeFabrics();
+    const int links   = NodeLinks();
+    const bool window = NodeWindowOpen();
+
+    Check(failed, NodeRandomOk(), "random", "the SDK's DRBG gives bytes, two draws differ");
+
+    again.vendorId      = gOnboarding.vendorId;
+    again.productId     = gOnboarding.productId;
+    again.passcode      = gOnboarding.passcode;
+    again.discriminator = gOnboarding.discriminator;
+    snprintf(text, sizeof(text), "discriminator %u, not the SDK's test codes, QR and manual code match them",
+             static_cast<unsigned>(gOnboarding.discriminator));
+    Check(failed,
+          OnboardingCodes(again) && strcmp(again.qr, gOnboarding.qr) == 0 && strcmp(again.manual, gOnboarding.manual) == 0 &&
+              SetupCodesAllowed(gOnboarding.passcode, gOnboarding.discriminator),
+          "setup codes", text);
+
+    if (fabrics > 0)
+    {
+        snprintf(text, sizeof(text), "commissioned (%d fabric(s)), window %s", fabrics, window ? "open" : "closed");
+        Check(failed, true, "Bluetooth LE", text);
+    }
+    else
+    {
+        const bool ble = links > 0 || NodeAdvertising();
+
+        snprintf(text, sizeof(text), "%s, window %s%s", links > 0 ? "link up" : ble ? "advertising" : "not advertising",
+                 window ? "open" : "closed", window ? "" : " (matter.open opens it)");
+        Check(failed, ble && window, "Bluetooth LE", text);
+    }
+
+    NodeNetwork(text, sizeof(text));
+    Check(failed, fabrics == 0 || strncmp(text, "Wi-Fi up", 8) == 0 || strncmp(text, "Thread", 6) == 0, "network",
+          text);
+    return failed == 0 ? UCXAPP_MATTER_OK : UCXAPP_MATTER_ERR_FAILED;
+}
+
 int Command(int argc, const char * const argv[])
 {
     if (argc < 1)
@@ -459,36 +522,36 @@ int Command(int argc, const char * const argv[])
         ShowCodes();
         return UCXAPP_MATTER_OK;
     }
-    if (strcmp(argv[0], "reset") == 0)
+    if (strcmp(argv[0], "selftest") == 0)
     {
-        // the app then removes the stored files; "all": new setup codes as well
-        const bool all  = argc == 2 && strcmp(argv[1], "all") == 0;
-        NodeSetup setup = { gOnboarding.vendorId, gOnboarding.productId, 0, 0 };
-
-        if (argc > 2 || (argc == 2 && !all))
-        {
-            return UCXAPP_MATTER_ERR_USAGE;
-        }
-        if (!NodeForget(all, setup))
-        {
-            Print("ERROR: the node is not commissionable again; matter.stop and matter.start bring it back\n");
-            return UCXAPP_MATTER_ERR_FAILED;
-        }
-        if (all)
-        {
-            if (!TakeSetup(setup))
-            {
-                return UCXAPP_MATTER_ERR_FAILED;
-            }
-            ShowCodes();
-        }
-        return UCXAPP_MATTER_OK;
+        return Selftest();
     }
     return UCXAPP_MATTER_ERR_UNSUPPORTED;
 }
 
+// What is linked into the plug-in; the commits are those of the SDK checkout it was built from (ucxapp.py)
+const char kSbom[] =
+    UCXM_PART("Matter SDK", UCXM_SDK_VERSION " commit " UCXM_SDK_COMMIT, "Apache-2.0",
+              "the Matter node of the plug-in ucxmatter (matter.*)", "https://github.com/project-chip/connectedhomeip")
+    UCXM_PART("mbedTLS (Matter SDK)", MBEDTLS_VERSION_STRING " commit " UCXM_MBEDTLS_COMMIT, "Apache-2.0",
+              "crypto of the Matter node", "https://github.com/Mbed-TLS/mbedtls")
+    UCXM_PART("Pigweed", "commit " UCXM_PIGWEED_COMMIT, "Apache-2.0", "support library of the Matter SDK",
+              "https://pigweed.googlesource.com/pigweed/pigweed")
+    UCXM_PART("nlassert", "commit " UCXM_NLASSERT_COMMIT, "Apache-2.0", "assertions of the Matter SDK",
+              "https://github.com/nestlabs/nlassert")
+    UCXM_PART("nlio", "commit " UCXM_NLIO_COMMIT, "Apache-2.0", "byte order helpers of the Matter SDK",
+              "https://github.com/nestlabs/nlio")
+#ifdef _WIN32
+    UCXM_PART("GCC runtime libraries", __VERSION__, "GPL-3.0-or-later with GCC Runtime Library Exception",
+              "libstdc++ and libgcc, linked into ucxmatter.dll", "https://gcc.gnu.org")
+    UCXM_PART("MinGW-w64 runtime", __MINGW64_VERSION_STR, "ZPL-2.1, MIT, BSD-3-Clause",
+              "C runtime start-up and winpthreads, linked into ucxmatter.dll", "https://www.mingw-w64.org")
+#endif
+    ;
+
 const ucxapp_matter_plugin_t kPlugin = {
-    UCXAPP_MATTER_ABI, sizeof(ucxapp_matter_plugin_t), "Matter SDK " UCXM_SDK_VERSION, Start, Stop, Urc, Command, Card,
+    UCXAPP_MATTER_ABI, sizeof(ucxapp_matter_plugin_t), "Matter SDK " UCXM_SDK_VERSION UCXM_BUILD, Start, Stop, Urc, Command,
+    Card, kSbom,
 };
 
 } // namespace

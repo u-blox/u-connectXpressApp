@@ -616,20 +616,12 @@ CHIP_ERROR GenericConfigurationManagerImpl<UcxclientConfig>::GetBLEDeviceIdentif
     info.Init();
     
     // Get discriminator from commissionable data provider
+    // u-connectXpressApp: there is no other one to fall back to; a node without its codes does not advertise
     uint16_t discriminator = 0;
     CHIP_ERROR err = GetCommissionableDataProvider()->GetSetupDiscriminator(discriminator);
-    if (err == CHIP_NO_ERROR)
-    {
-        info.SetDeviceDiscriminator(discriminator);
-        ChipLogProgress(DeviceLayer, "[Config] BLE discriminator: %u", discriminator);
-    }
-    else
-    {
-        // Use discriminator from device config (or default)
-        const auto& config = ucxmatter::GetDeviceConfig();
-        info.SetDeviceDiscriminator(config.discriminator);
-        ChipLogProgress(DeviceLayer, "[Config] BLE discriminator: %u (from config)", config.discriminator);
-    }
+    ReturnErrorOnFailure(err);
+    info.SetDeviceDiscriminator(discriminator);
+    ChipLogProgress(DeviceLayer, "[Config] BLE discriminator: %u", discriminator);
     
     // Get vendor/product IDs from device config (loaded from matter.config)
     const auto& deviceConfig = ucxmatter::GetDeviceConfig();

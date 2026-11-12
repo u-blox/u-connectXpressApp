@@ -55,11 +55,11 @@ PAIRING_EXCHANGE = 0x1234
 PBKDF_PARAM_RESPONSE = 0x21
 
 
-def pairing_request():
+def pairing_request(counter=0x01234567, exchange=PAIRING_EXCHANGE):
     """A commissioner's first message of a pairing over the network: PBKDFParamRequest on an unsecured session,
     from node PAIRING_NODE on exchange PAIRING_EXCHANGE, asking for an answer (reliable)."""
-    message = bytes([0x04, 0, 0, 0]) + (0x01234567).to_bytes(4, "little") + PAIRING_NODE
-    exchange = bytes([0x05, 0x20]) + PAIRING_EXCHANGE.to_bytes(2, "little") + bytes(2)
+    message = bytes([0x04, 0, 0, 0]) + counter.to_bytes(4, "little") + PAIRING_NODE
+    exchange = bytes([0x05, 0x20]) + exchange.to_bytes(2, "little") + bytes(2)
     # initiator random, initiator session 0x1234, passcode id 0, no PBKDF parameters known
     payload = b"\x15\x30\x01\x20" + bytes(range(32)) + b"\x25\x02\x34\x12\x24\x03\x00\x28\x04\x18"
     return message + exchange + payload

@@ -16,6 +16,8 @@
 #pragma warning(disable: 4200 4201)
 #endif
 #include "u_port.h"
+#include "u_cx_bluetooth.h"
+#include "u_cx_wifi.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -39,6 +41,8 @@ static int gLogLevel = UCXAPP_MATTER_LOG_INFO;
 static uint32_t gUrcCount;
 static uint32_t gUrcKept;
 static char gPath[260];
+static char gEndpoints[UCXAPP_MAX_ARGS][24];   /* what matter.start was given: matter.reset starts the same node */
+static int gEndpointCount;
 
 static const char *const kLevels[] = { "error", "info", "detail" };
 
@@ -257,6 +261,27 @@ bool ucxapp_matter_running(void)
     return gRunning;
 }
 
+/* The components of an installed plug-in, after the app's own in app.sbom; on the command thread. */
+void ucxapp_matter_sbom(void)
+{
+    bool mine = gPlugin == NULL;
+
+    if (mine && (!pluginPath() || !fileExists(gPath) || !load())) {
+        return;
+    }
+    /* line by line: ucxapp_print has a bounded buffer */
+    for (const char *line = gPlugin->sbom != NULL ? gPlugin->sbom : ""; *line != '\0';) {
+        const char *end = strchr(line, '\n');
+        int len = end != NULL ? (int)(end - line) : (int)strlen(line);
+
+        ucxapp_print("%.*s\n", len, line);
+        line += len + (end != NULL ? 1 : 0);
+    }
+    if (mine) {
+        unload();
+    }
+}
+
 /* The web page asks four times a second from its own thread: the plug-in under the lock that stop takes, the
    file looked for every few seconds only. */
 bool ucxapp_matter_card(char *out, size_t size)
@@ -329,20 +354,12 @@ static int forward(int argc, char *argv[])
     return rc;
 }
 
-static int cmdStart(ucxapp_t *app, int argc, char *argv[])
+static int startNode(ucxapp_t *app, int count, const char *const words[])
 {
-    const char *words[UCXAPP_MAX_ARGS];
     int rc;
 
-    if (gRunning) {
-        ucxapp_print("ERROR: a Matter node is already running; matter.stop ends it\n");
-        return UCXAPP_ERR_FAILED;
-    }
     if (!load()) {
         return UCXAPP_ERR_FAILED;
-    }
-    for (int i = 1; i < argc; i++) {
-        words[i - 1] = argv[i];
     }
     if (!gLockMade) {
         U_CX_MUTEX_CREATE(gLock);
@@ -358,7 +375,7 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
     gNextUrc = gClient->urcCallback;
     gRunning = true;
     uCxAtClientSetUrcCallback(gClient, urcTap, gClient->pUrcCallbackTag);
-    rc = gPlugin->start(&gHost, argc - 1, words);
+    rc = gPlugin->start(&gHost, count, words);
     if (rc != UCXAPP_MATTER_OK) {
         uCxAtClientSetUrcCallback(gClient, gNextUrc, gClient->pUrcCallbackTag);
         U_CX_MUTEX_LOCK(gLock);
@@ -370,6 +387,22 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("matter: node started (%s)\n", gPlugin->name);
     return UCXAPP_OK;
+}
+
+static int cmdStart(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *words[UCXAPP_MAX_ARGS];
+
+    if (gRunning) {
+        ucxapp_print("ERROR: a Matter node is already running; matter.stop ends it\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    for (int i = 1; i < argc; i++) {
+        snprintf(gEndpoints[i - 1], sizeof(gEndpoints[0]), "%s", argv[i]);
+        words[i - 1] = gEndpoints[i - 1];
+    }
+    gEndpointCount = argc - 1;
+    return startNode(app, gEndpointCount, words);
 }
 
 static int cmdStop(ucxapp_t *app, int argc, char *argv[])
@@ -458,35 +491,135 @@ static void collectFile(const char *name, uint64_t size, void *ctx)
     }
 }
 
-/* Forgets every fabric: the node drops what it holds, then what it stored goes too. Its setup codes stay, as
-   the label on a product does; "all" draws new ones (a running node does that itself and stores them). */
+/* The module as a commissioner must find it: off the Wi-Fi network the node was given (the access point sees it
+   leave), rebooted, and with "all" back on its factory settings. */
+static bool resetModule(ucxapp_t *app, bool factory)
+{
+    char ssid[64], ip[48];
+
+    if (ucxapp_module_has_wifi(app) && ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        ucxapp_events_clear(URC_FLAG_WIFI_LINK_DOWN);
+        if (uCxWifiStationDisconnect(app->ucx) != 0) {
+            ucxapp_print("ERROR: the module did not leave Wi-Fi network %s\n", ssid);
+            return false;
+        }
+        (void)ucxapp_events_wait(URC_FLAG_WIFI_LINK_DOWN, 3);
+        ucxapp_print("matter: left Wi-Fi network %s\n", ssid);
+    }
+    if (factory ? !ucxapp_module_factory_reset(app) : !ucxapp_module_reboot(app)) {
+        return false;
+    }
+    ucxapp_print("matter: module %s\n", factory ? "reset to factory settings and rebooted" : "rebooted");
+    return true;
+}
+
+/* Forgets every fabric: the node stops and what it stored goes. Its setup codes stay, as the label on a product
+   does; "all" draws new ones and resets the module to factory settings. Then the module leaves its network and
+   reboots, and a node that ran starts again with the same endpoints, ready to be commissioned. */
 static int cmdReset(ucxapp_t *app, int argc, char *argv[])
 {
     char files[STORE_FILES][48];
+    const char *words[UCXAPP_MAX_ARGS];
     bool all = argc == 2 && strcmp(argv[1], "all") == 0;
-    bool keepCodes = !all || gRunning;
+    bool restart = gRunning;
     int removed = 0;
 
-    (void)app;
     if (argc > 2 || (argc == 2 && !all)) {
         return UCXAPP_ERR_USAGE;
     }
-    if (gRunning) {
-        int rc = forward(argc, argv);
-        if (rc != UCXAPP_OK) {
-            return rc;
-        }
-    }
+    ucxapp_matter_stop();
     memset(files, 0, sizeof(files));
     ucxapp_store_list(collectFile, files);
     for (int i = 0; i < STORE_FILES && files[i][0] != '\0'; i++) {
-        if (keepCodes && strcmp(files[i], STORE_FACTORY) == 0) {
+        if (!all && strcmp(files[i], STORE_FACTORY) == 0) {
             continue;
         }
         removed += ucxapp_store_remove(files[i]) ? 1 : 0;
     }
-    ucxapp_print("matter: reset, %d stored file(s) removed; commission the node again%s\n", removed,
+    ucxapp_print("matter: reset, %d stored file(s) removed\n", removed);
+    if (!resetModule(app, all)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (restart) {
+        for (int i = 0; i < gEndpointCount; i++) {
+            words[i] = gEndpoints[i];
+        }
+        if (startNode(app, gEndpointCount, words) != UCXAPP_OK) {
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    ucxapp_print("matter: %scommission the node again%s\n", restart ? "" : "matter.start, then ",
                  all ? " with its new setup codes" : "");
+    return UCXAPP_OK;
+}
+
+static void selfCheck(int *failed, bool ok, const char *name, const char *detail)
+{
+    ucxapp_print("  %-12s %s  %s\n", name, ok ? "ok    " : "FAILED", detail);
+    *failed += ok ? 0 : 1;
+}
+
+/* What a node needs, checked from the app's side, then by the node itself; a node that is not running is
+   started for it and stopped again. */
+static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
+{
+    static const char kProbe[] = STORE_PREFIX "selftest" STORE_SUFFIX;
+    static const uint8_t kData[] = "ucxapp matter selftest";
+    const char *words[1] = { "selftest" };
+    char text[160];
+    uint8_t *back;
+    size_t length = 0;
+    uBtMode_t mode = U_BT_MODE_DISABLED;
+    bool mine = !gRunning, ok;
+    int failed = 0;
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_print("matter selftest\n");
+    ok = gRunning || load();
+    snprintf(text, sizeof(text), "%s, interface %u", ok ? gPlugin->name : "not loaded", (unsigned)UCXAPP_MATTER_ABI);
+    selfCheck(&failed, ok, "plug-in", text);
+    if (ok && mine) {
+        unload();
+    }
+
+    ok = uCxBluetoothGetMode(app->ucx, &mode) == 0 && (mode == U_BT_MODE_PERIPHERAL ||
+                                                        mode == U_BT_MODE_CENTRAL_PERIPHERAL);
+    snprintf(text, sizeof(text), "Bluetooth LE mode %d%s, %s", (int)mode, ok ? " (peripheral)" : ", needs 2 or 3 (AT+UBTM)",
+             ucxapp_module_has_wifi(app) ? "Wi-Fi" : ucxapp_module_has_thread(app) ? "Thread" : "no Wi-Fi or Thread");
+    selfCheck(&failed, ok && (ucxapp_module_has_wifi(app) || ucxapp_module_has_thread(app)), "module", text);
+
+    back = ucxapp_store_save(kProbe, kData, sizeof(kData)) ? ucxapp_store_load_raw(kProbe, &length) : NULL;
+    ok = back != NULL && length > 4 && memcmp(back, "UCXS", 4) == 0;
+    free(back);
+    back = ok ? ucxapp_store_load(kProbe, &length) : NULL;
+    ok = back != NULL && length == sizeof(kData) && memcmp(back, kData, length) == 0;
+    free(back);
+    (void)ucxapp_store_remove(kProbe);
+    selfCheck(&failed, ok, "store", ok ? "sealed (UCXS) and read back" : "not sealed, or not read back");
+
+    if (mine && failed == 0 && startNode(app, 0, NULL) != UCXAPP_OK) {
+        failed++;
+    }
+    if (gRunning) {
+        int rc = gPlugin->command(1, words);
+
+        if (rc == UCXAPP_MATTER_ERR_UNSUPPORTED) {
+            ucxapp_print("  node         has no selftest (%s)\n", gPlugin->name);
+        } else {
+            failed += rc == UCXAPP_MATTER_OK ? 0 : 1;
+        }
+        if (mine) {
+            ucxapp_matter_stop();
+        }
+    }
+    if (failed > 0) {
+        ucxapp_print("ERROR: matter selftest: %d check(s) failed\n", failed);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("matter selftest: ok\n");
     return UCXAPP_OK;
 }
 
@@ -513,9 +646,10 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },
     { "matter.endpoints", "", "Endpoints of the running node and the kinds the plug-in can build", 0, cmdForward },
     { "matter.set", "<endpoint> <value...>", "Change an endpoint from this side, as a button or sensor would (matter.endpoints shows the values each takes)", 0, cmdSet },
-    { "matter.qr", "", "Setup QR code and manual pairing code of the node", 0, cmdForward },
-    { "matter.open", "[seconds]", "Open the commissioning window again", 0, cmdForward },
-    { "matter.reset", "[all]", "Forget every fabric and remove what the node stored; all: draw new setup codes (QR and manual code) as well", UCXAPP_CMD_DANGER, cmdReset },
+    { "matter.qr", "", "Show the setup QR code and manual pairing code of the node (it does not advertise: matter.open does)", 0, cmdForward },
+    { "matter.open", "[seconds]", "Open the commissioning window again and advertise over Bluetooth LE (180 to 900 s, default 900)", 0, cmdForward },
+    { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
+    { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
     { "matter.log", "[error|info|detail]", "How much of the Matter SDK's log is printed", 0, cmdLog },
 };
 

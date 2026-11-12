@@ -19,6 +19,7 @@ from harness.matter import (
     codes_allowed,
     manual_decode,
     pairing_request,
+    setup_codes,
     unsecured_message,
 )
 from hwutil import _args, _finish, _has_wifi, _reboot, _run, _stop, _wifi_connect_command
@@ -89,6 +90,23 @@ def test_matter_node_is_found_by_a_second_module(app_exe, port_a, port_b, plugin
         _run(app_exe, port_b, "bt.filter clear")
     out = _run(app_exe, port_a, "bt.adv")
     assert re.search(r"^Advertising:   off", out.stdout, re.M), out.stdout   # the node took its advertisement down
+
+
+def test_matter_selftest_and_reset_on_the_module(app_exe, port_a, plugin, tmp_path, monkeypatch):
+    """matter.selftest on a real module, then matter.reset: the module reboots and the node is commissionable again
+    with the same setup codes. matter.reset all is not run here: it resets the module to factory settings."""
+    _reboot(app_exe, port_a)
+    monkeypatch.setenv("UCX_MATTER_PLUGIN", str(plugin))
+    out = _run(app_exe, port_a, "matter.selftest", "matter.status", cwd=tmp_path)
+    assert out.returncode == 0 and "matter selftest: ok" in out.stdout and "matter: stopped" in out.stdout, out.stdout
+    for name in ("plug-in", "module", "store", "random", "setup codes", "Bluetooth LE", "network"):
+        assert re.search(rf"^  {name} +ok ", out.stdout, re.M), (name, out.stdout)
+    out = _run(app_exe, port_a, "matter.start", "matter.status", "matter.reset", "matter.selftest", "matter.status",
+               cwd=tmp_path)
+    assert out.returncode == 0 and "matter: module rebooted" in out.stdout, out.stdout
+    before, after = out.stdout.split("matter: reset, ")
+    assert "commission the node again\n" in after and "commissioning window: open" in after, out.stdout
+    assert setup_codes(before) == setup_codes(after.split("matter selftest")[1]), out.stdout
 
 
 def test_matter_at_bursts_have_no_gaps_on_the_uart(app_exe, port_a, plugin, tmp_path, monkeypatch):

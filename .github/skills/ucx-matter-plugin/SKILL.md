@@ -15,7 +15,8 @@ the Matter GATT service (FFF6, C1 and C2) on the module, opens a commissioning w
 and manual codes. Discriminator, passcode, SPAKE2+ salt and the UniqueID are the node's own: drawn at random the
 first time it starts and kept sealed as `matter.factory.key` (as the i.MX 93 kit does for its end nodes), so
 nothing can be worked out from the module's address. `matter.reset` keeps them, like the label on a product;
-`matter.reset all` draws new ones. A commissioner connects and
+`matter.reset all` draws new ones. `matter.qr` only shows the codes; `matter.open` opens the window and advertises.
+A commissioner connects and
 pairs over Bluetooth LE (BTP, PASE), installs its fabric and gives the node a Wi-Fi network: the Wi-Fi driver
 (`NetworkCommissioningDriver.cpp`) scans, joins it with the module and reports back when the module has an
 address. From then on the node talks UDP through a socket on the module and is announced by the module's mDNS.
@@ -70,9 +71,16 @@ matter.endpoints               # endpoints of the node and the kinds the plug-in
 matter.set light 40            # act as the device: light on|off|0..100, temp -40..125, contact open|closed
 matter.open                    # commissioning window for 15 minutes again, with the codes
 matter.log detail              # how much of the SDK's log is printed: error, info, detail
-matter.stop                    # also done when the app leaves; matter.reset forgets what the node stored
-matter.reset all               # as matter.reset, and new setup codes (QR and manual code)
+matter.stop                    # also done when the app leaves
+matter.reset                   # forget what the node stored, leave Wi-Fi, reboot the module, start the node again
+matter.reset all               # as matter.reset, new setup codes, and the module factory-reset instead of rebooted
+matter.selftest                # plug-in, module, sealed store, random generator, setup codes, Bluetooth LE, network
 ```
+
+After a reset the node (when it ran) starts again with the same endpoints and, having no fabric, opens the
+commissioning window for 15 minutes and advertises (FFF6 with its discriminator): scan the QR or type the manual
+code in the home app; when the window has closed, `matter.open`. A factory reset also puts the module's UART back
+to 115200 baud.
 
 The module needs Bluetooth LE with a peripheral role, and Wi-Fi or Thread (`dev.caps`). `matter.example` shows worked examples.
 
@@ -88,7 +96,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 
 | Path | What |
 |---|---|
-| `app/src/ucxapp_matter.h` | The whole interface between app and plug-in, plain C: AT client calls, URC copy, print, log, event, QR, sealed store, tick; from the plug-in: start, stop, urc, command, card |
+| `app/src/ucxapp_matter.h` | The whole interface between app and plug-in, plain C: AT client calls, URC copy, print, log, event, QR, sealed store, tick; from the plug-in: start, stop, urc, command, card, sbom (its components, for `app.sbom`) |
 | `app/src/ucxapp_cmds_matter.c` | Loads the plug-in, `matter.*` commands, the URC tap, the live card (`ucxapp_matter_card`, sent to the page by `ucxapp_cmds_web.c` as the `matter` event) |
 | `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.cpp` (the node's random setup codes, kept in the store), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
@@ -103,10 +111,11 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 
 - Nothing in the plug-in bypasses `ucxapp_matter.h`: no UART, no files, no sockets of the PC, no console. Storage goes
   through `storeSave`/`storeLoad` (sealed by the secure store as `matter.<name>.key`), never a plain file. The
-  blob `factory` is what the node is made with (its setup codes): `matter.reset` removes every blob but that one.
+  blob `factory` is what the node is made with (its setup codes): `matter.reset` (done by the app, not the
+  plug-in) removes every blob but that one.
   Random numbers come from the SDK's `Crypto::DRBG_get_bytes` (the system's entropy on a PC; a board needs its
   hardware generator as the entropy source before the node may draw codes there).
-- The interface is versioned (`UCXAPP_MATTER_ABI`): raise it when a struct changes; add fields at the end.
+- The interface is versioned (`UCXAPP_MATTER_ABI`, now 4): raise it when a struct changes; add fields at the end.
 - Windows is the reference platform. Keep Linux (`.so`), STM32 (the same sources linked into the firmware, ucxapp
   calling the entry directly) and WebAssembly possible: Windows-only code stays in `matter/compat/windows`.
 - Take code from `E:\u-blox\u-connectMatter` (the working reference) rather than rewriting it. Its module bring-up
@@ -117,11 +126,11 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   u-connectMatter.
 - mDNS runs on the module (`AT+UMD*`, `chip_mdns = "platform"`; the build refuses anything else), like the sockets:
   never the SDK's responder on the host, which would need multicast through the module and keep the host awake.
-- The module is the user's: the node does not unbond, change the Bluetooth mode or local name, store (`AT&W`) or
-  factory-reset it. What it sets (pairing and security mode, connection and advertising intervals, its GATT
+- While it runs, the node does not unbond the module, change its Bluetooth mode or local name, or store (`AT&W`).
+  Only `matter.reset` touches the module: it disconnects Wi-Fi and reboots it, and `matter.reset all`
+  factory-resets it (`AT+USYFR`, `AT&W`, reboot). What the node sets (pairing and security mode, connection and advertising intervals, its GATT
   service) lasts until the module reboots. Wi-Fi is shared with the app: the node joins the network a
-  commissioner gives it (as `wifi.connect` would) and uses a network that is up already; `matter.reset` forgets
-  the node's network but leaves the module on it. When the node stops, its mDNS service is removed and the
+  commissioner gives it (as `wifi.connect` would) and uses a network that is up already. When the node stops, its mDNS service is removed and the
   responder and its host name are put back as they were. Its UDP socket is made in buffered read mode, and the
   read mode the app had is restored right after.
 - URCs reach the plug-in on the AT client's thread: it queues them for the Matter thread and returns true for the
@@ -133,7 +142,8 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   `-Wignored-attributes` (they test macros of other platforms); fix anything else at its cause (`EnforceFormat.h`
   patch, `compat/windows`).
 - `UCX_KEYLOG_FILE` (patched `RawKeySessionKeystore.cpp`) writes the session keys of the node to that file for
-  Wireshark: a debug aid, off unless the variable is set, never for a node that is in use.
+  Wireshark, only in a plug-in built with `ucxapp --matter --keylog --build` (`matter.status` says `KEY LOG BUILD`):
+  a debug aid, never for a node that is in use. A normal build has no such code.
 - New endpoint kind: one entry in `kKinds[]` in `matter/src/endpoints.cpp` (name, device type, values, init/set/show)
   and the same kind in `tests/matter_stub` when the offline tests should know it.
 

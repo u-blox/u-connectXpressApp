@@ -100,6 +100,7 @@ STUBBORN = {
         "AT+USYTS": ['+USYTS:"idle",1024,512,50', '+USYTS:"bad"', "+USYTS:noquote,12,x", "OK"],
         "AT+USYCI?": ["OK"],
         "AT+USYFR": ["OK"],
+        "AT&W": ["OK"],
     },
 }
 

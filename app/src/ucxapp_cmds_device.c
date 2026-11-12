@@ -245,23 +245,29 @@ static int cmdDeviceReboot(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* AT+USYFR takes effect only after AT&W and a reboot (AT command manual) */
+bool ucxapp_module_factory_reset(ucxapp_t *app)
+{
+    int32_t r = uCxSystemFactoryReset(app->ucx);
+
+    if (r == 0) {
+        r = uCxSystemStoreConfiguration(app->ucx);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: factory reset failed (%d%s)\n", (int)r, ucxapp_errname(r));
+        return false;
+    }
+    return ucxapp_module_reboot(app);
+}
+
 static int cmdDeviceFactory(ucxapp_t *app, int argc, char *argv[])
 {
     if (argc != 2 || strcmp(argv[1], "confirm") != 0) {
         return UCXAPP_ERR_USAGE;
     }
-    int32_t r = uCxSystemFactoryReset(app->ucx);
-    if (r != 0) {
-        ucxapp_print("ERROR: factory reset failed (%d%s)\n", (int)r, ucxapp_errname(r));
+    if (!ucxapp_module_factory_reset(app)) {
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_events_clear(URC_FLAG_STARTUP);
-    r = uCxSystemReboot(app->ucx);
-    if (r != 0) {
-        ucxapp_print("ERROR: reboot failed (%d%s)\n", (int)r, ucxapp_errname(r));
-        return UCXAPP_ERR_FAILED;
-    }
-    waitStartup(app);
     ucxapp_print("module reset to factory settings and rebooted\n");
     return UCXAPP_OK;
 }

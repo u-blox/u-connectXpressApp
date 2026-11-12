@@ -137,6 +137,10 @@ def parse(argv):
     g.add_argument("--zap", action="store_true",
                    help="with --matter: regenerate the data model code in matter/data_model from ucxmatter.zap (after "
                         "editing it with the ZAP tool; ZAP_INSTALL_PATH or ../u-connectMatter/tools/zap-*)")
+    g.add_argument("--keylog", action="store_true",
+                   help="with --matter: a debug plug-in that writes the node's session keys to the file "
+                        "UCX_KEYLOG_FILE names, for Wireshark; never hand it on (matter.status says KEY LOG BUILD). "
+                        "A build without this option has no such code")
     g = p.add_argument_group("build")
     g.add_argument("--build", action="store_true", help="build, then stop (add --run to start the app)")
     g.add_argument("--clean", action="store_true", help="remove build output")
@@ -1611,7 +1615,7 @@ def matter_zap():
     print("Generated", out.relative_to(ROOT))
 
 
-def matter_build():
+def matter_build(keylog=False):
     matter_fetch()
     matter_patch()
     gn, ninja, env = matter_tool("gn"), matter_tool("ninja"), matter_env()
@@ -1620,9 +1624,16 @@ def matter_build():
     # for every SDK source: it tests macros of platforms this build does not have, and its log callback type
     # carries a format attribute that std::atomic<> cannot keep
     cflags = ["-Wno-undef", "-Wno-ignored-attributes"]
+    if keylog:
+        cflags.append("-DUCX_KEYLOG=1")   # matter/patches/src/crypto/RawKeySessionKeystore.cpp
     # the data model code is checked in next to its .zap file (matter_zap), which is where the SDK looks with
     # its own folder as the directory of pre-generated code
     gn_args = f'ucxm_sdk_version="{sdk}" chip_code_pre_generated_directory="{MATTER_SDK.as_posix()}"'
+    # what the plug-in is made of, for app.sbom: the commits of the SDK and of its parts that are linked in
+    for name, repo in (("sdk", MATTER_SDK), *((p, MATTER_SDK / "third_party" / p / "repo")
+                                               for p in ("mbedtls", "pigweed", "nlassert", "nlio"))):
+        commit = git_out("-C", str(repo), "rev-parse", "--short=12", "HEAD") or "unknown"
+        gn_args += f' ucxm_{name}_commit="{commit}"'
     if IS_WINDOWS:
         # matter/compat/windows: the POSIX headers the SDK includes and MinGW lacks, for every SDK source
         compat = Path(os.path.relpath(MATTER_DIR / "compat" / "windows", MATTER_BUILD)).as_posix()
@@ -1651,7 +1662,7 @@ def matter(args, extra):
         matter_plugin().unlink(missing_ok=True)
         print("Cleaned", MATTER_BUILD.relative_to(ROOT))
     if args.build or args.rebuild or not args.clean:
-        matter_build()
+        matter_build(args.keylog)
     if (args.build or args.clean or args.rebuild or args.zap) and not args.run:
         return 0
     return host(argparse.Namespace(**{**vars(args), "build": False, "clean": False, "rebuild": False}), extra)

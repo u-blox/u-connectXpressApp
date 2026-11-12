@@ -9,6 +9,14 @@ import("${chip_root}/src/app/chip_data_model.gni")
 declare_args() {
   # Shown by matter.status; "ucxapp --matter" passes the tag of the SDK checkout.
   ucxm_sdk_version = "unknown"
+
+  # For the plug-in's bill of materials (app.sbom): the commits of the SDK checkout and of its parts in the
+  # plug-in, also from "ucxapp --matter".
+  ucxm_sdk_commit = "unknown"
+  ucxm_mbedtls_commit = "unknown"
+  ucxm_pigweed_commit = "unknown"
+  ucxm_nlassert_commit = "unknown"
+  ucxm_nlio_commit = "unknown"
 }
 
 _client = "../u-connectClient"
@@ -91,7 +99,14 @@ shared_library("ucxmatter") {
     "src/progress.cpp",
     "src/progress.h",
   ]
-  defines = [ "UCXM_SDK_VERSION=\"${ucxm_sdk_version}\"" ]
+  defines = [
+    "UCXM_SDK_VERSION=\"${ucxm_sdk_version}\"",
+    "UCXM_SDK_COMMIT=\"${ucxm_sdk_commit}\"",
+    "UCXM_MBEDTLS_COMMIT=\"${ucxm_mbedtls_commit}\"",
+    "UCXM_PIGWEED_COMMIT=\"${ucxm_pigweed_commit}\"",
+    "UCXM_NLASSERT_COMMIT=\"${ucxm_nlassert_commit}\"",
+    "UCXM_NLIO_COMMIT=\"${ucxm_nlio_commit}\"",
+  ]
   deps = [
     ":ucx_api",
     ":ucxmatter-data-model",

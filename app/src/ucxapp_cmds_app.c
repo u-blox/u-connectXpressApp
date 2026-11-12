@@ -251,6 +251,9 @@ static int cmdSbom(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("%s%s%s  [%s]\n", c->name, hasVersion ? " " : "", hasVersion ? c->version : "", c->license);
         ucxapp_print("  %s\n  %s\n\n", c->use, c->source);
     }
+#if UCXAPP_HOST
+    ucxapp_matter_sbom();
+#endif
     return UCXAPP_OK;
 }
 

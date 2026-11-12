@@ -23,7 +23,7 @@ public:
     static constexpr size_t kUniqueIdLen      = 16;
 
     // The stored codes, or new ones when there are none (renew: new ones in any case). With the SDK's memory up.
-    CHIP_ERROR Init(bool renew = false);
+    CHIP_ERROR Init();
 
     uint16_t Discriminator() const { return mDiscriminator; }
     uint32_t Passcode() const { return mPasscode; }

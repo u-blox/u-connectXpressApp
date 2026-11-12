@@ -440,9 +440,10 @@ The node is a root node with a dimmable light, a temperature sensor and a contac
 | `matter.card` | | The node at a glance, one `TAG value` line each: state, commissioning step, Bluetooth LE, commissioning window, network, setup codes, every endpoint with its value and what `matter.set` takes, and the log level. The web page shows the same card as the Matter tab of What's happening, with a button or a number field for each endpoint value and buttons for start, stop, QR code, open window, SDK log and factory default (`matter.reset`) |
 | `matter.endpoints` | | Endpoints of the running node with their values, and the kinds the plug-in can build |
 | `matter.set` | `<endpoint> <value...>` | Change an endpoint from this side, as a button or a sensor would: `matter.set light on`, `matter.set temp 23.5`, `matter.set contact open` |
-| `matter.qr` | | Setup QR code and manual pairing code |
-| `matter.open` | `[seconds]` | Open the commissioning window again (180 to 900 seconds, default 900) and show the codes |
-| `matter.reset` | `[all]` | Forget every fabric and remove what the node stored; it must be commissioned again. Its setup codes stay, as the label on a product does; `all` draws new ones and shows them |
+| `matter.qr` | | Setup QR code and manual pairing code; it does not advertise (`matter.open` does) |
+| `matter.open` | `[seconds]` | Open the commissioning window again (180 to 900 seconds, default 900), advertise over Bluetooth LE and show the codes |
+| `matter.reset` | `[all]` | Forget every fabric and remove what the node stored, disconnect Wi-Fi and reboot the module; a node that ran starts again with the same endpoints and opens its commissioning window, so it can be commissioned again. Its setup codes stay, as the label on a product does; `all` draws new ones and factory-resets the module instead of rebooting it (the UART goes back to 115200 baud) |
+| `matter.selftest` | | Check the plug-in, the module (Bluetooth LE peripheral role, Wi-Fi or Thread), the sealed store, and the node (random generator, its own setup codes, Bluetooth LE advertising or link, network); starts a node for the test when none runs and stops it again; fails when a check fails |
 | `matter.log` | `[error\|info\|detail]` | Show or set how much of the node's log is printed: `info` (default) is its milestones and the commissioning steps, `detail` adds the Matter SDK's log |
 
 ```powershell

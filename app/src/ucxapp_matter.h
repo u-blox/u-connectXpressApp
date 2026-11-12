@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define UCXAPP_MATTER_ABI 3
+#define UCXAPP_MATTER_ABI 4
 
 /* The symbol the host looks up in the plug-in. */
 #define UCXAPP_MATTER_ENTRY "ucxmatter_plugin"
@@ -90,6 +90,10 @@ typedef struct {
      * matter.set takes>]". From any thread between start() and stop(): it sends no AT command and does not wait
      * for the node's own thread. */
     size_t (*card)(char *out, size_t size);
+    /* What the plug-in is made of, for app.sbom and in its form: for each component the lines
+     * "<name> <version>  [<licence>]", "  <what it is used for>", "  <https source>" and an empty one. Read
+     * without start(). */
+    const char *sbom;
 } ucxapp_matter_plugin_t;
 
 typedef const ucxapp_matter_plugin_t *(*ucxapp_matter_entry_t)(void);

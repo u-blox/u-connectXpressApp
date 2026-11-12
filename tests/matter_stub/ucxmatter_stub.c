@@ -158,9 +158,11 @@ static int command(int argc, const char *const argv[])
         gHost->print("manual code: 0000-000-0000\n");
         return UCXAPP_MATTER_OK;
     }
-    if (strcmp(argv[0], "reset") == 0) {
-        gStarts = 0;
-        return UCXAPP_MATTER_OK;
+    if (strcmp(argv[0], "selftest") == 0) {
+        /* UCX_STUB_SELFTEST_FAIL: the node finds a fault */
+        bool fail = getenv("UCX_STUB_SELFTEST_FAIL") != NULL;
+        gHost->print(fail ? "  stub         FAILED  told to fail\n" : "  stub         ok      stand-in node\n");
+        return fail ? UCXAPP_MATTER_ERR_FAILED : UCXAPP_MATTER_OK;
     }
     return UCXAPP_MATTER_ERR_UNSUPPORTED;   /* "open": a command this plug-in does not have */
 }
@@ -186,6 +188,8 @@ static ucxapp_matter_plugin_t gPlugin = {
     .urc = urc,
     .command = command,
     .card = card,
+    .sbom = "Matter stub 1.2.3  [MIT]\n  stand-in for the Matter SDK in the offline tests\n"
+            "  https://github.com/u-blox/u-connectXpressApp\n\n",
 };
 
 EXPORT const ucxapp_matter_plugin_t *ucxmatter_plugin(void)

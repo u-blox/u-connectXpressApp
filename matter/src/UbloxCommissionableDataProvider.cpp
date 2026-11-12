@@ -81,13 +81,13 @@ CHIP_ERROR UbloxCommissionableDataProvider::Draw()
     return chip::Crypto::DRBG_get_bytes(mUniqueId, sizeof(mUniqueId));
 }
 
-CHIP_ERROR UbloxCommissionableDataProvider::Init(bool renew)
+CHIP_ERROR UbloxCommissionableDataProvider::Init()
 {
     chip::Crypto::Spake2pVerifier verifier;
     chip::MutableByteSpan serialized(mVerifier, sizeof(mVerifier));
 
     mReady = false;
-    if (renew || !Load())
+    if (!Load())
     {
         BlobMap map;
 
@@ -159,3 +159,12 @@ CHIP_ERROR UbloxCommissionableDataProvider::GetSetupPasscode(uint32_t & out)
 }
 
 } // namespace ucxmatter
+
+namespace ucxm {
+
+bool SetupCodesAllowed(uint32_t passcode, uint16_t discriminator)
+{
+    return ucxmatter::PasscodeOk(passcode) && ucxmatter::DiscriminatorOk(discriminator);
+}
+
+} // namespace ucxm

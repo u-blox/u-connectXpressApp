@@ -395,15 +395,20 @@ class Network:
                 return ([f"+USOWB:{m[1]},{len(data)}", "OK"],
                         {**nxt, "lines": [close] + nxt["lines"]} if nxt else [close])
             return [f"+USOWB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
-        m = re.fullmatch(r"AT\+USOSTB=(\d+),([\d.]+),(\d+),?", cmd)
+        # the far end as IPv4, or as IPv6 in brackets: a dual-stack socket takes an IPv4 host as ::ffff:a.b.c.d
+        m = re.fullmatch(r"AT\+USOSTB=(\d+),([\d.]+|\[[0-9A-Fa-f:]+\]),(\d+),?", cmd)
         if m and int(m[1]) in self.socks:
             s = self.socks[int(m[1])]
+            host = m[2]
+            mapped = re.fullmatch(r"\[(?:0000:){5}ffff:([0-9a-f]{4}):([0-9a-f]{4})\]", host.lower())
+            if mapped:
+                host = ".".join(str(b) for b in bytes.fromhex(mapped[1] + mapped[2]))
             if int(m[3]) == 50000 and self.udp_replies is not None:   # to the scripted UDP client
                 self.udp_replies.append(bytes(data))
                 if self.followups:     # its next datagram goes back to the socket that wrote
                     s["rx"].append(("192.168.1.10", 50000, self.followups.pop(0)))
                 return [f"+USOSTB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
-            self._serve({**s, "port": int(m[3])}, data, m[2], int(m[3]))
+            self._serve({**s, "port": int(m[3])}, data, host, int(m[3]))
             return [f"+USOSTB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
         m = re.fullmatch(r"AT\+USOR(F?)B=(\d+),(\d+)", cmd)
         if m and int(m[2]) in self.socks:

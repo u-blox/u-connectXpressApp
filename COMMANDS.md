@@ -430,6 +430,8 @@ ucxapp COM13 --exec "perf.phone tx 10" --exec "perf.phone rx 10" --exec "perf.ph
 
 A Matter node on the connected module. The node itself (the Matter SDK) is an optional plug-in next to the app, `ucxmatter.dll` (`libucxmatter.so` on Linux), built with `ucxapp --matter --build`; without it `matter.start` says so and everything else works as before. The plug-in uses the app's connection to the module, so the other commands, `at.trace`, the events and the web page keep working while the node runs. What the node stores (fabrics, keys) is sealed in the secure store as `matter.*.key`.
 
+The node is a root node with a dimmable light, a temperature sensor and a contact sensor. Without a fabric it opens a commissioning window for 15 minutes and advertises over Bluetooth LE; its discriminator and passcode come from the module's Bluetooth address, so every module has its own codes. The log shows commissioning as six steps, one line each (`[matter] commissioning [##----] 2/6 fabric installed`); `matter.log detail` adds the Matter SDK's own log. A commissioner pairs with the node over Bluetooth LE and gives it a Wi-Fi network, which the node joins with the module; a module that is on Wi-Fi already (`wifi.connect`) is used as it is. On the network the node is reached over UDP through the module and announced by the module's own mDNS. `matter.status` shows the node's network.
+
 | Command | Arguments | Description |
 |---|---|---|
 | `matter.start` | `[endpoint...]` | Load the plug-in and start the node on the module. Endpoints are named as `matter.endpoints` lists the kinds (`light temp contact`); none builds the default set |
@@ -438,9 +440,9 @@ A Matter node on the connected module. The node itself (the Matter SDK) is an op
 | `matter.endpoints` | | Endpoints of the running node with their values, and the kinds the plug-in can build |
 | `matter.set` | `<endpoint> <value...>` | Change an endpoint from this side, as a button or a sensor would: `matter.set light on`, `matter.set temp 23.5`, `matter.set contact open` |
 | `matter.qr` | | Setup QR code and manual pairing code |
-| `matter.open` | `[seconds]` | Open the commissioning window again |
+| `matter.open` | `[seconds]` | Open the commissioning window again (180 to 900 seconds, default 900) and show the codes |
 | `matter.reset` | | Forget every fabric and remove what the node stored; it must be commissioned again |
-| `matter.log` | `[error\|info\|detail]` | Show or set how much of the Matter SDK's log is printed (default `info`) |
+| `matter.log` | `[error\|info\|detail]` | Show or set how much of the node's log is printed: `info` (default) is its milestones and the commissioning steps, `detail` adds the Matter SDK's log |
 
 ```powershell
 ucxapp COM13 --exec "matter.start" --exec "matter.qr" --exec "matter.status"

@@ -3,6 +3,7 @@
  *
  * This file is the module side: the plug-in entry and the commands. What needs the Matter SDK sits in its own
  * files (node.cpp, onboarding.cpp), see the note in onboarding.h. */
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +12,7 @@
 #include "endpoints.h"
 #include "node.h"
 #include "onboarding.h"
+#include "progress.h"
 #include "ucxm_host.h"
 
 extern "C" {
@@ -39,10 +41,13 @@ Onboarding gOnboarding;
 char gModel[32];
 const char * gNetwork;
 bool gStarted;
+std::atomic<bool> gCardReady{ false };
+NodeState gCardState; // the last one the Matter thread had time for
 
 void Print(const char * format, ...) __attribute__((format(gnu_printf, 1, 2)));
 void Log(int level, const char * format, ...) __attribute__((format(gnu_printf, 2, 3)));
 void Event(const char * format, ...) __attribute__((format(gnu_printf, 1, 2)));
+size_t CardLine(char * out, size_t size, size_t n, const char * format, ...) __attribute__((format(gnu_printf, 4, 5)));
 
 void Print(const char * format, ...)
 {
@@ -114,20 +119,88 @@ bool BuildEndpoints(int argc, const char * const argv[])
     return true;
 }
 
-void ShowCodes()
+// "0233-981-9486" for the usual 11 digits
+void ManualText(char * out, size_t size)
 {
     const char * m = gOnboarding.manual;
 
-    gHost->qr(gOnboarding.qr);
     if (strlen(m) == 11)
     {
-        Print("manual code: %.4s-%.3s-%.4s\n", m, m + 4, m + 7);
+        snprintf(out, size, "%.4s-%.3s-%.4s", m, m + 4, m + 7);
     }
     else
     {
-        Print("manual code: %s\n", m);
+        snprintf(out, size, "%s", m);
     }
+}
+
+void ShowCodes()
+{
+    char manual[32];
+
+    ManualText(manual, sizeof(manual));
+    gHost->qr(gOnboarding.qr);
+    Print("manual code: %s\n", manual);
     Print("QR payload: %s\n", gOnboarding.qr);
+}
+
+size_t CardLine(char * out, size_t size, size_t n, const char * format, ...)
+{
+    va_list args;
+    int written;
+
+    if (n + 1 >= size)
+    {
+        return n;
+    }
+    va_start(args, format);
+    written = vsnprintf(out + n, size - n, format, args);
+    va_end(args);
+    return written < 0 ? n : n + static_cast<size_t>(written) < size ? n + static_cast<size_t>(written) : size - 1;
+}
+
+// The live card of ucxapp_matter.h: the app calls it from its web thread, one call at a time
+size_t Card(char * out, size_t size)
+{
+    char text[128];
+    size_t n = 0;
+
+    if (size == 0)
+    {
+        return 0;
+    }
+    out[0] = '\0';
+    if (!gCardReady)
+    {
+        return CardLine(out, size, n, "NODE  starting\n");
+    }
+    (void) NodeSnapshot(gCardState);
+    n = CardLine(out, size, n, "NODE  %s over %s, %d endpoint(s)\n", gModel, gNetwork, EndpointCount());
+    if (gCardState.fabrics > 0)
+    {
+        n = CardLine(out, size, n, "STATE commissioned, %d fabric(s)\n", gCardState.fabrics);
+    }
+    else
+    {
+        n = CardLine(out, size, n, "STATE not commissioned\n");
+    }
+    if (ProgressLine(text, sizeof(text)))
+    {
+        n = CardLine(out, size, n, "STEP  %s\n", text);
+    }
+    n = CardLine(out, size, n, "BLE   %s\nWIN   %s\nNET   %s\n",
+                 gCardState.links > 0 ? "link up" : gCardState.advertising ? "advertising" : "off",
+                 gCardState.windowOpen ? "open" : "closed", gCardState.network);
+    ManualText(text, sizeof(text));
+    n = CardLine(out, size, n, "CODE  %s\nQR    %s\n", text, gOnboarding.qr);
+    for (int i = 0; i < EndpointCount(); i++)
+    {
+        const Endpoint & e = EndpointAt(i);
+
+        e.kind->show(e, text, sizeof(text));
+        n = CardLine(out, size, n, "EP    %u %s = %s  [%s]\n", static_cast<unsigned>(e.id), e.name, text, e.kind->values);
+    }
+    return n;
 }
 
 int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[])
@@ -206,7 +279,13 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
     }
     Log(UCXAPP_MATTER_LOG_INFO, "%s over %s, %d endpoint(s), discriminator %u", gModel, gNetwork, EndpointCount(),
         static_cast<unsigned>(gOnboarding.discriminator));
-    if (NodeFabrics() == 0)
+    gCardState.fabrics     = NodeFabrics();
+    gCardState.links       = NodeLinks();
+    gCardState.advertising = NodeAdvertising();
+    gCardState.windowOpen  = NodeWindowOpen();
+    NodeNetwork(gCardState.network, sizeof(gCardState.network));
+    gCardReady = true;
+    if (gCardState.fabrics == 0)
     {
         ShowCodes();
     }
@@ -215,6 +294,7 @@ int Start(const ucxapp_matter_host_t * host, int argc, const char * const argv[]
 
 void Stop()
 {
+    gCardReady = false;
     if (gStarted)
     {
         NodeStop();
@@ -344,7 +424,7 @@ int Command(int argc, const char * const argv[])
 }
 
 const ucxapp_matter_plugin_t kPlugin = {
-    UCXAPP_MATTER_ABI, sizeof(ucxapp_matter_plugin_t), "Matter SDK " UCXM_SDK_VERSION, Start, Stop, Urc, Command,
+    UCXAPP_MATTER_ABI, sizeof(ucxapp_matter_plugin_t), "Matter SDK " UCXM_SDK_VERSION, Start, Stop, Urc, Command, Card,
 };
 
 } // namespace

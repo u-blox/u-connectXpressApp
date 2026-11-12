@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -175,6 +176,75 @@ def test_log_level_filters_the_plugins_log(app_exe, module, stub, tmp_path):
     assert "[matter]" not in out.stdout.split("matter: node started")[0], out.stdout
     out = _run(app_exe, module, stub, tmp_path, "matter.log loud")
     assert out.returncode != 0 and "[error|info|detail]" in out.stdout, out.stdout
+
+
+def test_card_shows_the_node_at_a_glance(app_exe, module, stub, tmp_path):
+    # stopped, with the plug-in installed: a card to start the node from
+    out = _run(app_exe, module, stub, tmp_path, "matter.card")
+    assert out.returncode == 0 and "NODE  stopped\nLOG   info\n" in out.stdout, out.stdout
+    out = _run(app_exe, module, stub, tmp_path, "matter.log detail", "matter.start", "matter.set light on",
+               "matter.card", "matter.stop", "matter.card")
+    assert out.returncode == 0, out.stdout
+    running, stopped = out.stdout.split("matter: node stopped")
+    # the plug-in's lines, each endpoint with what matter.set takes, then the app's own
+    assert re.search(r"NODE  stub on NORA-\S+, 3 endpoint\(s\)\nSTATE not commissioned\nSTEP  2/6 fabric installed\n"
+                     r"EP    1 light = on  \[on \| off \| 0\.\.100 \(percent\)\]\n"
+                     r"EP    2 temp = 21\.5  \[-40\.\.125 \(degrees Celsius\)\]\n"
+                     r"EP    3 contact = closed  \[open \| closed\]\nLOG   detail\n", running), out.stdout
+    assert "NODE  stopped\nLOG   detail\n" in stopped, out.stdout
+    # every line is "TAG   value", which is what the web page draws
+    card = running[running.index("NODE  "):running.index("LOG   detail") + 12]
+    assert all(re.fullmatch(r"[A-Z]{2,5} +\S.*", line) for line in card.splitlines()), card
+
+
+def test_web_page_gets_the_card_and_every_change_of_it(app_exe, stub, tmp_path):
+    """The card reaches a page as the "matter" event of the event stream: when the page connects, and again when
+    an endpoint changes or the node stops."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    token = "0123456789abcdef0123456789abcdef"
+    profile = load("nora-w36.yaml")
+    # a page: it connects to the event stream as soon as the web server listens
+    profile["sockets"]["requests"] = {8080: [f"GET /events HTTP/1.1\r\nHost: m\r\nX-Token: {token}\r\n\r\n"]}
+    module = Vucx(profile)
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path,
+                            env=dict(os.environ, UCX_MATTER_PLUGIN=str(stub)))
+
+    def stream_with(text):
+        end = time.monotonic() + 20
+        seen = ""
+        while time.monotonic() < end and text not in seen:
+            time.sleep(0.05)
+            seen = bytes(module.net.replies[0]).decode("latin-1") if module.net.replies else ""
+        return seen
+
+    try:
+        for command, expected in (
+                (f"matter.start\nweb.start 8080 {token} http\n",
+                 'event: matter\ndata: "NODE  stub on NORA-W36, 3 endpoint(s)\\nSTATE not commissioned\\n'),
+                ("matter.set light on\n", "EP    1 light = on  [on | off | 0..100 (percent)]\\n"),
+                ("matter.log detail\n", '\\nLOG   detail"'),
+                ("matter.stop\n", 'event: matter\ndata: "NODE  stopped\\nLOG   detail"')):
+            proc.stdin.write(command)
+            proc.stdin.flush()
+            seen = stream_with(expected)
+            assert expected in seen, (command, seen[-1500:])
+        proc.stdin.write("web.stop\n")
+        proc.stdin.close()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+
+
+def test_card_without_the_plugin(app_exe, module, tmp_path):
+    out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "matter.card")
+    assert out.returncode != 0 and "the plug-in is not installed" in out.stdout, out.stdout
+    out = _run(app_exe, module, tmp_path / "missing.dll", tmp_path, "matter.card now")
+    assert out.returncode != 0 and "NODE" not in out.stdout, out.stdout
 
 
 def test_plugin_for_another_app_version_is_refused(app_exe, module, stub, tmp_path):

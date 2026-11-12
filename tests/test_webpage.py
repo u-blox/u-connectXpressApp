@@ -116,7 +116,7 @@ def test_cellular_card_and_status_chip():
     of the status bar runs cell.status."""
     page = PAGE_FILE.read_text(encoding="utf-8")
     assert 'id="gc"' not in page and 'id="cc"' not in page and '<div id="pet"' in page
-    assert "['gnss','cell'].forEach(c=>es.addEventListener(c," in SCRIPT and "Cell:'cell.status'" in SCRIPT
+    assert "['gnss','cell','matter'].forEach(c=>es.addEventListener(c," in SCRIPT and "Cell:'cell.status'" in SCRIPT
     # the details card lives in What's happening, leaving the Connections pane to the graph
     pn = page[page.index('id="pn"'):page.index('id="pl"')]
     assert 'id="cnd"' not in pn and page.index('id="cnd"') > page.index('id="pe"')
@@ -152,6 +152,71 @@ def test_whats_happening_tabs_draw_the_cards(server):
         page.click("#pet button[data-k='']")
         assert page.evaluate("CN.sel") == "" and page.is_hidden("#cnd") and page.is_visible("#ev")
         assert page.is_hidden("#flt-on")
+        browser.close()
+    assert not js_errors, js_errors
+
+
+def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
+    """The Matter node (matter.card) is a tab of What's happening in every view: its state, the commissioning
+    steps as segments, a control for each value an endpoint takes, and the node's commands as buttons."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector("#st.ok")
+        assert page.locator("#pet button[data-k='x']").count() == 0   # no plug-in, no tab
+        show = "t => {CARD.matter = t; cnDetails()}"
+        # stopped: Start, and Factory default for what an earlier node stored
+        page.evaluate(show, "NODE  stopped\nLOG   info")
+        page.click("#pet button[data-k='x']")
+        assert page.is_visible("#cnd") and page.is_hidden("#ev") and page.is_visible("#flt-on")
+        assert [b.inner_text() for b in page.locator("#cnd .r button").all()] == ["Start", "Factory default", "Close"]
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
+                            "STEP  3/6 network credentials received\nBLE   link up\nWIN   open\n"
+                            "NET   Wi-Fi down; a commissioner gives the node its network\n"
+                            "CODE  0233-981-9486\nQR    MT:-24J06PF15I.GR1OP00\n"
+                            "EP    1 light = on 40%  [on | off | 0..100 (percent)]\n"
+                            "EP    2 temp = 21.5 C  [-40..125 (degrees Celsius)]\n"
+                            "EP    3 contact = closed  [open | closed]\nLOG   info")
+        assert page.locator("#cnd .seg.s6 i").count() == 6 and page.locator("#cnd .seg.s6 i.on").count() == 3
+        assert [b.inner_text() for b in page.locator("#cnd .r button").all()] == [
+            "Status", "QR code", "Open window", "SDK log", "Stop", "Factory default", "Close"]
+        assert "light on 40%" in page.inner_text("#cnd") and "[" not in page.inner_text("#cnd")
+        # an endpoint: a button for each word, a number field for a range
+        assert [b.inner_text() for b in page.locator("#cnd .gv button").all()] == ["on", "off", "open", "closed"]
+        assert page.locator("#cnd .gv input[type=number]").count() == 2
+        assert page.get_attribute("#cnd .gv input >> nth=1", "min") == "-40"
+        page.wait_for_function("() => sessionStorage.getItem('ucxs') && !busy")   # the page's own first command
+
+        def posted(count):
+            for _ in range(50):
+                if len(server.posted) > count:
+                    break
+                page.wait_for_timeout(100)
+            return server.posted[count:]
+
+        count = len(server.posted)
+        page.click('#cnd .gv button >> text="open"')
+        assert posted(count)[-1].endswith("cmd=matter.set&a0=contact&a1=open"), server.posted
+        # a failed step is marked, with the steps that were done still lit
+        page.evaluate("busy = false")
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
+                            "STEP  failed at 5/6: the access point did not take the password\nLOG   detail")
+        assert page.locator("#cnd .gv .al .seg i.on").count() == 4
+        assert "Quiet log" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
+        count = len(server.posted)
+        page.click('#cnd .r button >> text="Quiet log"')
+        assert posted(count)[-1].endswith("cmd=matter.log&a0=info"), server.posted
+        # the node's events and commands are the ones shown while its tab is open
+        assert page.evaluate("CNK.matter.includes(fltKind())")
+        page.evaluate(show, "")
+        assert page.locator("#pet button[data-k='x']").count() == 0 and page.is_visible("#ev")
         browser.close()
     assert not js_errors, js_errors
 

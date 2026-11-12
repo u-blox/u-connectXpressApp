@@ -38,6 +38,18 @@ bool NodeOpenWindow(unsigned seconds = 900); // commissioning window, 180 to 900
 void NodeForget();     // drops every fabric and what the node holds for its store; it is commissionable again
 void NodeNetwork(char * out, size_t size); // one line for matter.status: the node's network on the module
 
+// The node for the live card, without waiting for the Matter thread: false when that thread is busy (the caller
+// keeps what it had)
+struct NodeState
+{
+    int fabrics;
+    int links;
+    bool advertising;
+    bool windowOpen;
+    char network[160];
+};
+bool NodeSnapshot(NodeState & state);
+
 // The data model's callback (callbacks.cpp), on the Matter thread: a controller or the node changed an attribute
 void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribute, const uint8_t * value,
                           uint16_t size);

@@ -58,6 +58,7 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
 .\ucxapp COM75                 # then, in the shell:
 matter.start                   # default endpoints: light, temp, contact; or: matter.start light light contact
 matter.status                  # plug-in, radios, node state; matter.qr shows the codes again
+matter.card                    # the node at a glance; the web page's Matter tab under What's happening is this card
 matter.endpoints               # endpoints of the node and the kinds the plug-in can build
 matter.set light 40            # act as the device: light on|off|0..100, temp -40..125, contact open|closed
 matter.open                    # commissioning window for 15 minutes again, with the codes
@@ -67,12 +68,20 @@ matter.stop                    # also done when the app leaves; matter.reset for
 
 The module needs Bluetooth LE with a peripheral role, and Wi-Fi or Thread (`dev.caps`). `matter.example` shows worked examples.
 
+The web page has a Matter tab in What's happening whenever the plug-in is installed: the node's state, the
+commissioning steps as segments, a button or a number field for each value an endpoint takes, and buttons for
+start, stop, QR code, open window, SDK log and factory default. It is a view of `matter.card`: the plug-in's
+`card()` gives `TAG value` lines (`EP    1 light = on 40%  [on | off | 0..100 (percent)]`: the page builds the
+controls from the bracket, so a new endpoint kind needs no change in the page), the app adds `LOG`, and every
+button runs a `matter.*` command. `card()` is called from the web thread four times a second: it sends no AT
+command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last state when the thread is busy.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `app/src/ucxapp_matter.h` | The whole interface between app and plug-in, plain C: AT client calls, URC copy, print, log, event, QR, sealed store, tick |
-| `app/src/ucxapp_cmds_matter.c` | Loads the plug-in, `matter.*` commands, the URC tap |
+| `app/src/ucxapp_matter.h` | The whole interface between app and plug-in, plain C: AT client calls, URC copy, print, log, event, QR, sealed store, tick; from the plug-in: start, stop, urc, command, card |
+| `app/src/ucxapp_cmds_matter.c` | Loads the plug-in, `matter.*` commands, the URC tap, the live card (`ucxapp_matter_card`, sent to the page by `ucxapp_cmds_web.c` as the `matter` event) |
 | `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.h` (discriminator and passcode from the address), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
 | `matter/platform/ucxclient/` | The Matter device layer from u-connectMatter: `BLEManagerImpl` (GATT service, advertising), `NetworkCommissioningDriver` (Wi-Fi scan and join for the commissioner), `UcxNetwork.cpp` (Wi-Fi state from the module's URCs, the UDP sockets and their data), `DnssdImpl` and `UcxMdns.cpp` (mDNS on the module), configuration and key-value store (through the app's sealed store, `UcxStore.h`), `PlatformManagerImpl` (the Matter thread). `UcxClientManager` here is a small facade: the handle, the URC queue and which URCs are the node's alone |

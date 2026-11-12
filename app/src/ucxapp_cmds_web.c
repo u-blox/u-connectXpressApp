@@ -172,7 +172,7 @@ typedef struct {
     uint32_t logCur, evCur, doneSeen;
     uint32_t stateSeen;
     int32_t stateMs;
-    uint32_t cardSeen[3];   /* hash of the GNSS, cellular and connections cards the page has */
+    uint32_t cardSeen[4];   /* hash of the GNSS, cellular, connections and Matter cards the page has */
 } viewer_t;
 
 /* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
@@ -213,6 +213,7 @@ static viewer_t *viewer(int i)
         v->cardSeen[0] = UINT32_MAX;
         v->cardSeen[1] = UINT32_MAX;
         v->cardSeen[2] = UINT32_MAX;
+        v->cardSeen[3] = UINT32_MAX;
         v->stateMs = U_CX_PORT_GET_TIME_MS();
     }
     return v;
@@ -351,6 +352,11 @@ static void flushCards(int first, int last)
     flushCard(&gnss, first, last);
     flushCard(&cell, first, last);
     flushCard(&conn, first, last);
+#if UCXAPP_HOST   /* the boards run no Matter plug-in */
+    static card_t matter = { .event = "matter", .get = ucxapp_matter_card, .slot = 3 };
+
+    flushCard(&matter, first, last);
+#endif
 }
 
 static void flushDone(int first, int last)

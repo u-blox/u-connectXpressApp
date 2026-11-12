@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define UCXAPP_MATTER_ABI 2
+#define UCXAPP_MATTER_ABI 3
 
 /* The symbol the host looks up in the plug-in. */
 #define UCXAPP_MATTER_ENTRY "ucxmatter_plugin"
@@ -83,6 +83,11 @@ typedef struct {
     bool (*urc)(char *line, size_t length, const uint8_t *binary, size_t binaryLength);
     /* matter.<argv[0]> with its arguments (status, endpoints, set, qr, open, reset); prints with host->print. */
     int (*command)(int argc, const char *const argv[]);
+    /* The node for the app's live card (matter.card, the web page): lines "TAG   value" with a tag of 2 to 5
+     * capitals, '\n' between them; returns the length. An endpoint is "EP    <id> <name> = <value>  [<what
+     * matter.set takes>]". From any thread between start() and stop(): it sends no AT command and does not wait
+     * for the node's own thread. */
+    size_t (*card)(char *out, size_t size);
 } ucxapp_matter_plugin_t;
 
 typedef const ucxapp_matter_plugin_t *(*ucxapp_matter_entry_t)(void);

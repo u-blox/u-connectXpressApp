@@ -184,6 +184,9 @@ void ucxapp_register_mdns_cmds(void);    /* mdns.* responder and DNS-SD services
 void ucxapp_register_matter_cmds(void);  /* matter.* Matter node run by the ucxmatter plug-in (host only) */
 void ucxapp_matter_stop(void);           /* before the module's AT client closes: the node uses it */
 bool ucxapp_matter_running(void);
+/* Matter live card (node, commissioning, network, codes, endpoints), or "stopped" when the plug-in is installed;
+   false when there is nothing to show. From any thread, no AT commands. */
+bool ucxapp_matter_card(char *out, size_t size);
 void ucxapp_register_thread_cmds(void);
 const char *ucxapp_thread_role_name(int32_t role);
 /* Store files shared between command packs */

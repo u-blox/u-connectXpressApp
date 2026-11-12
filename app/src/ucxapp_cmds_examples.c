@@ -178,7 +178,8 @@ static const example_t kExamples[] = {
     { "matter", "A Matter node on the module (needs the plug-in: ucxapp --matter --build)",
       "matter.start\nmatter.qr\n# scan the code with the home app, then watch it join\nmatter.status\nconn.status" },
     { "matter", "Act as the device: flip the light and trip the contact sensor from this side",
-      "matter.endpoints\nmatter.set light on\nmatter.set contact open\nmatter.set temp 23.5" },
+      "matter.endpoints\nmatter.set light on\nmatter.set contact open\nmatter.set temp 23.5\n"
+      "# the node at a glance; the web page shows the same card, with buttons, under What's happening\nmatter.card" },
     { "matter", "Only some endpoints, more of the SDK's log, and a clean slate",
       "matter.stop\nmatter.log detail\nmatter.start light temp\n# forget every fabric: the node must be commissioned again\nmatter.reset" },
 #endif

@@ -21,6 +21,7 @@ typedef struct {
 
 static const char *const kKinds[] = { "light", "temp", "contact" };
 static const char *const kDefaults[] = { "off", "21.5", "closed" };
+static const char *const kValues[] = { "on | off | 0..100 (percent)", "-40..125 (degrees Celsius)", "open | closed" };
 
 static const ucxapp_matter_host_t *gHost;
 static endpoint_t gEndpoints[MAX_ENDPOINTS];
@@ -164,6 +165,18 @@ static int command(int argc, const char *const argv[])
     return UCXAPP_MATTER_ERR_UNSUPPORTED;   /* "open": a command this plug-in does not have */
 }
 
+static size_t card(char *out, size_t size)
+{
+    int n = snprintf(out, size, "NODE  stub on %s, %d endpoint(s)\nSTATE not commissioned\nSTEP  2/6 fabric installed\n",
+                     gModel, gEndpointCount);
+
+    for (int i = 0; i < gEndpointCount && n > 0 && (size_t)n < size; i++) {
+        n += snprintf(out + n, size - (size_t)n, "EP    %d %s = %s  [%s]\n", i + 1, gEndpoints[i].name,
+                      gEndpoints[i].value, kValues[kindOf(gEndpoints[i].name)]);
+    }
+    return n > 0 && (size_t)n < size ? (size_t)n : 0;
+}
+
 static ucxapp_matter_plugin_t gPlugin = {
     .abi = UCXAPP_MATTER_ABI,
     .size = sizeof(ucxapp_matter_plugin_t),
@@ -172,6 +185,7 @@ static ucxapp_matter_plugin_t gPlugin = {
     .stop = stop,
     .urc = urc,
     .command = command,
+    .card = card,
 };
 
 EXPORT const ucxapp_matter_plugin_t *ucxmatter_plugin(void)

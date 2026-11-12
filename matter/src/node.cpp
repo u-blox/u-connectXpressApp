@@ -324,9 +324,9 @@ void NodeForget()
     (void) NodeOpenWindow();
 }
 
-void NodeNetwork(char * out, size_t size)
+// With the stack lock
+static void NetworkText(char * out, size_t size)
 {
-    StackLock lock;
     UcxClientManager & module = UcxClientManager::GetInstance();
     const uint8_t * ip        = module.GetIpv4Address();
 
@@ -348,6 +348,28 @@ void NodeNetwork(char * out, size_t size)
     {
         snprintf(out, size, "Wi-Fi up (IPv6 only), channel %u", static_cast<unsigned>(module.GetWiFiChannel()));
     }
+}
+
+void NodeNetwork(char * out, size_t size)
+{
+    StackLock lock;
+
+    NetworkText(out, size);
+}
+
+bool NodeSnapshot(NodeState & state)
+{
+    if (!gStackUp || !PlatformMgr().TryLockChipStack())
+    {
+        return false;
+    }
+    state.fabrics     = gServerUp ? static_cast<int>(Server::GetInstance().GetFabricTable().FabricCount()) : 0;
+    state.links       = static_cast<int>(ConnectivityMgr().NumBLEConnections());
+    state.advertising = ConnectivityMgr().IsBLEAdvertising();
+    state.windowOpen  = gServerUp && Server::GetInstance().GetCommissioningWindowManager().IsCommissioningWindowOpen();
+    NetworkText(state.network, sizeof(state.network));
+    PlatformMgr().UnlockChipStack();
+    return true;
 }
 
 void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribute, const uint8_t * value, uint16_t size)

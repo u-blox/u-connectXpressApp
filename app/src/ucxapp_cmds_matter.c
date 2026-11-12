@@ -177,16 +177,21 @@ static bool fileExists(const char *path)
     return f != NULL;
 }
 
-/* The plug-in file into gPath; false where this build cannot load one (the browser). */
-static bool pluginPath(void)
+/* The plug-in file; false where this build cannot load one (the browser). */
+static bool pluginFile(char *out, size_t size)
 {
     const char *env = getenv(PLUGIN_ENV);
 
     if (env != NULL && env[0] != '\0') {
-        snprintf(gPath, sizeof(gPath), "%s", env);
+        snprintf(out, size, "%s", env);
         return true;
     }
-    return ucxapp_platform_lib_file(PLUGIN_BASE, gPath, sizeof(gPath));
+    return ucxapp_platform_lib_file(PLUGIN_BASE, out, size);
+}
+
+static bool pluginPath(void)
+{
+    return pluginFile(gPath, sizeof(gPath));
 }
 
 static void unload(void)
@@ -249,6 +254,50 @@ void ucxapp_matter_stop(void)
 bool ucxapp_matter_running(void)
 {
     return gRunning;
+}
+
+/* The web page asks four times a second from its own thread: the plug-in under the lock that stop takes, the
+   file looked for every few seconds only. */
+bool ucxapp_matter_card(char *out, size_t size)
+{
+    static uint32_t checkedMs;
+    static bool checked, installed;
+    uint32_t now = ucxapp_platform_tick_ms();
+    size_t n = 0;
+    bool running = false;
+
+    if (size == 0) {
+        return false;
+    }
+    out[0] = '\0';
+    if (gLockMade) {
+        U_CX_MUTEX_LOCK(gLock);
+        running = gRunning;
+        if (running) {
+            n = gPlugin->card(out, size);
+            n = n < size ? n : size - 1;
+        }
+        U_CX_MUTEX_UNLOCK(gLock);
+    }
+    if (!running) {
+        if (!checked || now - checkedMs >= 5000u) {
+            char path[sizeof(gPath)];
+
+            checked = true;
+            checkedMs = now;
+            installed = pluginFile(path, sizeof(path)) && fileExists(path);
+        }
+        if (!installed) {
+            return false;
+        }
+        n = (size_t)snprintf(out, size, "NODE  stopped");
+        n = n < size ? n : size - 1;
+    }
+    while (n > 0 && out[n - 1] == '\n') {
+        out[--n] = '\0';
+    }
+    (void)snprintf(out + n, size - n, "%sLOG   %s", n > 0 ? "\n" : "", kLevels[gLogLevel]);
+    return true;
 }
 
 /* ---- commands ------------------------------------------------------------- */
@@ -358,6 +407,23 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     return forward(argc, argv);
 }
 
+static int cmdCard(ucxapp_t *app, int argc, char *argv[])
+{
+    static char card[UCXAPP_CONN_SNAPSHOT];
+
+    (void)app;
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (!ucxapp_matter_card(card, sizeof(card))) {
+        ucxapp_print("matter: no card, the plug-in is not installed (ucxapp --matter --build)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%s\n", card);
+    return UCXAPP_OK;
+}
+
 static int cmdForward(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;
@@ -436,6 +502,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.start", "[endpoint...]", "Start a Matter node on the module with the ucxmatter plug-in; endpoints as matter.endpoints lists them, none for the default set", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
     { "matter.stop", "", "Stop the Matter node and unload the plug-in", 0, cmdStop },
     { "matter.status", "", "Is a node running, with which plug-in, and what the node says about itself", 0, cmdStatus },
+    { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },
     { "matter.endpoints", "", "Endpoints of the running node and the kinds the plug-in can build", 0, cmdForward },
     { "matter.set", "<endpoint> <value...>", "Change an endpoint from this side, as a button or sensor would (matter.endpoints shows the values each takes)", 0, cmdSet },
     { "matter.qr", "", "Setup QR code and manual pairing code of the node", 0, cmdForward },

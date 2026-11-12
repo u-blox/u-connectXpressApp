@@ -30,8 +30,8 @@ body.uc main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.uc #p
 body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #pn{grid-row:span 2}body.cn #pc,body:not(.cn) #pn{display:none}
 .cnw{display:flex;flex-direction:column;gap:.4rem}.cnh{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap}#cnst{font-size:.8rem}
 .cnleg{display:flex;gap:.7rem;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}.cnleg i{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.25rem;background:var(--k);box-shadow:0 0 6px var(--k)}
-:root{--c-wifi:#66d17a;--c-ap:#b5e655;--c-ble:var(--ble);--c-thr:var(--pu);--c-sock:var(--warm);--c-mqtt:#f06292;--c-gnss:#4dd0c8;--c-cell:#ff8a65}
-.k-wifi{--k:var(--c-wifi)}.k-ap,.k-sta{--k:var(--c-ap)}.k-ble{--k:var(--c-ble)}.k-thr,.k-nbr{--k:var(--c-thr)}.k-sock{--k:var(--c-sock)}.k-mqtt{--k:var(--c-mqtt)}.k-gnss{--k:var(--c-gnss)}.k-cell{--k:var(--c-cell)}.k-host{--k:var(--ac)}
+:root{--c-wifi:#66d17a;--c-ap:#b5e655;--c-ble:var(--ble);--c-thr:var(--pu);--c-sock:var(--warm);--c-mqtt:#f06292;--c-gnss:#4dd0c8;--c-cell:#ff8a65;--c-mat:#e2e8f0}
+.k-wifi{--k:var(--c-wifi)}.k-ap,.k-sta{--k:var(--c-ap)}.k-ble{--k:var(--c-ble)}.k-thr,.k-nbr{--k:var(--c-thr)}.k-sock{--k:var(--c-sock)}.k-mqtt{--k:var(--c-mqtt)}.k-gnss{--k:var(--c-gnss)}.k-cell{--k:var(--c-cell)}.k-matter{--k:var(--c-mat)}.k-host{--k:var(--ac)}
 #cnv{flex:1;position:relative;display:flex;min-height:18rem}
 #cn{flex:1;width:100%;min-height:18rem;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}#cn.drag{cursor:grabbing}
 #cnz{position:absolute;right:.4rem;bottom:.4rem;display:flex;gap:.25rem}#cnz button{width:2rem;height:2rem;padding:0;font-size:1.05rem;font-weight:800;border-radius:.5rem;opacity:.75}#cnz button:hover{opacity:1}
@@ -65,7 +65,8 @@ body.cn main{grid-template-columns:3fr 2fr;grid-template-rows:3fr 2fr}body.cn #p
 body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{display:flex;align-items:center;gap:.5rem}
 .gv{display:grid;grid-template-columns:3.4rem 1fr;gap:.55rem .7rem;align-items:center;margin:.2rem 0 .5rem}.gv>span{color:var(--mut);font:600 11px Consolas,monospace;letter-spacing:.06em}
 .gv>div{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}.gv b{font:600 12px Consolas,monospace}.gv a{color:var(--k);font:600 12px Consolas,monospace}.gv .al b{color:var(--err,#ff6b6b)}
-.seg{display:inline-flex;gap:3px}.seg i{width:1.3rem;height:.65rem;border-radius:3px;background:var(--bd)}.seg i.on{background:var(--k)}
+.seg{display:inline-flex;gap:3px}.seg i{width:1.3rem;height:.65rem;border-radius:3px;background:var(--bd)}.seg i.on{background:var(--k)}.seg.s6 i{width:.9rem}
+.gv input{width:4.4rem;padding:.15rem .3rem;font:12px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.gv button{padding:.1rem .55rem;font-size:.75rem}
 .dots{display:inline-flex;flex-wrap:wrap;gap:3px}.dots i{width:.6rem;height:.6rem;border-radius:50%;border:1.5px solid var(--k);box-sizing:border-box}.dots i.on{background:var(--k)}
 .bars{display:inline-flex;align-items:flex-end;gap:2px;height:1rem}.bars i{width:.35rem;background:var(--bd);border-radius:1px}.bars i.on{background:var(--k)}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
@@ -81,7 +82,7 @@ body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{
 .e{display:flex;gap:.5rem;align-items:baseline;padding:.12rem .25rem;border-radius:4px;font-size:.82rem}.e .t{color:var(--mut);font-variant-numeric:tabular-nums}
 .e .g{font:700 .62rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:0 .3rem;border:1px solid currentColor;border-radius:4px;min-width:3rem;text-align:center;color:var(--mut)}
 .e .x{flex:1;color:#b7c0cd;word-break:break-word}.e.n{animation:gl 1.2s ease-out}@keyframes gl{from{background:#a07cff40}}
-.e.wifi .g,.e.net .g,.e.http .g,.e.ping .g{color:var(--c-wifi)}.e.ap .g{color:var(--c-ap)}.e.bt .g,.e.gatt .g,.e.sps .g,.e.hid .g{color:var(--c-ble)}.e.thread .g{color:var(--c-thr)}.e.sock .g,.e.tls .g{color:var(--c-sock)}.e.mqtt .g{color:var(--c-mqtt)}.e.gnss .g{color:var(--c-gnss)}.e.cell .g{color:var(--c-cell)}
+.e.wifi .g,.e.net .g,.e.http .g,.e.ping .g{color:var(--c-wifi)}.e.ap .g{color:var(--c-ap)}.e.bt .g,.e.gatt .g,.e.sps .g,.e.hid .g{color:var(--c-ble)}.e.thread .g{color:var(--c-thr)}.e.sock .g,.e.tls .g{color:var(--c-sock)}.e.mqtt .g{color:var(--c-mqtt)}.e.gnss .g{color:var(--c-gnss)}.e.cell .g{color:var(--c-cell)}.e.matter .g{color:var(--c-mat)}
 footer{padding:0 .7rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
 #cmd,#flt,#mb{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:8px}
 #flt{flex:none;margin-bottom:.35rem;padding:.3rem .5rem}#mb{flex:none;min-width:0;width:5rem;padding:.3rem}
@@ -588,7 +589,7 @@ const SVGN='http://www.w3.org/2000/svg',cnS=$('cn'),
  csR=d=>95+clamp(d,0,10)*14,                          /* Channel Sounding: metres to radius */
  spread=(i,n,a,b)=>n<2?(a+b)/2:a+(b-a)*i/(n-1),
  CNK={bt:['ble'],gatt:['ble'],sps:['ble'],hid:['ble'],ancs:['ble'],wifi:['wifi','ap','sta'],net:['wifi','ap'],http:['wifi'],ping:['wifi'],
-  mdns:['wifi'],sock:['sock'],mqtt:['sock'],tls:['sock'],dtls:['sock'],coap:['sock'],tftp:['sock'],thread:['thr','nbr'],gnss:['gnss'],cell:['cell']};
+  mdns:['wifi'],sock:['sock'],mqtt:['sock'],tls:['sock'],dtls:['sock'],coap:['sock'],tftp:['sock'],thread:['thr','nbr'],gnss:['gnss'],cell:['cell'],matter:['matter']};
 /* zoom and pan move the viewBox; dragging a node stores an offset from its computed place. Until the user zooms or
    pans (reset turns it back on), the view follows the content: it starts as the default box and grows only when a
    node, pushed out by its neighbours, would leave it, so every link stays on screen */
@@ -728,14 +729,18 @@ function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
 
 
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
-/* the live GNSS and cell cards (SSE): a tab in What's happening in every view, drawn as a picture there */
-const CARD={gnss:'',cell:''};
+/* the live GNSS, cell and Matter cards (SSE): a tab in What's happening in every view, drawn as a picture there */
+const CARD={gnss:'',cell:'',matter:''};
 /* what a key shows: a graph node (Connections view only), the module, or a live card without a graph */
 function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')return cn?CN.mod:null;if(cn&&CN.n[k]&&!CN.n[k].gone)return CN.n[k].o;
  if(k==='g'&&CARD.gnss)return{k,c:'gnss',ic:'GNSS',lb:'receiver',info:[],act:[['Status','gnss.status'],['Satellites','gnss.sats']]};
+ /* the Matter node (matter.card): its commands as buttons, Start alone while it is stopped */
+ if(k==='x'&&CARD.matter){const on=!/^NODE\s+stopped/.test(CARD.matter),dt=/^LOG\s+detail/m.test(CARD.matter),fd=['Factory default','matter.reset',null,1];
+  return{k,c:'matter',ic:'MATTER',lb:on?'node':'stopped',info:[],act:on?[['Status','matter.status'],['QR code','matter.qr'],['Open window','matter.open'],
+   [dt?'Quiet log':'SDK log','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
  if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
 function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
- ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
+ ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
  const sig=ks.join(',')+'|'+CN.sel;if(p.sig===sig)return;p.sig=sig;p.textContent='';ks.forEach(k=>{const o=k?cnItem(k):null,
  b=el('button',(o?'k-'+(o.c||'host'):'')+(k===CN.sel?' on':''));b.setAttribute('role','tab');b.dataset.k=k;b.appendChild(el('i'));
  b.appendChild(document.createTextNode(!k?'Events':k==='hub'?'Module':o.ic));b.title=o?o.ic+' '+o.lb:'What happened, newest last';
@@ -755,6 +760,13 @@ function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{con
   a=el('a','',v);a.href='https://www.openstreetmap.org/?mlat='+la+'&mlon='+lo+'#map=17/'+la+'/'+lo;a.target='_blank';a.rel='noopener';
   a.title='Show on a map';w.appendChild(a);v=''}}
  else if(k==='ALERT')w.className='al';
+ /* Matter: the commissioning steps as segments; an endpoint with a button or a number field for each value matter.set takes */
+ else if(k==='STEP'){const f=/^failed at (\d+)\/(\d+)/.exec(v),q=f||/^(\d+)\/(\d+)/.exec(v);if(q){const s=el('span','seg s6');
+  for(let i=0;i<+q[2];i++)s.appendChild(el('i',i<+q[1]-(f?1:0)?'on':''));w.appendChild(s)}if(f)w.className='al'}
+ else if(k==='EP'){const p=/^(\d+) (\S+) = (.*?)  \[(.*)\]$/.exec(v);if(p){w.appendChild(el('b','',p[2]+' '+p[3]));v='';
+  p[4].split(' | ').forEach(a=>{const r=/^(-?\d+)\.\.(-?\d+)/.exec(a),e=el(r?'input':'button','',r?null:a);e.title='matter.set '+p[2]+' '+a;
+   if(r){e.type='number';e.min=r[1];e.max=r[2];e.step='any';e.placeholder=r[1]+'..'+r[2];e.setAttribute('aria-label',p[2]+' '+a);e.onchange=()=>{if(e.value!=='')run('matter.set',[p[2],e.value])}}
+   else e.onclick=()=>run('matter.set',[p[2],a]);w.appendChild(e)})}}
  if(v.trim())w.appendChild(el('b','',v.trim()));g.appendChild(el('span','',k));g.appendChild(w)});return g}
 petDraw();
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
@@ -805,7 +817,7 @@ function events(){const es=new EventSource('/events');
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>{const t=JSON.parse(e.data);addEv(t);cnPulse(t.slice(0,Math.max(0,t.indexOf(':'))),0)});
- ['gnss','cell'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';cnDetails();if(s!==CN.sel)fltSet()}));
+ ['gnss','cell','matter'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';cnDetails();if(s!==CN.sel)fltSet()}));
  es.addEventListener('conn',e=>{if(CN.timer)cnUpdate(JSON.parse(e.data))});
  const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
  es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));

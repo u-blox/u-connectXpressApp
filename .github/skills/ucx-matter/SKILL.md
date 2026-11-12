@@ -18,21 +18,15 @@ The full comparison, the API gap list and the footprint budget are in
 ## The ucxmatter plug-in (the direction taken)
 
 ucxapp stays the main app and owns the UART; Matter is an optional plug-in, `ucxmatter.dll` / `libucxmatter.so`,
-loaded by `matter.start` and built by `.\ucxapp --matter --build` from `matter/`.
+loaded by `matter.start` and built by `.\ucxapp --matter --build` from `matter/`. Building, running, the layout,
+the rules, the SDK patches and the tests are in the [ucx-matter-plugin](../ucx-matter-plugin/SKILL.md) skill.
 
-- Interface: `app/src/ucxapp_matter.h`, plain C (the SDK needs GCC, ucxapp on Windows is MSVC; mbedTLS 3.6 in
-  the SDK, 4.x in ucxapp, so the two cannot be linked into one exe). The plug-in sends AT commands through the
-  app's AT client and gets a copy of every URC; storage, time, log, events and the QR code come from the app.
+- Why a plug-in and not one exe: the SDK needs GCC and ucxapp on Windows is MSVC; the SDK has mbedTLS 3.6,
+  ucxapp 4.x. The interface `app/src/ucxapp_matter.h` is plain C for that reason.
 - Source is copied from `E:\u-blox\u-connectMatter` (the working reference), not rewritten: its module bring-up,
   web server, console and main loop are ucxapp's job and stay behind.
-- Build: gn + ninja (`matter/tools`, else `../u-connectMatter/tools`), MinGW-w64 GCC, SDK submodule
-  `matter/connectedhomeip` (opt-in, `update = none`), whole-file SDK patches in `matter/patches` (copied over the
-  pinned SDK by the launcher, refused for another SDK commit), POSIX headers for MinGW in `matter/compat/windows`.
 - Needs neither `uCxSessionLock` nor direct binary sockets: ucxapp's u-connectClient has the event-driven RX
   workers and the `cmdEnd()` status fix that made both workarounds unnecessary.
-- Tests: `tests/test_matter.py` (stand-in plug-in), `tests/test_matter_plugin.py` (real plug-in on the virtual
-  module), `tests/hardware/test_hw_matter.py` (a second module finds the node's advertisement).
-- Windows is the reference platform; Linux (`.so`), STM32 (static link) and WebAssembly must stay possible.
 
 ## Short answers
 

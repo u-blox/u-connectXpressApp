@@ -35,6 +35,7 @@ git submodule update --init u-connectClient
 | Linux | `./ucxapp.py` (from Windows: `.\ucxapp --linux` runs it in WSL, `--linux-host user@host` on a Linux machine over SSH; fresh setup: `sudo apt install -y git cmake build-essential ninja-build python3-pytest` and `sudo usermod -aG dialout $USER`) |
 | STM32 (FreeRTOS) | `.\ucxapp --stm32-freertos` |
 | STM32 (Zephyr) | `.\ucxapp --stm32-zephyr` |
+| Matter plug-in | `.\ucxapp --matter --build` (optional; see [Matter plug-in](#matter-plug-in)) |
 
 ### Windows
 
@@ -91,6 +92,19 @@ Only official ST NUCLEO and Discovery boards are supported.
 The build needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH` or `STM32CUBEF1_PATH` or `STM32CUBEG0_PATH`, or the u-connectClient submodule).
 Release builds of all five boards are published with each tag.
 
+### Matter plug-in
+
+```powershell
+.\ucxapp --matter --build     # app/bin/ucxmatter.dll; --clean and --rebuild work too
+.\ucxapp COM75 --exec "matter.start"
+```
+
+The app runs without it; `matter.start` loads `ucxmatter.dll` (`libucxmatter.so` on Linux) from next to the app.
+The plug-in is built from `matter/` with gn and ninja (`matter/tools`) and GCC: on Windows install MSYS2 and, in it,
+`pacman -S mingw-w64-ucrt-x86_64-gcc` (the Matter SDK does not build with MSVC). The first build fetches the Matter SDK
+into `matter/connectedhomeip` (about 1.5 GB); no other command fetches that submodule. Today the plug-in advertises a
+commissionable node over Bluetooth LE and shows its QR and manual codes; commissioning itself is not in yet.
+
 ## File structure
 
 ```
@@ -105,6 +119,7 @@ u-connectXpressApp/
 │   ├── release/                    # Signed releases
 │   └── third-party/                # FTDI DLL, Bluetooth SIG, etc.
 ├── u-connectClient/                # Git submodule: AT client library
+├── matter/                         # Optional Matter plug-in (ucxmatter): sources, gn build, SDK patches, gn and ninja
 └── build/                          # CMake artifacts per target (gitignored)
 ```
 

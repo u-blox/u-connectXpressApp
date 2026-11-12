@@ -17,9 +17,6 @@ app/bin/u-connectClientApp-debug.exe
 # Release binaries are published on the GitHub Releases page, not in git
 app/release/*.exe
 
-# gn and ninja for the Matter plug-in (ucxapp --matter)
-matter/tools/
-
 # Local notes
 TODO.md
 

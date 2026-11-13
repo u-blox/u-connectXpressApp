@@ -518,14 +518,16 @@
        queued, then wait until it has run; the next connect waits for this so it finds the module closed */
     const wait = () => new Promise(r => setTimeout(r, 100));
     closing = (async () => {
-      try {
-        if (reader) await reader.cancel();
-        await loop;
-        if (w) await w.close();
-        if (p) await p.close();
-      } catch (e) {
-        console.warn('serial close', e);
+      /* each step on its own: a dead port rejects the writer's close, and the port only closes once the
+         writer's lock is released */
+      const step = async (what, f) => { try { await f(); } catch (e) { console.warn('serial close: ' + what, e); } };
+      if (reader) await step('reader', () => reader.cancel());
+      await step('loop', () => loop);
+      if (w) {
+        await step('writer', () => w.close());
+        await step('writer lock', () => w.releaseLock());
       }
+      if (p) await step('port', () => p.close());
       for (let i = 0; (await exec('dev.disconnect')).status === 409 && i < 600; i++) await wait();
       for (let i = 0; M._ucxapp_web_local_busy() && i < 600; i++) await wait();
     })();
@@ -546,6 +548,7 @@
   }
 
   async function openPort(p) {
+    await closing;   /* a close still under way holds the port: opening it now fails with 'already open' */
     await p.open({ baudRate: 115200, bufferSize: 65536 });
     port = p;
     const ports = await navigator.serial.getPorts(), info = p.getInfo();
@@ -607,23 +610,29 @@
       (window.ucxAsk || alert)(noSerialReason());
       return;
     }
-    await ready;
-    let all = !!(e && e.shiftKey);
-    for (;;) {
-      try {
-        await openPort(await navigator.serial.requestPort(all ? {} : { filters: EVK_FILTERS }));
-        return;
-      } catch (err) {
-        port = null;
-        if (err.name !== 'NotFoundError') {
-          (window.ucxAsk || alert)('Could not open the port: ' + err.message);
+    if (opening) return;   /* a second click while the port opens */
+    opening = true;
+    try {
+      await ready;
+      let all = !!(e && e.shiftKey);
+      for (;;) {
+        try {
+          await openPort(await navigator.serial.requestPort(all ? {} : { filters: EVK_FILTERS }));
           return;
+        } catch (err) {
+          port = null;
+          if (err.name !== 'NotFoundError') {
+            (window.ucxAsk || alert)('Could not open the port: ' + err.message);
+            return;
+          }
+          if (all || !window.ucxAsk || !await window.ucxAsk('No u-connectXpress EVK picked. The list only shows ' +
+            'known EVK USB bridges (FTDI, u-blox); a module on another USB-UART is in the full list.',
+            { ok: 'Show all ports', cancel: true })) return;
+          all = true;
         }
-        if (all || !window.ucxAsk || !await window.ucxAsk('No u-connectXpress EVK picked. The list only shows known ' +
-          'EVK USB bridges (FTDI, u-blox); a module on another USB-UART is in the full list.',
-          { ok: 'Show all ports', cancel: true })) return;
-        all = true;
       }
+    } finally {
+      opening = false;
     }
   }
 

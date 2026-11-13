@@ -16,16 +16,41 @@ WASM = ROOT / "app" / "wasm"
 FAKE_SERIAL = """
 (() => {
   window.__tx = '';
-  let push = null;
+  let push = null, isOpen = false, rd, wr;
+  /* like a real port: new streams on every open; a lost port (__dead) rejects writes and, after a moment, the
+     writer's close; a port with a locked writer cannot close, and an open port cannot open again; a silent
+     module (__mute) takes the commands and never answers */
+  const fresh = () => {
+    rd = new ReadableStream({ start(c) { push = c; } });
+    wr = new WritableStream({
+      write(chunk) {
+        if (window.__dead) throw new DOMException('The device has been lost.', 'NetworkError');
+        const text = new TextDecoder().decode(chunk);
+        window.__tx += text;
+        if (window.__mute) return;
+        if (/\\r/.test(text)) setTimeout(() => { try { push.enqueue(new TextEncoder().encode('\\r\\nOK\\r\\n')); }
+                                                 catch (e) { /* closed: a real port drops it too */ } }, 5);
+      },
+      close() {
+        if (window.__dead) return new Promise((_, no) => setTimeout(
+          () => no(new DOMException('The device has been lost.', 'NetworkError')), 300));
+      },
+    });
+  };
+  fresh();
   const port = {
-    readable: new ReadableStream({ start(c) { push = c; } }),
-    writable: new WritableStream({ write(chunk) {
-      const text = new TextDecoder().decode(chunk);
-      window.__tx += text;
-      if (/\\r/.test(text)) setTimeout(() => { try { push.enqueue(new TextEncoder().encode('\\r\\nOK\\r\\n')); }
-                                               catch (e) { /* closed: a real port drops it too */ } }, 5);
-    } }),
-    open: async () => {}, close: async () => {}, getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6015 }),
+    get readable() { return rd; }, get writable() { return wr; },
+    open: async () => {
+      if (isOpen) throw new DOMException('The port is already open.', 'InvalidStateError');
+      isOpen = true;
+      window.__dead = false;
+      fresh();
+    },
+    close: async () => {
+      if (wr.locked) throw new TypeError('Cannot close a port whose writable stream is locked.');
+      isOpen = false;
+    },
+    getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6015 }),
   };
   window.__asked = [];
   Object.defineProperty(navigator, 'serial', { value: {
@@ -349,6 +374,69 @@ def test_last_port_is_reopened_until_disconnected(site):
     assert not js_errors, js_errors
 
 
+def test_a_lost_port_closes_and_connects_again(site):
+    """A port lost under the app (unplugged) rejects the writer's close: the lock is still released and the port
+    closed, so Connect opens it again instead of failing with 'already open', also when it is clicked while the
+    close is still under way."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script(FAKE_SERIAL)
+        js_errors, console = [], []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.on("console", lambda msg: console.append(msg.text))
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                               timeout=60000)
+        page.evaluate("window.__dead = true")
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Connect module'", timeout=30000)
+        page.click("#wsc")
+        try:
+            page.wait_for_function(
+                "document.getElementById('out').innerText.split('connected to webserial').length > 2", timeout=60000)
+        except sync_api.TimeoutError:
+            pytest.fail("not connected again; the page shows:\n" + page.inner_text("#out")[-1500:] +
+                        "\nconsole:\n" + "\n".join(console[-20:]))
+        assert "already open" not in page.inner_text("#out")
+        browser.close()
+    assert not js_errors, js_errors
+
+
+def test_a_port_lost_during_a_command_ends_the_command_at_once(site):
+    """A command waiting for the module when the port is lost ends with an I/O error at once, not after its AT
+    timeout (10 s for every command still to run), so Connect works again within seconds."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script(FAKE_SERIAL)
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        page.evaluate("window.__mute = true")   # dev.connect's first AT command gets no answer
+        page.click("#wsc")
+        page.wait_for_function("window.__tx.includes('AT')", timeout=60000)
+        page.evaluate("window.__dead = true; window.__mute = false")
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('wsc').textContent === 'Connect module'", timeout=30000)
+        page.click("#wsc")
+        try:
+            page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                                   timeout=8000)
+        except sync_api.TimeoutError:
+            pytest.fail("the lost port held the app; the page shows:\n" + page.inner_text("#out")[-1500:])
+        browser.close()
+
+
 def test_port_picker_shows_the_evks_and_all_ports_on_request(site):
     """The picker lists the EVKs' USB bridges; cancelling it offers every serial port, and so does Shift+click."""
     sync_api = pytest.importorskip("playwright.sync_api")
@@ -401,6 +489,45 @@ def test_no_web_serial_starts_the_virtual_module(site):
         assert page.input_value("#wsvm") == "valma-w1.json"
         browser.close()
     assert not js_errors, js_errors
+
+
+def test_first_visit_on_a_host_without_headers_isolates_itself():
+    """GitHub Pages sets no COOP/COEP: on the first visit the service worker takes the page, which reloads once,
+    isolated, and the app starts."""
+    if not (SITE / "ucxapp.wasm").exists():
+        pytest.skip("no browser build (ucxapp --wasm --build)")
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    class Plain(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), partial(Plain, directory=str(SITE)))
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with sync_api.sync_playwright() as p:
+            try:
+                browser = p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"no browser: {exc}")
+            page = browser.new_context().new_page()
+            page.add_init_script("delete Navigator.prototype.serial")
+            # the slow case: the worker claims the page before register() resolves
+            page.add_init_script("""{const r = ServiceWorkerContainer.prototype.register;
+                ServiceWorkerContainer.prototype.register = function (...a) {
+                  return r.apply(this, a).then(reg => this.controller ? reg :
+                    new Promise(ok => this.addEventListener('controllerchange', () => ok(reg), { once: true })));
+                };}""")
+            page.goto(f"http://127.0.0.1:{srv.server_address[1]}/")
+            page.wait_for_function("self.crossOriginIsolated", timeout=30000)
+            page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                                   timeout=60000)
+            browser.close()
+    finally:
+        srv.shutdown()
 
 
 def test_matter_node_is_built_in(site):

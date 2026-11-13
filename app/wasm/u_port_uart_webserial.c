@@ -21,6 +21,13 @@ static bool gOpen;
 static bool gWake;
 static int gHandle;     /* any non-NULL address will do as the handle */
 
+/* Open and the page still has its port. A lost port (unplugged, closed by the page) fails every read at once, so
+ * a command in flight ends with an I/O error instead of waiting out its timeout. Called with gMutex held. */
+static bool alive(void)
+{
+    return gOpen && gReady;
+}
+
 /* Called by the page (main thread) for every chunk the serial port delivers; bytes beyond the ring are lost. */
 EMSCRIPTEN_KEEPALIVE void ucxapp_webserial_rx(const uint8_t *data, int len)
 {
@@ -47,7 +54,7 @@ static void waitData(int32_t timeoutMs)
     struct timespec until;
 
     if (timeoutMs < 0) {
-        while (gCount == 0 && !gWake && gOpen) {
+        while (gCount == 0 && !gWake && alive()) {
             pthread_cond_wait(&gCond, &gMutex);
         }
         return;
@@ -59,7 +66,7 @@ static void waitData(int32_t timeoutMs)
         until.tv_nsec -= 1000000000L;
         until.tv_sec++;
     }
-    while (gCount == 0 && !gWake && gOpen) {
+    while (gCount == 0 && !gWake && alive()) {
         if (pthread_cond_timedwait(&gCond, &gMutex, &until) != 0) {
             break;
         }
@@ -130,9 +137,9 @@ int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int3
         gCount--;
     }
     gWake = false;
-    bool open = gOpen;
+    bool ok = alive();
     pthread_mutex_unlock(&gMutex);
-    return open ? (int32_t)n : -1;
+    return ok ? (int32_t)n : -1;
 }
 
 int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
@@ -144,7 +151,7 @@ int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
     }
     pthread_mutex_lock(&gMutex);
     waitData(timeoutMs);
-    result = !gOpen ? -1 : gCount > 0 ? 1 : 0;
+    result = !alive() ? -1 : gCount > 0 ? 1 : 0;
     gWake = false;
     pthread_mutex_unlock(&gMutex);
     return result;

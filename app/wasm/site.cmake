@@ -10,8 +10,10 @@ foreach(tag "<script>" "</head>" "</body>")
 endforeach()
 string(REPLACE "</body>" "<script src=\"fx.js\"></script><script src=\"guide.js\"></script></body>" page "${page}")
 string(FIND "${page}" "<script>" at)
-# the worker always registers: it isolates the page (threads) and keeps the site offline (installable app)
-set(inject "<script>if(navigator.serviceWorker)navigator.serviceWorker.register('coi-serviceworker.js').then(()=>{if(!self.crossOriginIsolated&&!navigator.serviceWorker.controller)location.reload()})</script>\n<script src=\"ucxapp.js\"></script><script src=\"ucxapp-wasm.js\"></script>\n")
+# the worker always registers: it isolates the page (threads) and keeps the site offline (installable app). A page
+# that is not isolated reloads once the worker controls it, whether the worker claimed it before or after register
+# resolved; once per tab, so a browser that cannot isolate does not reload forever
+set(inject "<script>if(navigator.serviceWorker)navigator.serviceWorker.register('coi-serviceworker.js').then(()=>{const s=navigator.serviceWorker,go=()=>{if(!sessionStorage.getItem('coi')){sessionStorage.setItem('coi','1');location.reload()}};if(self.crossOriginIsolated)sessionStorage.removeItem('coi');else if(s.controller)go();else s.addEventListener('controllerchange',go)})</script>\n<script src=\"ucxapp.js\"></script><script src=\"ucxapp-wasm.js\"></script>\n")
 string(SUBSTRING "${page}" 0 ${at} head)
 string(SUBSTRING "${page}" ${at} -1 tail)
 # plain unless the FX button or a ?fx=1 link turned the look on (?fx=0 turns it off); decided before the first paint

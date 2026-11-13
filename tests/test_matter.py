@@ -191,6 +191,28 @@ def test_reset_removes_what_the_node_stored_and_reboots_the_module(app_exe, stub
         module.stop()
 
 
+def test_reset_goes_on_when_the_module_restarts_while_leaving_wifi(app_exe, stub, tmp_path):
+    """Seen on an EVK: the module restarted on the Wi-Fi status query, so the reset stopped with an error."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    module.start()
+    try:
+        _run(app_exe, module, stub, tmp_path, "matter.start")
+        module.commands["AT+UWSNST=0"] = [""]   # no answer: it restarts instead
+        module.urcs["AT+UWSNST=0"] = ["+STARTUP"]
+        start = len(module.log)
+        out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.reset")
+        assert out.returncode == 0, out.stdout
+        assert "left Wi-Fi network vucx-net (the module restarted)\nmatter: module rebooted\n" in out.stdout, out.stdout
+        log = module.log[module.log.index("AT+UWSNST=0", start):]
+        assert "ATE0" in log and "AT+UWSDC" not in log and "AT+CPWROFF" not in log, log
+        assert "matter: node started (stub)" in out.stdout.split("module rebooted")[1], out.stdout
+    finally:
+        module.stop()
+
+
 def _check_reset(app_exe, module, stub, tmp_path):
     out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.set light on", "matter.reset", "matter.status",
                "matter.endpoints")

@@ -647,22 +647,56 @@ static void collectFile(const char *name, uint64_t size, void *ctx)
     }
 }
 
-/* The module as a commissioner must find it: off the Wi-Fi network the node was given (the access point sees it
-   leave), rebooted, and with "all" back on its factory settings. */
-static bool resetModule(ucxapp_t *app, bool factory)
+/* Up to 10 s for the link down a disconnect ends with: a reboot sent while the module still leaves the network
+   goes unanswered. False when the module restarted instead (+STARTUP). */
+static bool waitWifiDown(void)
 {
-    char ssid[64], ip[48];
-
-    if (ucxapp_module_has_wifi(app) && ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
-        ucxapp_events_clear(URC_FLAG_WIFI_LINK_DOWN);
-        if (uCxWifiStationDisconnect(app->ucx) != 0) {
-            ucxapp_print("ERROR: the module did not leave Wi-Fi network %s\n", ssid);
+    for (int i = 0; i < 100; i++) {
+        if (ucxapp_events_take(URC_FLAG_WIFI_LINK_DOWN)) {
+            return true;
+        }
+        if (ucxapp_events_take(URC_FLAG_STARTUP)) {
             return false;
         }
-        (void)ucxapp_events_wait(URC_FLAG_WIFI_LINK_DOWN, 3);
-        ucxapp_print("matter: left Wi-Fi network %s\n", ssid);
+        U_CX_PORT_SLEEP_MS(100);
     }
-    if (factory ? !ucxapp_module_factory_reset(app) : !ucxapp_module_reboot(app)) {
+    return true;
+}
+
+/* The module as a commissioner must find it: off the Wi-Fi network the node was given (the access point sees it
+   leave), rebooted, and with "all" back on its factory settings. A module that restarts by itself on the way
+   (seen leaving Wi-Fi) has done the reboot: its echo goes off again and the reset goes on. */
+static bool resetModule(ucxapp_t *app, bool factory)
+{
+    char ssid[64], now[64], ip[48];
+    bool restarted = false;
+
+    ucxapp_events_clear(URC_FLAG_STARTUP);
+    if (ucxapp_module_has_wifi(app) && ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        ucxapp_events_clear(URC_FLAG_WIFI_LINK_DOWN);
+        restarted = ucxapp_events_take(URC_FLAG_STARTUP);
+        if (!restarted && uCxWifiStationDisconnect(app->ucx) != 0) {
+            restarted = ucxapp_events_take(URC_FLAG_STARTUP);
+            if (!restarted) {
+                ucxapp_print("ERROR: the module did not leave Wi-Fi network %s\n", ssid);
+                return false;
+            }
+        }
+        if (!restarted) {
+            restarted = !waitWifiDown();
+            if (!restarted && ucxapp_wifi_get_status(app->ucx, now, sizeof(now), ip, sizeof(ip))) {
+                ucxapp_print("ERROR: the module is still on Wi-Fi network %s\n", ssid);
+                return false;
+            }
+        }
+        ucxapp_print("matter: left Wi-Fi network %s%s\n", ssid, restarted ? " (the module restarted)" : "");
+    }
+    restarted = restarted || ucxapp_events_take(URC_FLAG_STARTUP);
+    if (restarted) {
+        U_CX_PORT_SLEEP_MS(200);
+        (void)ucxapp_session_restore(app);
+    }
+    if (factory ? !ucxapp_module_factory_reset(app) : !restarted && !ucxapp_module_reboot(app)) {
         return false;
     }
     ucxapp_print("matter: module %s\n", factory ? "reset to factory settings and rebooted" : "rebooted");

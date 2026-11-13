@@ -325,7 +325,9 @@ class Network:
     def __init__(self, cfg, ft=None):
         self.servers = {int(k): v for k, v in (cfg.get("servers") or {}).items()}
         self.accept = {int(p) for p in cfg.get("accept") or []}
-        # listening port -> requests; each is a client that connects, sends it and keeps what comes back in replies
+        # listening port -> requests; each is a client that connects, sends it and keeps what comes back in replies.
+        # A callable is a client that talks (tests only): client(None) gives its first bytes, client(data) its
+        # answer to each write of the module, and it hangs up once client.closed is true (harness/tlsclient.py)
         self.requests = {int(k): list(v) for k, v in (cfg.get("requests") or {}).items()}
         # bound UDP port -> datagrams the scripted client sends at once, without waiting for an answer in between
         self.bursts = {int(k): list(v) for k, v in (cfg.get("bursts") or {}).items()}
@@ -400,7 +402,13 @@ class Network:
         if m and int(m[1]) in self.socks:
             s = self.socks[int(m[1])]
             self._serve(s, data)
-            if "reply" in s and self._complete(s["reply"]):   # the client has its answer and hangs up
+            if "talk" in s:            # a client that answers what it is sent (a TLS handshake, then its request)
+                out = s["talk"](bytes(data))
+                if out:
+                    s["rx"].append(("192.168.1.10", 50000, bytes(out)))
+            hangs_up = getattr(s["talk"], "closed", False) if "talk" in s else \
+                "reply" in s and self._complete(s["reply"])
+            if hangs_up:               # the client has its answer and hangs up
                 del self.socks[int(m[1])]
                 nxt = self._next_client(0.05)
                 close = f"+UESOCL:{m[1]}"
@@ -501,8 +509,11 @@ class Network:
             return []
         req, listener = self.pending.pop(0)
         n = self._new(6)
-        req = req.encode() if isinstance(req, str) else bytes(req)
+        talk = req if callable(req) else None
+        req = bytes(talk(None)) if talk else req.encode() if isinstance(req, str) else bytes(req)
         self.socks[n].update(rx=[("192.168.1.10", 50000, req)], reply=bytearray())
+        if talk:
+            self.socks[n]["talk"] = talk
         self.replies.append(self.socks[n]["reply"])
         # the firmware's order (see ucxapp_urc.c): listening socket first, the new one last
         return {"after": after, "lines": [f"+UESOIC:{listener},192.168.1.10,{n}", f"+UESODA:{n},{len(req)}"]}

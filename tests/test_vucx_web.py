@@ -142,3 +142,113 @@ def test_web_upload_and_download_a_file(app_exe, tmp_path):
     assert "404" in status[5], status
     assert "400" in status[6] and "409" in status[7], status
     assert "200" not in status[9], status
+
+
+# ---- HTTPS: TLS clients behind the module (harness/tlsclient.py) do a real handshake with the app's server --------
+
+
+def _serve_https(app_exe, tmp_path, clients, start, before=(), wait_s=40):
+    """Runs `before` and `start` (a web.start command on port 8443); the clients connect as it listens, one after
+    the other. Returns the app's output once every client has hung up."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {8443: clients}
+    module = Vucx(profile)
+    proc = None
+    try:
+        proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                                cwd=tmp_path)
+        proc.stdin.write("".join(line + "\n" for line in (*before, start)))
+        proc.stdin.flush()
+        end = time.monotonic() + wait_s
+        while time.monotonic() < end and not all(getattr(c, "closed", True) for c in clients):
+            time.sleep(0.05)
+        time.sleep(0.3)
+        proc.stdin.write("web.status\nweb.stop\n")
+        proc.stdin.close()
+        out = proc.stdout.read()
+        proc.wait(timeout=20)
+        open_ = [i for i, c in enumerate(clients) if not getattr(c, "closed", True)]
+        assert not open_, f"clients {open_} got no answer:\n{out[-2000:]}\n" + "\n".join(map(str, module.log[-30:]))
+        return out
+    finally:
+        if proc and proc.poll() is None:
+            proc.kill()
+        module.stop()
+
+
+def _status(client):
+    assert client.error is None, client.error
+    return client.response.split(b"\r\n", 1)[0].decode()
+
+
+def test_https_serves_the_api_and_files_with_a_certificate_from_the_local_ca(app_exe, tmp_path):
+    from harness.tlsclient import TlsClient
+
+    ca = tmp_path / "storage" / "tls-ca.crt"   # made by web.start, read when the first client connects
+    payload = bytes(range(256))
+    upload = (f"POST /api/upload?n=hw.bin&o=0&e=1 HTTP/1.1\r\nHost: m\r\nX-Token: {TOKEN}\r\n"
+              f"Content-Length: {len(payload)}\r\n\r\n").encode() + payload
+    clients = [TlsClient(r, ca=ca) for r in (
+        _get("/api/version"), _get("/api/version", token=False), upload, _get("/api/file?n=hw.bin&o=0"),
+        _get("/api/file?n=tls-web.key&o=0"), _get("/api/file?n=tls-ca.crt&o=0"), _get("/"))]
+    out = _serve_https(app_exe, tmp_path, clients, f"web.start 8443 {TOKEN}")
+    assert "created certificate tls-web for 192.168.1.50, signed by the local CA (tls-ca)" in out, out
+    assert f"https://192.168.1.50:8443/#t={TOKEN}" in out, out
+    assert "web server: https port 8443" in out, out
+    status = [_status(c) for c in clients]
+    assert all(c.version in ("TLSv1.2", "TLSv1.3") for c in clients), [c.version for c in clients]
+    assert "200" in status[0] and b'{"v":"u-connectXpressApp ' in clients[0].response, clients[0].response[:300]
+    assert "403" in status[1], status
+    assert "200" in status[2] and "200" in status[3], status
+    assert clients[3].response.split(b"\r\n\r\n", 1)[1] == payload, "the file must come back byte for byte"
+    assert "403" in status[4], "private keys never leave the device"
+    assert "200" in status[5] and b"BEGIN CERTIFICATE" in clients[5].response, status
+    page = clients[6].response.split(b"\r\n\r\n", 1)[1]
+    assert "200" in status[6] and len(page) > 50000 and b"</html>" in page[-200:], (status[6], len(page))
+    key = (tmp_path / "storage" / "tls-web.key").read_bytes()
+    assert b"PRIVATE KEY" not in key, "the server key must be sealed in the store"
+
+
+def test_https_without_a_token_says_so_and_needs_none(app_exe, tmp_path):
+    from harness.tlsclient import TlsClient
+
+    client = TlsClient(_get("/api/version", token=False), ca=tmp_path / "storage" / "tls-ca.crt")
+    out = _serve_https(app_exe, tmp_path, [client], "web.start 8443")
+    assert "no access token: anyone who can reach this address can use the page (web.start 8443 token adds one)" in out
+    assert "https://192.168.1.50:8443/\n" in out, out
+    assert "200" in _status(client), client.response[:200]
+
+
+def test_https_goes_on_after_a_client_that_distrusts_it_and_one_that_speaks_plain_http(app_exe, tmp_path):
+    from harness.tlsclient import TlsClient
+
+    other = tmp_path / "other"
+    other.mkdir()
+    made = subprocess.run([str(app_exe), "--offline", "--exec", "utils.tls.ca.create"], capture_output=True,
+                          text=True, timeout=60, cwd=other, stdin=subprocess.DEVNULL)
+    assert made.returncode == 0, made.stdout
+    stranger = TlsClient(_get("/api/version"), ca=other / "storage" / "tls-ca.crt")
+    friend = TlsClient(_get("/api/version"), ca=tmp_path / "storage" / "tls-ca.crt")
+    plain = _get("/api/version")   # not TLS at all: the server must drop it and take the next client
+    out = _serve_https(app_exe, tmp_path, [stranger, plain, friend], f"web.start 8443 {TOKEN}")
+    assert stranger.error is not None and "CERTIFICATE_VERIFY_FAILED" in str(stranger.error), stranger.error
+    assert stranger.response == b"", "nothing may be served to a client that did not finish the handshake"
+    assert "200" in _status(friend), out[-1500:]
+
+
+def test_https_with_a_named_certificate_and_one_that_does_not_exist(app_exe, tmp_path):
+    from harness.tlsclient import TlsClient
+
+    client = TlsClient(_get("/api/version"), ca=tmp_path / "storage" / "tls-ca.crt")
+    out = _serve_https(app_exe, tmp_path, [client], f"web.start 8443 {TOKEN} https box",
+                       before=["web.start 8443 tok https nosuch", "utils.tls.ca.create",
+                               "utils.tls.server.create box 192.168.1.50 box.local"])
+    assert "ERROR: TLS certificate 'nosuch':" in out, out
+    assert "utils.tls.server.create nosuch 192.168.1.50" in out, out
+    assert "created certificate tls-web" not in out, "a named certificate must not make tls-web"
+    assert "200" in _status(client), client.response[:200]
+    assert not (tmp_path / "storage" / "tls-web.crt").exists()

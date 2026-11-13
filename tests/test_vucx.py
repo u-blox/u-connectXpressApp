@@ -770,6 +770,104 @@ def test_ntrip_bridge_checks_every_correction_frame(app_exe, nora):
     assert re.search(r"\(RTCM 2 \(1 bad\), SPARTN 4, UBX 1, \d+ bytes outside frames\)", text), text[-3000:]
 
 
+def _pointperfect(app_exe, *steps, urcs=None, **answers):
+    """Runs the steps on a receiver next to a NORA-W36 whose broker hands out one SPARTN frame per poll. A step
+    is its commands and what the module's AT log must show before the next step starts (None: nothing to wait
+    for). Returns the output, the exit code and the AT log."""
+    from harness import corrections
+    from harness.vucx import Feeder
+
+    frame = corrections.spartn(1, bytes(range(40))).decode("latin-1")
+    answers.setdefault("AT+UMQRB=*", [['+UMQRB:0,"/pp/ip/eu"\x01' + frame, "OK"], ["ERROR"]])
+    module = _nora_with(urcs=urcs, **answers)
+    gnss = Feeder(NMEA, 0.2)
+    proc = subprocess.Popen([str(app_exe), module.port, "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=_CWD)
+    try:
+        proc.stdin.write(f"gnss.open {gnss.start()} 9600\n")
+        for commands, seen in steps:
+            proc.stdin.write("\n".join(commands) + "\n")
+            proc.stdin.flush()
+            deadline = time.time() + 30
+            while seen is not None and not seen(list(module.log)):
+                assert time.time() < deadline, "\n".join(c for c in module.log if "UMQ" in c)
+                time.sleep(0.05)
+        out, _ = proc.communicate(timeout=30)
+    finally:
+        proc.kill()
+        gnss.stop()
+        module.stop()
+    return out, proc.returncode, module.log
+
+
+def _count(prefix, n):
+    return lambda log: sum(cmd.startswith(prefix) for cmd in log) >= n
+
+
+def test_pointperfect_bridge_feeds_mqtt_corrections_to_the_receiver(app_exe):
+    """gnss.bridge pointperfect: MQTT over TLS with the thing's certificate, key and CA, the key topic and the
+    region's correction topic subscribed, every message checked and passed to the receiver; the module's one MQTT
+    connection carries one such bridge."""
+    pytest.importorskip("yaml")
+    text, _, log = _pointperfect(
+        app_exe, (["gnss.bridge pointperfect thing-1 us"], _count("AT+UMQRB=", 2)),   # a message, then none left
+        (["gnss.bridge status", "gnss.bridge pointperfect thing-2", "gnss.bridge off", "gnss.bridge status"], None))
+    assert "MQTT pp.services.u-blox.com:8883 as thing-1, messages on /pp/ubx/0236/ip /pp/ip/us go to the receiver" \
+        in text, text[-3000:]
+    assert "MQTT pp.services.u-blox.com:8883, connected, 1 messages (50 bytes) to the receiver (SPARTN 1)" in text, \
+        text[-3000:]
+    assert "ERROR: an MQTT bridge is already running (the module has one MQTT connection)" in text, text[-3000:]
+    assert "bridge: off" in text.split("bridge stopped")[-1], text[-3000:]
+    assert 'AT+UMQCP=0,"pp.services.u-blox.com",8883,"thing-1"' in log, log
+    assert any(cmd.startswith("AT+UMQTLS=0,") and cmd.endswith('"pointperfect-ca","pointperfect","pointperfect-key"')
+               for cmd in log), log
+    assert [cmd for cmd in log if cmd.startswith("AT+UMQS=")] == ['AT+UMQS=0,0,"/pp/ubx/0236/ip",1',
+                                                                 'AT+UMQS=0,0,"/pp/ip/us",1'], log
+    assert log.index("AT+UMQDC=0") > log.index('AT+UMQS=0,0,"/pp/ip/us",1'), log   # stopped: the broker is left
+
+
+@pytest.mark.parametrize("answers, urcs, message", [
+    ({"AT+UMQTLS=*": ["ERROR"]}, None,
+     "ERROR: cannot set up MQTT over TLS (upload thing, thing-key and thing-ca with cert.upload)"),
+    ({"AT+UMQC=*": ["ERROR"]}, None, "ERROR: no MQTT connection to pp.services.u-blox.com:8883"),
+    ({}, {"AT+UMQS=*": []}, "ERROR: cannot subscribe to /pp/ubx/0236/ip"),
+])
+def test_pointperfect_bridge_says_what_failed(app_exe, answers, urcs, message):
+    """Certificates missing on the module, a broker that refuses and a topic the thing may not have: each ends
+    the command with its own hint and leaves no bridge and no MQTT connection behind."""
+    pytest.importorskip("yaml")
+    text, _, log = _pointperfect(app_exe, (["gnss.bridge pointperfect client eu thing", "gnss.bridge status"], None),
+                                 urcs=urcs, **answers)
+    assert message in text and "bridge: off" in text, text[-3000:]
+    assert ("AT+UMQDC=0" in log) == ("TLS" not in message), log   # connected or connecting: disconnect
+
+
+def test_pointperfect_bridge_reconnects_after_the_broker_drops_it(app_exe):
+    """The broker closes the connection: the bridge says so, shows 'reconnecting', connects and subscribes again
+    by itself and corrections flow as before."""
+    pytest.importorskip("yaml")
+    text, _, log = _pointperfect(
+        app_exe, (["gnss.bridge pointperfect thing-1"], _count("AT+UMQRB=", 2)),
+        (["gnss.bridge status"], _count("AT+UMQRB=", 4)),          # dropped after the first read; read again
+        (["gnss.bridge status", "gnss.bridge off"], None),
+        urcs={"AT+UMQRB=*": {"after": 0.3, "lines": ["+UEMQDC:0,0"], "times": 1}})
+    lost = text.index("gnss bridge: MQTT connection to pp.services.u-blox.com lost, reconnecting")
+    again = text.index("gnss bridge: MQTT reconnected to pp.services.u-blox.com")
+    assert lost < again, text[-3000:]
+    assert "MQTT pp.services.u-blox.com:8883, connected, 2 messages (100 bytes)" in text[again:], text[-3000:]
+    assert sum(cmd.startswith("AT+UMQC=") for cmd in log) == 2, log
+    assert sum(cmd.startswith("AT+UMQS=") for cmd in log) == 4, log
+
+
+@pytest.mark.parametrize("command", ["gnss.bridge pointperfect", "gnss.bridge pointperfect thing mars",
+                                     "gnss.bridge pointperfect thing eu bad/cert", "gnss.bridge pointperfect th;ng"])
+def test_pointperfect_bridge_refuses_bad_arguments(app_exe, command):
+    pytest.importorskip("yaml")
+    text, code, log = _pointperfect(app_exe, ([command], None))
+    assert code == 1 and "usage: gnss.bridge" in text.lower(), text[-3000:]
+    assert not any(cmd.startswith("AT+UMQ") for cmd in log), log
+
+
 def test_hw_bridges_share_the_stream_until_the_last_one_stops(app_exe, nora):
     """hw.bridge keeps its stream while one bridge is left; only one BLE bridge per stream."""
     out = _shell(app_exe, nora.port, [

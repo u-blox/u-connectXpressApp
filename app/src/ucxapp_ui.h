@@ -40,6 +40,11 @@ typedef struct {
 /* Starts the streams and the command runner; calls nest, the last release stops them. */
 bool ucxapp_ui_acquire(ucxapp_t *app);
 void ucxapp_ui_release(void);
+/* True on the worker that runs the commands a front end submits (the web page, the text UI): a command that would
+   take away what the front end is served through must not run there. */
+bool ucxapp_ui_on_worker(void);
+/* True on that worker when the caller is its only front end: its release would stop the worker from itself. */
+bool ucxapp_ui_sole_on_worker(void);
 
 /* One line for the events stream (URC context safe); ignored while no front end is active. */
 void ucxapp_ui_event(const char *text);

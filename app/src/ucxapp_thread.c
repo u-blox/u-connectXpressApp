@@ -14,6 +14,7 @@
 struct ucxapp_thread {
 #ifdef _WIN32
     HANDLE handle;
+    DWORD id;
 #else
     pthread_t handle;
 #endif
@@ -47,7 +48,7 @@ ucxapp_thread_t *ucxapp_thread_start(void (*fn)(void *), void *arg)
     t->fn = fn;
     t->arg = arg;
 #ifdef _WIN32
-    t->handle = CreateThread(NULL, 0, entry, t, 0, NULL);
+    t->handle = CreateThread(NULL, 0, entry, t, 0, &t->id);
     if (t->handle == NULL) {
 #else
     if (pthread_create(&t->handle, NULL, entry, t) != 0) {
@@ -58,16 +59,36 @@ ucxapp_thread_t *ucxapp_thread_start(void (*fn)(void *), void *arg)
     return t;
 }
 
+bool ucxapp_thread_is_self(const ucxapp_thread_t *t)
+{
+    if (t == NULL) {
+        return false;
+    }
+#ifdef _WIN32
+    return GetCurrentThreadId() == t->id;
+#else
+    return pthread_equal(pthread_self(), t->handle) != 0;
+#endif
+}
+
 void ucxapp_thread_join(ucxapp_thread_t *t)
 {
     if (t == NULL) {
         return;
     }
+    /* Until the thread has ended: the caller frees what the thread works on next. A thread asked to join
+       itself cannot wait for its own end; it is left to finish. */
 #ifdef _WIN32
-    WaitForSingleObject(t->handle, 5000);
+    if (!ucxapp_thread_is_self(t)) {
+        WaitForSingleObject(t->handle, INFINITE);
+    }
     CloseHandle(t->handle);
 #else
-    pthread_join(t->handle, NULL);
+    if (ucxapp_thread_is_self(t)) {
+        pthread_detach(t->handle);
+    } else {
+        pthread_join(t->handle, NULL);
+    }
 #endif
     free(t);
 }

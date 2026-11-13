@@ -17,6 +17,7 @@ struct ucxapp_thread {
     void (*fn)(void *);
     void *arg;
     SemaphoreHandle_t done;
+    TaskHandle_t task;
 };
 
 static void entry(void *p)
@@ -39,7 +40,7 @@ ucxapp_thread_t *ucxapp_thread_start(void (*fn)(void *), void *arg)
     t->arg = arg;
     t->done = xSemaphoreCreateBinary();
     if (t->done == NULL ||
-        xTaskCreate(entry, "ucxthr", UCXAPP_THREAD_STACK_WORDS, t, tskIDLE_PRIORITY + 2, NULL) != pdPASS) {
+        xTaskCreate(entry, "ucxthr", UCXAPP_THREAD_STACK_WORDS, t, tskIDLE_PRIORITY + 2, &t->task) != pdPASS) {
         if (t->done != NULL) {
             vSemaphoreDelete(t->done);
         }
@@ -47,6 +48,11 @@ ucxapp_thread_t *ucxapp_thread_start(void (*fn)(void *), void *arg)
         return NULL;
     }
     return t;
+}
+
+bool ucxapp_thread_is_self(const ucxapp_thread_t *t)
+{
+    return t != NULL && xTaskGetCurrentTaskHandle() == t->task;
 }
 
 /* newlib's malloc is not thread-safe on its own; with a second task (web pump, TLS) it needs these hooks. */

@@ -329,6 +329,7 @@ class Network:
         self.servers = {int(k): v for k, v in (cfg.get("servers") or {}).items()}
         self.accept = {int(p) for p in cfg.get("accept") or []}
         # listening port -> requests; each is a client that connects, sends it and keeps what comes back in replies.
+        # A list is a request sent in parts, each arriving once the part before it was read.
         # A callable is a client that talks (tests only): client(None) gives its first bytes, client(data) its
         # answer to each write of the module, and it hangs up once client.closed is true (harness/tlsclient.py)
         self.requests = {int(k): list(v) for k, v in (cfg.get("requests") or {}).items()}
@@ -437,13 +438,18 @@ class Network:
             return [f"+USOSTB:{m[1]},{len(data)}", "OK"], self._avail(m[1])
         m = re.fullmatch(r"AT\+USOR(F?)B=(\d+),(\d+)", cmd)
         if m and int(m[2]) in self.socks:
-            rx, size = self.socks[int(m[2])]["rx"], int(m[3])
+            s = self.socks[int(m[2])]
+            rx, size = s["rx"], int(m[3])
             ip, port, chunk = rx.pop(0) if rx else ("0.0.0.0", 0, b"")
             if len(chunk) > size and not m[1]:
                 rx.insert(0, (ip, port, chunk[size:]))
             chunk = chunk[:size]
             text = f"+USORFB:{m[2]},{ip},{port}" if m[1] else f"+USORB:{m[2]}"
-            return [(text, chunk), "OK"], []
+            more = []
+            if not rx and s.get("later"):   # the next part of a request sent in parts arrives now
+                rx.append(("192.168.1.10", 50000, s["later"].pop(0)))
+                more = self._avail(m[2])
+            return [(text, chunk), "OK"], more
         m = re.fullmatch(r"AT\+USOCL=(\d+)", cmd)
         if m:
             s = self.socks.pop(int(m[1]), None)
@@ -455,7 +461,8 @@ class Network:
             port = int(m[2] or 0) or (self.socks[int(m[1])]["port"] if cmd.startswith("AT+USOL") else 0)
             self.socks[int(m[1])].update(port=port, status=3 if cmd.startswith("AT+USOL") else 1)
             if cmd.startswith("AT+USOL") and port in self.requests:
-                self.pending = [(req, m[1]) for req in self.requests[port]]
+                # the clients of every listener take their turn, in the order the listeners came
+                self.pending = getattr(self, "pending", []) + [(req, m[1]) for req in self.requests[port]]
                 return ["OK"], self._next_client(0.3)
             if cmd.startswith("AT+USOB") and self.socks[int(m[1])]["proto"] == 17 and port in self.peers:
                 self.peer = self.peers[port]
@@ -513,13 +520,20 @@ class Network:
         req, listener = self.pending.pop(0)
         n = self._new(6)
         talk = req if callable(req) else None
+        later = []
+        if isinstance(req, (list, tuple)):   # a request sent in parts: each arrives when the one before was read
+            req, *later = [p.encode() if isinstance(p, str) else bytes(p) for p in req]
         req = bytes(talk(None)) if talk else req.encode() if isinstance(req, str) else bytes(req)
-        self.socks[n].update(rx=[("192.168.1.10", 50000, req)], reply=bytearray())
+        self.socks[n].update(rx=[("192.168.1.10", 50000, req)] if req else [], reply=bytearray(), later=later)
         if talk:
             self.socks[n]["talk"] = talk
         self.replies.append(self.socks[n]["reply"])
         # the firmware's order (see ucxapp_urc.c): listening socket first, the new one last
-        return {"after": after, "lines": [f"+UESOIC:{listener},192.168.1.10,{n}", f"+UESODA:{n},{len(req)}"]}
+        lines = [f"+UESOIC:{listener},192.168.1.10,{n}"] + ([f"+UESODA:{n},{len(req)}"] if req else [])
+        if getattr(talk, "idle", False):   # it stays connected and says nothing: the next client comes beside it
+            more = self._next_client(after)
+            lines += more["lines"] if more else []
+        return {"after": after, "lines": lines}
 
     def _avail(self, n):
         rx = self.socks[int(n)]["rx"]

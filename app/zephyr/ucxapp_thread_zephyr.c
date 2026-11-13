@@ -55,6 +55,11 @@ ucxapp_thread_t *ucxapp_thread_start(void (*fn)(void *), void *arg)
     return t;
 }
 
+bool ucxapp_thread_is_self(const ucxapp_thread_t *t)
+{
+    return t != NULL && k_current_get() == &t->thread;
+}
+
 void ucxapp_thread_join(ucxapp_thread_t *t)
 {
     if (t == NULL) {

@@ -21,8 +21,9 @@ def _post(path, body, token=True):
     return f"POST {path} HTTP/1.1\r\nHost: m\r\n{auth}Content-Length: {len(body)}\r\n\r\n{body}"
 
 
-def _serve(app_exe, tmp_path, requests, wait_s=20):
-    """Starts web.start 8080 <token>; the clients connect as it listens. Returns (stdout, replies as text)."""
+def _serve(app_exe, tmp_path, requests, wait_s=20, then=()):
+    """Starts web.start 8080 <token>; the clients connect as it listens. `then`: commands typed in the app once
+    every client has its answer. Returns (stdout, replies as text)."""
     pytest.importorskip("yaml")
     from harness.vucx import Vucx, load
 
@@ -43,7 +44,7 @@ def _serve(app_exe, tmp_path, requests, wait_s=20):
                 time.sleep(0.3)        # let the bodies finish
                 break
             time.sleep(0.05)
-        proc.stdin.write("web.status\nweb.stop\nweb.status\n")
+        proc.stdin.write("".join(c + "\n" for c in then) + "web.status\nweb.stop\nweb.status\n")
         proc.stdin.close()
         out = proc.stdout.read()
         proc.wait(timeout=20)
@@ -142,6 +143,150 @@ def test_web_upload_and_download_a_file(app_exe, tmp_path):
     assert "404" in status[5], status
     assert "400" in status[6] and "409" in status[7], status
     assert "200" not in status[9], status
+
+
+def test_a_body_that_did_not_arrive_whole_is_refused_not_stored(app_exe, tmp_path):
+    """The request buffer takes 2 KB: a larger upload slice arrives cut off. Storing what came and answering ok
+    would leave a damaged file that looks uploaded."""
+    whole = _post("/api/upload?n=big.bin&o=0&e=1", "x" * 3000)
+    big = [whole[:1200], whole[1200:2400], whole[2400:]]   # as the network delivers it: in segments
+    negative = _post("/api/upload?n=neg.bin&o=0&e=1", "hello").replace("Content-Length: 5", "Content-Length: -5")
+    words = _post("/api/upload?n=abc.bin&o=0&e=1", "hello").replace("Content-Length: 5", "Content-Length: lots")
+    _, replies = _serve(app_exe, tmp_path, [big, negative, words, _post("/api/upload?n=ok.bin&o=0&e=1", "hello")])
+    status = [r.split("\r\n", 1)[0] for r in replies]
+    assert "413" in status[0] and "request too large" in replies[0], replies[0][:300]
+    assert "400" in status[1] and "400" in status[2] and "bad Content-Length" in replies[1], status
+    assert "200" in status[3], status
+    stored = sorted(p.name for p in (tmp_path / "storage").iterdir())
+    assert "ok.bin" in stored and not {"big.bin", "neg.bin", "abc.bin"} & set(stored), stored
+
+
+class _Silent:
+    """A connection that is opened and then left alone, as a browser's spare connection is."""
+    idle = True      # the next client connects beside it
+    closed = False
+
+    def __call__(self, data):
+        return b""
+
+
+def test_the_event_stream_goes_to_the_connection_that_asked_for_it(app_exe, tmp_path):
+    """Another connection that is open when the page asks for /events, with no request and no token, must not get
+    the stream (the commands' output, the node's setup codes) instead of the page or beside it."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {8080: [_Silent(), _get("/events")]}
+    module = Vucx(profile)
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path)
+
+    def stream(i):
+        return bytes(module.net.replies[i]) if len(module.net.replies) > i else b""
+
+    def until(check, timeout=20):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and not check():
+            time.sleep(0.05)
+        return check()
+
+    try:
+        proc.stdin.write(f"web.start 8080 {TOKEN} http\n")
+        proc.stdin.flush()
+        assert until(lambda: b"event: connected" in stream(1)), (stream(1), module.log[-20:])
+        proc.stdin.write("app.version\n")
+        proc.stdin.flush()
+        assert until(lambda: b"event: out" in stream(1) and b"u-connectXpressApp " in stream(1)), stream(1)[-600:]
+        assert stream(0) == b"", stream(0)[:300]
+        proc.stdin.write("web.stop\n")
+        proc.stdin.close()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+
+
+def test_a_client_that_keeps_its_connection_is_closed_after_the_answer(app_exe, tmp_path):
+    """The module has six sockets. A client that does not hang up after its answer would keep one for good."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    class Stays:
+        closed = False
+
+        def __call__(self, data):
+            return _get("/api/version").encode() if data is None else b""
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {8080: [Stays()]}
+    module = Vucx(profile)
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path)
+    try:
+        proc.stdin.write(f"web.start 8080 {TOKEN} http\n")
+        proc.stdin.flush()
+        end = time.monotonic() + 20
+        while time.monotonic() < end and not any(c.startswith("AT+USOCL=") for c in module.log):
+            time.sleep(0.05)
+        closed = [c for c in module.log if c.startswith("AT+USOCL=")]
+        answer = bytes(module.net.replies[0]) if module.net.replies else b""
+        proc.stdin.write("web.stop\n")
+        proc.stdin.close()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert b"HTTP/1.1 200" in answer and b'{"v":"u-connectXpressApp ' in answer, answer[:300]
+    assert closed, "the server never closed the connection it had answered"
+
+
+def test_connections_to_another_listener_are_not_the_web_servers(app_exe, tmp_path):
+    """Every incoming connection is told to the web server too. One to another listener (sock.listen, a bridge) is
+    not a page: taken as one, the server reads what the client sent before its owner does."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {9000: ["hello from a client\n"]}
+    module = Vucx(profile)
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path)
+    try:
+        proc.stdin.write(f"web.start 8080 {TOKEN} http\nsock.open tcp\nsock.listen 9000\n")
+        proc.stdin.flush()
+        end = time.monotonic() + 20
+        while time.monotonic() < end and not module.net.replies:
+            time.sleep(0.05)
+        assert module.net.replies, module.log[-20:]
+        time.sleep(1.0)   # many rounds of the web server's loop
+        reads = [c for c in module.log if c.startswith("AT+USORB=")]
+        proc.stdin.write("sock.read 2 100 1\nweb.stop\n")   # 0 the page's listener, 1 ours, 2 its client
+        proc.stdin.close()
+        out = proc.stdout.read()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert not reads, f"read by the web server: {reads}"
+    assert "hello from a client" in out, out[-600:] + " | ".join(module.log[-15:])
+
+
+def test_the_page_cannot_take_away_the_module_or_the_server_it_is_served_by(app_exe, tmp_path):
+    """dev.disconnect and dev.use close the AT client the web server's thread is using; web.stop from a command
+    the page ran (an example) would stop the worker it runs on."""
+    reqs = [_post("/api/exec?cmd=dev.disconnect", ""), _get("/api/version"),
+            _post("/api/exec?cmd=examples%20web%202", ""), _get("/api/version")]
+    out, replies = _serve(app_exe, tmp_path, reqs, then=("dev.use tcp:127.0.0.1:1", "dev.disconnect"))
+    status = [r.split("\r\n", 1)[0] for r in replies]
+    assert all("200" in s for s in status), status   # both accepted, and the server still answers after each
+    assert out.count("ERROR: the web server runs on this module; web.stop first, then dev.disconnect") == 2, out
+    assert "ERROR: the web server runs on this module; web.stop first, then dev.use" in out, out
+    assert "ERROR: web.stop cannot run from the page it serves; run it in the app" in out, out
+    assert "web server: http port 8080" in out and "web server stopped" in out, out
 
 
 # ---- HTTPS: TLS clients behind the module (harness/tlsclient.py) do a real handshake with the app's server --------

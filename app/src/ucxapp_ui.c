@@ -536,6 +536,16 @@ void ucxapp_ui_release(void)
     U_CX_MUTEX_DELETE(gLock);
 }
 
+bool ucxapp_ui_on_worker(void)
+{
+    return gRefs > 0 && ucxapp_thread_is_self(gWorker);
+}
+
+bool ucxapp_ui_sole_on_worker(void)
+{
+    return gRefs == 1 && ucxapp_thread_is_self(gWorker);
+}
+
 /* ---- catalog ---------------------------------------------------------------- */
 
 /* The menu, in display order. Module groups (AT commands the NORA module executes) go from the device

@@ -116,7 +116,7 @@ def test_matter_setup_codes_come_only_from_the_random_generator():
             assert "20202021" not in text, source.name
         assert "36363636" not in text and "kFallback" not in text, source.name
     # without codes the node does not start, and it never advertises with another discriminator
-    assert "the Matter SDK made no setup codes" in (matter / "src" / "node.cpp").read_text(encoding="utf-8")
+    assert "the node has no setup codes" in (matter / "src" / "node.cpp").read_text(encoding="utf-8")
     config = (matter / "platform" / "ucxclient" / "ConfigurationManagerImpl.cpp").read_text(encoding="utf-8")
     assert "SetDeviceDiscriminator(config.discriminator)" not in config, "a stand-in discriminator"
     # the SDK's generator is seeded by the system; its build may not turn that off

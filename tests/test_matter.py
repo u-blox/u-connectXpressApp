@@ -387,7 +387,8 @@ def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_pa
         assert _until(lambda: "ERR unknown command 'hello'" in got() and "EP light = on\n" in got()), got()
         text = got()
         assert ("NODE stub on NORA-W36, 3 endpoint(s)\nSTATE not commissioned\nSTEP 2/6 fabric installed\n"
-                "TIME 5.0 s so far (steps at 1.2 5.0 s)\nEP light = off\nEP temp = 21.5\nEP contact = closed\nOK\n") in text, text
+                "TIME 5.0 s so far (steps at 1.2 5.0 s)\nEP light = off\nEP temp = 21.5\nEP contact = closed\nOK\n"
+                ) in text, text
         # the setup codes are on the card, for who holds the node: a bridge's far side never gets them
         assert "CODE" not in text and "QR" not in text and "MT:" not in text, text
         assert "ERR no endpoint oven\n" in text and "ERR usage: set <endpoint> <value...>\n" in text, text
@@ -606,3 +607,36 @@ def test_a_command_does_not_end_the_at_command_of_another_thread(app_exe, stub, 
         module.stop()
     assert "left an AT command open" not in out, out
     assert "u-connectXpressApp" in out, out
+
+
+def test_a_bridge_listening_beside_the_web_page_keeps_its_own_clients(app_exe, stub, tmp_path):
+    """Every incoming connection is told to the web server too. One to a bridge's port is the bridge's: the web
+    server reading it would take the client's lines away and answer them as HTTP."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    token = "0123456789abcdef0123456789abcdef"
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {8080: [f"GET /api/version HTTP/1.1\r\nHost: m\r\nX-Token: {token}\r\n\r\n"],
+                                      7540: ["get\n"]}
+    module = Vucx(profile)
+    proc = _shell(app_exe, module, stub, tmp_path)
+
+    def got(i):
+        return bytes(module.net.replies[i]).decode("latin-1") if len(module.net.replies) > i else ""
+
+    try:
+        proc.stdin.write(f"matter.start\nweb.start 8080 {token} http\n")
+        proc.stdin.flush()
+        assert _until(lambda: '{"v":"u-connectXpressApp ' in got(0)), (got(0), module.log[-20:])
+        proc.stdin.write("matter.bridge tcps\n")
+        proc.stdin.flush()
+        assert _until(lambda: "EP light = off\n" in got(1) and got(1).endswith("OK\n")), (got(1), module.log[-20:])
+        assert "HTTP/1.1" not in got(1), got(1)
+        proc.stdin.write("matter.bridge off\nweb.stop\n")
+        proc.stdin.close()
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()

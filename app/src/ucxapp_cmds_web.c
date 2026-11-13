@@ -389,10 +389,13 @@ static void pumpLoop(void *arg)
         while (!gStop && popEvent(&e)) {
             switch (e.type) {
             case EVT_INCOMING: {
-                /* Accept either handle order in +UESOIC (see sockIncomingUrc in ucxapp_urc.c). */
+                /* Accept either handle order in +UESOIC (see sockIncomingUrc in ucxapp_urc.c). A connection to
+                 * another listener (a bridge, sock.listen) is not the page's: taking it would read its data. */
                 int32_t listen = uWebServerGetListenSocket(gServer);
-                int32_t client = (e.sock == listen) ? e.n : e.sock;
-                uWebServerHandleIncomingConnection(gServer, gApp->ucx, client, NULL, listen);
+                if (e.sock == listen || e.n == listen) {
+                    uWebServerHandleIncomingConnection(gServer, gApp->ucx, e.sock == listen ? e.n : e.sock, NULL,
+                                                       listen);
+                }
                 break;
             }
             case EVT_DATA:
@@ -1394,6 +1397,11 @@ static int cmdWebStop(ucxapp_t *app, int argc, char *argv[])
     (void)argv;
     if (gServer == NULL) {
         return UCXAPP_OK;
+    }
+    if (ucxapp_ui_sole_on_worker()) {
+        /* reached through a command the page ran (an example, a script): stopping would end the worker this runs on */
+        ucxapp_print("ERROR: web.stop cannot run from the page it serves; run it in the app\n");
+        return UCXAPP_ERR_FAILED;
     }
     webStop();
     ucxapp_print("web server stopped\n");

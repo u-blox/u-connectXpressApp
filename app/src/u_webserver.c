@@ -104,6 +104,7 @@ struct uWebServer {
     bool running;                                  /**< Server running */
     
     uWebServerClient_t clients[U_WEBSERVER_MAX_CLIENTS];  /**< Client connections */
+    uWebServerClient_t *handling;                  /**< The client whose request a route handler is answering */
     uRoute_t routes[U_WEBSERVER_MAX_ROUTES];               /**< Route handlers */
     int32_t route_count;                           /**< Number of routes */
     ucxapp_tls_server_t *tls;                      /**< HTTPS configuration, NULL for HTTP */
@@ -185,17 +186,12 @@ static bool parse_request(const char *raw, int32_t raw_len, uHttpRequest_t *requ
 }
 
 /**
- * True once the headers and the Content-Length body have arrived, or the buffer is full.
+ * Content-Length of the request whose headers end at end: 0 when it has none, -1 when it is no number.
  */
-static bool request_ready(const char *raw, int32_t raw_len)
+static int32_t content_length(const char *raw, const char *end)
 {
     static const char kLen[] = "content-length:";
-    const char *end = strstr(raw, "\r\n\r\n");
-    long body = 0;
 
-    if (end == NULL) {
-        return false;
-    }
     for (const char *p = raw; p < end; p++) {
         if (p != raw && p[-1] != '\n') {
             continue;
@@ -205,11 +201,27 @@ static bool request_ready(const char *raw, int32_t raw_len)
             i++;
         }
         if (kLen[i] == '\0') {
-            body = strtol(p + i, NULL, 10);
-            break;
+            char *stop = NULL;
+            long long body = strtoll(p + i, &stop, 10);
+            return stop == p + i || body < 0 || body > INT32_MAX ? -1 : (int32_t)body;
         }
     }
-    return raw_len >= (int32_t)(end - raw) + 4 + body || raw_len >= U_WEBSERVER_MAX_REQUEST_SIZE - 1;
+    return 0;
+}
+
+/**
+ * True once the headers and the Content-Length body have arrived, or the buffer is full.
+ */
+static bool request_ready(const char *raw, int32_t raw_len)
+{
+    const char *end = strstr(raw, "\r\n\r\n");
+    int32_t body;
+
+    if (end == NULL) {
+        return false;
+    }
+    body = content_length(raw, end);
+    return body < 0 || raw_len - ((int32_t)(end - raw) + 4) >= body || raw_len >= U_WEBSERVER_MAX_REQUEST_SIZE - 1;
 }
 
 /**
@@ -354,8 +366,9 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     int32_t remaining = client->tx_total - client->tx_offset;
     if (remaining <= 0) {
         // Already fully sent \u2014 finalize.
+        bool close = client->tx_close_when_done;   /* the release clears it */
         client_release_tx_buffer(client);
-        if (client->tx_close_when_done) {
+        if (close) {
             client_close_later(client);
         }
         return 0;
@@ -414,8 +427,9 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     // If this was the last chunk, finalize on this call so the next
     // Process() doesn't have to spin once more just to mark for close.
     if (client->tx_offset >= client->tx_total) {
+        bool close = client->tx_close_when_done;   /* the release clears it */
         client_release_tx_buffer(client);
-        if (client->tx_close_when_done) {
+        if (close) {
             client_close_later(client);
         }
     }
@@ -442,12 +456,23 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
                   request.method == 1 ? "GET" : request.method == 2 ? "POST" : "?", 
                   request.path);
     
-    if (parsed) {
+    /* A body that is not all here (it did not fit the request buffer) or has no length a handler can trust is
+     * refused: a handler that stored the part that came would call a cut-off upload done. */
+    const char *head_end = strstr(client->rx_buffer, "\r\n\r\n");
+    int32_t declared = head_end != NULL ? content_length(client->rx_buffer, head_end) : 0;
+
+    if (parsed && declared < 0) {
+        uWebServerSendError(&response, 400, "bad Content-Length");
+    } else if (parsed && declared > request.body_length) {
+        uWebServerSendError(&response, 413, "request too large");
+    } else if (parsed) {
         // Find route handler
         uRoute_t *route = find_route(server, request.method, request.path);
         if (route) {
             // Call handler
+            server->handling = client;
             route->handler(&request, &response, route->user_data);
+            server->handling = NULL;
         } else {
             U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Route not found: %s", request.path);
         }
@@ -1029,17 +1054,13 @@ uSseClient_t uWebServerRegisterSSE(uWebServer_t *server, const uHttpRequest_t *r
     response->body = g_sse_initial_event;
     response->body_length = (int32_t)strlen(g_sse_initial_event);
     
-    // Find which client slot this is and MARK AS SSE NOW
-    // (so is_sse is true before the handler returns)
-    for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
-        if (server->clients[i].active && !server->clients[i].is_sse) {
-            // Mark as SSE immediately so count is correct
-            server->clients[i].is_sse = true;
-            return i;
-        }
+    // The connection that asked becomes the event stream, marked now so is_sse is true before the handler
+    // returns. Never another connection that happens to be open (a browser's spare one, or a stranger's).
+    if (server->handling == NULL) {
+        return -2;
     }
-    
-    return -2;  // No active client found
+    server->handling->is_sse = true;
+    return (uSseClient_t)(server->handling - server->clients);
 }
 
 int32_t uWebServerSendSSEEvent(uWebServer_t *server, uSseClient_t client, const char *event_name, const char *data)

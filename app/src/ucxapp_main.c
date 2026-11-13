@@ -145,10 +145,23 @@ static int cmdDeviceConnect(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* The page is served through the module: taking the module away under the web server leaves its thread with an
+   AT client that is gone. */
+static bool webNeedsModule(const char *name)
+{
+    if (!ucxapp_web_running()) {
+        return false;
+    }
+    ucxapp_print("ERROR: the web server runs on this module; web.stop first, then %s\n", name);
+    return true;
+}
+
 static int cmdDeviceDisconnect(ucxapp_t *app, int argc, char *argv[])
 {
     (void)argc;
-    (void)argv;
+    if (webNeedsModule(argv[0])) {
+        return UCXAPP_ERR_FAILED;
+    }
     app->ucx = NULL;
     disconnectModule();
     return UCXAPP_OK;
@@ -165,6 +178,9 @@ static int cmdDeviceUse(ucxapp_t *app, int argc, char *argv[])
     if (gConnected && strcmp(gPortName, argv[1]) == 0) {
         ucxapp_print("%s is already the active module\n", argv[1]);
         return UCXAPP_OK;
+    }
+    if (webNeedsModule(argv[0])) {
+        return UCXAPP_ERR_FAILED;
     }
     snprintf(previous, sizeof(previous), "%s", gConnected ? gPortName : "");
     app->ucx = NULL;

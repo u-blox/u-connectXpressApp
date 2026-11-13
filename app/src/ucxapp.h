@@ -93,6 +93,8 @@ void ucxapp_adopt_connections(uCxHandle_t *ucx);
 void ucxapp_udp_reset_limit(void);   /* forget the UDP read limit learned from the previous module */
 /* Tick of the last +STARTUP; *exact is false when none was seen and the time is the connect time instead. */
 uint32_t ucxapp_module_boot_ms(bool *exact);
+/* True (once) when a +STARTUP came since the session settings were last set: the module has echo on again. */
+bool ucxapp_session_lost_take(void);
 /* Last +UEMDCD (NORA-W36 3.5.0+): the module renamed its mDNS hostname (type 0) or a service instance (type 1)
    after a name conflict; false when none was seen since start. */
 bool ucxapp_mdns_conflict(int32_t *type, const char **previous, const char **renamed);

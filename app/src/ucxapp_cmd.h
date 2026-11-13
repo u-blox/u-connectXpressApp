@@ -253,6 +253,8 @@ const char *ucxapp_web_local_poll(void);
 void ucxapp_register_usecase_cmds(void);    /* usecase.* fit checks (ucxapp_cmds_usecase.c) */
 void ucxapp_register_examples_cmds(void);   /* <group>.example and examples [group]; register last */
 
+/* The session settings a restart clears: echo off, extended error codes. false when the module did not take them. */
+bool ucxapp_session_restore(ucxapp_t *app);
 /* Reboots the module and restores the session settings (dev.reboot). */
 bool ucxapp_module_reboot(ucxapp_t *app);
 bool ucxapp_module_factory_reset(ucxapp_t *app);   /* AT+USYFR, AT&W, reboot */

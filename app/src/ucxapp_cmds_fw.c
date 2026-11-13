@@ -169,12 +169,7 @@ static int cmdFwFlash(ucxapp_t *app, int argc, char *argv[])
     if (rc == UCXAPP_OK && !ucxapp_events_wait(URC_FLAG_STARTUP, FW_STARTUP_WAIT_S)) {
         ucxapp_print("warning: no +STARTUP received, continuing\n");
     }
-    if (uCxSystemSetEchoOff(app->ucx) != 0) {
-        ucxapp_print("warning: could not disable echo\n");
-    }
-    if (uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON) != 0) {
-        ucxapp_print("warning: could not enable extended error codes\n");
-    }
+    (void)ucxapp_session_restore(app);
     showVersion(app);
     return rc;
 }

@@ -1099,6 +1099,11 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         return UCXAPP_ERR_UNSUPPORTED;
     }
 
+    if ((cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) && ucxapp_session_lost_take()) {
+        ucxapp_print("module restarted (+STARTUP): echo off and extended error codes set again\n");
+        (void)ucxapp_session_restore(app);
+    }
+
     int result;
     char *typed[UCXAPP_MAX_ARGS];
     int typedCount = argc;

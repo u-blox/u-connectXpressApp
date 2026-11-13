@@ -44,7 +44,16 @@ static void evt(const char *fmt, ...)
 
 static uint32_t gBootMs;
 static bool gBootSeen;
+static volatile bool gSessionLost;
 static volatile bool gMqttUp;
+
+bool ucxapp_session_lost_take(void)
+{
+    bool lost = gSessionLost;
+
+    gSessionLost = false;
+    return lost;
+}
 
 bool ucxapp_mqtt_up(void)
 {
@@ -97,6 +106,7 @@ static void startupUrc(struct uCxHandle *h)
     (void)h;
     gBootMs = ucxapp_platform_tick_ms();
     gBootSeen = true;
+    gSessionLost = true;   /* echo is on again; restored before the next command (no AT on the URC thread) */
     gMqttUp = false;
     ucxapp_sock_set_leftovers(0);   /* a reboot closed every socket */
     evt("device: startup");
@@ -323,6 +333,7 @@ void ucxapp_urc_register(uCxHandle_t *ucx)
 {
     gBootMs = ucxapp_platform_tick_ms();
     gBootSeen = false;
+    gSessionLost = false;
     gPower = UCXAPP_POWER_ACTIVE;
     gPowerSaveLevel = false;
     ucx->callbacks.STARTUP = startupUrc;

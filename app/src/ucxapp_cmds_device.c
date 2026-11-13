@@ -213,12 +213,23 @@ static void waitStartup(ucxapp_t *app)
         ucxapp_print("warning: no +STARTUP received\n");
     }
     U_CX_PORT_SLEEP_MS(200);
+    (void)ucxapp_session_restore(app);
+}
+
+bool ucxapp_session_restore(ucxapp_t *app)
+{
+    bool ok = true;
+
+    (void)ucxapp_session_lost_take();
     if (uCxSystemSetEchoOff(app->ucx) != 0) {
         ucxapp_print("warning: could not disable echo\n");
+        ok = false;
     }
     if (uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON) != 0) {
         ucxapp_print("warning: could not enable extended error codes\n");
+        ok = false;
     }
+    return ok;
 }
 
 bool ucxapp_module_reboot(ucxapp_t *app)
@@ -640,6 +651,7 @@ static int cmdDevicePower(ucxapp_t *app, int argc, char *argv[])
         ucxapp_platform_pulse_dtr(app->ucx->pAtClient->uartHandle);
         U_CX_PORT_SLEEP_MS(200);
         uCxAtClientSetCommandTimeout(app->ucx->pAtClient, POWER_WAKE_TIMEOUT_MS, false);
+        (void)ucxapp_session_lost_take();
         bool answers = uCxSystemSetEchoOff(app->ucx) == 0;
         uCxSystemSetExtendedError(app->ucx, U_SYS_EXTENDED_ERRORS_ON);
         if (started) {

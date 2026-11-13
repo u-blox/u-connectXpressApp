@@ -72,6 +72,16 @@ def test_reboot_waits_for_startup_event(app_exe, vucx):
     out = _run(app_exe, vucx.port, "dev.reboot")
     assert "AT+CPWROFF" in vucx.log, vucx.log
     assert "module rebooted" in out.stdout, out.stdout
+    assert "module restarted (+STARTUP)" not in out.stdout, out.stdout   # dev.reboot restores the settings itself
+
+
+def test_a_restart_the_app_did_not_ask_for_gets_echo_off_again(app_exe, vucx):
+    """A +STARTUP (reset button, watchdog, a raw AT+CPWROFF) puts echo back on: the next command turns it off."""
+    out = _run(app_exe, vucx.port, "at AT+CPWROFF", "dev.info", "dev.info")
+    assert out.returncode == 0, out.stdout
+    after = vucx.log[vucx.log.index("AT+CPWROFF"):]
+    assert "ATE0" in after and "AT+USYEE=1" in after, vucx.log
+    assert out.stdout.count("module restarted (+STARTUP)") == 1, out.stdout
 
 
 def test_dev_crash_shows_the_stored_record(app_exe, vucx):

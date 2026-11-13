@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux, STM32 (FreeRTOS and Zephyr) and the
-browser app, sign the Windows exe and publish one archive with the layout windows/, linux/,
-stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/ (every part is required).
+browser app, sign the Windows exe and Matter plug-in and publish one archive with the layout windows/, linux/,
+stm32/stm32_<board>/, zephyr/zephyr_<board>/ and wasm/ (every part is required, each host build with its Matter
+plug-in and the browser app with the Matter node).
 
 1. Checks the work tree is clean, on master and in sync with origin.
 2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards on FreeRTOS
    and Zephyr, WebAssembly, offline tests) and commits the refreshed memory tables in README.md and
    docs/STM32_MEMORY.md.
-3. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
+3. Builds the Windows Release exe and signs it and ucxmatter.dll (the EV certificate is only available locally).
 4. Tags and pushes; .github/workflows/release.yml builds Linux, STM32, Zephyr and WebAssembly into the
    `release-tree` artifact.
-5. Downloads that tree, adds windows/ucxapp.exe and creates the release with
-   ucxapp-<tag>.zip plus ucxapp.exe, ucxapp (Linux) and ucxapp-wasm-<tag>.zip as direct downloads.
+5. Downloads that tree, adds windows/ and creates the release with ucxapp-<tag>.zip plus ucxapp.exe,
+   ucxmatter.dll, ucxapp and libucxmatter.so (Linux) and ucxapp-wasm-<tag>.zip as direct downloads.
 
 X.Y.Z is U_CX_VERSION_MAJOR/MINOR/PATCH in u_cx_version.h (the same header app/CMakeLists.txt reads), YYMMDD is today.
 
@@ -86,21 +87,26 @@ def build_and_sign(thumbprint, tree):
     run("cmake", "-S", "app", "-B", "build/windows", "-A", "x64")
     run("cmake", "--build", "build/windows", "--config", "Release", "--target", "ucxapp", "--clean-first")
     built = ROOT / "app" / "bin" / "ucxapp.exe"
+    plugin = ROOT / "app" / "bin" / "ucxmatter.dll"   # built by --everything, with GCC
     if not built.exists():
         fail(f"{built} not found")
+    if not plugin.exists():
+        fail(f"{plugin} not found: the release ships the Matter plug-in (install MSYS2 GCC, "
+             "then ucxapp --matter --build)")
 
     step("Signing")
     folder = tree / "windows"
     folder.mkdir(parents=True)
-    exe = folder / "ucxapp.exe"
-    shutil.copy2(built, exe)
-    run(signtool, "sign", "/sha1", thumbprint, "/tr", "http://timestamp.digicert.com",
-        "/td", "sha256", "/fd", "sha256", exe)
-    run(signtool, "verify", "/pa", exe)
-    digest = hashlib.sha256(exe.read_bytes()).hexdigest()
-    Path(f"{exe}.sha256").write_text(f"{digest}  {exe.name}\n", encoding="ascii")
-    print(f"SHA-256: {digest}")
-    return exe
+    for src in (plugin, built):
+        signed = folder / src.name
+        shutil.copy2(src, signed)
+        run(signtool, "sign", "/sha1", thumbprint, "/tr", "http://timestamp.digicert.com",
+            "/td", "sha256", "/fd", "sha256", signed)
+        run(signtool, "verify", "/pa", signed)
+        digest = hashlib.sha256(signed.read_bytes()).hexdigest()
+        Path(f"{signed}.sha256").write_text(f"{digest}  {signed.name}\n", encoding="ascii")
+        print(f"SHA-256: {digest}  {signed.name}")
+    return folder / built.name
 
 
 def wait_for_run(tag, minutes):
@@ -125,11 +131,14 @@ def package(tree, archive, root=None):
     if root is None:
         missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
         missing += [f"zephyr_{b}" for b in ZEPHYR_BOARDS if not (tree / "zephyr" / f"zephyr_{b}").is_dir()]
-        for f in ("windows/ucxapp.exe", "linux/ucxapp", "linux/libucxmatter.so", "wasm/ucxapp.wasm"):
+        for f in ("windows/ucxapp.exe", "windows/ucxmatter.dll", "linux/ucxapp", "linux/libucxmatter.so",
+                  "wasm/ucxapp.wasm"):
             if not (tree / f).is_file():
                 missing.append(f)
         if missing:
             fail(f"release tree incomplete: {missing}")
+        if b"Matter SDK " not in (tree / "wasm" / "ucxapp.wasm").read_bytes():
+            fail("release tree incomplete: the browser app has no Matter node")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted((root or tree).rglob("*")):
             if f.is_file():
@@ -208,7 +217,8 @@ def finish(args, tag, tree, exe):
     run("gh", "run", "download", run_id, "--name", "release-tree", "--dir", tree)
     archive = dist / f"ucxapp-{tag}.zip"
     package(tree, archive)
-    assets = [archive, exe, tree / "linux" / "ucxapp"]
+    assets = [archive, exe, exe.with_name("ucxmatter.dll"), tree / "linux" / "ucxapp",
+              tree / "linux" / "libucxmatter.so"]
     web = dist / f"ucxapp-wasm-{tag}.zip"
     package(tree, web, tree / "wasm")
     assets.append(web)

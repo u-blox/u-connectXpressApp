@@ -2,12 +2,12 @@
 
 u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, in the browser, and as FreeRTOS or Zephyr firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY and NUCLEO-F103RB (lite) boards.
 
-- One launcher, `ucxapp.py`, for Windows, Linux (also WSL) and STM32
-- Hardware detection with `--detect`, including NORA modules, GNSS receiver and IMU
-- New command modules for the app, GNSS, IMU, cellular and hardware
-- Streaming and a terminal UI
-- Embedded web page for the module
-- STM32 board configurations in `app/boards/`
+- **Matter:** `matter.start` makes the module a Matter node (light, temperature and contact sensor). Scan the QR code in Apple Home, Google Home or Alexa; `matter.status` and the web page show how long the commissioning took, step by step. The plug-in ships with the app (`ucxmatter.dll`, `libucxmatter.so`) and is built into the browser app
+- **In the browser:** the whole app as WebAssembly with the module over Web Serial, installable and usable offline
+- **Secure by default:** private keys and passwords sealed with AES-256-GCM, the web UI over HTTPS with a random token
+- **Phone as a test peer:** `xplorer.*` and `perf.phone` drive u-connectXplorer on a phone (echo server, BLE central, throughput)
+- One launcher, `ucxapp.py`, for Windows, Linux (also WSL), STM32 and the browser; `--detect` finds modules, GNSS receivers, IMUs, modems and the PPK2
+- Bridges for GNSS, IMU, CAN, cellular and UART over TCP, TLS, UDP and BLE
 
 ## Downloads
 
@@ -15,7 +15,9 @@ u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, N
 
 ```
 windows/ucxapp.exe            signed; run it with the module's COM port
+windows/ucxmatter.dll         signed; the Matter plug-in, keep it next to ucxapp.exe
 linux/ucxapp                  run it with the serial port, e.g. /dev/ttyUSB0
+linux/libucxmatter.so         the Matter plug-in, keep it next to ucxapp
 stm32/stm32_h753/             .bin/.hex/.elf; flash with STM32CubeProgrammer at 0x08000000
 stm32/stm32_f767/
 stm32/stm32_f439/
@@ -24,10 +26,10 @@ stm32/stm32_f401/
 stm32/stm32_f446/
 stm32/stm32_f103/             lite build
 zephyr/zephyr_<board>/        the same boards on Zephyr (ucxapp_zephyr.bin/.hex/.elf), flashed the same way
-wasm/                         the app in the browser (WebAssembly + Web Serial), see below
+wasm/                         the app in the browser (WebAssembly + Web Serial, Matter node built in), see below
 ```
 
-`ucxapp.exe` (Windows, signed), `ucxapp` (Linux x64) and `ucxapp-wasm-<version>.zip` (the browser app) are also attached on their own.
+`ucxapp.exe` and `ucxmatter.dll` (Windows, signed), `ucxapp` and `libucxmatter.so` (Linux x64) and `ucxapp-wasm-<version>.zip` (the browser app) are also attached on their own.
 
 ## The app in the browser
 

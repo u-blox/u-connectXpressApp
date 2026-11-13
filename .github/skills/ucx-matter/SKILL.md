@@ -56,4 +56,4 @@ the rules, the SDK patches and the tests are in the [ucx-matter-plugin](../ucx-m
   `master` already has the binary-URC signature for `NORA-B26X-THREAD`; the W36X/MERGED variants do not.
 - Module behaviour and AT commands: the `u-blox-docs` MCP server (`.mcp.json`).
 - Matter console keys ('x' XMODEM, 'u' AT log, 'c' commissioning window, 'w' web, '!' factory reset) map to
-  ucxapp `fw.flash`, `app.log.at.on`/`at.trace`, a future `matter.commission`, `web.start`, `dev.factory`.
+  ucxapp `fw.flash`, `app.log.at.on`/`at.trace`, `matter.open`, `web.start`, `dev.factory`.

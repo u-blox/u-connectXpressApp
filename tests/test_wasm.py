@@ -531,9 +531,9 @@ def test_first_visit_on_a_host_without_headers_isolates_itself():
 
 
 def test_matter_node_is_built_in(site):
-    """ucxapp --wasm --matter links the Matter node into the app: a browser loads no plug-in file."""
+    """ucxapp --wasm links the Matter node into the app: a browser loads no plug-in file."""
     if b"Matter SDK " not in (SITE / "ucxapp.wasm").read_bytes():
-        pytest.skip("the browser build has no Matter node (ucxapp --wasm --matter --build)")
+        pytest.skip("the browser build was made without the Matter node (--no-matter)")
     sync_api = pytest.importorskip("playwright.sync_api")
     with sync_api.sync_playwright() as p:
         try:

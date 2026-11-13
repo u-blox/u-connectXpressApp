@@ -145,17 +145,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Init u-connectClient (not its nested submodules)
+      - name: Init u-connectClient and mbedTLS (not the Matter SDK, the launcher fetches it)
         run: |
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
       - uses: emscripten-core/setup-emsdk@v16
-      - name: Build
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++
+      - name: gn key (the commit ucxapp.py builds gn from)
+        id: gn
+        run: echo "commit=$(sed -n 's/^GN_COMMIT = \"\(.*\)\"/\1/p' ucxapp.py)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: build/gn
+          key: gn-${{ runner.os }}-${{ steps.gn.outputs.commit }}
+      - name: Build the browser app with the Matter node
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-          emcmake cmake -S app -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/wasm
+          python ucxapp.py --wasm --build
+          grep -qa "Matter SDK " build/wasm/site/ucxapp.wasm
       - name: Package
         run: |
           mkdir -p pkg

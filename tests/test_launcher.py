@@ -140,12 +140,96 @@ def test_publish_web_tests_then_commits_only_the_web_and_pushes_master(monkeypat
             ("remote", "get-url", "origin"): "https://github.com/U-Blox/u-connectXpressApp.git"}
     monkeypatch.setattr(ucxapp, "require", lambda *a: None)
     monkeypatch.setattr(ucxapp, "git_out", lambda *cmd: outs[cmd])
+    monkeypatch.setattr(ucxapp, "matter_wasm_build", lambda: steps.append("node"))
     monkeypatch.setattr(ucxapp, "wasm_build", lambda: steps.append("build"))
     monkeypatch.setattr(ucxapp, "check", lambda cmd, what, **kw: steps.append(what))
     monkeypatch.setattr(ucxapp.subprocess, "call", lambda cmd, **kw: 1)  # staged web changes
     assert ucxapp.main(["--publish-web", "new look"]) == 0
-    assert steps == ["build", "web tests", "git add", "git commit", "git push"]
+    assert steps == ["node", "build", "web tests", "git add", "git commit", "git push"]
     assert "https://u-blox.github.io/u-connectXpressApp/" in capsys.readouterr().out
+
+
+def _matter_default(monkeypatch, tmp_path, gcc=True, plugin_age=None, build=None):
+    """The launcher with its builds replaced by a list of what it would build; the plug-in file is plugin_age
+    seconds older than its sources (None: not built yet)."""
+    steps = []
+    plugin = tmp_path / "ucxmatter.dll"
+    if plugin_age is not None:
+        plugin.write_text("x")
+        os.utime(plugin, (5000 - plugin_age, 5000 - plugin_age))
+    monkeypatch.delenv("UCX_APP_EXE", raising=False)
+    monkeypatch.setattr(ucxapp, "host_build", lambda configs, fresh=False: steps.append("app"))
+    monkeypatch.setattr(ucxapp, "matter_build", build or (lambda keylog=False: steps.append("plug-in")))
+    monkeypatch.setattr(ucxapp, "matter_gcc", lambda: gcc)
+    monkeypatch.setattr(ucxapp, "matter_plugin", lambda: plugin)
+    monkeypatch.setattr(ucxapp, "matter_sources", lambda: 5000)
+    monkeypatch.setattr(ucxapp, "stale", lambda exe: False)
+    monkeypatch.setattr(ucxapp, "SIGNED", tmp_path / "none.exe")
+    monkeypatch.setattr(ucxapp, "run_app", lambda exe, extra: steps.append("start") or 0)
+    return steps
+
+
+@pytest.mark.parametrize("argv, built", [(["--build"], ["app", "plug-in"]), (["--rebuild"], ["app", "plug-in"]),
+                                         (["--build", "--no-matter"], ["app"])])
+def test_a_host_build_includes_the_matter_plugin(monkeypatch, tmp_path, argv, built):
+    steps = _matter_default(monkeypatch, tmp_path, plugin_age=0)   # an explicit build always brings it up to date
+    monkeypatch.setattr(ucxapp, "host_clean", lambda configs: None)
+    assert ucxapp.main(argv) == 0
+    assert steps == built
+
+
+def test_a_host_build_without_gcc_builds_the_app_and_says_what_matter_needs(monkeypatch, tmp_path, capsys):
+    steps = _matter_default(monkeypatch, tmp_path, gcc=False)
+    assert ucxapp.main(["--build"]) == 0
+    assert steps == ["app"]
+    assert "Matter plug-in not built: g++ not found" in capsys.readouterr().out
+
+
+def test_a_failing_plugin_build_fails_an_explicit_build(monkeypatch, tmp_path):
+    _matter_default(monkeypatch, tmp_path, build=lambda keylog=False: ucxapp.fail("ninja failed"))
+    with pytest.raises(SystemExit):
+        ucxapp.main(["--build"])
+
+
+@pytest.mark.parametrize("plugin_age, gcc, steps_expected", [
+    (0, True, ["start"]),                  # up to date: nothing to build
+    (10, True, ["plug-in", "start"]),      # its sources changed
+    (None, True, ["plug-in", "start"]),    # not built yet
+    (None, False, ["start"]),              # no GCC: the app starts, and says nothing on every start
+])
+def test_a_plain_start_builds_the_plugin_only_when_it_is_stale(monkeypatch, tmp_path, capsys, plugin_age, gcc,
+                                                               steps_expected):
+    steps = _matter_default(monkeypatch, tmp_path, gcc=gcc, plugin_age=plugin_age)
+    assert ucxapp.main(["COM1"]) == 0
+    assert steps == steps_expected
+    assert "not built" not in capsys.readouterr().out
+
+
+def test_a_plain_start_runs_the_app_when_the_plugin_does_not_build(monkeypatch, tmp_path, capsys):
+    steps = _matter_default(monkeypatch, tmp_path, build=lambda keylog=False: ucxapp.fail("ninja failed"))
+    assert ucxapp.main(["COM1"]) == 0
+    assert steps == ["start"]
+    assert "starting without it" in capsys.readouterr().out
+
+
+def test_the_tests_own_exe_is_never_built_for(monkeypatch, tmp_path):
+    steps = _matter_default(monkeypatch, tmp_path)
+    monkeypatch.setenv("UCX_APP_EXE", str(tmp_path / "ucxapp"))
+    assert ucxapp.main(["--build"]) == 0
+    assert steps == ["app"]
+
+
+@pytest.mark.parametrize("argv, built", [(["--wasm", "--build"], ["node", "site with node"]),
+                                         (["--wasm", "--build", "--no-matter"], ["site without node"])])
+def test_the_browser_build_includes_the_matter_node(monkeypatch, tmp_path, argv, built):
+    steps = []
+    lib = tmp_path / "libucxmatter.a"
+    monkeypatch.setattr(ucxapp, "WASM_DIR", tmp_path / "wasm")
+    monkeypatch.setattr(ucxapp, "MATTER_WASM_LIB", lib)
+    monkeypatch.setattr(ucxapp, "matter_wasm_build", lambda: steps.append("node") or lib.write_text("x"))
+    monkeypatch.setattr(ucxapp, "wasm_build", lambda node=True: steps.append(f"site with{'' if node else 'out'} node"))
+    assert ucxapp.main(argv) == 0
+    assert steps == built
 
 
 def test_publish_web_refuses_a_branch_pages_does_not_deploy(monkeypatch):

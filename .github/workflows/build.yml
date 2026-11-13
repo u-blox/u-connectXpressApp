@@ -54,7 +54,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           python -m pytest tests -m app -p no:cacheprovider -n auto
-          gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml --fail-under-line 74
+          gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml --fail-under-line 80
       - uses: actions/upload-artifact@v5
         with:
           name: c-coverage
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Init u-connectClient (not its nested submodules)
+      - name: Init u-connectClient and mbedTLS (not the Matter SDK, the launcher fetches it)
         run: |
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
@@ -123,24 +123,34 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Build the browser app (warnings are errors)
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++
+      - name: gn key (the commit ucxapp.py builds gn from)
+        id: gn
+        run: echo "commit=$(sed -n 's/^GN_COMMIT = \"\(.*\)\"/\1/p' ucxapp.py)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: build/gn
+          key: gn-${{ runner.os }}-${{ steps.gn.outputs.commit }}
+      - name: Build the browser app with the Matter node (warnings are errors)
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-          emcmake cmake -S app -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/wasm 2>&1 | tee wasm-build.txt
+          python ucxapp.py --wasm --build 2>&1 | tee wasm-build.txt
           test "${PIPESTATUS[0]}" -eq 0 || exit 1
           if grep -E "warning:" wasm-build.txt; then exit 1; fi
-      - name: Run it in Chromium (fake and virtual Web Serial), W3C check of the site page
+          grep -qa "Matter SDK " build/wasm/site/ucxapp.wasm
+      - name: Run it in Chromium (fake and virtual Web Serial, the Matter node), W3C check of the site page
         run: |
-          python -m pip install pytest playwright html5validator
+          python -m pip install pytest playwright html5validator pyyaml cryptography
           python -m playwright install --with-deps chromium
           python -m pytest tests/test_wasm.py "tests/test_webpage.py::test_page_passes_the_w3c_validator[wasm-site]"
       - uses: actions/upload-artifact@v5
         with:
           name: ucxapp-wasm
           path: build/wasm/site
+
+  # The Matter plug-in on Windows and Linux, with its tests: part of every build
+  matter:
+    uses: ./.github/workflows/matter.yml
 
   build-windows:
     runs-on: windows-latest

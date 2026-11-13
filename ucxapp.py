@@ -9,7 +9,7 @@ and STM32.
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
-  ucxapp --matter --build                   the Matter plug-in for matter.* (fetches the Matter SDK the first time)
+  ucxapp --matter --build                   only the Matter plug-in for matter.* (host and browser builds include it)
   ucxapp --publish-web "new look"          build and test the browser site, commit app/web + app/wasm, push (Pages)
   ucxapp --detect                           find NORA modules, GNSS receivers, IMUs, modems and PPK2
   ucxapp --detect --test tests/hardware   hardware tests on what was found
@@ -180,9 +180,12 @@ def parse(argv):
                    help="browser build: the app as WebAssembly, the module over Web Serial (emsdk: EMSDK, C:/emsdk "
                         "or ~/emsdk); build/wasm/site, served on 127.0.0.1:8098 unless only --build/--clean")
     g.add_argument("--matter", action="store_true",
-                   help="the Matter plug-in (ucxmatter) behind matter.*: fetches the Matter SDK on first use (about "
-                        "1.5 GB), builds it with gn, ninja and GCC (MinGW-w64 on Windows) in build/matter and puts it "
-                        "next to the app; then starts the app unless only --build/--clean")
+                   help="only the Matter plug-in (ucxmatter) behind matter.*: fetches the Matter SDK on first use "
+                        "(one commit, about 150 MB), builds it with gn, ninja and GCC (MinGW-w64 on Windows) in "
+                        "build/matter and puts it next to the app; then starts the app unless only --build/--clean. "
+                        "Host and --wasm builds include it without this option")
+    g.add_argument("--no-matter", action="store_true",
+                   help="host and --wasm builds without the Matter plug-in (they build it when GCC is found)")
     g.add_argument("--zap", action="store_true",
                    help="with --matter: regenerate the data model code in matter/data_model from ucxmatter.zap (after "
                         "editing it with the ZAP tool; ZAP_INSTALL_PATH or ../u-connectMatter/tools/zap-*)")
@@ -410,6 +413,7 @@ def pick_exe(args):
         return SIGNED
     if stale(exe):
         host_build([config])
+    matter_default(args, explicit=False)
     if use_signed and SIGNED.stat().st_mtime >= exe.stat().st_mtime:
         return SIGNED
     return exe
@@ -566,6 +570,15 @@ def sign(thumbprint):
     SIGNED.parent.mkdir(exist_ok=True)
     shutil.copy2(exe, SIGNED)
     print("Signed:", SIGNED.relative_to(ROOT))
+    plugin = matter_plugin()
+    if plugin.exists():
+        # the app loads the plug-in from its own folder: the signed exe gets a signed copy next to it
+        signed = SIGNED.parent / plugin.name
+        shutil.copy2(plugin, signed)
+        check([tool, "sign", "/sha1", thumbprint, "/tr", "http://timestamp.digicert.com", "/td", "sha256",
+               "/fd", "sha256", signed], "signing the Matter plug-in")
+        check([tool, "verify", "/pa", signed], "signature verification of the Matter plug-in")
+        print("Signed:", signed.relative_to(ROOT))
 
 
 def host(args, extra):
@@ -574,6 +587,7 @@ def host(args, extra):
         host_clean(configs if (args.debug or args.all or args.rebuild) else ["Debug", "Release"])
     if args.build or args.rebuild or args.all:
         host_build(configs, fresh=args.rebuild)
+        matter_default(args, explicit=True)
     if args.sign:
         sign(args.sign)
     if (args.build or args.clean or args.rebuild or args.all or args.sign) and not args.run:
@@ -1293,15 +1307,27 @@ def stm32_all(args):
     return build_many(args, {b: ["--stm32", "--board", b, *flags] for b in ACTIVE_BOARDS})
 
 
+def wsl_works():
+    """WSL is installed and a distribution starts: an installed WSL can still fail to start (a policy, a broken
+    virtual machine service), and every Linux step would then fail the same way."""
+    if not shutil.which("wsl"):
+        return False
+    try:
+        return subprocess.run(["wsl", "-e", "true"], capture_output=True, timeout=120).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def everything(args):
     flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild)) if on]
     if not flags:
         fail("--everything needs --build, --clean or --rebuild")
-    jobs = {"win": flags} if IS_WINDOWS else {}
-    jobs["linux"] = ["--linux", *flags]
-    if IS_WINDOWS and not args.linux_host and not shutil.which("wsl"):
+    host_flags = [*flags, *(["--no-matter"] if args.no_matter else [])]   # the builds with a Matter node
+    jobs = {"win": host_flags} if IS_WINDOWS else {}
+    jobs["linux"] = ["--linux", *host_flags]
+    if IS_WINDOWS and not args.linux_host and not wsl_works():
         del jobs["linux"]
-        print("WSL not found and no --linux-host, skipping the Linux build")
+        print("WSL not found or it does not start (wsl -e true) and no --linux-host, skipping the Linux build")
     stm32_tools()
     jobs.update({b: ["--stm32", "--board", b, *flags] for b in ACTIVE_BOARDS})
     if zephyr_available():
@@ -1309,9 +1335,15 @@ def everything(args):
     else:
         print("Zephyr workspace or west not found, skipping the Zephyr builds")
     if emsdk_env(required=False):
-        jobs["wasm"] = ["--wasm", *flags]
+        jobs["wasm"] = ["--wasm", *host_flags]
     else:
         print("Emscripten (emsdk) not found, skipping the optional WebAssembly build")
+    if (args.build or args.rebuild) and not args.no_matter and (matter_gcc() or "wasm" in jobs):
+        # the host, Linux and browser jobs each build a Matter node from one SDK checkout: fetch and patch it once,
+        # before they run side by side
+        matter_fetch()
+        matter_patch()
+        matter_python()
     rc = build_many(args, jobs)
     if args.clean and not (args.build or args.rebuild):
         return rc
@@ -1555,16 +1587,16 @@ def emsdk_env(required=True):
     return False
 
 
-def wasm_build():
+def wasm_build(node=True):
     emsdk_env()
     require("cmake", "Install CMake from https://cmake.org/download/")
     require("ninja", "Install Ninja (winget install Ninja-build.Ninja)")
-    # the Matter node is linked in when it has been built for the browser (--wasm --matter)
-    node = MATTER_WASM_LIB.as_posix() if MATTER_WASM_LIB.exists() else ""
+    # the Matter node is linked in (a browser loads no plug-in file); --no-matter leaves it out
+    lib = MATTER_WASM_LIB.as_posix() if node else ""
     check([shutil.which("emcmake"), "cmake", "-S", "app", "-B", WASM_DIR, "-G", "Ninja",
-           "-DCMAKE_BUILD_TYPE=Release", f"-DUCXAPP_MATTER_LIB={node}"], "emcmake")
+           "-DCMAKE_BUILD_TYPE=Release", f"-DUCXAPP_MATTER_LIB={lib}"], "emcmake")
     check(["cmake", "--build", WASM_DIR], "WebAssembly build")
-    print("Built", (WASM_DIR / "site").relative_to(ROOT), "with the Matter node" if node else "")
+    print("Built", (WASM_DIR / "site").relative_to(ROOT), "with the Matter node" if node else "without the Matter node")
 
 
 def wasm_server(site, port):
@@ -1597,6 +1629,10 @@ def wasm_serve(site, port):
     return 0
 
 
+def wasm_node_stale():
+    return not MATTER_WASM_LIB.exists() or MATTER_WASM_LIB.stat().st_mtime < matter_sources()
+
+
 def wasm(args, extra):
     if extra:
         fail(f"unknown --wasm argument(s): {' '.join(extra)}")
@@ -1607,15 +1643,17 @@ def wasm(args, extra):
         if args.matter:
             shutil.rmtree(MATTER_WASM, ignore_errors=True)
             print("Cleaned", MATTER_WASM.relative_to(ROOT))
-    if args.matter and (args.build or args.rebuild or not args.clean):
+    # the Matter node is part of the site (--no-matter builds without it): brought up to date by every build, and
+    # before a plain start when its sources changed
+    if not args.no_matter and (args.build or args.rebuild or (not args.clean and wasm_node_stale())):
         matter_wasm_build()
+    node = [] if args.no_matter or not MATTER_WASM_LIB.exists() else [MATTER_WASM_LIB]
     page = max(f.stat().st_mtime for f in [ROOT / "app" / "web" / "index.html", *(ROOT / "app" / "wasm").iterdir(),
-                                           *(ROOT / "app" / "web" / "public").iterdir(),
-                                           *([MATTER_WASM_LIB] if MATTER_WASM_LIB.exists() else [])])
+                                           *(ROOT / "app" / "web" / "public").iterdir(), *node])
     built = site / "ucxapp.wasm"
     if args.build or args.rebuild or (not args.clean and (not built.exists()
                                                          or max(newest_source(), page) > built.stat().st_mtime)):
-        wasm_build()
+        wasm_build(bool(node))
     if (args.build or args.clean or args.rebuild) and not args.run:
         return 0
     return wasm_serve(site, WASM_PORT)
@@ -1651,6 +1689,46 @@ GN_SOURCE = ROOT / "build" / "gn"
 
 def matter_plugin():
     return BIN / ("ucxmatter.dll" if IS_WINDOWS else "libucxmatter.so")
+
+
+def matter_sources():
+    """Newest change to what the plug-in is built from. Not the SDK: it is pinned, and patched from matter/patches."""
+    files = [ROOT / "app" / "src" / "ucxapp_matter.h"]
+    for sub in MATTER_DIR.iterdir():
+        if sub.name not in ("connectedhomeip", "tools"):
+            files += [sub] if sub.is_file() else [f for f in sub.rglob("*") if f.is_file()]
+    return max(f.stat().st_mtime for f in files if f.is_file())
+
+
+def matter_gcc():
+    """Is the compiler of the plug-in installed? (MinGW-w64 on Windows: the Matter SDK does not build with MSVC)"""
+    return shutil.which("g++") is not None or (IS_WINDOWS and any((Path(d) / "g++.exe").is_file()
+                                                                  for d in MINGW_DIRS))
+
+
+def matter_default(args, explicit):
+    """Matter is part of the host build: the plug-in is built with the app unless --no-matter. The app does not
+    need it, so a machine without GCC still builds and runs (an explicit build says what is missing), and a plain
+    start whose plug-in build fails starts the app without it. The tests' own exe is never built for."""
+    if args.no_matter or os.environ.get("UCX_APP_EXE"):
+        return
+    plugin = matter_plugin()
+    if not explicit and plugin.exists() and plugin.stat().st_mtime >= matter_sources():
+        return
+    if not matter_gcc():
+        if explicit:
+            print("Matter plug-in not built: g++ not found" + (" (install MSYS2 from https://www.msys2.org/ and in "
+                  "it: pacman -S mingw-w64-ucrt-x86_64-gcc)" if IS_WINDOWS else " (sudo apt install g++)")
+                  + "; matter.* needs it, everything else works (--no-matter hides this)")
+        return
+    print("Building the Matter plug-in (--no-matter skips it) ...", flush=True)
+    try:
+        matter_build()
+    except SystemExit:
+        if explicit:
+            raise
+        print("The Matter plug-in did not build: starting without it (matter.* needs it; "
+              "ucxapp --matter --build shows the error again)")
 
 
 def matter_fetch():
@@ -1922,6 +2000,7 @@ def publish_web(message):
     branch = git_out("rev-parse", "--abbrev-ref", "HEAD")
     if branch != "master":
         fail(f"GitHub Pages deploys from master, this is {branch}")
+    matter_wasm_build()   # the site as Pages builds it: with the Matter node
     wasm_build()
     check([sys.executable, "-m", "pytest", "tests/test_wasm.py", "tests/test_webpage.py", "-p", "no:cacheprovider"],
           "web tests")

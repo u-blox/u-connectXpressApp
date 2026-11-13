@@ -95,20 +95,21 @@ cd u-connectXpressApp
 .\ucxapp             # builds on first run, then starts the shell
 ```
 
-Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm`. Details: [BUILDING.md](BUILDING.md).
+Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32-freertos --build --flash --log` (Zephyr: `--stm32-zephyr`). Browser: `.\ucxapp --wasm` builds the site and serves it on http://127.0.0.1:8098/ (Chrome or Edge). Details: [BUILDING.md](BUILDING.md).
 
 ## Matter
 
-The Matter node is an optional plug-in (`ucxmatter.dll`, `libucxmatter.so` on Linux) next to the app: ucxapp keeps the UART and every other command keeps working while the node runs. It needs a module with Bluetooth LE and Wi-Fi (NORA-W36; Thread on NORA-B26 and ALMA-W1 follows).
+The Matter node is a plug-in (`ucxmatter.dll`, `libucxmatter.so` on Linux) next to the app, part of every release and built with the app when GCC is installed (MinGW-w64 on Windows; `--no-matter` skips it). ucxapp keeps the UART and every other command keeps working while the node runs. It needs a module with Bluetooth LE and Wi-Fi (NORA-W36; Thread on NORA-B26 and ALMA-W1 follows).
 
 ```powershell
-.\ucxapp --matter --build        # fetches only the Matter SDK parts it needs, builds app\bin\ucxmatter.dll (needs MinGW GCC)
 .\ucxapp COM75                   # then in the shell:
 matter.start                     # light, temperature and contact sensor; shows the QR and manual pairing code
+                                 # scan the QR code in Apple Home, Google Home or Alexa
+matter.status                    # "commissioned in: 18.4 s (steps at ...)": how long the home app took, step by step
 matter.set light 40              # act as the device; the home app sees the change
 ```
 
-The web page (`--web`) gets a Matter tab with the node's state, the commissioning steps and a control per endpoint. How-to, layout and tests: [the ucx-matter-plugin skill](.github/skills/ucx-matter-plugin/SKILL.md) and [BUILDING.md](BUILDING.md).
+The web page (`--web`) gets a Matter tab with the node's state, the commissioning steps with a timeline of how long each took, and a control per endpoint; the browser app (`--wasm`) has the node built in. How-to, layout and tests: [the ucx-matter-plugin skill](.github/skills/ucx-matter-plugin/SKILL.md) and [BUILDING.md](BUILDING.md).
 
 ## Small enough for a microcontroller
 

@@ -45,18 +45,26 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
 ## Build
 
 ```powershell
-.\ucxapp --matter --build      # also --clean, --rebuild; the result is app/bin/ucxmatter.dll
+.\ucxapp --build               # the app and the plug-in (app/bin/ucxmatter.dll); --no-matter builds the app alone
+.\ucxapp --matter --build      # only the plug-in; also --clean, --rebuild (from scratch)
 ```
 
+- Matter is part of the default build: every host build (`--build`, `--rebuild`, `--everything`, and a plain
+  `.\ucxapp` whose plug-in is missing or older than `matter/`) brings the plug-in up to date (`matter_default` in
+  `ucxapp.py`), and `--wasm` builds the node into the site. Without GCC the app builds and runs as before and an
+  explicit build says what is missing; a plain start whose plug-in build fails starts the app without it.
+  `--clean` and `--rebuild` of the app leave `build/matter` alone (ninja rebuilds what changed).
 - Needs GCC: MSYS2 with `pacman -S mingw-w64-ucrt-x86_64-gcc` on Windows (the Matter SDK does not build with MSVC),
   `g++` on Linux. Git and this Python; the launcher installs the SDK's build modules with pip the first time.
 - `gn.exe` and `ninja.exe` are in `matter/tools`: the binaries u-connectMatter uses (gn is signed by u-blox and
   accepted by IT). Use these, do not download others. Linux takes `gn` and `ninja` from `../u-connectMatter/tools` or
   PATH; without a gn there, the launcher builds gn from its source at the same version (`GN_COMMIT`, gn 2322, one
   commit deep) into `build/gn` once.
-- CI: `.github/workflows/matter.yml` builds the plug-in on Windows, Linux and in the browser with zero warnings and
-  runs the Matter tests. It runs by hand (`workflow_dispatch`) and from `release.yml` (the release ships
-  `linux/libucxmatter.so`), never on every push. Its checkout is minimal: `u-connectClient` and mbedTLS only.
+- CI, on every push: `.github/workflows/matter.yml` (called by `build.yml`) builds the plug-in on Windows and Linux
+  with zero warnings and runs the Matter tests; the `build-wasm` job builds the site with the node and runs
+  `tests/test_wasm.py` in Chromium. `pages.yml` deploys that site, and the release ships `windows/ucxmatter.dll`
+  (signed like the exe by `release.py`), `linux/libucxmatter.so` and the site with the node; `release.py` refuses
+  a tree that misses one. The checkouts are minimal: `u-connectClient` and mbedTLS only.
 - The first build fetches the Matter SDK into `matter/connectedhomeip`: only the pinned commit (`--depth 1`,
   `--filter=blob:none`), only the folders in `MATTER_SDK_DIRS` (sparse checkout) and only the parts in
   `MATTER_SDK_PARTS` (nlassert, nlio, uriparser, pigweed), each one commit deep. It is an opt-in submodule
@@ -77,7 +85,7 @@ which one and why. The Matter SDK's own log is `matter.log detail`.
 ### In the browser and on boards (linked in)
 
 ```powershell
-.\ucxapp --wasm --matter --build   # build/matter-wasm/libucxmatter.a, linked into build/wasm/site
+.\ucxapp --wasm --build            # build/matter-wasm/libucxmatter.a, linked into build/wasm/site (--no-matter: without)
 ```
 
 A browser (and a board) loads no library at run time: the node is built as a static library and linked into the
@@ -138,7 +146,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 | `matter/src/` | The plug-in: `plugin.cpp` (entry, commands), `node.cpp` (the Matter server: start, stop, commissioning window), `progress.cpp` (the commissioning steps of the default log), `callbacks.cpp` (the data model's callbacks), `endpoints.cpp` (endpoint kinds), `onboarding.cpp` (SDK setup codes), `UbloxCommissionableDataProvider.cpp` (the node's random setup codes, kept in the store), `logging.cpp` (SDK log to the app), `ucxm_host.c` and `ucxm_at.h` (the generated u-connectXpress API on the app's AT client) |
 | `matter/data_model/` | `ucxmatter.zap` (the data model), `ucxmatter.matter` and the generated code in `ucxmatter/` |
 | `matter/platform/ucxclient/` | The Matter device layer from u-connectMatter: `BLEManagerImpl` (GATT service, advertising), `NetworkCommissioningDriver` (Wi-Fi scan and join for the commissioner), `UcxNetwork.cpp` (Wi-Fi state from the module's URCs, the UDP sockets and their data), `DnssdImpl` and `UcxMdns.cpp` (mDNS on the module), configuration and key-value store (through the app's sealed store, `UcxStore.h`), `PlatformManagerImpl` (the Matter thread). `UcxClientManager` here is a small facade: the handle, the URC queue and which URCs are the node's alone |
-| `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` (Windows), `build/matter-linux` (Linux, WSL included, so the two never clobber each other) and `build/matter-wasm` (`--wasm --matter`) |
+| `matter/BUILD.gn`, `.gn`, `args.gni`, `build_overrides/` | The gn build; output in `build/matter` (Windows), `build/matter-linux` (Linux, WSL included, so the two never clobber each other) and `build/matter-wasm` (`--wasm`) |
 | `matter/mbedtls/` | The app's mbedTLS 4 (`third-party/mbedtls`, app config and `app/third-party/mbedtls-gen`) as gn target `//mbedtls`; the SDK's crypto uses it through its PSA backend (`chip_crypto = "psa"` with the PSA session keystore: the PSA AES-CCM takes PSA key ids, with the raw keystore every message after PASE fails to decrypt). The SDK's own mbedTLS 2.28 (end of life) is never fetched |
 | `matter/patches/` | Whole Matter SDK files from u-connectMatter, copied over the SDK before every build |
 | `matter/compat/windows/` | POSIX headers the SDK includes and MinGW lacks |

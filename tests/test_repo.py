@@ -59,7 +59,13 @@ def test_ci_builds_what_the_release_ships():
     assert "-rc" not in refs.pop(), "release a Zephyr release, not a release candidate"
     boards = [re.search(r"board: \[([^\]]+)\]", text).group(1) for text in (build, release)]
     assert boards[0] == boards[1]
-    assert "build-wasm:" in build and "emcmake" in build and "tests/test_wasm.py" in build
+    # Matter is part of every build: the plug-in jobs, and a browser app with the node on CI, Pages and the release
+    pages = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+    assert "build-wasm:" in build and "tests/test_wasm.py" in build
+    assert "uses: ./.github/workflows/matter.yml" in build and "uses: ./.github/workflows/matter.yml" in release
+    for text in (build, release, pages):
+        assert "ucxapp.py --wasm --build" in text and 'grep -qa "Matter SDK "' in text
+        assert "emcmake cmake" not in text, "build the site with the launcher: it links the Matter node in"
 
 
 def test_cmake_references_existing_submodule_files():

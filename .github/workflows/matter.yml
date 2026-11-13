@@ -1,8 +1,9 @@
 name: matter
 
-# The Matter plug-in (ucxmatter) on Windows, Linux and in the browser. Started by hand or by release.yml: the
-# SDK fetch and build take long, so it does not run on every push. The checkout is minimal: only u-connectClient
-# and mbedTLS; the launcher fetches the one SDK commit, only the folders the node needs (matter_fetch in ucxapp.py).
+# The Matter plug-in (ucxmatter) on Windows and Linux, with its tests. Part of every build (build.yml) and of the
+# release (release.yml); the browser's node is built with the site there. The checkout is minimal: only
+# u-connectClient and mbedTLS; the launcher fetches the one SDK commit, only the folders the node needs (matter_fetch
+# in ucxapp.py).
 
 on:
   workflow_dispatch:
@@ -81,33 +82,3 @@ jobs:
         with:
           name: matter-linux
           path: pkg
-
-  wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Init u-connectClient and mbedTLS (not the Matter SDK, the launcher fetches it)
-        run: |
-          git submodule update --init u-connectClient
-          git submodule update --init --recursive third-party/mbedtls
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - uses: emscripten-core/setup-emsdk@v16
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++
-      - name: gn key (the commit ucxapp.py builds gn from)
-        id: gn
-        run: echo "commit=$(sed -n 's/^GN_COMMIT = \"\(.*\)\"/\1/p' ucxapp.py)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v5
-        with:
-          path: build/gn
-          key: gn-${{ runner.os }}-${{ steps.gn.outputs.commit }}
-      - name: Build the site with the node linked in (zero warnings)
-        run: |
-          set -o pipefail
-          python ucxapp.py --wasm --matter --build 2>&1 | tee matter-build.log
-          ! grep -n "warning:" matter-build.log
-      - name: The node is built in
-        run: |
-          python -m pip install pytest pyyaml cryptography
-          python -m pytest tests/test_wasm.py -k matter -p no:cacheprovider

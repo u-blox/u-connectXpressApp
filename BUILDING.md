@@ -90,23 +90,30 @@ The NUCLEO-F103RB (`f103`) and NUCLEO-G071RB (`g071`), both 128 KB flash, get a 
 Only official ST NUCLEO and Discovery boards are supported.
 
 The build needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH` or `STM32CUBEF1_PATH` or `STM32CUBEG0_PATH`, or the u-connectClient submodule).
-Release builds of all five boards are published with each tag.
+Release builds of every board (`--board all`: FreeRTOS and Zephyr images) are published with each tag.
 
 ### Matter plug-in
 
+Host builds include it: `.\ucxapp --build` (and the first `.\ucxapp`) also builds `app/bin/ucxmatter.dll`
+(`libucxmatter.so` on Linux) when GCC is installed, and `--wasm` links the node into the browser app.
+`--no-matter` leaves it out; `--matter` builds only the plug-in:
+
 ```powershell
-.\ucxapp --matter --build     # app/bin/ucxmatter.dll; --clean and --rebuild work too
+.\ucxapp --matter --build     # only the plug-in; --clean and --rebuild work too
 .\ucxapp COM75 --exec "matter.start"
 ```
 
 The app runs without it; `matter.start` loads `ucxmatter.dll` (`libucxmatter.so` on Linux) from next to the app.
 The plug-in is built from `matter/` with gn and ninja (`matter/tools`) and GCC: on Windows install MSYS2 and, in it,
-`pacman -S mingw-w64-ucrt-x86_64-gcc` (the Matter SDK does not build with MSVC). The first build fetches the Matter SDK
-into `matter/connectedhomeip`: one commit, only the folders and SDK submodules the plug-in builds from; no other
-command fetches that submodule. On Linux without a `gn` (in `../u-connectMatter/tools` or PATH) the launcher builds
-gn 2322 from source into `build/gn` once (needs `g++`, `ninja` and `git`). CI: `.github/workflows/matter.yml` (Windows,
-Linux, browser; run it from the Actions tab), also run by `release.yml`. Today the plug-in advertises a
-commissionable node over Bluetooth LE and shows its QR and manual codes; commissioning itself is not in yet.
+`pacman -S mingw-w64-ucrt-x86_64-gcc` (the Matter SDK does not build with MSVC). Without GCC the app still builds
+and runs, and the build says what `matter.*` needs. The first build fetches the Matter SDK into
+`matter/connectedhomeip`: one commit, only the folders and SDK submodules the plug-in builds from (about 150 MB);
+no other command fetches that submodule. On Linux without a `gn` (in `../u-connectMatter/tools` or PATH) the
+launcher builds gn 2322 from source into `build/gn` once (needs `g++`, `ninja` and `git`). CI builds and tests it
+on every push: `.github/workflows/matter.yml` (the plug-in on Windows and Linux) and the `build-wasm` job (the
+browser app with the node); the release ships all three, the Windows plug-in signed like the exe. The node is
+commissioned over Bluetooth LE onto Wi-Fi (NORA-W36) by Apple Home, Google Home, Alexa or chip-tool; `matter.card`
+shows each step and how long the commissioning took.
 
 ## File structure
 

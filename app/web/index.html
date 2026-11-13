@@ -157,7 +157,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="300">
 <text x="205" y="325" fill="#fff" textLength="190">u</text>
 <text x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
-<h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated: Wi-Fi, BLE, Thread, sockets, GNSS and cellular">Connections</button></span>
+<h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated">Connections</button></span>
 <span id="state"></span><span id="busy"></span>
 <button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pn">Links</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
@@ -179,7 +179,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
-<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local time when app.time geo or app.time zone set the zone, else UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS fix, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
+<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><label id="upl" title="Upload a file to the app's file store"><input type="file" id="up" hidden>&#x2B06; Upload file&hellip;</label><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
 <dialog id="md"><div class="mh"><b>Command manual</b><input id="mq" placeholder="Search the manual" autocomplete="off"><button id="mclose">Close</button></div>
@@ -553,7 +553,7 @@ const UC={
   h:['Sensor','host + NORA-W36'],n:[['wifi','Home Wi-Fi','station'],['sock','MQTT broker','Home Assistant'],['imu','Sensor','IMU, door, machine'],['ble','Phone','BLE setup']]},
  provision:{t:'Wi-Fi set up from a phone',d:'A new device has no keyboard: the phone sends the network name and password over BLE (Wi-Fi Provisioning service), or joins the device\'s own AP from a QR code.',
   h:['New device','NORA-W36'],n:[['ble','Phone app','BLE provisioning'],['wifi','Home Wi-Fi','joined after setup'],['ap','Setup AP','QR code'],['sock','Cloud or app','after setup']]},
- matter:{t:'Matter smart home device',d:'A Matter light, temperature sensor and contact sensor on the host: a home app scans the setup QR code, commissions the node over Bluetooth LE and sends it the network.',
+ matter:{t:'Matter smart home device',d:'A Matter light, temperature and contact sensor on the host: a home app scans the QR code and commissions it over BLE in seconds.',
   h:['Device','host + NORA module'],n:[['phone','Home app','Apple, Google, HA'],['ble','Commissioning','Bluetooth LE'],['wifi','Network','Wi-Fi or Thread'],['id','Setup codes','QR, manual code']]},
  hotel:{t:'Hotel or cafe Wi-Fi with a login page',d:'Guest networks hold traffic until a form is filled in: the app finds the portal page, fills in the room and surname, and checks the internet.',
   h:['Device','NORA-W36'],n:[['wifi','Guest Wi-Fi','open or WPA2'],['portal','Login page','room, surname'],['sock','Internet','after login'],['ble','Phone','BLE']]},
@@ -777,6 +777,7 @@ function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{con
  /* Matter: the commissioning steps as segments; an endpoint with a control for each value matter.set takes */
  else if(k==='STEP'){const f=/^failed at (\d+)\/(\d+)/.exec(v),q=f||/^(\d+)\/(\d+)/.exec(v);if(q){const s=el('span','seg s6');
   for(let i=0;i<+q[2];i++)s.appendChild(el('i',i<+q[1]-(f?1:0)?'on':''));w.appendChild(s)}if(f)w.className='al'}
+ else if(k==='TIME'&&/ste/.test(v)){const t=v.match(/[\d.]+/g)||[];w.className='seg';t.slice(1).forEach((x,i)=>w.appendChild(el('i','on')).style.width=(x-(i&&t[i]))/t[0]*9+'rem')}
  else if(k==='EP'){const p=/^(\d+) (\S+) = (.*?)  \[(.*)\]$/.exec(v);if(p){const nm=p[2],kd=nm.replace(/\d+$/,''),pic=mtPic(kd,nm,p[3]);
   w.classList.add('ep');if(pic)w.appendChild(pic);w.appendChild(el('b','ev',nm+' '+p[3]));v='';if(kd==='temp')w.appendChild(mtSpark(TH[nm]||[]));
   p[4].split(' | ').forEach(a=>{const r=/^(-?\d+)\.\.(-?\d+)/.exec(a),e=el(r?'input':'button','',r?null:a);e.title='matter.set '+p[2]+' '+a;

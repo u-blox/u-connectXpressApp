@@ -269,6 +269,11 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
                             "ALERT the module restarted: stop the node and start it again\nLOG   detail")
         assert page.locator("#cnd .seg.s6 i.on").count() == 6
         assert "18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)" in page.inner_text("#cnd")
+        # and a timeline: one bar per step, as wide as the step took (joining the network, 6.8 of 18.4 s, the widest)
+        widths = page.evaluate(
+            "[...document.querySelectorAll('#cnd .seg:not(.s6) i.on')].map(i => parseFloat(i.style.width))")
+        assert len(widths) == 6 and widths.index(max(widths)) == 4 and abs(sum(widths) - 9) < 0.01, widths
+        assert abs(widths[4] - 6.8 / 18.4 * 9) < 0.01, widths
         assert page.inner_text("#cnd .gv .al") == "the module restarted: stop the node and start it again"
         assert "SDK log off" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
         count = len(server.posted)

@@ -23,7 +23,9 @@ address. From then on the node talks UDP through a socket on the module and is a
 A module that is on Wi-Fi already (`wifi.connect`) is used as it is. To a controller the node is the product
 `u-connectXpressApp` of vendor `u-blox` (Basic Information, `DeviceInstanceInfoProviderImpl.h` from
 `support/DeviceConfig.h`): the module's type code is its hardware version and part number, the module's serial
-number its own and the module's firmware version its software version (`matter.status` shows them). Checked so
+number its own and the module's firmware version its software version (`matter.status` shows them). A new node's NodeLabel is the
+product name too (`DefaultNodeLabel` in `node.cpp`; the SDK leaves it empty, and Apple Home then names the accessory
+generically); a name a controller writes is kept. Checked so
 far: a whole commissioning with a phone over Bluetooth LE and Wi-Fi (the light then switches from the home app),
 the Bluetooth LE transport over the air between two modules, and a pairing request over UDP on the virtual
 module. **Not yet:** the endpoints of `matter.set`

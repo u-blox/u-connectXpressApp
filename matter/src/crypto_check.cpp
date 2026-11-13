@@ -200,6 +200,7 @@ bool CcmOne(SessionKeystore & keystore, const ccm_128_test_vector & v)
     {
         memcpy(tag, v.tag, v.tag_len);
         tag[0] ^= 1;
+        SdkErrorsExpected expected;
         ok = AES_CCM_decrypt(v.ct, v.ct_len, v.aad, v.aad_len, tag, v.tag_len, key, v.nonce, v.nonce_len, pt.Get()) !=
             CHIP_NO_ERROR;
     }
@@ -299,7 +300,10 @@ int Ecdsa()
             keypair.Deserialize(serialized) == CHIP_NO_ERROR &&
             // the RFC's signature checks, and one over another message does not
             keypair.Pubkey().ECDSA_validate_msg_signature(msg, length, known) == CHIP_NO_ERROR &&
-            keypair.Pubkey().ECDSA_validate_msg_signature(msg, length - 1, known) != CHIP_NO_ERROR &&
+            [&] {
+                SdkErrorsExpected expected;
+                return keypair.Pubkey().ECDSA_validate_msg_signature(msg, length - 1, known) != CHIP_NO_ERROR;
+            }() &&
             // what the key signs now checks against the RFC's public key
             keypair.ECDSA_sign_msg(msg, length, fresh) == CHIP_NO_ERROR &&
             keypair.Pubkey().ECDSA_validate_msg_signature(msg, length, fresh) == CHIP_NO_ERROR;
@@ -390,6 +394,7 @@ int Csr()
     }
     csr[length - 2]++; // in the signature
     csr[length - 1]++;
+    SdkErrorsExpected expected;
     return VerifyCertificateSigningRequest(csr, length, key) != CHIP_NO_ERROR ? -1 : 1;
 }
 
@@ -491,6 +496,7 @@ bool Spake2pOne(SessionKeystore & keystore, const spake2p_rfc_tv & v)
         again.Fix(v.y, v.y_len);
         peer.Fix(v.x, v.x_len);
         macA[0] ^= 1;
+        SdkErrorsExpected expected;
         ok = peer.Init(v.context, v.context_len) == CHIP_NO_ERROR &&
             peer.BeginProver(v.prover_identity, v.prover_identity_len, v.verifier_identity, v.verifier_identity_len, v.w0,
                              v.w0_len, v.w1, v.w1_len) == CHIP_NO_ERROR &&

@@ -136,6 +136,12 @@ READ_REQUEST, REPORT_DATA = 0x02, 0x05
 
 # Read Basic Information (cluster 0x0028) VendorID (attribute 2) of endpoint 0, not fabric filtered
 READ_VENDOR_ID = bytes.fromhex("1536001724020024032824040218182803 24FF0C18".replace(" ", ""))
+NODE_LABEL = 5
+
+
+def read_basic_information(attribute):
+    """READ_VENDOR_ID for another attribute of Basic Information (below 0x100)."""
+    return READ_VENDOR_ID[:12] + bytes([attribute]) + READ_VENDOR_ID[13:]
 
 
 def parse(message):
@@ -170,8 +176,9 @@ class Commissioner:
 
     NODE = bytes.fromhex("8877665544332211")
 
-    def __init__(self, passcode, session=0x2345, exchange=0x3456):
+    def __init__(self, passcode, session=0x2345, exchange=0x3456, attribute=2):
         self.passcode, self.session, self.exchange = passcode, session, exchange
+        self.read = read_basic_information(attribute)
         self.counter = int.from_bytes(os.urandom(3), "little") + 1
         self.secure_counter = 0
         self.state, self.report, self.seen = "pbkdf", None, set()
@@ -249,7 +256,7 @@ class Commissioner:
             self.keys = hkdf(self.Ke, b"", b"SessionKeys", 48)
             self.state = "paired"
             out = [self._unsecured(STANDALONE_ACK, b"", ack=counter, reliable=False)] if flags & 0x04 else []
-            return out + [self._secure(INTERACTION_MODEL, READ_REQUEST, self.exchange + 1, READ_VENDOR_ID)]
+            return out + [self._secure(INTERACTION_MODEL, READ_REQUEST, self.exchange + 1, self.read)]
         if opcode == STATUS_REPORT:
             raise ValueError(f"status report in state {self.state}: {payload.hex()}")
         return []

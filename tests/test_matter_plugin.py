@@ -141,6 +141,8 @@ def test_reset_keeps_the_setup_codes_and_reset_all_draws_new_ones(app_exe, modul
 def test_selftest_checks_the_node(app_exe, module, plugin, tmp_path):
     out = _run(app_exe, module, plugin, tmp_path, "matter.selftest", "matter.start", "matter.selftest")
     assert out.returncode == 0 and out.stdout.count("matter selftest: ok") == 2, out.stdout
+    # the checks that want a refusal (bad tag, changed signature) leave no error line from the SDK
+    assert "[matter] [" not in out.stdout, out.stdout
     for name in ("plug-in", "module", "store", "random", *CRYPTO, "setup codes", "Bluetooth LE"):
         assert len(re.findall(rf"^  {re.escape(name)} +ok ", out.stdout, re.M)) == 2, (name, out.stdout)
 
@@ -315,10 +317,8 @@ def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, pl
     assert "AT+USOCL=0" in module.log[module.log.index("AT+USOB=0,5540"):], sent
 
 
-def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_exe, plugin, tmp_path):
-    """The whole data path of commissioning: PASE with the passcode, then an encrypted read of the vendor ID and
-    the node's encrypted answer. A node that pairs but cannot use its session keys (the raw session keystore with
-    the PSA crypto backend: "failed to decode/authenticate", then the failsafe expires) fails here."""
+def _commission(app_exe, plugin, tmp_path, attribute=2):
+    """A commissioner that pairs over UDP and reads one Basic Information attribute: (it, the app's output)."""
     pytest.importorskip("yaml")
     pytest.importorskip("cryptography")
     from harness.pase import Commissioner
@@ -330,7 +330,7 @@ def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_
         passcode = setup_codes(_run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status").stdout)[1]
     finally:
         module.stop()
-    commissioner = Commissioner(passcode)
+    commissioner = Commissioner(passcode, attribute=attribute)
     profile = load("nora-w36.yaml")
     profile["sockets"]["peers"] = {5540: commissioner}
     module = Vucx(profile)
@@ -342,8 +342,24 @@ def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_
         module.stop()
     assert out.returncode == 0, out.stdout
     assert commissioner.state == "read", (commissioner.state, out.stdout)
+    return commissioner, out
+
+
+def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_exe, plugin, tmp_path):
+    """The whole data path of commissioning: PASE with the passcode, then an encrypted read of the vendor ID and
+    the node's encrypted answer. A node that pairs but cannot use its session keys (the raw session keystore with
+    the PSA crypto backend: "failed to decode/authenticate", then the failsafe expires) fails here."""
+    commissioner, out = _commission(app_exe, plugin, tmp_path)
     assert b"\x25\x02\xf1\xff" in commissioner.report, commissioner.report.hex()   # VendorID 0xFFF1
     assert "failed to decode" not in out.stdout and "Failsafe timer expired" not in out.stdout, out.stdout
+
+
+def test_a_new_node_is_labelled_with_the_product_name(app_exe, plugin, tmp_path):
+    """Apple Home names a new accessory after NodeLabel: empty, it shows a generic name."""
+    from harness.pase import NODE_LABEL
+
+    commissioner, _ = _commission(app_exe, plugin, tmp_path, NODE_LABEL)
+    assert b"\x2c\x02\x12u-connectXpressApp" in commissioner.report, commissioner.report.hex()
 
 
 def test_a_pairing_request_over_udp_reaches_the_matter_server_and_is_answered(app_exe, plugin, tmp_path):

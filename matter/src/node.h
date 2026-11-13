@@ -52,6 +52,12 @@ bool NodeRandomOk();                          // matter.selftest: the SDK's DRBG
 typedef void (*CryptoReport)(void * context, const char * name, bool ok, const char * detail);
 void NodeCryptoCheck(CryptoReport report, void * context); // with the stack lock
 void CryptoCheck(CryptoReport report, void * context);     // crypto_check.cpp
+// While one lives, the SDK's error lines are detail (logging.cpp): for a check that wants the SDK to refuse
+struct SdkErrorsExpected
+{
+    SdkErrorsExpected();
+    ~SdkErrorsExpected();
+};
 bool SetupCodesAllowed(uint32_t passcode, uint16_t discriminator); // no test or forbidden code (Matter 5.1.7.1)
 void NodeNetwork(char * out, size_t size); // one line for matter.status: the node's network on the module
 

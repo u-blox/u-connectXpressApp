@@ -6,6 +6,8 @@
 #include <app/clusters/identify-server/identify-server.h>
 #include <app/clusters/network-commissioning/network-commissioning.h>
 #include <app/server/Server.h>
+#include <app/persistence/String.h>
+#include <lib/support/DefaultStorageKeyAllocator.h>
 #include <credentials/DeviceAttestationCredsProvider.h>
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include <crypto/CHIPCryptoPAL.h>
@@ -155,6 +157,24 @@ void OnIdentify(::Identify * identify)
                : identify == &gIdentifyContact ? "matter: identify the contact sensor" : "matter: identify the node");
 }
 
+// A new node calls itself what the product is: Apple Home names the accessory after NodeLabel, which the SDK leaves
+// empty until a controller writes one (a name given in the home app is kept)
+void DefaultNodeLabel(PersistentStorageDelegate * storage)
+{
+    namespace BasicInformation = app::Clusters::BasicInformation;
+    const StorageKeyName key   = DefaultStorageKeyAllocator::AttributeValue(kRootEndpointId, BasicInformation::Id,
+                                                                            BasicInformation::Attributes::NodeLabel::Id);
+    app::Storage::String<BasicInformation::Attributes::NodeLabel::TypeInfo::MaxLength()> label;
+
+    if (storage == nullptr || storage->SyncDoesKeyExist(key.KeyName()) ||
+        !label.SetContent(CharSpan::fromCharString(ucxmatter::GetDeviceConfig().deviceName.c_str())))
+    {
+        return;
+    }
+    const ByteSpan value = app::Storage::Internal::ShortStringOutputAdapter(label).ContentWithPrefix();
+    (void) storage->SyncSetKeyValue(key.KeyName(), value.data(), static_cast<uint16_t>(value.size()));
+}
+
 // The Matter server on the stack: the data model, attestation and, without a fabric, an open commissioning window
 const char * ServerStart()
 {
@@ -167,6 +187,7 @@ const char * ServerStart()
     {
         return "the Matter server got no resources";
     }
+    DefaultNodeLabel(sParams.persistentStorageDelegate);
     sParams.appDelegate                        = &gCommissioning;
     sParams.advertiseCommissionableIfNoFabrics = true;
     sParams.discoveryTimeout                   = System::Clock::Seconds16(kWindowSeconds);

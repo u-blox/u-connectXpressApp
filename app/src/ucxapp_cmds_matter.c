@@ -852,6 +852,8 @@ static char gLast[BRIDGE_LINES][BRIDGE_TEXT];   /* the card as last sent; the po
 static int gLastCount;
 static char gRx[200];
 static size_t gRxLen;
+static int gRxQuiet;   /* polls since the last byte: a line without its newline runs after RX_QUIET_POLLS */
+#define RX_QUIET_POLLS  3
 static ucxapp_t *gMqttApp;
 static char gMqttPrefix[48];
 static volatile bool gMqttOn;
@@ -1019,6 +1021,7 @@ static bool bridgeWrite(void *ctx, const uint8_t *data, size_t len)
         bool whole = false;
 
         U_CX_MUTEX_LOCK(gBridgeLock);
+        gRxQuiet = 0;
         if (data[i] == '\n' || data[i] == '\r') {
             whole = gRxLen > 0;
             memcpy(line, gRx, gRxLen);
@@ -1122,12 +1125,25 @@ static void bridgePoll(void *ctx, ucxapp_stream_t *s)
     char now[BRIDGE_LINES][BRIDGE_TEXT];
     char events[BRIDGE_EVENTS][BRIDGE_TEXT];
     char out[1024];
+    char line[sizeof(gRx)];
     size_t o = 0;
     int ne = 0, n;
-    bool fresh;
+    bool fresh, pending = false;
 
     (void)ctx;
     (void)s;
+    U_CX_MUTEX_LOCK(gBridgeLock);
+    /* phone terminals often send "set light off" with no line end */
+    if (gRxLen > 0 && ++gRxQuiet >= RX_QUIET_POLLS) {
+        memcpy(line, gRx, gRxLen);
+        line[gRxLen] = '\0';
+        gRxLen = 0;
+        pending = true;
+    }
+    U_CX_MUTEX_UNLOCK(gBridgeLock);
+    if (pending) {
+        bridgeExec(line);
+    }
     n = bridgeCard(now, BRIDGE_LINES);
     U_CX_MUTEX_LOCK(gBridgeLock);
     for (; gEventCount > 0; gEventCount--, gEventHead = (gEventHead + 1) % BRIDGE_EVENTS) {

@@ -371,8 +371,9 @@ def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_pa
     from harness.vucx import Vucx, load
 
     profile = load("nora-w36.yaml")
-    # a client: it connects as soon as the bridge listens, and sends its lines
-    profile["sockets"]["requests"] = {7540: ["get\nset light on\nset oven on\nset light\nhello\n"]}
+    # a client: it connects as soon as the bridge listens, and sends its lines; the last one without its newline,
+    # as phone terminals send it
+    profile["sockets"]["requests"] = {7540: ["get\nset light on\nset oven on\nset light\nhello\nset temp 25"]}
     module = Vucx(profile)
     proc = _shell(app_exe, module, stub, tmp_path)
 
@@ -389,6 +390,7 @@ def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_pa
         assert "ERR no endpoint oven\n" in text and "ERR usage: set <endpoint> <value...>\n" in text, text
         assert "ERR unknown command 'hello' (set <endpoint> <value...> | get)\n" in text, text
         assert "LOG" not in text, text   # the app's own line
+        assert _until(lambda: "EP temp = 25\n" in got()), got()
         # a change made in the app reaches the client as well, and so do the node's events
         proc.stdin.write("matter.set temp 30\n")
         proc.stdin.flush()

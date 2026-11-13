@@ -42,7 +42,7 @@ def _drive(app_exe, module, first, until, timeout=20):
         while time.time() < deadline and not until(module.log):
             time.sleep(0.2)
         time.sleep(0.5)
-        out, _ = proc.communicate("can.bridge status\ncan.status\ncan.bridge tcp\ncan.bridge off\ncan.bridge status\n",
+        out, _ = proc.communicate("can.bridge status\ncan.status\ncan.bridge tcps\ncan.bridge off\ncan.bridge status\n",
                                   timeout=30)
     finally:
         proc.kill()

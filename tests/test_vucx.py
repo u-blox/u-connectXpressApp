@@ -716,8 +716,8 @@ def test_gnss_commands_on_a_virtual_receiver(app_exe, nora, tmp_path):
             f"gnss.open {port} 9600", "gnss.status", "gnss.sats", "gnss.watch 2",
             f"gnss.log {tmp_path / 'g.nmea'}", "gnss.status", "gnss.log off", "gnss.send $PUBX,00",
             "gnss.send b5 62 06 04", "gnss.send ubx 06 08 e8030100", "gnss.restart cold", "gnss.rate 5",
-            "gnss.bridge status", "gnss.bridge tcp 2947", "gnss.bridge status", "gnss.bridge off",
-            "gnss.bridge udp 192.168.1.10 10110", "gnss.bridge off", "gnss.bridge ble nus", "gnss.bridge off",
+            "gnss.bridge status", "gnss.bridge tcps 2947", "gnss.bridge status", "gnss.bridge off",
+            "gnss.bridge udpc 192.168.1.10 10110", "gnss.bridge off", "gnss.bridge ble nus", "gnss.bridge off",
             "gnss.close", "gnss.status"])
     finally:
         gnss.stop()
@@ -726,14 +726,15 @@ def test_gnss_commands_on_a_virtual_receiver(app_exe, nora, tmp_path):
 
 
 def test_gnss_runs_several_bridges_at_once(app_exe, nora):
-    """Up to 4 bridges side by side on one receiver, numbered, stopped one by one; a fifth is refused."""
+    """Up to 4 bridges side by side on one receiver, numbered, stopped one by one; a fifth is refused. The old names
+    tcp and udp still work as tcps and udpc."""
     from harness.vucx import Feeder
 
     gnss = Feeder(NMEA, 0.2)
     port = gnss.start()
     try:
         out = _shell(app_exe, nora.port, [
-            f"gnss.open {port} 9600", "gnss.bridge tcp 2947", "gnss.bridge udp 192.168.1.10 10110",
+            f"gnss.open {port} 9600", "gnss.bridge tcps 2947", "gnss.bridge udp 192.168.1.10 10110",
             "gnss.bridge ble nus", "gnss.bridge status", "gnss.bridge off 2", "gnss.bridge status",
             "gnss.bridge udps 9000", "gnss.bridge tcp 2948", "bridge.list", "gnss.status",
             "gnss.bridge udps 9001"])
@@ -773,7 +774,7 @@ def test_hw_bridges_share_the_stream_until_the_last_one_stops(app_exe, nora):
     """hw.bridge keeps its stream while one bridge is left; only one BLE bridge per stream."""
     out = _shell(app_exe, nora.port, [
         "hw.bridge udps 7000", "hw.bridge ble nus", "hw.bridge status", "hw.bridge off 1", "hw.bridge status",
-        "hw.bridge off", "hw.bridge status", "hw.bridge tcp", "hw.bridge ble nus", "hw.bridge ble sps"])
+        "hw.bridge off", "hw.bridge status", "hw.bridge tcps", "hw.bridge ble nus", "hw.bridge ble sps"])
     text = out.stdout
     assert out.returncode == 1, text[-3000:]
     assert "bridge 1: UDP port 0" in text and "bridge 2: BLE Nordic UART" in text, text[-3000:]
@@ -792,8 +793,8 @@ def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
     try:
         out = _shell(app_exe, nora.port, [
             f"imu.open {port} 9600 wit", "imu.status", f"imu.log {tmp_path / 'i.bin'}", "imu.status",
-            "imu.log off", "imu.rate 10", "imu.send ff aa 69 88 b5", "imu.bridge status", "imu.bridge tcp 9000",
-            "imu.bridge status", "imu.bridge off", "imu.bridge udp 192.168.1.10 9001", "imu.bridge off",
+            "imu.log off", "imu.rate 10", "imu.send ff aa 69 88 b5", "imu.bridge status", "imu.bridge tcps 9000",
+            "imu.bridge status", "imu.bridge off", "imu.bridge udpc 192.168.1.10 9001", "imu.bridge off",
             "imu.close", "imu.status"])
     finally:
         imu.stop()

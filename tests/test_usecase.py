@@ -148,7 +148,7 @@ def test_fieldkit_says_it_relays_a_socket_not_ip(app_exe):
     out = _exec(app_exe, "usecase.check fieldkit").stdout
     verdict, text = _row(out, "Not a hotspot")
     assert verdict == "limit" and "one socket is relayed, not IP" in text, out
-    assert _row(out, "Relay")[1].endswith("cell.bridge tcp 7000"), out
+    assert _row(out, "Relay")[1].endswith("cell.bridge tcps 7000"), out
 
 
 @pytest.mark.app

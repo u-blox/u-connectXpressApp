@@ -62,7 +62,7 @@ bool ucxapp_stream_bridge_ble_custom(ucxapp_stream_t *s, ucxapp_t *app, const ui
                                      const uint8_t tx[16]);
 /* Second PC serial port, both directions, no module needed. */
 bool ucxapp_stream_bridge_uart(ucxapp_stream_t *s, ucxapp_t *app, const char *port, int32_t baud);
-/* Shared "bridge tcp|udp|ble|uart|off [n]|status" handler; argv[0] is the command name. */
+/* Shared "bridge tcps|tcpc|udpc|udps|tls|ble|uart|off [n]|status" handler; argv[0] is the command name. */
 int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], int32_t defaultPort);
 void ucxapp_stream_bridge_stop(ucxapp_stream_t *s);   /* every bridge */
 bool ucxapp_stream_bridge_stop_one(ucxapp_stream_t *s, int n);   /* bridge n (1-based); false if there is none */

@@ -1842,7 +1842,8 @@ static int bridgeCmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], 
         }
         return UCXAPP_OK;
     }
-    if (strcasecmp(argv[1], "tcp") == 0 && argc <= 3) {
+    /* tcps/udpc say which side the module is; "tcp" and "udp" are their old names, kept for scripts */
+    if ((strcasecmp(argv[1], "tcps") == 0 || strcasecmp(argv[1], "tcp") == 0) && argc <= 3) {
         if (argc == 3 && (!ucxapp_parse_int(argv[2], &port) || port < 1 || port > 65535)) {
             return UCXAPP_ERR_USAGE;
         }
@@ -1868,7 +1869,7 @@ static int bridgeCmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *argv[], 
         }
         return ucxapp_stream_bridge_tcp_connect(s, app, argv[2], port) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
-    if (strcasecmp(argv[1], "udp") == 0 && (argc == 4 || argc == 5)) {
+    if ((strcasecmp(argv[1], "udpc") == 0 || strcasecmp(argv[1], "udp") == 0) && (argc == 4 || argc == 5)) {
         int32_t local = 0;
         if (!ucxapp_parse_int(argv[3], &port) || port < 1 || port > 65535 ||
             (argc == 5 && (!ucxapp_parse_int(argv[4], &local) || local < 1 || local > 65535))) {

@@ -320,7 +320,7 @@ def test_imu_bno055_stream(app_exe, cwd, tmp_path):
     try:
         out = _interactive(app_exe, module.port, [
             f"imu.open {fport} 115200 bno055", "gatt.listen 1", "imu.status", "dash", "imu.rate 10",
-            "imu.bridge tcp 9123", "imu.bridge off", "imu.close"], tmp_path)
+            "imu.bridge tcps 9123", "imu.bridge off", "imu.close"], tmp_path)
     finally:
         feeder.stop()
         module.stop()

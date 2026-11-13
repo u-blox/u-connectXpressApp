@@ -71,7 +71,7 @@ def test_values_are_not_offered(app_exe, tmp_path, line):
 def test_second_line_lists_the_keywords(app_exe, tmp_path):
     out = _complete(app_exe, tmp_path, '"gnss.bridge "')
     listed = out.split("\n")[1].split()
-    assert {"tcp", "tls", "tcpc", "ntrip", "udp", "udps", "ble", "uart", "cell",
+    assert {"tcps", "tls", "tcpc", "ntrip", "udpc", "udps", "ble", "uart", "cell",
             "pointperfect", "off", "status"} == set(listed)
 
 

@@ -49,7 +49,7 @@ def test_usage_is_printed_for_bad_arguments(app_exe, tmp_path):
 def test_long_usage_is_one_alternative_per_line(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "help gnss.bridge", "gnss.bridge")
     lines = [ln.strip() for ln in out.stdout.splitlines()]
-    for alt in ("tcp [port]", "tls [port] [cert] [clientauth]", "tcpc <host> <port>", "udps <port>",
+    for alt in ("tcps [port]", "tls [port] [cert] [clientauth]", "tcpc <host> <port>", "udps <port>",
                 "ble [nus|sps|custom <uuid> [rx tx]]", "uart <port> [baud]", "cell", "off [n]", "status"):
         assert alt in lines, alt
         assert f"gnss.bridge {alt}" in lines, alt
@@ -293,7 +293,7 @@ def test_wifi_enterprise_commands_are_documented(app_exe, tmp_path):
 
 
 @pytest.mark.parametrize("command", [
-    "gnss.status", "gnss.send 00", "gnss.log off", "gnss.bridge tcp", "gnss.bridge status",
+    "gnss.status", "gnss.send 00", "gnss.log off", "gnss.bridge tcps", "gnss.bridge status",
 ])
 def test_gnss_commands_need_an_open_receiver(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -302,7 +302,7 @@ def test_gnss_commands_need_an_open_receiver(app_exe, tmp_path, command):
 
 
 @pytest.mark.parametrize("command", [
-    "imu.status", "imu.send aa", "imu.rate 10", "imu.bridge udp host 5005", "imu.bridge ble",
+    "imu.status", "imu.send aa", "imu.rate 10", "imu.bridge udpc host 5005", "imu.bridge ble",
 ])
 def test_imu_commands_need_an_open_sensor(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -351,7 +351,7 @@ def test_gatt_listen_help_mentions_off(app_exe, tmp_path):
 
 @pytest.mark.parametrize("command", [
     "cell.close", "cell.status", "cell.at AT", "cell.apn", "cell.apn internet", "cell.attach", "cell.ping 8.8.8.8",
-    "cell.bridge tcp", "cell.bridge uart COM1", "cell.info", "cell.signal", "cell.operator", "cell.operator scan",
+    "cell.bridge tcps", "cell.bridge uart COM1", "cell.info", "cell.signal", "cell.operator", "cell.operator scan",
     "cell.radio", "cell.rat", "cell.profile", "cell.pin 1234",
 ])
 def test_cell_commands_need_an_open_module(app_exe, tmp_path, command):
@@ -366,7 +366,7 @@ def test_cell_commands_need_an_open_module(app_exe, tmp_path, command):
     ("gnss.bridge udps 5000", "no receiver open"),
     ("gnss.bridge ble sps", "no receiver open"),
     ("imu.bridge uart COM1", "no IMU open"),
-    ("imu.bridge udp 10.0.0.1 5000 6000", "no IMU open"),
+    ("imu.bridge udpc 10.0.0.1 5000 6000", "no IMU open"),
     ("cell.bridge uart COM1 9600", "no cellular module open"),
     ("cell.bridge tcpc 10.0.0.1 80", "no cellular module open"),
 ])
@@ -487,7 +487,7 @@ def test_hw_help_lists_every_documented_command(app_exe, tmp_path):
 
 
 def test_hw_bridge_without_module_or_port_fails_cleanly(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "hw.bridge status", "hw.bridge off", "hw.bridge udp 10.0.0.1 5000")
+    out = _run(app_exe, tmp_path, "COM255", "hw.bridge status", "hw.bridge off", "hw.bridge udpc 10.0.0.1 5000")
     assert out.stdout.count("bridge: off") == 2
     assert "no module connected" in out.stdout
     out = _run(app_exe, tmp_path, "COM255", "hw.bridge uart COM254")

@@ -150,7 +150,7 @@ static const ucRow_t kImplement[] = {
     { 0, "[ok]", "CAN bus", "ISOBUS and J1939 run at 250 kbit/s: can.cfg 250000, can.recv", "can.cfg" },
     { 0, "[ok]", "CAN adapter", "an STM32 board with a CAN transceiver runs can.* on the bus; the PC emulates it", "can.cfg" },
     { 'w', "[ok]", "Cab Wi-Fi", "the module is the cab's access point: wifi.ap.enable", NULL },
-    { 0, "[ok]", "Cab tablet", "CAN frames both ways over TCP: can.bridge tcp 9100", "can.bridge" },
+    { 0, "[ok]", "Cab tablet", "CAN frames both ways over TCP: can.bridge tcps 9100", "can.bridge" },
     { 0, "[ok]", "Phone", "or over BLE to the operator's phone: can.bridge ble nus", "can.bridge" },
     { 0, "[ok]", "Yard upload", "back at the yard: wifi.connect, then mqtt.publish the work record", "mqtt.publish" },
     { 0, "[ok]", "Field link", "frames over cellular in the field: can.bridge cell (reconnects after dead zones)", "can.bridge" },
@@ -160,7 +160,7 @@ static const ucRow_t kImplement[] = {
 static const ucRow_t kCondition[] = {
     { 0, "[ok]", "Vibration", "an IMU on the motor housing at up to 200 Hz: imu.open, imu.rate 100", "imu.rate" },
     { 0, "[ok]", "Baseline", "record the healthy motor first: imu.log baseline.bin", "imu.log" },
-    { 0, "[ok]", "Raw stream", "to the analysis PC or edge model: imu.bridge tcp 9000", "imu.bridge" },
+    { 0, "[ok]", "Raw stream", "to the analysis PC or edge model: imu.bridge tcps 9000", "imu.bridge" },
     { 'w', "[ok]", "Plant Wi-Fi", "Enterprise Wi-Fi with certificates: wifi.eap", "wifi.eap" },
     { 0, "[ok]", "Alarms", "the host's verdict to the plant broker: mqtt.publish", "mqtt.publish" },
     { 0, "[limit]", "Bearing faults", "200 Hz finds imbalance and misalignment; bearings need a kHz sensor on the host", NULL },
@@ -199,7 +199,7 @@ static const ucRow_t kBleGw[] = {
 
 static const ucRow_t kEdge[] = {
     { 0, "[ok]", "Training data", "record the motion for the model: imu.open, imu.log motion.bin", "imu.log" },
-    { 0, "[ok]", "Live stream", "the IMU stream to a PC or notebook: imu.bridge tcp 9000", "imu.bridge" },
+    { 0, "[ok]", "Live stream", "the IMU stream to a PC or notebook: imu.bridge tcps 9000", "imu.bridge" },
     { 0, "[ok]", "I2C sensors", "find and read sensors on the host: hw.i2c.scan, hw.i2c.reg", "hw.i2c.scan" },
     { 0, "[ok]", "Results", "the model's result to the cloud: mqtt.publish", "mqtt.publish" },
     { 0, "[check]", "ALMA-W16x", "ALMA-W161/W166 run u-connectXpress on Wi-Fi 6: these steps carry over", NULL },
@@ -291,7 +291,7 @@ static const ucRow_t kLivestock[] = {
 static const ucRow_t kBoat[] = {
     { 'g', "[check]", "GNSS receiver", "any NMEA receiver on a serial port: gnss.open finds port and baud", "gnss.open" },
     { 'w', "[ok]", "Onboard Wi-Fi", "the module is the access point: wifi.ap.enable (WPA2, max 5 tablets or phones)", NULL },
-    { 0, "[ok]", "Chart app", "NMEA over TCP port 10110 (OpenCPN, Navionics, iNavX): gnss.bridge tcp 10110", "gnss.bridge" },
+    { 0, "[ok]", "Chart app", "NMEA over TCP port 10110 (OpenCPN, Navionics, iNavX): gnss.bridge tcps 10110", "gnss.bridge" },
     { 0, "[ok]", "Phone over BLE", "NMEA over Nordic UART instead: gnss.bridge ble nus", "gnss.bridge" },
     { 0, "[ok]", "Trip log", "the raw receiver stream to a file: gnss.log trip.nmea", "gnss.log" },
     { 0, "[ok]", "Both at once", "tablet and phone together: both bridges run side by side (up to 4)", "gnss.bridge" },
@@ -340,7 +340,7 @@ static const ucRow_t kFieldKit[] = {
     { 'w', "[ok]", "Soft AP", "laptops and tablets join the module's own network: wifi.ap.enable (WPA2, max 5)", NULL },
     { 0, "[check]", "Cellular", "a modem with a SIM and a data plan: cell.open, cell.attach on", "cell.attach" },
     { 0, "[ok]", "Server", "one TCP or UDP socket over LTE: cell.connect <host> <port>", "cell.connect" },
-    { 0, "[ok]", "Relay", "a laptop on the AP connects to <ap-ip>:7000, byte for byte to the server: cell.bridge tcp 7000",
+    { 0, "[ok]", "Relay", "a laptop on the AP connects to <ap-ip>:7000, byte for byte to the server: cell.bridge tcps 7000",
       "cell.bridge" },
     { 0, "[ok]", "Phone, serial", "or relay a phone (cell.bridge ble nus) or a machine's port (cell.bridge uart <port>)",
       "cell.bridge" },

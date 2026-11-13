@@ -94,7 +94,7 @@ const char *ucxapp_ui_group_section(const char *group);
 /* Splits a usage string into fields; -1 when it has more than one form or is too complex. */
 int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max);
 
-/* Splits a usage string into its forms ("tcp [port] | udps <port>", "[a|b c]") and each form into a
+/* Splits a usage string into its forms ("tcps [port] | udps <port>", "[a|b c]") and each form into a
  * literal and fields; returns the number of forms, -1 when it is too complex (use one free-text field). */
 int ucxapp_ui_parse_variants(const char *usage, ucxapp_ui_variant_t *out, int max);
 

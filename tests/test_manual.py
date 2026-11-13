@@ -47,7 +47,7 @@ def test_manual_tables_keep_escaped_pipes_in_one_cell(app_exe):
     rc, out = run(app_exe, "manual cell.bridge")
     assert rc == 0
     row = next(line for line in out.splitlines() if line.strip().startswith("cell.bridge"))
-    assert "tcp [port]|tcpc <host> <port>|udp" in row and "\\|" not in row
+    assert "tcps [port]|tcpc <host> <port>|udpc" in row and "\\|" not in row
 
 
 @pytest.mark.app

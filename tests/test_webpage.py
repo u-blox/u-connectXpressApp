@@ -372,7 +372,7 @@ def test_script_syntax(tmp_path, source):
 
 # Commands in the format web.export writes: fields [name, optional, choices, default, kind, key], forms in "v"
 DEMO = [
-    {"n": "gnss.bridge", "h": "Bridges", "u": "tcp [port] | ntrip <host> <port> [ble]", "f": None,
+    {"n": "gnss.bridge", "h": "Bridges", "u": "tcps [port] | ntrip <host> <port> [ble]", "f": None,
      "v": [{"l": "tcp", "p": "tcp", "f": [["port", 1, "", "", "t", ""]]},
            {"l": "ntrip", "p": "ntrip", "f": [["host", 0, "", "", "t", ""], ["port", 0, "", "2101", "t", ""],
                                               ["ble", 1, "", "", "f", ""]]}]},
@@ -855,7 +855,7 @@ def test_web_export_writes_the_page_json(app_exe, tmp_path):
     examples = json.loads((tmp_path / "examples-usecase.json").read_text(encoding="utf-8"))
     assert any("(PEAP)" in e["t"] and "wifi." in e["l"] for e in examples)
     boat = json.loads((tmp_path / "examples-uc-boat.json").read_text(encoding="utf-8"))
-    assert any("gnss.bridge tcp 10110" in e["l"] for e in boat)
+    assert any("gnss.bridge tcps 10110" in e["l"] for e in boat)
     assert not (tmp_path / "commands-web.json").exists()
 
 

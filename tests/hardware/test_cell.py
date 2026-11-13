@@ -151,7 +151,7 @@ def test_bridge_over_cell_round_trip(app_exe, cell, source, request):
 @pytest.mark.wifi
 def test_cell_at_console_over_a_tcp_bridge(app_exe, port_a, cell):
     """The NORA module serves the modem's AT console on TCP; a PC socket on the same Wi-Fi asks for the maker."""
-    shell = _Shell(app_exe, port_a, _wifi_connect_command(), _open(cell), "cell.bridge tcp 2949")
+    shell = _Shell(app_exe, port_a, _wifi_connect_command(), _open(cell), "cell.bridge tcps 2949")
     try:
         m = shell.wait(r"connect a TCP client to ([\d.]+):2949", 120)
         with socket.create_connection((m.group(1), 2949), timeout=20) as s:
@@ -176,7 +176,7 @@ def test_cell_at_console_over_a_tcp_bridge(app_exe, port_a, cell):
 def test_cell_relays_a_wifi_client_to_the_internet(app_exe, port_a, cell):
     """Wi-Fi to cellular relay: a PC socket to the NORA module's TCP server reaches the echo server over the modem."""
     shell = _Shell(app_exe, port_a, _wifi_connect_command(), _open(cell), "cell.attach on", f"cell.connect {ECHO}",
-                   "cell.bridge tcp 2950")
+                   "cell.bridge tcps 2950")
     try:
         m = shell.wait(r"connect a TCP client to ([\d.]+):2950", 300)
         shell.wait(r"relaying the data link to ", 20)

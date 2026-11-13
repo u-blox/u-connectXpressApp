@@ -819,7 +819,7 @@ static const ucxapp_cmd_t kCmds[] = {
     HW_OPS(X_ENTRY)
     { "hw.profile.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
     { "hw.exec", "<command...>", "Run a bridge line such as 'gpio.read 3' and print the OK/ERR reply", 0, cmdExec },
-    { "hw.bridge", "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
+    { "hw.bridge", "tcps [port] | tcpc <host> <port> | udpc <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
       "uart <port> [baud] | off [n] | status", "Expose these commands as a line protocol, with EVT lines for events; up to 4 bridges at once", 0,
       cmdBridge },
 };

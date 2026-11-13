@@ -365,7 +365,7 @@ def _until(check, timeout=20):
 
 
 def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_path):
-    """matter.bridge tcp: a client gets every change of the card and the node's events as lines, and sets and gets
+    """matter.bridge tcps: a client gets every change of the card and the node's events as lines, and sets and gets
     the endpoints with lines of its own."""
     pytest.importorskip("yaml")
     from harness.vucx import Vucx, load
@@ -381,7 +381,7 @@ def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_pa
         return bytes(module.net.replies[0]).decode("latin-1") if module.net.replies else ""
 
     try:
-        proc.stdin.write("matter.start\nmatter.bridge tcp\n")
+        proc.stdin.write("matter.start\nmatter.bridge tcps\n")
         proc.stdin.flush()
         assert _until(lambda: "ERR unknown command 'hello'" in got() and "EP light = on\n" in got()), got()
         text = got()

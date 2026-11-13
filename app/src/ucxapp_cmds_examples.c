@@ -16,14 +16,14 @@ typedef struct {
 static const example_t kExamples[] = {
 #if UCXAPP_HOST   /* peripherals and tools of the PC builds */
     { "bridge", "Sensor hub: GNSS to the PC over Wi-Fi, IMU to a phone over BLE",
-      "wifi.profile.auto\ngnss.open\nimu.open\ngnss.bridge tcp\nimu.bridge ble nus\nbridge.list" },
+      "wifi.profile.auto\ngnss.open\nimu.open\ngnss.bridge tcps\nimu.bridge ble nus\nbridge.list" },
     { "bridge", "Asset tracker: GNSS over cellular, CAN over Wi-Fi",
       "cell.open\ncell.attach on\ncell.connect myserver.example.com 5000\ngnss.open\ngnss.bridge cell\n"
-      "can.bridge udp 192.168.1.10 6000\nbridge.list" },
+      "can.bridge udpc 192.168.1.10 6000\nbridge.list" },
     { "bridge", "RTK rover: NTRIP in over Wi-Fi, position out over BLE",
       "wifi.profile.auto\ngnss.open\ngnss.bridge off\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS} ble\nbridge.list" },
     { "bridge", "Remote modem console over Wi-Fi",
-      "wifi.profile.auto\ncell.open\ncell.bridge tcp 7000\n# telnet <module-ip> 7000 and type AT commands" },
+      "wifi.profile.auto\ncell.open\ncell.bridge tcps 7000\n# telnet <module-ip> 7000 and type AT commands" },
     { "bridge", "Stop everything",
       "bridge.list\nbridge.off" },
 
@@ -32,13 +32,13 @@ static const example_t kExamples[] = {
     { "gnss", "Watch the fix come in (time to first fix)",
       "gnss.open\ngnss.restart cold\ngnss.watch 60" },
     { "gnss", "u-center or gpsd on the PC over Wi-Fi",
-      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge tcp\n# connect u-center / gpsd to <module-ip>:2947" },
+      "wifi.connect MyNetwork MyPassword\ngnss.open\ngnss.bridge tcps\n# connect u-center / gpsd to <module-ip>:2947" },
     { "gnss", "Phone app over BLE",
       "gnss.open\ngnss.bridge ble nus\n# open nRF Connect or a Serial Bluetooth Terminal app and connect" },
     { "gnss", "Stream to a server or chart plotter",
-      "gnss.open\ngnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udp 192.168.1.10 10110" },
+      "gnss.open\ngnss.bridge tcpc myserver.example.com 5000\n# or NMEA over UDP to OpenCPN:\ngnss.bridge udpc 192.168.1.10 10110" },
     { "gnss", "Several bridges at once (up to 4): u-center, OpenCPN and a phone",
-      "gnss.open\ngnss.bridge tcp\ngnss.bridge udp 192.168.1.10 10110\ngnss.bridge ble nus\ngnss.bridge status\n"
+      "gnss.open\ngnss.bridge tcps\ngnss.bridge udpc 192.168.1.10 10110\ngnss.bridge ble nus\ngnss.bridge status\n"
       "# stop one by its number, or all of them\ngnss.bridge off 2\ngnss.bridge off" },
     { "gnss", "RTK / PPP corrections from an NTRIP caster (PointPerfect, RTK2go)",
       "wifi.profile.auto\ngnss.open\ngnss.bridge off\ngnss.bridge ntrip ppntrip.services.u-blox.com 2101 EU ${NTRIP_USER} ${NTRIP_PASS}\n"
@@ -51,9 +51,9 @@ static const example_t kExamples[] = {
     { "gnss", "Log a drive test",
       "gnss.open\ngnss.rate 5\ngnss.log drive.nmea nmea\n# ...drive...\ngnss.watch 10\ngnss.log off" },
     { "gnss", "Replay a track without a receiver (recorded, or drawn on nmeagen.org)",
-      "gnss.close\ngnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udp 192.168.1.10 10110" },
+      "gnss.close\ngnss.replay drive.nmea 2\ngnss.watch 10\ngnss.bridge udpc 192.168.1.10 10110" },
     { "gnss", "No receiver at hand: a virtual one at the PC's location (u-blox Malmo if unknown)",
-      "gnss.close\ngnss.virtual\ngnss.watch 5\ngnss.bridge tcp\n# or a fixed spot: gnss.virtual 55.61276 12.98625 10" },
+      "gnss.close\ngnss.virtual\ngnss.watch 5\ngnss.bridge tcps\n# or a fixed spot: gnss.virtual 55.61276 12.98625 10" },
     { "gnss", "u-center recording: log UBX, replay it, view the track in Google Earth",
       "gnss.open\ngnss.log drive.ubx ubx\n# ...drive...\ngnss.watch 5\ngnss.log off\ngnss.export drive.ubx drive.kml\ngnss.close\ngnss.replay drive.ubx 5" },
     { "gnss", "Geofence from Google My Maps (draw the area, Export to KML)",
@@ -85,7 +85,7 @@ static const example_t kExamples[] = {
       "gnss.open\ngnss.setup rover\ngnss.bridge ntrip rtk2go.com 2101 MOUNT ${NTRIP_USER} ${NTRIP_PASS}\ngnss.watch 120\n"
       "# the RTK line goes DGNSS -> RTK float -> RTK fixed" },
     { "gnss", "RTK base station: survey-in, then serve RTCM3 to rovers over TCP",
-      "gnss.open\ngnss.setup base survey 120 2\ngnss.status\ngnss.bridge tcp 2101\n"
+      "gnss.open\ngnss.setup base survey 120 2\ngnss.status\ngnss.bridge tcps 2101\n"
       "# when gnss.status says survey-in done, it prints the gnss.setup base fixed line that keeps the position\n"
       "# rover: gnss.setup rover, then gnss.bridge tcpc <base-ip> 2101" },
     { "gnss", "RTK base station at a known position",
@@ -94,7 +94,7 @@ static const example_t kExamples[] = {
     { "imu", "First look at the sensor",
       "imu.detect\nimu.open\nimu.status" },
     { "imu", "Stream to a PC over Wi-Fi",
-      "imu.open\nimu.rate 50\nimu.bridge tcp 9000\n# connect a TCP client to <module-ip>:9000" },
+      "imu.open\nimu.rate 50\nimu.bridge tcps 9000\n# connect a TCP client to <module-ip>:9000" },
     { "imu", "Live data to a phone over BLE",
       "imu.open\nimu.bridge ble nus" },
     { "imu", "Record a session",
@@ -186,7 +186,7 @@ static const example_t kExamples[] = {
       "matter.stop\nmatter.log detail\nmatter.start light temp\n# forget every fabric, leave Wi-Fi and reboot the module: the node starts again, ready to be commissioned\nmatter.reset\nmatter.selftest" },
     { "matter", "The node over TCP, UDP, BLE and MQTT: changes go out, 'set light on' comes back",
       "matter.start\n# a TCP client on port 7540 gets EP light = on, STATE ... and EVT lines; it sends set light on or get\n"
-      "matter.bridge tcp\nmatter.bridge udp 192.168.1.10 7541\nmatter.bridge ble nus\n"
+      "matter.bridge tcps\nmatter.bridge udpc 192.168.1.10 7541\nmatter.bridge ble nus\n"
       "# MQTT: retained values on ucxapp/matter/<endpoint>, commands on ucxapp/matter/<endpoint>/set\n"
       "mqtt.connect\nmatter.bridge mqtt\nmatter.bridge status\nmatter.bridge off" },
 #endif
@@ -329,10 +329,10 @@ static const example_t kExamples[] = {
     { "cell", "u-blox: LTE-M first, then NB-IoT, global profile, then a network in range",
       "cell.open\ncell.profile global\ncell.rat ltem nbiot\ncell.operator scan\ncell.operator auto\ncell.attach on" },
     { "cell", "Modem AT console from a PC tool over TCP",
-      "cell.open\ncell.bridge tcp 7000" },
+      "cell.open\ncell.bridge tcps 7000" },
     { "cell", "Wi-Fi to cellular relay: a laptop on the module's access point reaches a server over LTE",
       "wifi.disconnect\nwifi.ap.enable FieldKit FieldKit123\ncell.open\ncell.attach on\ncell.connect myserver.example.com 5000\n"
-      "cell.bridge tcp 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status\n"
+      "cell.bridge tcps 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status\n"
       "cell.disconnect" },
     { "cell", "XPLR-IOT-1: update the SARA-R5 firmware with EasyFlash, then restore the settings",
       "cell.power on\n# EasyFlash: SARA-R5, the port shown, 3000000 baud or slower, the .dof file\ncell.power cycle\n"
@@ -347,7 +347,7 @@ static const example_t kExamples[] = {
     { "can", "CANable on Linux (SocketCAN, set up with: sudo ip link set can0 type can bitrate 500000 up)",
       "can.open can0\ncan.cfg 500000 normal\ncan.send 0x123 11 22 33\ncan.watch 10\ncan.open emulated" },
     { "can", "CAN frames to a PC over UDP (Windows, Linux or the STM32 board)",
-      "can.bridge udp 192.168.1.10 6000\ncan.bridge status" },
+      "can.bridge udpc 192.168.1.10 6000\ncan.bridge status" },
     { "can", "CAN frames to a phone over SPS from the STM32 board",
       "can.cfg 500000 listen\ncan.bridge ble sps\ncan.bridge status" },
 #endif
@@ -360,7 +360,7 @@ static const example_t kExamples[] = {
     { "hw", "I2C sensor",
       "hw.i2c.scan\nhw.i2c.reg 0x76 0xD0" },
     { "hw", "Remote control over TCP",
-      "hw.bridge tcp 7100\n# send 'gpio.read 3' lines from the PC" },
+      "hw.bridge tcps 7100\n# send 'gpio.read 3' lines from the PC" },
 
     { "coap", "CoAP GET",
       "coap.get coap.me 5683 test" },
@@ -506,7 +506,7 @@ static const example_t kExamples[] = {
     { "uc-implement", "ISOBUS at 250 kbit/s",
       "can.cfg 250000\ncan.status\ncan.recv" },
     { "uc-implement", "Cab Wi-Fi and machine data to the tablet",
-      "wifi.ap.enable Implement Implement123\ncan.bridge tcp 9100\n# the tablet app connects to <ap-ip>:9100\ncan.bridge status" },
+      "wifi.ap.enable Implement Implement123\ncan.bridge tcps 9100\n# the tablet app connects to <ap-ip>:9100\ncan.bridge status" },
     { "uc-implement", "Machine data to the operator's phone over BLE",
       "can.bridge ble nus\ncan.bridge status" },
     { "uc-implement", "Back at the yard: the work record to the cloud",
@@ -515,7 +515,7 @@ static const example_t kExamples[] = {
     { "uc-condition", "Vibration sensor on the motor",
       "imu.detect\nimu.open\nimu.rate 100\nimu.status" },
     { "uc-condition", "Record a healthy baseline, then stream to the analysis PC",
-      "imu.log baseline.bin\n# ...a few minutes of normal running...\nimu.log off\nimu.bridge tcp 9000\n"
+      "imu.log baseline.bin\n# ...a few minutes of normal running...\nimu.log off\nimu.bridge tcps 9000\n"
       "# the PC connects to <module-ip>:9000\nimu.bridge status" },
     { "uc-condition", "Alarm to the plant broker",
       "mqtt.connect broker.example.com 1883\nmqtt.publish plant/line1/motor7/vibration \"rms=7.1 mm/s state=alarm\"\n"
@@ -548,7 +548,7 @@ static const example_t kExamples[] = {
     { "uc-edge", "Record training data from the IMU",
       "imu.detect\nimu.open\nimu.rate 100\nimu.log motion.bin\n# ...move the sensor...\nimu.log off" },
     { "uc-edge", "Live stream to a notebook",
-      "imu.bridge tcp 9000\n# in Python: socket.create_connection((\"<module-ip>\", 9000))\nimu.bridge status" },
+      "imu.bridge tcps 9000\n# in Python: socket.create_connection((\"<module-ip>\", 9000))\nimu.bridge status" },
     { "uc-edge", "I2C sensors on the host",
       "hw.i2c.scan\nhw.i2c.reg 0x76 0xD0" },
     { "uc-edge", "The model's result to the cloud",
@@ -613,11 +613,11 @@ static const example_t kExamples[] = {
     { "uc-fieldkit", "Modem online, then your server",
       "cell.open\ncell.attach on\ncell.signal\ncell.connect myserver.example.com 5000" },
     { "uc-fieldkit", "Relay: a laptop on FieldKit talks to the server over LTE",
-      "cell.bridge tcp 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status" },
+      "cell.bridge tcps 7000\n# the laptop joins FieldKit and connects to <ap-ip>:7000\ncell.bridge status" },
     { "uc-fieldkit", "Done: stop the relay and the link",
       "cell.bridge off\ncell.disconnect" },
     { "uc-fieldkit", "Or: the modem's AT console for the laptop (no cell.connect)",
-      "cell.bridge tcp 7000\n# the laptop connects to <ap-ip>:7000 and types AT commands\ncell.bridge off\n"
+      "cell.bridge tcps 7000\n# the laptop connects to <ap-ip>:7000 and types AT commands\ncell.bridge off\n"
       "wifi.ap.disable" },
     { "uc-blecell", "Modem online, then your server",
       "cell.open\ncell.attach on\ncell.connect myserver.example.com 5000" },
@@ -650,7 +650,7 @@ static const example_t kExamples[] = {
     { "uc-boat", "Boat Wi-Fi for the tablets",
       "wifi.ap.enable BoatNet BoatPass123\nwifi.ap.status" },
     { "uc-boat", "NMEA to the chart app over TCP 10110",
-      "gnss.bridge off\ngnss.bridge tcp 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
+      "gnss.bridge off\ngnss.bridge tcps 10110\n# in OpenCPN or Navionics: add a TCP connection to <ap-ip>:10110\ngnss.bridge status" },
     { "uc-boat", "NMEA to a phone over BLE as well",
       "gnss.bridge ble nus\n# connect a GNSS app to the Nordic UART service\ngnss.bridge status\n"
       "# bridge 1 is the TCP server, bridge 2 the BLE link; gnss.bridge off 2 stops only the phone" },

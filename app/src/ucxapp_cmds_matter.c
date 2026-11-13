@@ -1351,7 +1351,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.qr", "", "Show the setup QR code and manual pairing code of the node (it does not advertise: matter.open does)", 0, cmdForward },
     { "matter.open", "[seconds]", "Open the commissioning window again and advertise over Bluetooth LE (180 to 900 s, default 900)", 0, cmdForward },
     { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, crypto known answers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
-    { "matter.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | "
+    { "matter.bridge", "tcps [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udpc <host> <port> [local] | "
       "udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | mqtt [prefix|off] | off [n] | status",
       "The node over a bridge: endpoint changes, node state and events go out as lines (EP light = on, STATE ..., "
       "EVT ...), 'set <endpoint> <value>' and 'get' come back (default port 7540); mqtt: <prefix>/<endpoint> and "

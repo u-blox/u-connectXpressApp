@@ -26,7 +26,7 @@ def test_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, r
     """A bridges the source over TCP on Wi-Fi; B connects a socket and reads the stream."""
     wifi = _wifi_connect_command()
     proc, seen = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source), [wifi],
-                               f"{source}.bridge tcp 2947")
+                               f"{source}.bridge tcps 2947")
     try:
         match = re.search(r"connect a TCP client to ([\d.]+):2947", "".join(seen))
         assert match, "".join(seen)
@@ -109,7 +109,7 @@ def test_can_bridge_record_reaches_other_module(app_exe, wifi_peers, port_a, por
                                     "sock.recvfrom 0 600 20",
                                     "sock.close 0", ready="bound to port 7008")
     try:
-        bridge = subprocess.Popen(_args(app_exe, port_a, wifi, f"can.bridge udp {ip_b} 7008") + ["--shell"],
+        bridge = subprocess.Popen(_args(app_exe, port_a, wifi, f"can.bridge udpc {ip_b} 7008") + ["--shell"],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                   errors="replace")
         try:

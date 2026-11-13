@@ -2026,7 +2026,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91) for gnss.bridge cell, imu.bridge cell, can.bridge cell", 0, cmdConnect },
     { "cell.disconnect", "", "Leave transparent mode and close the socket (stops the bridges that use the link)", 0, cmdDisconnect },
-    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once. After cell.connect it relays the data link instead: a Wi-Fi client of the NORA module (e.g. on its soft AP) talks to the cell.connect host; off leaves the link up", 0, cmdBridge },
+    { "cell.bridge", "tcps [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udpc <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off [n] | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART; up to 4 at once. After cell.connect it relays the data link instead: a Wi-Fi client of the NORA module (e.g. on its soft AP) talks to the cell.connect host; off leaves the link up", 0, cmdBridge },
 };
 
 void ucxapp_register_cell_cmds(void)

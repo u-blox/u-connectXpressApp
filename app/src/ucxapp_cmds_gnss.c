@@ -3360,7 +3360,7 @@ static int cmdSetup(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("next: corrections with gnss.bridge ntrip <caster> <port> <mount> [user pass], "
                      "gnss.bridge pointperfect <client-id>, or from a base with gnss.bridge tcpc <host> <port>\n");
     } else if (kind == SURVEY || kind == FIXED) {
-        ucxapp_print("next: %sserve the corrections with gnss.bridge tcp [port] (rovers: gnss.bridge tcpc <host> <port>)\n",
+        ucxapp_print("next: %sserve the corrections with gnss.bridge tcps [port] (rovers: gnss.bridge tcpc <host> <port>)\n",
                      kind == SURVEY ? "gnss.status shows the survey-in; " : "");
     }
     return UCXAPP_OK;
@@ -3913,7 +3913,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.setup", "standard | rover | base survey [min_s=120] [acc_m=2] | base fixed <lat> <lon> <height_m> [acc_m=0.05] | base off", "Basic setup in one step, each part checked by its UBX-ACK: standard NMEA + NAV-PVT; RTK rover (RTCM3/SPARTN in, NAV-HPPOSLLH, high-precision NMEA); RTK base (survey-in or fixed position, RTCM3 1005 1074 1084 1094 1124 1230 out); base and rover need a ZED-F9P or ZED-X20P", 0, cmdSetup },
     { "gnss.backup", "<save|clear|status>", "Save-on-shutdown (UBX-UPD-SOS): save stops navigation and keeps the state in flash for a fast start after power off; status shows how the last start went", 0, cmdBackup },
     { "gnss.assist", "<file.ubx>|online [gnss] [data]|register <ztp-token>|chipcode <code>|id [ztp-token]|legacy <token> [gnss]", "u-blox AssistNow: UBX-MGA time, orbits and almanac over the module's Wi-Fi (or from a file) to the receiver for a fast first fix", 0, cmdAssist },
-    { "gnss.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | ntrip <host> <port> <mount> [user pass] [ble] [cell] | pointperfect <client-id> [eu|us|kr|au|jp] [cert] | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | off [n] | status", "Two-way bridges of the receiver stream: TCP server/client, NTRIP corrections, PointPerfect SPARTN over MQTT (certificates <cert>, <cert>-key, <cert>-ca), UDP, BLE NUS/SPS, PC UART; up to 4 at once", 0, cmdBridge },
+    { "gnss.bridge", "tcps [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | ntrip <host> <port> <mount> [user pass] [ble] [cell] | pointperfect <client-id> [eu|us|kr|au|jp] [cert] | udpc <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | off [n] | status", "Two-way bridges of the receiver stream: TCP server/client, NTRIP corrections, PointPerfect SPARTN over MQTT (certificates <cert>, <cert>-key, <cert>-ca), UDP, BLE NUS/SPS, PC UART; up to 4 at once", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

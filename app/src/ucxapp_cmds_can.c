@@ -624,7 +624,7 @@ static size_t takeBatch(uint8_t *batch)
    ucxapp_stream.c's). One at a time, serviced from a task (board) or thread (host) of their own under gBrLock. */
 #ifdef UCXAPP_CAN_HW
 enum { BR_OFF, BR_GATT, BR_SLCAN, BR_TCP, BR_TCPC, BR_UDP, BR_SPS };
-static const char *const kBrNames[] = { "off", "ble gatt", "ble slcan", "tcp", "tcpc", "udp", "ble sps" };
+static const char *const kBrNames[] = { "off", "ble gatt", "ble slcan", "tcps", "tcpc", "udp", "ble sps" };
 #else
 enum { BR_OFF, BR_GATT, BR_SLCAN };
 static const char *const kBrNames[] = { "off", "ble gatt", "ble slcan" };
@@ -1680,7 +1680,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("%s\n", was ? "bridge stopped" : "bridge: off");
         return UCXAPP_OK;
     }
-    if (strcasecmp(argv[1], "tcp") == 0 && argc <= 3) {
+    if ((strcasecmp(argv[1], "tcps") == 0 || strcasecmp(argv[1], "tcp") == 0) && argc <= 3) {
         if (argc == 3 && !parsePort(argv[2], &port)) {
             return UCXAPP_ERR_USAGE;
         }
@@ -1692,7 +1692,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
         }
         return brStart(app, BR_TCPC, argv[2], port, 0);
     }
-    if (strcasecmp(argv[1], "udp") == 0 && (argc == 4 || argc == 5)) {
+    if ((strcasecmp(argv[1], "udpc") == 0 || strcasecmp(argv[1], "udp") == 0) && (argc == 4 || argc == 5)) {
         if (!parsePort(argv[3], &port) || (argc == 5 && !parsePort(argv[4], &local))) {
             return UCXAPP_ERR_USAGE;
         }
@@ -1763,14 +1763,14 @@ static const ucxapp_cmd_t gCanCmds[] = {
     { "can.watch",    "[seconds=10]",     "Print received CAN frames with their time (any key stops)", 0, cmdWatch },
     { "can.status",   "",              "Controller, counters and bridge state", 0, cmdStatus },
 #ifndef UCXAPP_CAN_HW
-    { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
+    { "can.bridge",   "tcps [port] | tcpc <host> <port> | udpc <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
       "ble gatt | ble slcan | uart <port> [baud] | cell | off [n] | status", "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]); "
       "ble gatt is the u-blox CAN GATT service (records, bit rate, mode, counters), ble slcan is SLCAN text over "
       "the Nordic UART Service, cell uses the cellular data link (cell.connect) and reconnects it; up to 4 bridges "
       "at once (ble gatt and ble slcan run alone)", 0,
       cmdBridge },
 #else
-    { "can.bridge",   "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble sps | ble gatt | "
+    { "can.bridge",   "tcps [port] | tcpc <host> <port> | udpc <host> <port> [local] | udps <port> | ble sps | ble gatt | "
       "ble slcan | off | status",
       "Carry CAN frames both ways as 17-byte records (ts, id, dlc, data[8]) through the module, in a task of its own; "
       "ble gatt is the u-blox CAN GATT service, ble slcan is SLCAN text over the Nordic UART Service; one bridge at a time",

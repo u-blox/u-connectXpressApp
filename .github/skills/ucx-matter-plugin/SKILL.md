@@ -100,7 +100,7 @@ matter.endpoints               # endpoints of the node and the kinds the plug-in
 matter.set light 40            # act as the device: light on|off|0..100, temp -40..125, contact open|closed
 matter.demo on                 # the node moves its sensors itself (temperature 19..24 C, contact every 30 s); off
 matter.open                    # commissioning window for 15 minutes again, with the codes
-matter.bridge tcp              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
+matter.bridge tcps              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
 matter.bridge mqtt             # after mqtt.connect: ucxapp/matter/<endpoint> (retained), ucxapp/matter/<endpoint>/set
 usecase.demo matter            # on a virtual module: start, codes, card, second window, stop (also part of demo)
 matter.log detail              # how much of the log is printed: info (default), detail (the SDK's own), error

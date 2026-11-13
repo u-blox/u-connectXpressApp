@@ -596,20 +596,34 @@
     }
   }
 
-  async function connect() {
+  /* What the picker lists first: the EVKs' USB serial bridges (as ucxapp.py's detector: FTDI on the EVKs, u-blox) */
+  const EVK_FILTERS = [0x6010, 0x6011, 0x6014, 0x601C, 0x6015].map(pid => ({ usbVendorId: 0x0403, usbProductId: pid }))
+    .concat([{ usbVendorId: 0x1546 }]);
+
+  /* The picker shows the known EVKs; Shift+click, or cancelling it and asking for all, lists every serial port. */
+  async function connect(e) {
     if (port || virt) return disconnect(true);
     if (!navigator.serial) {
       (window.ucxAsk || alert)(noSerialReason());
       return;
     }
     await ready;
-    let p;
-    try {
-      p = await navigator.serial.requestPort();
-      await openPort(p);
-    } catch (e) {
-      port = null;
-      if (e.name !== 'NotFoundError') (window.ucxAsk || alert)('Could not open the port: ' + e.message);
+    let all = !!(e && e.shiftKey);
+    for (;;) {
+      try {
+        await openPort(await navigator.serial.requestPort(all ? {} : { filters: EVK_FILTERS }));
+        return;
+      } catch (err) {
+        port = null;
+        if (err.name !== 'NotFoundError') {
+          (window.ucxAsk || alert)('Could not open the port: ' + err.message);
+          return;
+        }
+        if (all || !window.ucxAsk || !await window.ucxAsk('No u-connectXpress EVK picked. The list only shows known ' +
+          'EVK USB bridges (FTDI, u-blox); a module on another USB-UART is in the full list.',
+          { ok: 'Show all ports', cancel: true })) return;
+        all = true;
+      }
     }
   }
 
@@ -643,7 +657,8 @@
     const files = document.getElementById('more') || document.getElementById('files');
     if (!files) return;
     const reason = noSerialReason();
-    addButton('wsc', 'Connect module', reason || 'Pick the NORA EVK serial port (Web Serial, 115200 baud)', connect);
+    addButton('wsc', 'Connect module', reason || 'Pick the EVK serial port (Web Serial, 115200 baud); the list shows ' +
+      'known EVKs, Shift+click shows every serial port', connect);
     const pick = document.createElement('select');
     pick.id = 'wsvm';
     pick.title = VIRTUAL[0][2];

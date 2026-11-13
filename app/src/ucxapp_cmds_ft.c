@@ -374,21 +374,7 @@ static void tcpPump(ucxapp_t *app, tcpRx_t *t, ring_t *q)
 
 static bool tcpWrite(uCxHandle_t *ucx, int32_t sock, const uint8_t *p, size_t n)
 {
-    size_t off = 0;
-    int idle = 0;
-
-    while (off < n) {
-        int32_t r = uCxSocketWrite(ucx, sock, p + off, (int32_t)(n - off));
-        if (r > 0) {
-            off += (size_t)r;
-            idle = 0;
-        } else if (r < 0 || ++idle > 1000) {
-            return false;
-        } else {
-            ucxapp_platform_sleep_ms(1);
-        }
-    }
-    return true;
+    return ucxapp_sock_write_all(ucx, sock, p, n) == 0;
 }
 
 /* ---- link ------------------------------------------------------------------------------------------------------- */

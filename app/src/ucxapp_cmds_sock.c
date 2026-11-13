@@ -155,7 +155,7 @@ static int cmdSockSend(ucxapp_t *app, int argc, char *argv[])
     if (!buildPayload(argc, argv, 2, text, sizeof(text), &len)) {
         return UCXAPP_ERR_FAILED;
     }
-    int32_t result = uCxSocketWrite(app->ucx, handle, (const uint8_t *)text, (int32_t)len);
+    int32_t result = ucxapp_sock_write_all(app->ucx, handle, (const uint8_t *)text, len);
     if (result < 0) {
         ucxapp_print("ERROR: send failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
@@ -444,6 +444,27 @@ int32_t ucxapp_sock_write(uCxHandle_t *ucx, int32_t sock, const uint8_t *buf, in
     return rc;
 }
 
+int32_t ucxapp_sock_write_all(uCxHandle_t *ucx, int32_t sock, const uint8_t *buf, size_t len)
+{
+    size_t off = 0;
+    int idle = 0;
+
+    while (off < len) {
+        int32_t r = ucxapp_sock_write(ucx, sock, buf + off, (int32_t)(len - off));
+        if (r > 0) {
+            off += (size_t)r;
+            idle = 0;
+        } else if (r < 0) {
+            return r;
+        } else if (++idle > 1000) {
+            return -1;
+        } else {
+            ucxapp_platform_sleep_ms(1);   /* the module's send buffer is full: it drains in a few ms */
+        }
+    }
+    return 0;
+}
+
 static int cmdSockClose(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t handle;
@@ -630,7 +651,7 @@ static int cmdSockEcho(ucxapp_t *app, int argc, char *argv[])
                 n = 0;
             } else {
                 n = uCxSocketRead(app->ucx, client, (int32_t)sizeof(buf), buf);
-                if (n > 0 && uCxSocketWrite(app->ucx, client, buf, n) < 0) {
+                if (n > 0 && ucxapp_sock_write_all(app->ucx, client, buf, (size_t)n) < 0) {
                     break;
                 }
             }

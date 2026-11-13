@@ -139,6 +139,8 @@ static ucxapp_stream_t *gStreams[MAX_STREAMS];
 
 /* Guards gStreams and the URC queues; the events mutex only exists while a module is connected. */
 static U_CX_MUTEX_HANDLE gRegLock;
+/* Guards a TCP bridge's client list against bridge.list while the sender drops a client (and frees its TLS). */
+static U_CX_MUTEX_HANDLE gClientLock;
 static bool gRegInit;
 
 static void regLock(void)
@@ -240,6 +242,7 @@ ucxapp_stream_t *ucxapp_stream_open(const char *port, int32_t baud, const ucxapp
     }
     if (!gRegInit) {
         U_CX_MUTEX_CREATE(gRegLock);
+        U_CX_MUTEX_CREATE(gClientLock);
         gRegInit = true;
     }
     s->cfg = *cfg;
@@ -315,11 +318,12 @@ bool ucxapp_stream_write(ucxapp_stream_t *s, const uint8_t *data, size_t len)
 {
     bool ok;
 
+    U_CX_MUTEX_LOCK(s->writeLock);   /* several bridges may write to one stream, virtual ones too */
     if (s->uart == NULL) {
-        return s->cfg.write != NULL && s->cfg.write(s->cfg.ctx, data, len);
+        ok = s->cfg.write != NULL && s->cfg.write(s->cfg.ctx, data, len);
+    } else {
+        ok = ucxapp_uart_write(s->uart, data, len) == (int32_t)len;
     }
-    U_CX_MUTEX_LOCK(s->writeLock);
-    ok = ucxapp_uart_write(s->uart, data, len) == (int32_t)len;
     U_CX_MUTEX_UNLOCK(s->writeLock);
     return ok;
 }
@@ -373,6 +377,7 @@ const char *ucxapp_stream_log_name(const ucxapp_stream_t *s)
 
 static void dropClient(bridge_t *b, int idx, bool closeSock)
 {
+    U_CX_MUTEX_LOCK(gClientLock);
     ucxapp_tls_close(b->tls[idx], closeSock);
     if (closeSock) {
         (void)uCxSocketClose(b->app->ucx, b->clients[idx]);
@@ -381,6 +386,7 @@ static void dropClient(bridge_t *b, int idx, bool closeSock)
     b->clients[idx] = b->clients[b->nClients];
     b->tls[idx] = b->tls[b->nClients];
     b->tls[b->nClients] = NULL;
+    U_CX_MUTEX_UNLOCK(gClientLock);
 }
 
 static bool connectOnce(bridge_t *b)
@@ -560,7 +566,7 @@ static void deliver(bridge_t *b, const uint8_t *d, size_t n)
                 continue;   /* not secured yet: nothing in clear text */
             }
             if ((b->tls[c] != NULL ? ucxapp_tls_write(b->tls[c], d, n)
-                                   : uCxSocketWrite(ucx, b->clients[c], d, (int32_t)n)) < 0) {
+                                   : ucxapp_sock_write_all(ucx, b->clients[c], d, n)) < 0) {
                 dropClient(b, c, true);
             } else {
                 ucxapp_stats_add(UCXAPP_STATS_TCP, n, 0);
@@ -1750,11 +1756,13 @@ static void bridgeDescribe(const bridge_t *b)
         ucxapp_print(" %s:%d, %s", b->connectHost, (int)b->connectPort, b->nClients > 0 ? "connected" : "reconnecting");
     } else if (b->bridge == BR_TCP) {
         ucxapp_print("%s port %d, %d client(s)", b->tlsSrv != NULL ? " (TLS)" : "", (int)b->tcpPort, b->nClients);
+        U_CX_MUTEX_LOCK(gClientLock);
         for (int c = 0; c < b->nClients; c++) {
             if (b->tls[c] != NULL && ucxapp_tls_peer(b->tls[c])[0] != '\0') {
                 ucxapp_print(" [%s]", ucxapp_tls_peer(b->tls[c]));
             }
         }
+        U_CX_MUTEX_UNLOCK(gClientLock);
     } else if (b->bridge == BR_UDP) {
         ucxapp_print(" port %d", (int)b->udpPort);
     } else if (b->bridge == BR_UART) {

@@ -288,12 +288,36 @@ static int cmdFileSelftest(ucxapp_t *app, int argc, char *argv[])
             fail = "retry";
         }
     }
+    if (fail == NULL) {
+        /* a file that ends before the size its header gave is not taken */
+        uint8_t acks[32];
+        memSink_t sink = { "", 0, got, 0, ST_FILE_LEN };
+        memcpy(bad, wire, 133 + 1029);
+        bad[133 + 1029] = 0x04;
+        loop_t s = { bad, 133 + 1029 + 1, 0, acks, 0, sizeof(acks) };
+        ucxapp_ymodem_io_t sio = { loopGet, loopPut, &s };
+        long n = 0;
+        if (ucxapp_ymodem_recv(&sio, memWrite, &sink, &n) != UCXAPP_YMODEM_ERR_PROTO) {
+            fail = "short file";
+        }
+    }
+    if (fail == NULL) {
+        /* a size of digits up to the end of the block is read within it */
+        uint8_t hdr[128];
+        char name[16];
+        long size = 0;
+        memset(hdr, '9', sizeof(hdr));
+        memcpy(hdr, "a\0", 2);
+        if (!ucxapp_ymodem_parse_header(hdr, sizeof(hdr), name, sizeof(name), &size) || size != -1) {
+            fail = "header size";
+        }
+    }
     free(file);
     if (fail != NULL) {
         ucxapp_print("ymodem selftest: FAILED (%s)\n", fail);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("ymodem selftest: crc16, 1K and 128-byte blocks, retry ok\n");
+    ucxapp_print("ymodem selftest: crc16, 1K and 128-byte blocks, retry, short file, header size ok\n");
     return UCXAPP_OK;
 }
 

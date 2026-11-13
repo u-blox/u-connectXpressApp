@@ -7,10 +7,14 @@
 #include "ucxapp_platform.h"
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <direct.h>
 #define MKDIR(p) _mkdir(p)
 #elif defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #define MKDIR(p) mkdir(p, 0777)
 #else
 #define MKDIR(p) ((void)(p), 0)   /* bare-metal: no directories */
@@ -38,7 +42,19 @@ static void *stdioOpen(const char *name, bool forWrite)
     if (!fullPath(name, path, sizeof(path))) {
         return NULL;
     }
-    FILE *f = fopen(path, forWrite ? "wb" : "rb");
+    FILE *f;
+#if defined(__unix__) || defined(__APPLE__)
+    if (forWrite) {
+        /* owner-only from the first byte: keys, passwords and fixes never sit world-readable, even for a moment */
+        int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        f = fd >= 0 ? fdopen(fd, "wb") : NULL;
+        if (fd >= 0 && f == NULL) {
+            close(fd);
+        }
+        return f;
+    }
+#endif
+    f = fopen(path, forWrite ? "wb" : "rb");
     /* Files given by the user (firmware images, certificates) may still live in the working directory. */
     if (f == NULL && !forWrite && gDir[0] != '\0' && !isAbsolute(name)) {
         f = fopen(name, "rb");
@@ -75,8 +91,15 @@ static bool stdioRename(const char *from, const char *to)
     if (!fullPath(from, a, sizeof(a)) || !fullPath(to, b, sizeof(b))) {
         return false;
     }
-    remove(b);   /* rename() does not replace an existing file on Windows */
+#ifdef _WIN32
+    /* replaces in one step: a crash leaves the old file or the new one, never none */
+    return MoveFileExA(a, b, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#elif defined(__unix__) || defined(__APPLE__)
     return rename(a, b) == 0;
+#else
+    remove(b);
+    return rename(a, b) == 0;
+#endif
 }
 
 static int stdioList(ucxapp_store_list_cb_t cb, void *ctx)
@@ -91,11 +114,16 @@ static const ucxapp_store_ops_t *gOps = &gStdioOps;
 static const ucxapp_store_secure_t *gSecure;
 
 struct ucxapp_store_writer {
-    void *handle;
+    void *handle;          /* NULL for a secret: it is kept in memory and only ever written sealed */
+    uint8_t *mem;
+    size_t memLen;
+    size_t memCap;
     char name[NAME_MAX_LEN];
     char tmp[NAME_MAX_LEN + sizeof(TMP_SUFFIX)];
     bool failed;
 };
+
+#define SECRET_MAX (256u * 1024u)   /* certificates and keys; more is not a key file */
 
 void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops)
 {
@@ -150,6 +178,17 @@ int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx)
     return gOps->list != NULL ? gOps->list(cb, ctx) : -1;
 }
 
+/* Closes a file written through the store; false when what was written did not all reach it. */
+static bool closeWritten(void *h)
+{
+    if (gOps == &gStdioOps) {
+        bool ok = fflush((FILE *)h) == 0 && !ferror((FILE *)h);
+        return fclose((FILE *)h) == 0 && ok;
+    }
+    gOps->close(h);
+    return true;
+}
+
 ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
 {
     if (name == NULL || strlen(name) >= NAME_MAX_LEN) {
@@ -161,6 +200,9 @@ ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
     }
     snprintf(w->name, sizeof(w->name), "%s", name);
     snprintf(w->tmp, sizeof(w->tmp), "%s%s", name, TMP_SUFFIX);
+    if (isSecret(name, NULL)) {
+        return w;   /* streamed in plain (web upload, BLE transfer): sealed at the end, never on disk before */
+    }
     w->handle = gOps->open(w->tmp, true);
     if (w->handle == NULL) {
         free(w);
@@ -169,12 +211,40 @@ ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
     return w;
 }
 
+static bool memAppend(ucxapp_store_writer_t *w, const void *data, size_t len)
+{
+    if (len > SECRET_MAX - w->memLen) {
+        return false;
+    }
+    if (w->memLen + len > w->memCap) {
+        size_t cap = w->memCap != 0 ? w->memCap : 4096;
+        while (cap < w->memLen + len) {
+            cap *= 2;
+        }
+        uint8_t *bigger = (uint8_t *)malloc(cap);
+        if (bigger == NULL) {
+            return false;
+        }
+        if (w->mem != NULL) {
+            memcpy(bigger, w->mem, w->memLen);
+            memset(w->mem, 0, w->memCap);
+            free(w->mem);
+        }
+        w->mem = bigger;
+        w->memCap = cap;
+    }
+    memcpy(w->mem + w->memLen, data, len);
+    w->memLen += len;
+    return true;
+}
+
 bool ucxapp_store_append(ucxapp_store_writer_t *w, const void *data, size_t len)
 {
     if (w == NULL || w->failed) {
         return false;
     }
-    if (len > 0 && gOps->write(w->handle, (const uint8_t *)data, len) < 0) {
+    if (len > 0 && (w->handle == NULL ? !memAppend(w, data, len)
+                                      : gOps->write(w->handle, (const uint8_t *)data, len) < 0)) {
         w->failed = true;
         return false;
     }
@@ -183,25 +253,23 @@ bool ucxapp_store_append(ucxapp_store_writer_t *w, const void *data, size_t len)
 
 bool ucxapp_store_end(ucxapp_store_writer_t *w, bool commit)
 {
+    bool ok;
+
     if (w == NULL) {
         return false;
     }
-    gOps->close(w->handle);
-    bool ok = commit && !w->failed && gOps->rename(w->tmp, w->name);
+    if (w->handle == NULL) {
+        ok = commit && !w->failed && ucxapp_store_save(w->name, w->mem != NULL ? w->mem : (const uint8_t *)"", w->memLen);
+        if (w->mem != NULL) {
+            memset(w->mem, 0, w->memCap);
+            free(w->mem);
+        }
+        free(w);
+        return ok;
+    }
+    ok = closeWritten(w->handle) && commit && !w->failed && gOps->rename(w->tmp, w->name);
     if (!ok) {
         gOps->remove(w->tmp);
-    } else if (isSecret(w->name, NULL)) {
-        /* streamed in plain (web upload, BLE transfer): seal it now, or do not keep it */
-        size_t len = 0;
-        uint8_t *plain = ucxapp_store_load(w->name, &len);
-        ok = plain != NULL && ucxapp_store_save(w->name, plain, len);
-        if (plain != NULL) {
-            memset(plain, 0, len);
-            free(plain);
-        }
-        if (!ok) {
-            gOps->remove(w->name);
-        }
     }
     free(w);
     return ok;
@@ -209,13 +277,22 @@ bool ucxapp_store_end(ucxapp_store_writer_t *w, bool commit)
 
 static bool saveRaw(const char *name, const void *data, size_t len)
 {
-    ucxapp_store_writer_t *w = ucxapp_store_begin(name);
-    if (w == NULL) {
+    ucxapp_store_writer_t *w = (ucxapp_store_writer_t *)calloc(1, sizeof(*w));
+    bool ok;
+
+    if (w == NULL || strlen(name) >= NAME_MAX_LEN) {
+        free(w);
         return false;
     }
-    bool ok = ucxapp_store_append(w, data, len);
-    gOps->close(w->handle);
-    ok = ok && gOps->rename(w->tmp, w->name);
+    snprintf(w->name, sizeof(w->name), "%s", name);
+    snprintf(w->tmp, sizeof(w->tmp), "%s%s", name, TMP_SUFFIX);
+    w->handle = gOps->open(w->tmp, true);
+    if (w->handle == NULL) {
+        free(w);
+        return false;
+    }
+    ok = ucxapp_store_append(w, data, len);
+    ok = closeWritten(w->handle) && ok && gOps->rename(w->tmp, w->name);
     if (!ok) {
         gOps->remove(w->tmp);
     }

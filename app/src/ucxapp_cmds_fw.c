@@ -487,8 +487,9 @@ static int cmdFwUpdate(ucxapp_t *app, int argc, char *argv[])
 
     size_t len = 0;
     uint8_t *existing = ucxapp_store_load(name, &len);
+    bool have = existing != NULL && len > 0;
     free(existing);
-    if (existing != NULL && len > 0) {
+    if (have) {
         ucxapp_print("using %s already in the store\n", name);
     } else if (!fwFetch(path, name, name)) {
         return UCXAPP_ERR_FAILED;

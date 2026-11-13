@@ -30,7 +30,7 @@ def _run(app_exe, cwd, *commands):
 def test_ymodem_selftest(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "file.selftest")
     assert out.returncode == 0, out.stdout + out.stderr
-    assert "ymodem selftest: crc16, 1K and 128-byte blocks, retry ok" in out.stdout
+    assert "ymodem selftest: crc16, 1K and 128-byte blocks, retry, short file, header size ok" in out.stdout
 
 
 @pytest.mark.app

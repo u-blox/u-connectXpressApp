@@ -157,6 +157,22 @@ def test_secure_store_seals_private_keys(app_exe, tmp_path):
     assert _export(app_exe, tmp_path, "dev.key") == PEM
 
 
+def test_a_streamed_key_file_is_never_on_disk_in_plain(app_exe, tmp_path):
+    """A .key written piece by piece (web upload, ft, a saved log) is held until it is whole and sealed: no
+    plain <name>.part sits in the store meanwhile."""
+    marker = "0cc175b9c0f1b6a831c399e269772661"   # md5 of "a"
+    out = subprocess.run([str(app_exe), "--offline", "--shell"], capture_output=True, text=True, timeout=120,
+                         errors="replace", cwd=tmp_path,
+                         input="app.log.save t.key\nutils.hash.text md5 a\nfile.view t.key.part\napp.log.stop\nexit\n")
+    assert out.stdout.count(marker) == 1, out.stdout
+    assert "ERROR: cannot read t.key.part" in out.stdout, out.stdout
+    assert "log saved" in out.stdout, out.stdout
+    files = [p.name for p in (tmp_path / "storage").iterdir() if p.name.startswith("t.key")]
+    assert files == ["t.key"], files
+    sealed = (tmp_path / "storage" / "t.key").read_bytes()
+    assert sealed.startswith(b"UCXS") and marker.encode() not in sealed, sealed[:40]
+
+
 def test_secure_store_rejects_changed_or_renamed_files(app_exe, tmp_path):
     storage = tmp_path / "storage"
     storage.mkdir()

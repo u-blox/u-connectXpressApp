@@ -417,7 +417,7 @@ static char *parseMessage(bool *closed)
         } else if (op == 0x0u || op == 0x1u || op == 0x2u) {
             char *m = (char *)realloc(gMsg, gMsgLen + (size_t)len + 1);
             if (m == NULL || gMsgLen + (size_t)len > XPLORER_MSG_MAX) {
-                free(m);
+                free(m != NULL ? m : gMsg);   /* a failed realloc leaves the old block, still ours */
                 gMsg = NULL;
                 gMsgLen = 0;
                 *closed = true;

@@ -80,8 +80,14 @@ bool ucxapp_ymodem_parse_header(const uint8_t *data, size_t len, char *name, siz
     }
     snprintf(name, nameSize, "%.*s", (int)n, (const char *)data);
     const char *p = (const char *)data + n + 1;
-    if ((size_t)(p - (const char *)data) < len && *p >= '0' && *p <= '9') {
-        *size = strtol(p, NULL, 10);
+    const char *stop = (const char *)data + len;
+    if (p < stop && *p >= '0' && *p <= '9') {
+        long v = 0;
+        /* digits within the block only; a size too large for a long is no size */
+        while (p < stop && *p >= '0' && *p <= '9' && v <= (0x7FFFFFFFL - 9) / 10) {
+            v = v * 10 + (*p++ - '0');
+        }
+        *size = p < stop && *p >= '0' && *p <= '9' ? -1 : v;
     }
     return true;
 }
@@ -169,6 +175,11 @@ int ucxapp_ymodem_recv(const ucxapp_ymodem_io_t *io, ucxapp_ymodem_sink_t sink, 
             continue;
         }
         if (r == PKT_EOT) {
+            if (!expectHeader && remaining > 0) {
+                cancel(io);   /* the header gave a size, and the file ended before it */
+                rc = UCXAPP_YMODEM_ERR_PROTO;
+                break;
+            }
             putByte(io, ACK);
             if (!expectHeader) {
                 putByte(io, CRC_REQ);

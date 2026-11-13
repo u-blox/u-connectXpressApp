@@ -33,6 +33,14 @@ def test_record_then_replay(app_exe, tmp_path):
     assert out.stdout.count("ba7816bf") >= 1, out.stdout
 
 
+def test_record_keeps_no_passphrase(app_exe, tmp_path):
+    (tmp_path / "plain.txt").write_text("secret data", encoding="utf-8")
+    _run_in(app_exe, tmp_path, "session.record s.ucx", "utils.encrypt plain.txt sealed.bin my-passphrase-42")
+    script = (tmp_path / "s.ucx").read_text(encoding="utf-8")
+    assert "utils.encrypt plain.txt sealed.bin ${UCX_SECRET}" in script, script
+    assert "my-passphrase-42" not in script, script
+
+
 def test_replay_skips_danger_commands(app_exe, tmp_path):
     (tmp_path / "d.ucx").write_text("# test\ndev.factory confirm\nutils.hash.text md5 a\n", encoding="utf-8")
     out = _run_in(app_exe, tmp_path, "session.replay d.ucx")

@@ -1402,7 +1402,7 @@ static bool brSend(uCxHandle_t *ucx, const uint8_t *d, size_t n)
     switch (gBr) {
     case BR_TCP:
     case BR_TCPC:
-        return gBrSock >= 0 && uCxSocketWrite(ucx, gBrSock, d, (int32_t)n) >= 0;
+        return gBrSock >= 0 && ucxapp_sock_write_all(ucx, gBrSock, d, n) >= 0;
     case BR_UDP:
         return gBrPort > 0 && uCxSocketSendTo(ucx, gBrSock, &gBrAddr, gBrPort, d, (int32_t)n) >= 0;
     case BR_SPS:

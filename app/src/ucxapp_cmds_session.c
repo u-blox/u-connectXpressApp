@@ -58,7 +58,9 @@ static bool isSecretArg(const char *usage, int idx)
             size_t n = (size_t)(p - s);
             char tok[48];
             snprintf(tok, sizeof(tok), "%.*s", (int)(n < sizeof(tok) - 1 ? n : sizeof(tok) - 1), s);
-            return strstr(tok, "password") != NULL || strcmp(tok, "[pw]") == 0 || strstr(tok, "token") != NULL;
+            /* password, passphrase, pass, token, secret, psk */
+            return (strstr(tok, "pass") != NULL && strstr(tok, "nopass") == NULL) || strcmp(tok, "[pw]") == 0 ||
+                   strstr(tok, "token") != NULL || strstr(tok, "secret") != NULL || strstr(tok, "psk") != NULL;
         }
     }
     return false;

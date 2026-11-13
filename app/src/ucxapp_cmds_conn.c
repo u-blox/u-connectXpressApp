@@ -194,7 +194,8 @@ static void threadLines(ucxapp_t *app, snap_t *s)
     put(s, "t|%s|%04x\n", role, rloc < 0 ? 0xfffe : rloc);
     uCxThreadListNeighborsBegin(app->ucx);
     while (uCxThreadListNeighborsGetNext(app->ucx, &nb) && count++ < CONN_MAX_NEIGH) {
-        put(s, "n|%04x|%s|%d|%d\n", (int)nb.rloc16, ucxapp_thread_role_name(nb.neighbor_role), (int)nb.rssi,
+        put(s, "n|%04x|%s|%d|%d\n", (int)nb.rloc16,
+            nb.neighbor_role == U_THREAD_NEIGHBOR_ROLE_ROUTER ? "router" : "child", (int)nb.rssi,
             (int)nb.link_quality);
     }
     uCxEnd(app->ucx);
@@ -419,6 +420,11 @@ static void printTable(char *snap)
             break;
         case 'c':
             ucxapp_print("  cell    %-8s %s\n", f[1], f[2]);
+            links++;
+            break;
+        case 'q':
+            ucxapp_print("  mqtt    %s%s%s%s%s%s%s\n", f[1][0] ? f[1] : "broker", f[2][0] ? " as " : "", f[2],
+                         f[3][0] ? ", subscribed to " : "", f[3], f[4][0] ? ", publishing to " : "", f[4]);
             links++;
             break;
         default:

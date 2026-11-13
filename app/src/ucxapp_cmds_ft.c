@@ -106,6 +106,7 @@ typedef struct {
     volatile int32_t sock;
     volatile bool pending;             /* set by the data URC */
     volatile bool closed;
+    volatile bool gone;                /* +UESOCL: the module closed it, the handle is free (and may be reused) */
     uint8_t acc[TCP_HDR + TCP_PKT_MAX];
     size_t n;
 } tcpRx_t;
@@ -329,9 +330,11 @@ void ucxapp_ft_on_sock_data(int32_t sock)
 void ucxapp_ft_on_sock_closed(int32_t sock)
 {
     if (sock == gSrvTcp.sock) {
+        gSrvTcp.gone = true;
         gSrvTcp.closed = true;
     }
     if (sock == gCliTcp.sock) {
+        gCliTcp.gone = true;
         gCliTcp.closed = true;
     }
 }
@@ -349,7 +352,7 @@ static void tcpPump(ucxapp_t *app, tcpRx_t *t, ring_t *q)
     uint8_t buf[1460];
     int32_t n;
 
-    if (t->sock < 0 || !t->pending) {
+    if (t->sock < 0 || !t->pending || t->gone) {   /* gone: the handle may be the next client's by now */
         return;
     }
     t->pending = false;
@@ -386,6 +389,9 @@ static bool sendPkt(link_t *l, bool data, const uint8_t *buf, size_t len)
 
     if (l->tcp != NULL) {
         uint8_t f[TCP_HDR + TCP_PKT_MAX];
+        if (l->tcp->gone) {
+            return false;   /* the module closed the socket: its handle may be the next client's by now */
+        }
         put16(f, (uint16_t)len);
         f[2] = data ? 1 : 0;
         memcpy(f + TCP_HDR, buf, len);
@@ -509,6 +515,9 @@ static long recvFile(link_t *l, FILE *f, int blk, long have, long expect, uint32
         pkt_t in;
         uint32_t now = ucxapp_platform_tick_ms();
         if (stopped(l)) {
+            if (done) {
+                return total;   /* all of it arrived: a peer that hangs up at once ends the wait for repeats */
+            }
             snprintf(l->err, sizeof(l->err), "stopped");
             return -1;
         }
@@ -759,7 +768,9 @@ static void serverTcpService(void)
     int32_t s = gAccepted;
 
     if (gSrvTcp.sock >= 0 && gSrvTcp.closed) {
-        (void)uCxSocketClose(gApp->ucx, gSrvTcp.sock);
+        if (!gSrvTcp.gone) {   /* a handle the module closed may be the next client's by now */
+            (void)uCxSocketClose(gApp->ucx, gSrvTcp.sock);
+        }
         gSrvTcp.sock = -1;
     }
     if (s < 0) {
@@ -772,6 +783,7 @@ static void serverTcpService(void)
     }
     gSrvTcp.n = 0;
     gSrvTcp.closed = false;
+    gSrvTcp.gone = false;
     gSrvTcp.pending = true;
     ringClear(&gSrvQ);
     gSrvTcp.sock = s;
@@ -1007,6 +1019,7 @@ static bool clientOpenTcp(ucxapp_t *app, link_t *l, const char *target)
 
     snprintf(host, sizeof(host), "%.*s", colon != NULL ? (int)(colon - target) : (int)strlen(target), target);
     if (host[0] == '\0' || (colon != NULL && (!ucxapp_parse_int(colon + 1, &port) || port <= 0 || port > 65535))) {
+        ucxapp_print("ERROR: %s is not host[:port] (port 1 to 65535)\n", target);
         return false;
     }
     if (uCxSocketCreate1(app->ucx, U_SOCKET_PROTOCOL_TCP, &sock) != 0) {
@@ -1016,6 +1029,7 @@ static bool clientOpenTcp(ucxapp_t *app, link_t *l, const char *target)
     gCliTcp.n = 0;
     gCliTcp.pending = false;
     gCliTcp.closed = false;
+    gCliTcp.gone = false;
     ringClear(&gCliQ);
     gCliTcp.sock = sock;
     if (uCxSocketConnect(app->ucx, sock, host, port) != 0) {
@@ -1047,6 +1061,7 @@ static bool clientOpen(ucxapp_t *app, link_t *l, const char *target)
         return clientOpenTcp(app, l, target);
     }
     if (!ucxapp_parse_int(target, &conn) || conn < 0) {
+        ucxapp_print("ERROR: %s is not a BLE connection number (bt.list) or host[:port]\n", target);
         return false;
     }
     if (gRunning) {
@@ -1082,7 +1097,9 @@ static void clientClose(void)
     if (gCliTcp.sock >= 0) {
         int32_t s = gCliTcp.sock;
         gCliTcp.sock = -1;
-        (void)uCxSocketClose(gCliApp->ucx, s);
+        if (!gCliTcp.gone) {   /* a handle the module closed is not ours to close any more */
+            (void)uCxSocketClose(gCliApp->ucx, s);
+        }
     }
 }
 
@@ -1271,11 +1288,14 @@ static int cmdPut(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("resuming at %ld bytes\n", from);
         }
         total = sendFile(&l, f, size, from, blk);
-        if (total >= 0 && (!waitCtrl(&l, OP_PUTOK, REPLY_MS, &rsp) || rsp.len < 2 || rsp.buf[0] != OP_PUTOK ||
-                           rsp.buf[1] != ST_OK)) {
-            snprintf(l.err, sizeof(l.err), "peer did not verify the file (%s)",
-                     rsp.len >= 2 ? statusName(rsp.buf[1]) : "no reply");
-            total = -1;
+        if (total >= 0) {
+            /* the verdict is a message of its own: without one, rsp still holds the reply to the request */
+            bool verdict = waitCtrl(&l, OP_PUTOK, REPLY_MS, &rsp) && rsp.len >= 2 && rsp.buf[0] == OP_PUTOK;
+            if (!verdict || rsp.buf[1] != ST_OK) {
+                snprintf(l.err, sizeof(l.err), "peer did not verify the file (%s)",
+                         verdict ? statusName(rsp.buf[1]) : "no reply");
+                total = -1;
+            }
         }
     } else {
         snprintf(l.err, sizeof(l.err), "request refused");

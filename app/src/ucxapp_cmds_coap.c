@@ -94,10 +94,15 @@ static int parseResponse(const uint8_t *buf, size_t len, uint16_t mid, uint8_t *
         } else if (delta == 14) {
             p += 2;
         }
-        if (optLen == 13) {
+        /* 13 and 14 say the length follows in one or two bytes, counted from 13 and 269 (RFC 7252, 3.1) */
+        if (optLen == 13 && p < len) {
+            optLen = 13u + buf[p];
             p += 1;
-        } else if (optLen == 14) {
+        } else if (optLen == 14 && p + 1 < len) {
+            optLen = 269u + (((unsigned)buf[p] << 8) | buf[p + 1]);
             p += 2;
+        } else if (optLen >= 13) {
+            return -1;
         }
         p += optLen;
         if (p > len) {
@@ -156,6 +161,9 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
     static const uint8_t expect[] = { 0x40, 0x01, 0x12, 0x34, 0xB5, 'h', 'e', 'l', 'l', 'o', 0x05, 'w', 'o', 'r', 'l', 'd' };
     /* 2.05 Content, message id 0x1234, payload "ok". */
     static const uint8_t reply[] = { 0x60, 0x45, 0x12, 0x34, 0xFF, 'o', 'k' };
+    /* The same after a 20 byte option: length 13 means "13 + the next byte" (here 7). */
+    static const uint8_t longOption[] = { 0x60, 0x45, 0x12, 0x34, 0x8D, 0x07, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                                          14, 15, 16, 17, 18, 19, 20, 0xFF, 'o', 'k' };
     uint8_t req[COAP_MAX];
     uint8_t code = 0;
     const uint8_t *payload = NULL;
@@ -172,6 +180,11 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
     int pl = parseResponse(reply, sizeof(reply), 0x1234, &code, &payload);
     if (pl != 2 || code != 0x45 || memcmp(payload, "ok", 2) != 0) {
         ucxapp_print("ERROR: coap selftest: response parsing mismatch\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    pl = parseResponse(longOption, sizeof(longOption), 0x1234, &code, &payload);
+    if (pl != 2 || memcmp(payload, "ok", 2) != 0) {
+        ucxapp_print("ERROR: coap selftest: a response with a long option is not parsed\n");
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("coap selftest: GET encoding and 2.05 response parsing ok\n");
@@ -207,11 +220,12 @@ static int cmdGet(ucxapp_t *app, int argc, char *argv[])
     }
     int pl = exchange(app->ucx, sock, req, n, COAP_MID, buf, sizeof(buf), &code, &payload);
     uCxSocketClose(app->ucx, sock);
+    path += path[0] == '/';   /* shown as host:port/path, however the path was typed */
     if (pl < 0) {
-        ucxapp_print("ERROR: no CoAP reply from %s:%d%s\n", argv[1], (int)port, path);
+        ucxapp_print("ERROR: no CoAP reply from %s:%d/%s\n", argv[1], (int)port, path);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("coap %d.%02d from %s:%d%s\n", code >> 5, code & 0x1F, argv[1], (int)port, path);
+    ucxapp_print("coap %d.%02d from %s:%d/%s\n", code >> 5, code & 0x1F, argv[1], (int)port, path);
     printPrintable(payload, pl);
     return UCXAPP_OK;
 }

@@ -408,8 +408,10 @@ static bool parsePkcs12(bundle_t *b, unsigned char *p, const unsigned char *end)
             return malformed("PKCS#12 content");
         }
         if (OID_IS(oid, kOidData)) {
-            if (mbedtls_asn1_get_tag(&p, infoEnd, &len, MBEDTLS_ASN1_OCTET_STRING) != 0 ||
-                !parseSafeContents(b, p, p + len, 0)) {
+            if (mbedtls_asn1_get_tag(&p, infoEnd, &len, MBEDTLS_ASN1_OCTET_STRING) != 0) {
+                return malformed("PKCS#12 content");
+            }
+            if (!parseSafeContents(b, p, p + len, 0)) {
                 return false;
             }
         } else if (OID_IS(oid, kOidEncryptedData)) {

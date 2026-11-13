@@ -89,7 +89,9 @@ const char *ucxapp_errname(int32_t code)
     const char *name = uCxGetErrorName(code);
 
     if (name == NULL) {
-        return "";
+        /* the AT client's own codes: no answer at all, and a serial port that failed */
+        return code == U_CX_ERROR_CMD_TIMEOUT ? ": no answer from the module"
+               : code == U_CX_ERROR_IO ? ": serial port error" : "";
     }
     gModErr = code;
     snprintf(text, sizeof(text), ": %s", name);

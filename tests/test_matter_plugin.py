@@ -223,6 +223,7 @@ def test_a_commissioner_opens_the_matter_transport_over_bluetooth(app_exe, modul
     # the Matter server answers on C2: handshake response, version 4, then fragment size and window
     assert re.search(r"AT\+UBTGIS=0,\d+,656C04[0-9A-F]{6}\n", sent), sent
     assert "matter: commissioning window open" in out.stdout, out.stdout
+    assert re.search(r"matter: advertising on Bluetooth LE \(FFF6, discriminator \d+\)", out.stdout), out.stdout
     assert "matter: Bluetooth LE link 0 up" in out.stdout, out.stdout
     assert "commissioning window: open" in out.stdout, out.stdout
     # the write was for the node: the app's own GATT server did not report it

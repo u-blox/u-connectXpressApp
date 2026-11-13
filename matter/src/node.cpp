@@ -257,6 +257,22 @@ void OnDeviceEvent(const ChipDeviceEvent * event, intptr_t)
     {
         ProgressFailed(0, "the commissioner did not finish in time; the node is as before");
     }
+    else if (event->Type == DeviceEventType::kCHIPoBLEAdvertisingChange)
+    {
+        char line[96];
+
+        if (event->CHIPoBLEAdvertisingChange.Result == kActivity_Started)
+        {
+            snprintf(line, sizeof(line), "matter: advertising on Bluetooth LE (FFF6, discriminator %u)",
+                     static_cast<unsigned>(gCommissionableData.Discriminator()));
+        }
+        else
+        {
+            snprintf(line, sizeof(line), "matter: advertising stopped%s",
+                     ConnectivityMgr().NumBLEConnections() > 0 ? ", a commissioner connected" : "");
+        }
+        gEvent(line);
+    }
 }
 
 void OnIdentify(::Identify * identify);

@@ -342,7 +342,9 @@ CHIP_ERROR BLEManagerImpl::_SetAdvertisingMode(BLEAdvertisingMode mode)
         // If currently advertising, restart with new intervals
         if (mAdvertising)
         {
+            mRestarting = true;   // the app sees only the new start, not a stop in between
             (void)StopAdvertising();
+            mRestarting = false;
             return StartAdvertising();
         }
     }
@@ -530,6 +532,13 @@ CHIP_ERROR BLEManagerImpl::StopAdvertising()
 
     mAdvertising = false;
     ChipLogProgress(DeviceLayer, "[BLE] Advertising stopped successfully");
+    if (!mRestarting)
+    {
+        ChipDeviceEvent advEvent;
+        advEvent.Type = DeviceEventType::kCHIPoBLEAdvertisingChange;
+        advEvent.CHIPoBLEAdvertisingChange.Result = kActivity_Stopped;
+        (void) PlatformMgr().PostEvent(&advEvent);
+    }
     ChipLogProgress(DeviceLayer, "[BLE] ==== StopAdvertising EXIT (success) ====");
     return CHIP_NO_ERROR;
 }

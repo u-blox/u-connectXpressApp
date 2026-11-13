@@ -84,6 +84,7 @@ private:
     BLEManager::BLEAdvertisingMode mAdvertisingMode = BLEAdvertisingMode::kFastAdvertising;
     bool mAdvertisingEnabled = false;
     bool mAdvertising = false;
+    bool mRestarting  = false;   // StopAdvertising only to start again with other intervals
     char mDeviceName[32] = "Matter Device";
 
     // ucxclient handles

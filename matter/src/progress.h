@@ -31,8 +31,8 @@ void ProgressFailed(int step, const char * reason);
 // commissioning is under way or has failed; false before the first step and after the last
 bool ProgressLine(char * out, size_t size);
 // For the live card: how long the commissioning has taken and when each step so far was done, counted from its
-// start: "5.4 s so far (steps at 1.2 5.0 5.4 s)", "18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)" once it is
-// complete; false before the first step. Needs room for 64 characters
+// start: "5.4 s so far (steps at 1.2 5.0 5.4 s)", and as a finished command reads once it is complete:
+// "ok, 18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)"; false before the first step. Needs room for 68 characters
 bool ProgressTimes(char * out, size_t size);
 // "18.4", the seconds the commissioning of this session took; false when there was none or it is not complete
 bool ProgressTotal(char * out, size_t size);

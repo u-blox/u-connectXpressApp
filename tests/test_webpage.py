@@ -265,10 +265,10 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         # the commissioning clock and a module that restarted under the node: lines of the card, the alert marked
         page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE commissioned, 1 fabric(s)\n"
                             "STEP  6/6 complete, the node is ready\n"
-                            "TIME  18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)\n"
+                            "TIME  ok, 18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)\n"
                             "ALERT the module restarted: stop the node and start it again\nLOG   detail")
         assert page.locator("#cnd .seg.s6 i.on").count() == 6
-        assert "18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)" in page.inner_text("#cnd")
+        assert "ok, 18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)" in page.inner_text("#cnd")
         # and a timeline: one bar per step, as wide as the step took (joining the network, 6.8 of 18.4 s, the widest)
         widths = page.evaluate(
             "[...document.querySelectorAll('#cnd .seg:not(.s6) i.on')].map(i => parseFloat(i.style.width))")

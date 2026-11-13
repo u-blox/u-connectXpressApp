@@ -429,7 +429,7 @@ int Status()
     }
     if (ProgressTotal(network, sizeof(network)) && ProgressTimes(network, sizeof(network)))
     {
-        Print("commissioned in: %s, from the commissioner's connection\n", network);
+        Print("commissioned: %s, from the commissioner's connection\n", network);
     }
     Print("commissioning window: %s\n", NodeWindowOpen() ? "open" : "closed (matter.open opens it again)");
     Print("setup: discriminator %u, vendor 0x%04X, product 0x%04X, passcode %08u\n",

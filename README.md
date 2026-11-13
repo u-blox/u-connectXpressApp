@@ -105,7 +105,7 @@ The Matter node is a plug-in (`ucxmatter.dll`, `libucxmatter.so` on Linux) next 
 .\ucxapp COM75                   # then in the shell:
 matter.start                     # light, temperature and contact sensor; shows the QR and manual pairing code
                                  # scan the QR code in Apple Home, Google Home or Alexa
-matter.status                    # "commissioned in: 18.4 s (steps at ...)": how long the home app took, step by step
+matter.status                    # "commissioned: ok, <seconds> s (steps at ...)": how long the home app took, step by step
 matter.set light 40              # act as the device; the home app sees the change
 ```
 

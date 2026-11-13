@@ -250,7 +250,7 @@ void OnDeviceEvent(const ChipDeviceEvent * event, intptr_t)
         (void) ProgressTotal(seconds, sizeof(seconds));
         // Runs with the stack lock held, as NetworkText wants
         NetworkText(network, sizeof(network));
-        snprintf(line, sizeof(line), "all OK: commissioned in %s s by vendor 0x%04X (fabric %u of %u), %s; controllers can "
+        snprintf(line, sizeof(line), "commissioned: ok, %s s, by vendor 0x%04X (fabric %u of %u), %s; controllers can "
                  "use the endpoints now", seconds, fabric != nullptr ? static_cast<unsigned>(fabric->GetVendorId()) : 0u,
                  static_cast<unsigned>(event->CommissioningComplete.fabricIndex),
                  static_cast<unsigned>(fabrics.FabricCount()), network);

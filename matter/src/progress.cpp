@@ -124,7 +124,10 @@ bool ProgressTimes(char * out, size_t size)
     {
         return false;
     }
-    n = Seconds(gStepMs[last], out, size);
+    // a finished one reads as a finished command does: "ok, 18.4 s"
+    n = gComplete ? static_cast<size_t>(snprintf(out, size, "ok, ")) : 0;
+    n = n < size ? n : size - 1;
+    n += Seconds(gStepMs[last], out + n, size - n);
     n += static_cast<size_t>(snprintf(out + n, size - n, " s%s (steps at", gComplete ? "" : " so far"));
     n = n < size ? n : size - 1;
     for (int i = 1; i <= last && n + 8 < size; i++)

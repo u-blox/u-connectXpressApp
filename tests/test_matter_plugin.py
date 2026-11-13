@@ -387,7 +387,7 @@ def test_commissioning_is_timed_step_by_step(app_exe, plugin, tmp_path):
     card = out.stdout[out.stdout.rindex("NODE  "):]
     assert f"STEP  1/6 paired with the passcode\nTIME  {step[1]} s so far (steps at {step[1]} s)\n" in card, card
     assert float(step[1]) < 10, step[1]   # it paired within the 4 s the test listens
-    assert "commissioned in:" not in out.stdout, out.stdout   # only a commissioning that completed has a total
+    assert "commissioned:" not in out.stdout, out.stdout   # only a commissioning that completed has a total
 
 
 def test_a_new_node_is_labelled_with_the_product_name(app_exe, plugin, tmp_path):

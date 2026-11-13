@@ -182,10 +182,10 @@ def test_wifi_portal_logs_in_to_fake_hotel_page(app_exe, port_a):
 
 
 @pytest.mark.hardware
-@pytest.mark.parametrize("token", ["", "hw-token"])
+@pytest.mark.parametrize("token", ["open", "hw-token"])
 def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path, token):
     """web.start https with a local-CA certificate; the PC trusts the CA, uploads, lists and downloads a file.
-    Without a token argument HTTPS needs none; with one, a request without it is refused."""
+    With `open` HTTPS needs no token; with one, a request without it is refused."""
     import ssl
     import urllib.error
     import urllib.request
@@ -194,7 +194,7 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path, to
     ip_a, _ = _join_wifi(app_exe, port_a, wifi)
     made = _run(app_exe, port_a, "utils.tls.ca.create", f"utils.tls.server.create server {ip_a}", cwd=tmp_path)
     assert made.returncode == 0, made.stdout
-    proc = subprocess.Popen(_args(app_exe, port_a, wifi, f"web.start 8443 {token} https server".replace("  ", " "))
+    proc = subprocess.Popen(_args(app_exe, port_a, wifi, f"web.start 8443 {token} https server")
                             + ["--shell"],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             errors="replace", cwd=tmp_path)
@@ -202,6 +202,8 @@ def test_https_web_server_files_and_key_protection(app_exe, port_a, tmp_path, to
     threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
     ctx = None
     base = f"https://{ip_a}:8443"
+    if token == "open":
+        token = ""
 
     def call(path, data=None, tok=token):
         req = urllib.request.Request(base + path, data, {"X-Token": tok} if tok else {},

@@ -1314,10 +1314,17 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
     }
+    /* a random token unless one is given; "open" (HTTPS only) serves without one */
+    bool open = argc == 3 && strcmp(argv[2], "open") == 0;
+    if (open && plain) {
+        ucxapp_print("ERROR: plain HTTP always needs a token: anyone on the network could read it otherwise\n");
+        ucxapp_tls_server_free(tls);
+        return UCXAPP_ERR_FAILED;
+    }
     gToken[0] = '\0';
-    if (argc == 3 && strcmp(argv[2], "token") != 0) {
+    if (argc == 3 && strcmp(argv[2], "token") != 0 && !open) {
         snprintf(gToken, sizeof(gToken), "%s", argv[2]);
-    } else if ((plain || argc == 3) && !makeToken(gToken)) {
+    } else if (!open && !makeToken(gToken)) {
         ucxapp_print("ERROR: no random source for the access token\n");
         ucxapp_tls_server_free(tls);
         return UCXAPP_ERR_FAILED;
@@ -1380,8 +1387,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
                  gToken[0] != '\0' ? "#t=" : "", gToken);
     if (gHttps) {
         if (gToken[0] == '\0') {
-            ucxapp_print("no access token: anyone who can reach this address can use the page (web.start %d token adds one)\n",
-                         (int)port);
+            ucxapp_print("no access token: anyone who can reach this address can use the page (leave out open for one)\n");
         }
         ucxapp_print("trust tls-ca.crt in the browser (utils.tls.pem ca) to avoid the certificate warning\n");
     } else {
@@ -1490,7 +1496,7 @@ static int cmdWebExport(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWebCmds[] = {
     { "web.export", "<dir>",          "Write the page's command lists and examples as JSON files (preview, static demo)", 0, cmdWebExport },
-    { "web.start",  "[port] [token] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80. HTTPS needs no token unless one is given (token makes a random one); plain HTTP always uses one", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
+    { "web.start",  "[port] [token|open] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80. The page needs an access token, random unless one is given (the URL ends in #t=<token>); open serves HTTPS without one", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Web server state",                                             0, cmdWebStatus },
 };

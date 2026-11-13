@@ -73,7 +73,7 @@ Arduino D0/D1 is USART2, which is the ST-Link VCP, so the module goes on USART1:
 - Command list: `COMMANDS.md`.
 
 ## Web UI over HTTPS (H753, F767)
-- NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) build the web UI with mbedTLS: `wifi.connect <ssid> <pw>`, then `web.start` prints `https://<module-ip>/` (no access token by default; `web.start 443 token` adds one). Plain `http` is refused.
+- NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) build the web UI with mbedTLS: `wifi.connect <ssid> <pw>`, then `web.start` prints `https://<module-ip>/#t=<token>` (a random access token; `web.start 443 open` serves without one). Plain `http` is refused.
 - The first start makes `tls-ca` and `tls-web` on the board (littlefs on FreeRTOS, RAM on Zephyr, so a new CA after each reset); accept the browser's certificate warning once per CA.
 - Keys and the token come only from the RNG peripheral (TRNG); if it fails, `web.start` fails. See `docs/SECURITY.md`. Other boards have no web UI (RAM or no RNG).
 

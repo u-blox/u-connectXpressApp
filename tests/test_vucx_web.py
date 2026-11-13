@@ -1,6 +1,7 @@
 """web.start against scripted HTTP clients of the virtual module (Network requests): the routes, the token,
 uploads and downloads, and the error paths of u_webserver.c, all without a browser or a network."""
 
+import re
 import subprocess
 import time
 
@@ -358,12 +359,18 @@ def test_https_serves_the_api_and_files_with_a_certificate_from_the_local_ca(app
     assert b"PRIVATE KEY" not in key, "the server key must be sealed in the store"
 
 
-def test_https_without_a_token_says_so_and_needs_none(app_exe, tmp_path):
+def test_https_needs_a_token_unless_opened(app_exe, tmp_path):
     from harness.tlsclient import TlsClient
 
-    client = TlsClient(_get("/api/version", token=False), ca=tmp_path / "storage" / "tls-ca.crt")
+    ca = tmp_path / "storage" / "tls-ca.crt"
+    client = TlsClient(_get("/api/version", token=False), ca=ca)
     out = _serve_https(app_exe, tmp_path, [client], "web.start 8443")
-    assert "no access token: anyone who can reach this address can use the page (web.start 8443 token adds one)" in out
+    assert re.search(r"https://192\.168\.1\.50:8443/#t=[0-9a-f]{32}\n", out), out
+    assert "403" in _status(client), client.response[:200]
+
+    client = TlsClient(_get("/api/version", token=False), ca=ca)
+    out = _serve_https(app_exe, tmp_path, [client], "web.start 8443 open")
+    assert "no access token: anyone who can reach this address can use the page (leave out open for one)" in out
     assert "https://192.168.1.50:8443/\n" in out, out
     assert "200" in _status(client), client.response[:200]
 

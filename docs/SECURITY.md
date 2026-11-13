@@ -43,8 +43,8 @@ None of these boards serves the web UI. The module (NORA-W36) handles its own TL
 
 The H753 and F767 serve the web UI over HTTPS only; `web.start ... http` is refused. On the first `web.start`
 the board makes an ECDSA P-256 key and a certificate for the module's address, signed by a local CA (`tls-ca`).
-Both keys come from the TRNG. HTTPS runs without an access token by default, so anyone who can reach the board on
-the network can use the page; `web.start 443 token` adds a random token in the URL (`#t=`) from the same generator.
+Both keys come from the TRNG. The page needs a random access token in the URL (`#t=`) from the same generator;
+`web.start 443 open` serves HTTPS without one, for trusted networks only.
 
 Limitations:
 

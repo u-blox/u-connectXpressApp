@@ -284,9 +284,9 @@ static const example_t kExamples[] = {
 
     { "web", "Web UI from the module over HTTPS (the first start makes its certificate)",
       "wifi.connect MyNetwork MyPassword\n# a running server keeps its settings\nweb.stop\nweb.start\nweb.status\n"
-      "# browse to https://<module-ip>/; no warning once the local CA is trusted\nutils.tls.ca.trust check" },
-    { "web", "HTTPS web UI that also asks for an access token",
-      "web.stop\nweb.start 443 mytoken\n# browse to https://<module-ip>/#t=mytoken (web.start 443 token makes a random one)" },
+      "# browse to the printed https://<module-ip>/#t=<token>; no warning once the local CA is trusted\nutils.tls.ca.trust check" },
+    { "web", "HTTPS web UI with a token of your own",
+      "web.stop\nweb.start 443 mytoken\n# browse to https://<module-ip>/#t=mytoken (web.start 443 open: no token, trusted networks only)" },
     { "utils", "Trust the local CA so browsers on this PC do not warn",
       "utils.tls.ca.create\nutils.tls.ca.trust\nutils.tls.ca.trust check" },
     { "web", "Plain HTTP web UI (trusted networks only)",

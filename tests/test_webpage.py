@@ -262,6 +262,14 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
                             "STEP  failed at 5/6: the access point did not take the password\nLOG   detail")
         assert page.locator("#cnd .gv .al .seg i.on").count() == 4
+        # the commissioning clock and a module that restarted under the node: lines of the card, the alert marked
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE commissioned, 1 fabric(s)\n"
+                            "STEP  6/6 complete, the node is ready\n"
+                            "TIME  18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)\n"
+                            "ALERT the module restarted: stop the node and start it again\nLOG   detail")
+        assert page.locator("#cnd .seg.s6 i.on").count() == 6
+        assert "18.4 s (steps at 1.2 5.0 5.4 5.5 12.3 18.4 s)" in page.inner_text("#cnd")
+        assert page.inner_text("#cnd .gv .al") == "the module restarted: stop the node and start it again"
         assert "SDK log off" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
         count = len(server.posted)
         page.click('#cnd .r button >> text="SDK log off"')

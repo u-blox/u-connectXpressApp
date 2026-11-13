@@ -44,6 +44,9 @@ Only lines starting with AT are commands; anything else (data mode, a bridged st
     data:                           # fnmatch pattern on a data-mode line -> raw bytes sent back as they are
       "GET /*": "ICY 200 OK\\r\\n\\r\\n"   # an NTRIP caster behind a modem in transparent mode
 
+    delays:                         # fnmatch pattern -> seconds before the answer (a scan, a busy module)
+      "AT+UWSSC*": 3
+
 Run alone: python -m harness.vucx tests/harness/vucx/basic.yaml  (prints the port to open)
 On any OS over TCP: python -m harness.vucx --tcp [PORT] nora-b26-ble.yaml  (prints tcp:127.0.0.1:PORT; the launcher's
 `ucxapp --virtual nora-b26` does this and starts the app on it)
@@ -534,6 +537,7 @@ class Vucx:
         self.urcs = t["urcs"]
         self.setters = t["state"]
         self.data = t["data"]
+        self.delays = dict(p.get("delays") or {})
         self.default = t["default"]
         self.gatt = GattServer(t["gatt_services"]) if t["gatt_server"] else None
         self.state = {}
@@ -629,6 +633,9 @@ class Vucx:
         if answer is None:
             reply = self._lookup(self.commands, cmd) or (self.gatt.handle(cmd) if self.gatt else None)
             answer = (reply or self.default, self._lookup(self.urcs, cmd))
+        delay = next((s for pattern, s in self.delays.items() if fnmatch.fnmatchcase(cmd, pattern)), 0)
+        if delay and self._stop.wait(float(delay)):
+            return
         if self.gatt and cmd == "AT+CPWROFF":
             self.gatt.reset()
         self.state.update(self._lookup(self.setters, cmd) or {})

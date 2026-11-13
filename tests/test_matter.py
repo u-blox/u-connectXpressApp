@@ -299,6 +299,7 @@ def test_card_shows_the_node_at_a_glance(app_exe, module, stub, tmp_path):
     running, stopped = out.stdout.split("matter: node stopped")
     # the plug-in's lines, each endpoint with what matter.set takes, then the app's own
     assert re.search(r"NODE  stub on NORA-\S+, 3 endpoint\(s\)\nSTATE not commissioned\nSTEP  2/6 fabric installed\n"
+                     r"TIME  5\.0 s so far \(steps at 1\.2 5\.0 s\)\nCODE  0000-000-0000\nQR    MT:STUB0000000000000\n"
                      r"EP    1 light = on  \[on \| off \| 0\.\.100 \(percent\)\]\n"
                      r"EP    2 temp = 21\.5  \[-40\.\.125 \(degrees Celsius\)\]\n"
                      r"EP    3 contact = closed  \[open \| closed\]\nLOG   detail\n", running), out.stdout
@@ -386,7 +387,9 @@ def test_bridge_sends_the_node_and_takes_commands_over_tcp(app_exe, stub, tmp_pa
         assert _until(lambda: "ERR unknown command 'hello'" in got() and "EP light = on\n" in got()), got()
         text = got()
         assert ("NODE stub on NORA-W36, 3 endpoint(s)\nSTATE not commissioned\nSTEP 2/6 fabric installed\n"
-                "EP light = off\nEP temp = 21.5\nEP contact = closed\nOK\n") in text, text
+                "TIME 5.0 s so far (steps at 1.2 5.0 s)\nEP light = off\nEP temp = 21.5\nEP contact = closed\nOK\n") in text, text
+        # the setup codes are on the card, for who holds the node: a bridge's far side never gets them
+        assert "CODE" not in text and "QR" not in text and "MT:" not in text, text
         assert "ERR no endpoint oven\n" in text and "ERR usage: set <endpoint> <value...>\n" in text, text
         assert "ERR unknown command 'hello' (set <endpoint> <value...> | get)\n" in text, text
         assert "LOG" not in text, text   # the app's own line
@@ -430,6 +433,11 @@ def test_bridge_mqtt_publishes_the_endpoints_and_takes_sets(app_exe, stub, tmp_p
         assert published("ucxapp/matter/light", b"off"), module.payloads   # the whole card first
         assert published("ucxapp/matter/temp", b"21.5"), module.payloads
         assert published("ucxapp/matter/node/state", b"not commissioned"), module.payloads
+        assert published("ucxapp/matter/node/time", b"5.0 s so far (steps at 1.2 5.0 s)"), module.payloads
+        # the setup codes never go to a broker; what an older version left there retained is removed
+        assert not any(b"MT:" in data or b"0000-000-0000" in data for _, data in module.payloads), module.payloads
+        assert any(cmd.startswith('AT+UMQPB=0,0,1,"ucxapp/matter/node/code"') for cmd in module.log), module.log
+        assert any(cmd.startswith('AT+UMQPB=0,0,1,"ucxapp/matter/node/qr"') for cmd in module.log), module.log
         assert any(cmd.startswith("AT+UMQS=") and "ucxapp/matter/+/set" in cmd for cmd in module.log), module.log
         proc.stdin.write("matter.endpoints\nmatter.bridge status\nmatter.bridge mqtt off\nmatter.bridge status\n"
                          "matter.bridge mqtt bad#\nmatter.bridge off 3\n")
@@ -489,3 +497,112 @@ def test_files_that_are_no_plugin_are_refused(app_exe, module, tmp_path):
     assert out.returncode != 0 and "does not load" in out.stdout, out.stdout
     out = _run(app_exe, module, _other_library(), tmp_path, "matter.start")
     assert out.returncode != 0 and "is not a Matter plug-in" in out.stdout, out.stdout
+
+
+def test_a_module_restart_under_the_node_is_told_until_the_node_starts_again(app_exe, stub, tmp_path):
+    """The module restarting (a brownout, dev.reboot) takes the node's GATT service, sockets and network with it;
+    the node itself does not notice. The app says so once, on the card and in matter.status."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    module.start()
+    try:
+        out = _run(app_exe, module, stub, tmp_path, "app.log.events.on", "matter.start", "matter.card", "dev.reboot",
+                   "matter.status", "matter.card", "matter.stop", "matter.start", "matter.status", "matter.card")
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout
+    before, after = out.stdout.split("matter: node stopped")
+    told = "the module restarted: the node lost its Bluetooth LE service, sockets and network; matter.stop, then " \
+           "matter.start brings it back"
+    assert before.count(f"[matter] ERROR: {told}") == 1, out.stdout
+    assert f"\nERROR: {told}\n" in before, out.stdout   # matter.status
+    assert "[event] matter: the module restarted, the node must be started again" in before, out.stdout
+    first, second = before.split("[matter] ERROR:")
+    assert "ALERT" not in first, out.stdout
+    assert "ALERT the module restarted: stop the node and start it again\nLOG   info\n" in second, out.stdout
+    assert "matter: node started (stub)" in after and "restarted" not in after and "ALERT" not in after, out.stdout
+
+
+def test_a_second_start_is_refused_on_a_module_that_does_not_reboot(app_exe, stub, tmp_path):
+    """The module keeps the Matter GATT service of the first start until it reboots: with a second one beside it a
+    commissioner would talk to the stale one, so no reboot means no start."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["commands"]["AT+CPWROFF"] = ["ERROR"]
+    module = Vucx(profile)
+    module.start()
+    try:
+        out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.stop", "matter.start")
+    finally:
+        module.stop()
+    assert out.returncode != 0, out.stdout
+    assert out.stdout.count("matter: node started (stub)") == 1, out.stdout
+    assert "matter: rebooting the module, its GATT server has the Matter service of the last start" in out.stdout
+    assert "ERROR: the node is not started on a module that did not reboot; dev.reboot, then matter.start" in out.stdout
+
+
+def test_mqtt_bridge_ends_when_the_module_is_disconnected(app_exe, stub, tmp_path):
+    """The bridge polls every 100 ms on its own thread and publishes through the module: after dev.disconnect there
+    is no module to publish through."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    proc = _shell(app_exe, module, stub, tmp_path)
+    try:
+        proc.stdin.write("matter.start\nmqtt.connect broker.local\nmatter.bridge mqtt\n")
+        proc.stdin.flush()
+        assert _until(lambda: any('"ucxapp/matter/light"' in cmd for cmd in module.log)), module.log
+        proc.stdin.write("dev.disconnect\n")
+        proc.stdin.flush()
+        time.sleep(0.6)   # several polls of the bridge without a module
+        proc.stdin.write("matter.bridge status\nmatter.status\napp.version\n")
+        proc.stdin.close()
+        out = proc.stdout.read()
+        code = proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert code == 0, out
+    after = out[out.index("matter.bridge mqtt stopped"):]
+    assert "bridge: off" in after and "matter: stopped" in after and "u-connectXpressApp" in after, out
+    assert "[matter] stub node stopped" in out, out
+
+
+def test_a_command_does_not_end_the_at_command_of_another_thread(app_exe, stub, tmp_path):
+    """After each command the shell closes an AT command that was left open. One that a bridge's thread (or the
+    Matter node's) is waiting on, a scan or a write that takes seconds, is not left open: it is in use."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {7540: ["get\n"]}
+    profile["delays"] = {"AT+USOWB=*": 2.6}   # the module is slow to take the bridge's answer
+    module = Vucx(profile)
+    proc = _shell(app_exe, module, stub, tmp_path)
+
+    def got():
+        return bytes(module.net.replies[0]).decode("latin-1") if module.net.replies else ""
+
+    try:
+        proc.stdin.write("matter.start\nmatter.bridge tcps\n")
+        proc.stdin.flush()
+        assert _until(lambda: any(cmd.startswith("AT+USOWB=") for cmd in module.log)), module.log
+        proc.stdin.write("app.version\n")   # returns at once, while the bridge's write is on its way
+        proc.stdin.flush()
+        assert _until(lambda: "EP light = off\n" in got()), (got(), module.log[-10:])
+        proc.stdin.write("matter.bridge off\n")
+        proc.stdin.close()
+        out = proc.stdout.read()
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    assert "left an AT command open" not in out, out
+    assert "u-connectXpressApp" in out, out

@@ -1116,15 +1116,23 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     gModErr = 0;
     int missing = insertCurrentHandle(cmd, &argc, argv);
     result = cmd->run(app, argc, argv);
-    /* A background thread (web server, bridges) may be mid-command; only a Begin that never ends is a leak. */
-    for (int i = 0; i < 200 && app->ucx != NULL && app->ucx->pAtClient->executingCmd; i++) {
-        U_CX_PORT_SLEEP_MS(10);
-    }
+    /* A Begin without End (some generated u-connectClient getters skip it on a parse error) keeps the AT mutex
+     * locked and the next command would block forever. But a background thread (the web server, a bridge, the
+     * Matter node) may be mid-command, for as long as that command's timeout allows: a Wi-Fi scan takes seconds,
+     * and ending it from here would break it and unlock a mutex this thread does not hold. So only a command
+     * that is still the same one after its own timeout has passed is a leak; nothing else can begin meanwhile. */
     if (app->ucx != NULL && app->ucx->pAtClient->executingCmd) {
-        /* A Begin without End (some generated u-connectClient getters skip it on a parse error) keeps the AT
-         * mutex locked and the next command would block forever. */
-        ucxapp_print("warning: %s left an AT command open; closed it\n", cmd->name);
-        uCxAtClientCmdEnd(app->ucx->pAtClient);
+        const uCxAtClient_t *at = app->ucx->pAtClient;
+        int32_t began = at->cmdStartTime;
+
+        while (app->ucx != NULL && at->executingCmd && at->cmdStartTime == began &&
+               (int32_t)(U_CX_PORT_GET_TIME_MS() - began) <= at->cmdTimeout + 500) {
+            U_CX_PORT_SLEEP_MS(10);
+        }
+        if (app->ucx != NULL && at->executingCmd && at->cmdStartTime == began) {
+            ucxapp_print("warning: %s left an AT command open; closed it\n", cmd->name);
+            uCxAtClientCmdEnd(app->ucx->pAtClient);
+        }
     }
     if (result == UCXAPP_ERR_USAGE && missing >= 0) {
         ucxapp_print("ERROR: no %s open (%s)\n", missing == UCXAPP_HANDLE_CONN ? "BLE connection" : "socket",

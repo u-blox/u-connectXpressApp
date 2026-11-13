@@ -107,6 +107,10 @@ void NoteLink(const char * line, size_t length)
 
     if (up || (length > 8 && strncmp(line, "+UEBTDC:", 8) == 0))
     {
+        if (up)
+        {
+            ProgressLinkUp(); // a commissioner's clock starts with its link
+        }
         Event("matter: Bluetooth LE link %d %s", atoi(line + (up ? 7 : 8)), up ? "up" : "down");
     }
 }
@@ -256,6 +260,10 @@ size_t Card(char * out, size_t size)
     if (ProgressLine(text, sizeof(text)))
     {
         n = CardLine(out, size, n, "STEP  %s\n", text);
+    }
+    if (ProgressTimes(text, sizeof(text)))
+    {
+        n = CardLine(out, size, n, "TIME  %s\n", text);
     }
     n = CardLine(out, size, n, "BLE   %s\nWIN   %s\nNET   %s\n",
                  gCardState.links > 0 ? "link up" : gCardState.advertising ? "advertising" : "off",
@@ -419,6 +427,10 @@ int Status()
     {
         Print("state: %s, not commissioned\n", ble);
     }
+    if (ProgressTotal(network, sizeof(network)) && ProgressTimes(network, sizeof(network)))
+    {
+        Print("commissioned in: %s, from the commissioner's connection\n", network);
+    }
     Print("commissioning window: %s\n", NodeWindowOpen() ? "open" : "closed (matter.open opens it again)");
     Print("setup: discriminator %u, vendor 0x%04X, product 0x%04X, passcode %08u\n",
           static_cast<unsigned>(gOnboarding.discriminator), static_cast<unsigned>(gOnboarding.vendorId),
@@ -462,13 +474,12 @@ int Set(int argc, const char * const argv[])
         Print("ERROR: no endpoint %s; matter.endpoints lists them\n", argv[1]);
         return UCXAPP_MATTER_ERR_FAILED;
     }
-    if (!e->kind->set(*e, argc - 2, argv + 2))
+    if (!NodeEndpointSet(*e, argc - 2, argv + 2))
     {
         Print("ERROR: %s takes %s\n", e->name, e->kind->values);
         return UCXAPP_MATTER_ERR_FAILED;
     }
     e->kind->show(*e, value, sizeof(value));
-    NodeEndpointChanged(*e);
     Event("matter: %s = %s", e->name, value);
     return UCXAPP_MATTER_OK;
 }

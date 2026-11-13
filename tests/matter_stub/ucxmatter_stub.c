@@ -169,8 +169,10 @@ static int command(int argc, const char *const argv[])
 
 static size_t card(char *out, size_t size)
 {
-    int n = snprintf(out, size, "NODE  stub on %s, %d endpoint(s)\nSTATE not commissioned\nSTEP  2/6 fabric installed\n",
-                     gModel, gEndpointCount);
+    /* as the node's card: the times of the steps done so far, and the setup codes a bridge must not pass on */
+    int n = snprintf(out, size, "NODE  stub on %s, %d endpoint(s)\nSTATE not commissioned\nSTEP  2/6 fabric installed\n"
+                     "TIME  5.0 s so far (steps at 1.2 5.0 s)\nCODE  0000-000-0000\nQR    MT:STUB0000000000000\n", gModel,
+                     gEndpointCount);
 
     for (int i = 0; i < gEndpointCount && n > 0 && (size_t)n < size; i++) {
         n += snprintf(out + n, size - (size_t)n, "EP    %d %s = %s  [%s]\n", i + 1, gEndpoints[i].name,

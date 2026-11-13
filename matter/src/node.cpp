@@ -216,7 +216,11 @@ public:
         gEvent("matter: commissioning window open");
     }
     void OnCommissioningWindowClosed() override { gEvent("matter: commissioning window closed"); }
-    void OnCommissioningSessionEstablishmentStarted() override { gEvent("matter: pairing with the passcode ..."); }
+    void OnCommissioningSessionEstablishmentStarted() override
+    {
+        ProgressBegin();
+        gEvent("matter: pairing with the passcode ...");
+    }
     void OnCommissioningSessionStarted() override { ProgressDone(kStepPaired); }
     void OnCommissioningSessionStopped() override { gEvent("matter: commissioning session closed"); }
     void OnCommissioningSessionEstablishmentError(CHIP_ERROR err) override { ProgressFailed(kStepPaired, ErrorStr(err)); }
@@ -239,13 +243,15 @@ void OnDeviceEvent(const ChipDeviceEvent * event, intptr_t)
         const FabricTable & fabrics = Server::GetInstance().GetFabricTable();
         const FabricInfo * fabric   = fabrics.FindFabricWithIndex(event->CommissioningComplete.fabricIndex);
         char network[96];
-        char line[200];
+        char seconds[16] = "?";
+        char line[220];
 
         ProgressDone(kStepComplete);
+        (void) ProgressTotal(seconds, sizeof(seconds));
         // Runs with the stack lock held, as NetworkText wants
         NetworkText(network, sizeof(network));
-        snprintf(line, sizeof(line), "all OK: commissioned by vendor 0x%04X (fabric %u of %u), %s; controllers can use the "
-                 "endpoints now", fabric != nullptr ? static_cast<unsigned>(fabric->GetVendorId()) : 0u,
+        snprintf(line, sizeof(line), "all OK: commissioned in %s s by vendor 0x%04X (fabric %u of %u), %s; controllers can "
+                 "use the endpoints now", seconds, fabric != nullptr ? static_cast<unsigned>(fabric->GetVendorId()) : 0u,
                  static_cast<unsigned>(event->CommissioningComplete.fabricIndex),
                  static_cast<unsigned>(fabrics.FabricCount()), network);
         if (gUcxmHost != nullptr)
@@ -389,7 +395,8 @@ const char * NodeStart(const NodeModule & module, bool wifi, NodeEvent event, No
     }
     if (gCommissionableData.Init() != CHIP_NO_ERROR)
     {
-        return "the Matter SDK made no setup codes (no random numbers, or no passcode verifier)";
+        return "the node has no setup codes: no random numbers, no passcode verifier, or the app's store did not keep "
+               "them (is storage/ writable?)";
     }
     SetCommissionableDataProvider(&gCommissionableData);
     SetDeviceInstanceInfoProvider(&DeviceInstanceInfoProviderMgrImpl());
@@ -640,15 +647,24 @@ void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribut
     }
 }
 
-void NodeEndpointChanged(const Endpoint & endpoint)
+bool NodeEndpointSet(Endpoint & endpoint, int argc, const char * const argv[])
 {
-    if (!gStackUp || !gServerUp)
+    // the value changes under the stack lock: a controller's write and the demo change it on the Matter thread
+    if (!gStackUp)
     {
-        return;
+        return endpoint.kind->set(endpoint, argc, argv);
     }
     StackLock lock;
 
-    WriteModel(endpoint);
+    if (!endpoint.kind->set(endpoint, argc, argv))
+    {
+        return false;
+    }
+    if (gServerUp)
+    {
+        WriteModel(endpoint);
+    }
+    return true;
 }
 
 bool NodeDemo(bool on)

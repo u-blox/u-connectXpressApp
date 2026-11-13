@@ -78,8 +78,9 @@ void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribut
                           uint16_t size);
 
 struct Endpoint;
-// matter.set changed an endpoint: its attributes in the data model follow, so controllers see it (endpoints.h)
-void NodeEndpointChanged(const Endpoint & endpoint);
+// matter.set: the endpoint takes the value (false when its kind refuses it) and its attributes in the data model
+// follow, so controllers see it (endpoints.h); both with the stack lock, as the Matter thread changes values too
+bool NodeEndpointSet(Endpoint & endpoint, int argc, const char * const argv[]);
 // matter.demo: the sensors change by themselves, the temperature on a slow curve and the contact now and then
 bool NodeDemo(bool on);
 bool NodeDemoOn();

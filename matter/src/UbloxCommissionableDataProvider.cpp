@@ -98,8 +98,10 @@ CHIP_ERROR UbloxCommissionableDataProvider::Init()
         Put(map, kUniqueId, mUniqueId);
         if (!StoreSave(kStoreName, map))
         {
-            // It still commissions; the next start then has other codes
+            // Codes that are not kept would be other ones at the next start: the QR code a user saved, and the
+            // node's identity towards its controllers, must not change by themselves
             ChipLogError(DeviceLayer, "the setup codes were not stored");
+            return CHIP_ERROR_PERSISTED_STORAGE_FAILED;
         }
     }
     ReturnErrorOnFailure(verifier.Generate(kIterationCount, chip::ByteSpan(mSalt, kSaltLen), mPasscode));

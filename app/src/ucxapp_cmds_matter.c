@@ -45,6 +45,9 @@ static void *gLib;
 static void *gKeptLib;
 static const ucxapp_matter_plugin_t *gPlugin;
 static volatile bool gRunning;
+/* The module restarted under a running node (+STARTUP): its Matter service, sockets and network are gone, the
+   node does not know. Said once, shown on the card and by matter.status until the node stops. */
+static volatile bool gModuleRestarted;
 static uCxAtClient_t *gClient;
 static uUrcCallback_t gNextUrc;
 static U_CX_MUTEX_HANDLE gLock;
@@ -188,6 +191,9 @@ static ucxapp_matter_host_t gHost = {
 
 /* ---- URCs: the plug-in first, then the app's own handlers ---------------- */
 
+#define MODULE_RESTARTED "the module restarted: the node lost its Bluetooth LE service, sockets and network; " \
+                         "matter.stop, then matter.start brings it back"
+
 static void urcTap(struct uCxAtClient *client, void *tag, char *line, size_t length, uint8_t *binary,
                    size_t binaryLength)
 {
@@ -195,6 +201,11 @@ static void urcTap(struct uCxAtClient *client, void *tag, char *line, size_t len
     char *copy = gRunning ? (char *)malloc(length + 1) : NULL;
     bool kept = false;
 
+    if (gRunning && !gModuleRestarted && length >= 8 && strncmp(line, "+STARTUP", 8) == 0) {
+        gModuleRestarted = true;
+        ucxapp_print("[matter] ERROR: " MODULE_RESTARTED "\n");
+        hostEvent("matter: the module restarted, the node must be started again");
+    }
     if (copy != NULL) {
         memcpy(copy, line, length);
         copy[length] = '\0';
@@ -311,7 +322,8 @@ static bool load(void)
     return true;
 }
 
-void ucxapp_matter_stop(void)
+/* Stops the node; a matter.bridge keeps running and shows it stopped. */
+static void stopNode(void)
 {
     if (!gRunning) {
         return;
@@ -323,6 +335,7 @@ void ucxapp_matter_stop(void)
     U_CX_MUTEX_UNLOCK(gLock);
     gPlugin->stop();
     unload();
+    gModuleRestarted = false;
     U_CX_MUTEX_UNLOCK(gCmdLock);
 }
 
@@ -391,6 +404,11 @@ bool ucxapp_matter_card(char *out, size_t size)
     }
     while (n > 0 && out[n - 1] == '\n') {
         out[--n] = '\0';
+    }
+    if (running && gModuleRestarted) {
+        n += (size_t)snprintf(out + n, size - n, "%sALERT the module restarted: stop the node and start it again",
+                              n > 0 ? "\n" : "");
+        n = n < size ? n : size - 1;
     }
     (void)snprintf(out + n, size - n, "%sLOG   %s", n > 0 ? "\n" : "", kLevels[gLogLevel]);
     return true;
@@ -463,15 +481,19 @@ static void closeLeftoverSockets(ucxapp_t *app)
 static uint32_t gServiceBootMs;
 static bool gServiceDefined;
 
-static void rebootForService(ucxapp_t *app, const char *why)
+static bool rebootForService(ucxapp_t *app, const char *why)
 {
     bool exact;
 
     ucxapp_print("matter: rebooting the module, %s (a GATT service cannot be removed)\n", why);
-    if (ucxapp_module_reboot(app)) {
-        gServiceBootMs = ucxapp_module_boot_ms(&exact);
-        gServiceDefined = false;
+    if (!ucxapp_module_reboot(app)) {
+        /* a second service with the same UUID would leave a commissioner talking to the stale one */
+        ucxapp_print("ERROR: the node is not started on a module that did not reboot; dev.reboot, then matter.start\n");
+        return false;
     }
+    gServiceBootMs = ucxapp_module_boot_ms(&exact);
+    gServiceDefined = false;
+    return true;
 }
 
 static int startNodeOnce(ucxapp_t *app, int count, const char *const words[]);
@@ -481,12 +503,15 @@ static int startNode(ucxapp_t *app, int count, const char *const words[])
     bool exact;
     int rc;
 
-    if (gServiceDefined && ucxapp_module_boot_ms(&exact) == gServiceBootMs) {
-        rebootForService(app, "its GATT server has the Matter service of the last start");
+    if (gServiceDefined && ucxapp_module_boot_ms(&exact) == gServiceBootMs &&
+        !rebootForService(app, "its GATT server has the Matter service of the last start")) {
+        return UCXAPP_ERR_FAILED;
     }
     rc = startNodeOnce(app, count, words);
     if (rc == UCXAPP_MATTER_ERR_GATT_FULL) {
-        rebootForService(app, "its GATT server has no room for the Matter service");
+        if (!rebootForService(app, "its GATT server has no room for the Matter service")) {
+            return UCXAPP_ERR_FAILED;
+        }
         rc = startNodeOnce(app, count, words);
         if (rc == UCXAPP_MATTER_ERR_GATT_FULL) {
             ucxapp_print("ERROR: the module refused the Matter GATT service after a reboot as well "
@@ -571,7 +596,7 @@ static int cmdStop(ucxapp_t *app, int argc, char *argv[])
     if (!gRunning) {
         return notRunning();
     }
-    ucxapp_matter_stop();
+    stopNode();
     ucxapp_print("matter: node stopped\n");
     return UCXAPP_OK;
 }
@@ -594,6 +619,9 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
                  gPlugin->name, gPath, (gHost.radios & UCXAPP_MATTER_RADIO_WIFI) ? ", Wi-Fi" : "",
                  (gHost.radios & UCXAPP_MATTER_RADIO_THREAD) ? ", Thread" : "", (unsigned)gUrcCount,
                  (unsigned)gUrcKept, kLevels[gLogLevel]);
+    if (gModuleRestarted) {
+        ucxapp_print("ERROR: " MODULE_RESTARTED "\n");
+    }
     return forward(argc, argv);
 }
 
@@ -717,7 +745,7 @@ static int cmdReset(ucxapp_t *app, int argc, char *argv[])
     if (argc > 2 || (argc == 2 && !all)) {
         return UCXAPP_ERR_USAGE;
     }
-    ucxapp_matter_stop();
+    stopNode();
     memset(files, 0, sizeof(files));
     ucxapp_store_list(collectFile, files);
     for (int i = 0; i < STORE_FILES && files[i][0] != '\0'; i++) {
@@ -806,7 +834,7 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
             failed += rc == UCXAPP_MATTER_OK ? 0 : 1;
         }
         if (mine) {
-            ucxapp_matter_stop();
+            stopNode();
         }
     }
     if (failed > 0) {
@@ -878,7 +906,9 @@ static int splitWords(char *text, char *words[], int max)
     return n;
 }
 
-/* A card line as the bridge sends it: "EP    1 light = on  [on | off]" is "EP light = on"; LOG is the app's own. */
+/* A card line as the bridge sends it: "EP    1 light = on  [on | off]" is "EP light = on". LOG is the app's own,
+   and the setup codes are for who holds the node (matter.qr, the web page behind its token): a bridge's far side
+   and a broker never get them. */
 static bool bridgeLine(char *line, char *out, size_t size)
 {
     char *rest = line + strcspn(line, " ");
@@ -890,7 +920,7 @@ static bool bridgeLine(char *line, char *out, size_t size)
         *rest++ = '\0';
     }
     rest += strspn(rest, " ");
-    if (strcmp(line, "LOG") == 0) {
+    if (strcmp(line, "LOG") == 0 || strcmp(line, "CODE") == 0 || strcmp(line, "QR") == 0) {
         return false;
     }
     if (strcmp(line, "EP") == 0) {
@@ -1044,13 +1074,17 @@ static void mqttPublish(const char *sub, const char *text, bool retain)
 {
     char topic[96];
     int32_t r = MQTT_BUSY;
+    uCxHandle_t *ucx = gMqttApp->ucx;
 
+    if (ucx == NULL) {
+        return;   /* the module was disconnected under the bridge */
+    }
     snprintf(topic, sizeof(topic), "%s/%s", gMqttPrefix, sub);
     for (int i = 0; r == MQTT_BUSY && i < 10; i++) {
         if (i > 0) {
             ucxapp_platform_sleep_ms(100);
         }
-        r = uCxMqttPublish(gMqttApp->ucx, MQTT_ID, U_MQTT_QOS_AT_MOST_ONCE, retain ? U_MQTT_RETAIN_YES : U_MQTT_RETAIN_NO,
+        r = uCxMqttPublish(ucx, MQTT_ID, U_MQTT_QOS_AT_MOST_ONCE, retain ? U_MQTT_RETAIN_YES : U_MQTT_RETAIN_NO,
                            topic, (const uint8_t *)text, (int32_t)strlen(text));
     }
     gMqttErrors += r < 0 ? 1u : 0u;
@@ -1085,14 +1119,15 @@ static void mqttReceive(void)
 {
     uint8_t buf[160];
     size_t prefix = strlen(gMqttPrefix);
+    uCxHandle_t *ucx = gMqttApp->ucx;
 
-    if (!ucxapp_events_take(URC_FLAG_MQTT_DATA)) {
+    if (ucx == NULL || !ucxapp_events_take(URC_FLAG_MQTT_DATA)) {
         return;
     }
     for (int m = 0; m < 10; m++) {
         const char *topic = NULL;
         char text[200] = "";
-        int32_t n = uCxMqttReadBegin(gMqttApp->ucx, MQTT_ID, buf, (uint16_t)(sizeof(buf) - 1), &topic);
+        int32_t n = uCxMqttReadBegin(ucx, MQTT_ID, buf, (uint16_t)(sizeof(buf) - 1), &topic);
         bool mine = false;
 
         if (n >= 0 && topic != NULL && strncmp(topic, gMqttPrefix, prefix) == 0 && topic[prefix] == '/') {
@@ -1103,7 +1138,7 @@ static void mqttReceive(void)
             mine = slash != NULL && slash > ep && strcmp(slash, "/set") == 0;
             snprintf(text, sizeof(text), "set %.*s %s", mine ? (int)(slash - ep) : 0, ep, (const char *)buf);
         }
-        (void)uCxEnd(gMqttApp->ucx);
+        (void)uCxEnd(ucx);
         if (n <= 0) {
             break;   /* none left: the module answers an error */
         }
@@ -1223,9 +1258,20 @@ static void mqttStop(void)
         return;
     }
     gMqttOn = false;
-    snprintf(topic, sizeof(topic), "%s/+/set", gMqttPrefix);
-    (void)uCxMqttSubscribe3(gMqttApp->ucx, MQTT_ID, U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE, topic);
+    if (gMqttApp->ucx != NULL) {
+        snprintf(topic, sizeof(topic), "%s/+/set", gMqttPrefix);
+        (void)uCxMqttSubscribe3(gMqttApp->ucx, MQTT_ID, U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE, topic);
+    }
     ucxapp_print("matter.bridge mqtt stopped\n");
+}
+
+/* Before the module's AT client closes (dev.disconnect, dev.use, leaving the app): the node uses it, and so does
+   the MQTT side of matter.bridge. */
+void ucxapp_matter_stop(void)
+{
+    mqttStop();
+    bridgeCloseIfIdle();
+    stopNode();
 }
 
 static int bridgeMqtt(ucxapp_t *app, int argc, char *argv[])
@@ -1274,6 +1320,13 @@ static int bridgeMqtt(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     (void)ucxapp_events_wait(URC_FLAG_MQTT_SUBSCRIBED, 5);
+    /* Versions before this one published the node's setup codes here, retained: an empty retained message takes
+       them off the broker. Not counted as a publish that failed. */
+    for (int i = 0; i < 2; i++) {
+        snprintf(topic, sizeof(topic), "%s/node/%s", prefix, i == 0 ? "code" : "qr");
+        (void)uCxMqttPublish(app->ucx, MQTT_ID, U_MQTT_QOS_AT_MOST_ONCE, U_MQTT_RETAIN_YES, topic,
+                             (const uint8_t *)"", 0);
+    }
     snprintf(gMqttPrefix, sizeof(gMqttPrefix), "%s", prefix);
     gMqttApp = app;
     gMqttErrors = 0;

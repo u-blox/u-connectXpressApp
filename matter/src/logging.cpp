@@ -1,6 +1,7 @@
 /* The Matter SDK's log lines go to the app (matter.log sets how much of them shows). */
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 
 #include <lib/support/logging/Constants.h>
 #include <platform/logging/LogV.h>
@@ -27,8 +28,10 @@ void LogV(const char * module, uint8_t category, const char * msg, va_list v)
         vsnprintf(line + n, sizeof(line) - static_cast<size_t>(n), msg, v);
     }
     // The SDK's progress lines are many and written for its developers: detail. The node's own milestones are
-    // the info lines (plugin.cpp).
-    host->log(category == kLogCategory_Error ? UCXAPP_MATTER_LOG_ERROR : UCXAPP_MATTER_LOG_DETAIL, line);
+    // the info lines (plugin.cpp). The data model's errors (DMG) are about what a controller asked for, such as an
+    // attribute the node does not have; the controller gets the status back and goes on, so they are detail too.
+    const bool error = category == kLogCategory_Error && strcmp(module, "DMG") != 0;
+    host->log(error ? UCXAPP_MATTER_LOG_ERROR : UCXAPP_MATTER_LOG_DETAIL, line);
 }
 
 } // namespace Platform

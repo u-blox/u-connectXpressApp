@@ -60,7 +60,7 @@ bool ProgressLine(char * out, size_t size)
         snprintf(out, size, "%s", gFailed);
         return true;
     }
-    if (last < 1 || last >= kSteps)
+    if (last < 1 || last > kSteps)
     {
         return false;
     }

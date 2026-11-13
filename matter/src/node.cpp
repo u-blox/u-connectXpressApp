@@ -28,6 +28,7 @@
 
 #include "UbloxCommissionableDataProvider.h"
 #include "progress.h"
+#include "ucxm_host.h"
 
 #include <chrono>
 #include <cstdio>
@@ -39,6 +40,9 @@ using namespace chip;
 using namespace chip::DeviceLayer;
 
 namespace ucxm {
+
+static void NetworkText(char * out, size_t size);
+
 namespace {
 
 // A commissioner has this long to find the node after matter.start or matter.open (the longest Matter allows)
@@ -113,7 +117,22 @@ void OnDeviceEvent(const ChipDeviceEvent * event, intptr_t)
 {
     if (event->Type == DeviceEventType::kCommissioningComplete)
     {
+        const FabricTable & fabrics = Server::GetInstance().GetFabricTable();
+        const FabricInfo * fabric   = fabrics.FindFabricWithIndex(event->CommissioningComplete.fabricIndex);
+        char network[96];
+        char line[200];
+
         ProgressDone(kStepComplete);
+        // Runs with the stack lock held, as NetworkText wants
+        NetworkText(network, sizeof(network));
+        snprintf(line, sizeof(line), "all OK: commissioned by vendor 0x%04X (fabric %u of %u), %s; controllers can use the "
+                 "endpoints now", fabric != nullptr ? static_cast<unsigned>(fabric->GetVendorId()) : 0u,
+                 static_cast<unsigned>(event->CommissioningComplete.fabricIndex),
+                 static_cast<unsigned>(fabrics.FabricCount()), network);
+        if (gUcxmHost != nullptr)
+        {
+            gUcxmHost->log(UCXAPP_MATTER_LOG_INFO, line);
+        }
     }
     else if (event->Type == DeviceEventType::kFailSafeTimerExpired)
     {

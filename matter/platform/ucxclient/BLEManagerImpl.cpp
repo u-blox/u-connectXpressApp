@@ -801,7 +801,9 @@ CHIP_ERROR BLEManagerImpl::SendIndication(BLE_CONNECTION_OBJECT conId, const Ble
             return CHIP_ERROR_CONNECTION_CLOSED_UNEXPECTEDLY;
         }
         
-        ChipLogError(DeviceLayer, "[BLE] SendInd attempt %d/%d FAILED: err=%d (%s)",
+        // u-connectXpressApp: expected until the commissioner subscribes to C2, so not an error (the last
+        // attempt's failure below is)
+        ChipLogProgress(DeviceLayer, "[BLE] SendInd attempt %d/%d not yet: err=%d (%s)",
                     attempt, kMaxIndicationAttempts, result, errName ? errName : "?");
         
         if (attempt < kMaxIndicationAttempts)

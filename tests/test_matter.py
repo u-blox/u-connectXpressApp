@@ -435,10 +435,9 @@ def test_bridge_mqtt_publishes_the_endpoints_and_takes_sets(app_exe, stub, tmp_p
         assert published("ucxapp/matter/temp", b"21.5"), module.payloads
         assert published("ucxapp/matter/node/state", b"not commissioned"), module.payloads
         assert published("ucxapp/matter/node/time", b"5.0 s so far (steps at 1.2 5.0 s)"), module.payloads
-        # the setup codes never go to a broker; what an older version left there retained is removed
+        # the setup codes never go to a broker; what an older version left there retained is replaced by "-"
         assert not any(b"MT:" in data or b"0000-000-0000" in data for _, data in module.payloads), module.payloads
-        assert any(cmd.startswith('AT+UMQPB=0,0,1,"ucxapp/matter/node/code"') for cmd in module.log), module.log
-        assert any(cmd.startswith('AT+UMQPB=0,0,1,"ucxapp/matter/node/qr"') for cmd in module.log), module.log
+        assert published("ucxapp/matter/node/code", b"-") and published("ucxapp/matter/node/qr", b"-"), module.payloads
         assert any(cmd.startswith("AT+UMQS=") and "ucxapp/matter/+/set" in cmd for cmd in module.log), module.log
         proc.stdin.write("matter.endpoints\nmatter.bridge status\nmatter.bridge mqtt off\nmatter.bridge status\n"
                          "matter.bridge mqtt bad#\nmatter.bridge off 3\n")

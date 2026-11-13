@@ -1320,12 +1320,12 @@ static int bridgeMqtt(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     (void)ucxapp_events_wait(URC_FLAG_MQTT_SUBSCRIBED, 5);
-    /* Versions before this one published the node's setup codes here, retained: an empty retained message takes
-       them off the broker. Not counted as a publish that failed. */
+    /* Versions before this one published the node's setup codes here, retained: a retained "-" replaces them on
+       the broker (u-connectClient sends no empty payload). Not counted as a publish that failed. */
     for (int i = 0; i < 2; i++) {
         snprintf(topic, sizeof(topic), "%s/node/%s", prefix, i == 0 ? "code" : "qr");
         (void)uCxMqttPublish(app->ucx, MQTT_ID, U_MQTT_QOS_AT_MOST_ONCE, U_MQTT_RETAIN_YES, topic,
-                             (const uint8_t *)"", 0);
+                             (const uint8_t *)"-", 1);
     }
     snprintf(gMqttPrefix, sizeof(gMqttPrefix), "%s", prefix);
     gMqttApp = app;

@@ -139,22 +139,27 @@ static bool parse_request(const char *raw, int32_t raw_len, uHttpRequest_t *requ
     
     // Parse request line: "GET /path?query HTTP/1.1\r\n"
     char method_str[16];
-    char url[512];
-    if (sscanf(raw, "%15s %511s", method_str, url) != 2) {
+    char url[640];
+    if (sscanf(raw, "%15s %639s", method_str, url) != 2) {
         return false;
     }
     
     request->method = parse_method(method_str);
+    request->too_long = strlen(url) >= sizeof(url) - 1;   /* sscanf stopped at the buffer, not the space */
     
-    // Split path and query
+    // Split path and query; one that does not fit is refused, never cut
     char *query_start = strchr(url, '?');
     if (query_start) {
         *query_start = '\0';
-        size_t qlen = strnlen(query_start + 1, sizeof(request->query) - 1);
+        size_t qlen = strnlen(query_start + 1, sizeof(request->query));
+        request->too_long |= qlen >= sizeof(request->query);
+        qlen = qlen < sizeof(request->query) ? qlen : sizeof(request->query) - 1;
         memcpy(request->query, query_start + 1, qlen);
         request->query[qlen] = '\0';
     }
-    size_t plen = strnlen(url, sizeof(request->path) - 1);
+    size_t plen = strnlen(url, sizeof(request->path));
+    request->too_long |= plen >= sizeof(request->path);
+    plen = plen < sizeof(request->path) ? plen : sizeof(request->path) - 1;
     memcpy(request->path, url, plen);
     request->path[plen] = '\0';
     
@@ -461,7 +466,9 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     const char *head_end = strstr(client->rx_buffer, "\r\n\r\n");
     int32_t declared = head_end != NULL ? content_length(client->rx_buffer, head_end) : 0;
 
-    if (parsed && declared < 0) {
+    if (parsed && request.too_long) {
+        uWebServerSendError(&response, 414, "URI too long");
+    } else if (parsed && declared < 0) {
         uWebServerSendError(&response, 400, "bad Content-Length");
     } else if (parsed && declared > request.body_length) {
         uWebServerSendError(&response, 413, "request too large");
@@ -969,21 +976,23 @@ int32_t uWebServerGetQueryParam(const uHttpRequest_t *request, const char *param
         return -1;
     }
     
-    // Find "param=" in query string
-    char search[128];
-    snprintf(search, sizeof(search), "%s=", param);
-    
-    const char *start = strstr(request->query, search);
+    // Find "param=" at the start of the query or right after a '&' ("a1=" is not in "a11=" or "xa1=")
+    size_t plen = strlen(param);
+    const char *start = NULL;
+    for (const char *p = request->query; *p != '\0'; p += strcspn(p, "&"), p += *p == '&' ? 1 : 0) {
+        if (strncmp(p, param, plen) == 0 && p[plen] == '=') {
+            start = p + plen + 1;
+            break;
+        }
+    }
     if (!start) {
         return -2;  // Not found
     }
     
-    start += strlen(search);
-    const char *end = strchr(start, '&');
-    size_t len = end ? (size_t)(end - start) : strlen(start);
-    
+    size_t len = strcspn(start, "&");
     if (len >= max_len) {
-        len = max_len - 1;
+        value[0] = '\0';
+        return U_WEBSERVER_PARAM_TOO_LONG;
     }
     
     memcpy(value, start, len);

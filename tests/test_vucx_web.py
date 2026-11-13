@@ -129,6 +129,20 @@ def test_web_exec_runs_commands_and_guards_dangerous_ones(app_exe, tmp_path):
     assert "200" in status[7] and "text/event-stream" in replies[7], replies[7][:500]
 
 
+def test_web_exec_never_cuts_an_argument(app_exe, tmp_path):
+    """A field sent %-encoded takes three times its length: it is decoded whole, or refused (414), never cut into
+    another value. A name is matched whole: a11= is not a1=."""
+    slashes = "%2F" * 32
+    reqs = [_post("/api/exec?cmd=help&a0=" + "%2F" * 96, ""), _post("/api/exec?cmd=help&a0=" + "x" * 600, ""),
+            _post("/api/exec?cmd=help&a11=zz&a0=" + slashes, "")]
+    out, replies = _serve(app_exe, tmp_path, reqs)
+    status = [r.split("\r\n", 1)[0] for r in replies]
+    assert "414" in status[0] and "argument too long" in replies[0], replies[0][:300]
+    assert "414" in status[1] and "URI too long" in replies[1], replies[1][:300]
+    assert "200" in status[2], replies[2][:300]
+    assert "No commands match '" + "/" * 32 + "'" in out, out[-1500:]
+    assert "zz" not in out, out[-1500:]
+
 def test_web_upload_and_download_a_file(app_exe, tmp_path):
     reqs = [_post("/api/upload?n=note.txt&o=0", "hello "), _post("/api/upload?n=note.txt&o=6&e=1", "web\n"),
             _get("/api/files"), _get("/api/file?n=note.txt"), _get("/api/file?n=note.txt&o=6"),
@@ -196,6 +210,8 @@ def test_the_event_stream_goes_to_the_connection_that_asked_for_it(app_exe, tmp_
         proc.stdin.write(f"web.start 8080 {TOKEN} http\n")
         proc.stdin.flush()
         assert until(lambda: b"event: connected" in stream(1)), (stream(1), module.log[-20:])
+        # nothing runs: a page that (re)connects is told so, or a command that ended while it was away leaves Run off
+        assert until(lambda: b"event: done" in stream(1)), stream(1)[-600:]
         proc.stdin.write("app.version\n")
         proc.stdin.flush()
         assert until(lambda: b"event: out" in stream(1) and b"u-connectXpressApp " in stream(1)), stream(1)[-600:]

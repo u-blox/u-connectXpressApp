@@ -208,7 +208,9 @@ static viewer_t *viewer(int i)
         v->gen = gen;
         v->logCur = ucxapp_ui_log_start();
         v->evCur = ucxapp_ui_event_start();
-        v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 });
+        /* a page that reconnects after its command ended in the gap still needs that "done" to enable Run
+           again; one that was not waiting ignores it */
+        v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 }) - (ucxapp_ui_busy() ? 0u : 1u);
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
         v->cardSeen[0] = UINT32_MAX;
         v->cardSeen[1] = UINT32_MAX;
@@ -596,17 +598,21 @@ static void routeEvents(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
 static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
     char cmd[MAX_JOB], line[MAX_JOB], vals[UCXAPP_UI_MAX_FIELDS][96], tmp[8];
+    char enc[3 * sizeof(vals[0])];   /* a field as sent: every byte may be %XX */
     const char *ptrs[UCXAPP_UI_MAX_FIELDS];
     int count = 0;
     const char *name = cmd;
+    int32_t got;
 
     (void)user;
     if (!tokenOk(req)) {
         uWebServerSendError(resp, 403, "token required");
         return;
     }
-    if (uWebServerGetQueryParam(req, "cmd", cmd, sizeof(cmd)) != 0) {
-        uWebServerSendError(resp, 400, "missing cmd");
+    got = uWebServerGetQueryParam(req, "cmd", cmd, sizeof(cmd));
+    if (got != 0) {
+        uWebServerSendError(resp, got == U_WEBSERVER_PARAM_TOO_LONG ? 414 : 400,
+                            got == U_WEBSERVER_PARAM_TOO_LONG ? "command too long" : "missing cmd");
         return;
     }
     urlDecode(cmd);
@@ -633,15 +639,27 @@ static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
 
         snprintf(key, sizeof(key), "a%d", i);
         ptrs[i] = "";
-        if (uWebServerGetQueryParam(req, key, vals[i], sizeof(vals[i])) == 0) {
-            urlDecode(vals[i]);
+        got = uWebServerGetQueryParam(req, key, enc, sizeof(enc));
+        if (got == 0) {
+            urlDecode(enc);
+            got = strlen(enc) < sizeof(vals[i]) ? 0 : U_WEBSERVER_PARAM_TOO_LONG;
+        }
+        if (got == U_WEBSERVER_PARAM_TOO_LONG) {
+            uWebServerSendError(resp, 414, "argument too long");   /* cut, it would be another argument */
+            return;
+        }
+        if (got == 0) {
+            memcpy(vals[i], enc, strlen(enc) + 1);
             ptrs[i] = vals[i];
             count = i + 1;
         }
     }
     if (count > 0) {
         bool raw = uWebServerGetQueryParam(req, "r", tmp, sizeof(tmp)) == 0;
-        ucxapp_ui_compose(name, ptrs, count, raw, line, sizeof(line));
+        if (!ucxapp_ui_compose(name, ptrs, count, raw, line, sizeof(line))) {
+            uWebServerSendError(resp, 414, "command too long");
+            return;
+        }
     } else {
         snprintf(line, sizeof(line), "%s", name);
     }
@@ -1530,6 +1548,10 @@ int ucxapp_web_local_request(const char *method, const char *path, const char *q
     memset(req, 0, sizeof(*req));
     memset(&gLocalResp, 0, sizeof(gLocalResp));
     req->method = strcmp(method, "POST") == 0 ? U_HTTP_METHOD_POST : U_HTTP_METHOD_GET;
+    if (strlen(path) >= sizeof(req->path) || strlen(query) >= sizeof(req->query)) {
+        uWebServerSendError(&gLocalResp, 414, "URI too long");
+        return 414;
+    }
     snprintf(req->path, sizeof(req->path), "%s", path);
     snprintf(req->query, sizeof(req->query), "%s", query);
     req->body = body;

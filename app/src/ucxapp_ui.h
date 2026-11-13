@@ -104,7 +104,7 @@ int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max)
 int ucxapp_ui_parse_variants(const char *usage, ucxapp_ui_variant_t *out, int max);
 
 /* Builds a command line from field values: trailing empties dropped, values quoted as needed.
- * raw: values[0] is appended unchanged. */
-void ucxapp_ui_compose(const char *name, const char *const *values, int count, bool raw, char *out, size_t size);
+ * raw: values[0] is appended unchanged. Returns false when the line did not fit out (it is then cut). */
+bool ucxapp_ui_compose(const char *name, const char *const *values, int count, bool raw, char *out, size_t size);
 
 #endif /* UCXAPP_UI_H */

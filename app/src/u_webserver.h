@@ -94,11 +94,12 @@ typedef enum {
  */
 typedef struct {
     uHttpMethod_t method;                          /**< HTTP method */
-    char path[256];                                /**< Request path (e.g., "/api/status") */
-    char query[256];                               /**< Query string (e.g., "id=123") */
+    char path[128];                                /**< Request path (e.g., "/api/status") */
+    char query[512];                               /**< Query string (e.g., "id=123") */
     char headers[1024];                            /**< Raw headers (newline-separated) */
     const char *body;                              /**< Request body (POST/PUT data) */
     int32_t body_length;                           /**< Body length in bytes */
+    bool too_long;                                 /**< the path or query did not fit: answered 414, no handler */
 } uHttpRequest_t;
 
 /**
@@ -237,18 +238,21 @@ void uWebServerSendHTML(uHttpResponse_t *response, const char *html);
  */
 void uWebServerSendError(uHttpResponse_t *response, int32_t status_code, const char *message);
 
+/** U_WEBSERVER_PARAM_TOO_LONG: the value does not fit max_len (value is left empty, never cut). */
+#define U_WEBSERVER_PARAM_TOO_LONG (-3)
+
 /**
  * Get query parameter value
  * 
  * @param request  HTTP request
- * @param param    Parameter name (e.g., "id")
+ * @param param    Parameter name (e.g., "id"), matched at the start of the query or after '&'
  * @param value    Output buffer for value
  * @param max_len  Maximum length of output buffer
- * @return         0 on success, negative if not found
+ * @return         0 on success, -2 if not found, U_WEBSERVER_PARAM_TOO_LONG, -1 on bad arguments
  */
 int32_t uWebServerGetQueryParam(const uHttpRequest_t *request, const char *param, char *value, size_t max_len);
 
-/** Case-insensitive header lookup; same return values as uWebServerGetQueryParam. */
+/** Case-insensitive header lookup; 0 when found, negative otherwise. */
 int32_t uWebServerGetHeader(const uHttpRequest_t *request, const char *name, char *value, size_t max_len);
 
 /* ========================================

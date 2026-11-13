@@ -94,6 +94,10 @@ private:
     int32_t mC2CharHandle = -1; // CHIPoBLE C2 characteristic (indicate)
     int32_t mC2CccdHandle = -1; // C2 CCCD for indication subscriptions
     bool mGattFull = false;
+    int32_t mDefinedC1Handle = -1; // C1 of the service this start defined, the newest on the module
+
+    // A BTP handshake on the C1 of a Matter service an earlier start left on the module: that copy becomes ours
+    bool AdoptEarlierService(int32_t valueHandle, const uByteArray_t * value);
 
     // Helper methods - state machine
     static void DriveBLEState(intptr_t arg);  // Static callback for ScheduleWork

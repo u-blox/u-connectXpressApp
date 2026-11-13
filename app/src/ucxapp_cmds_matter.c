@@ -557,7 +557,7 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
         snprintf(gEndpoints[i - 1], sizeof(gEndpoints[0]), "%s", argv[i]);
         words[i - 1] = gEndpoints[i - 1];
     }
-    gEndpointCount = argc - 1;
+    gEndpointCount = argc == 2 && strcmp(argv[1], "all") == 0 ? 0 : argc - 1;
     return startNode(app, gEndpointCount, words);
 }
 
@@ -1289,17 +1289,18 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gMatterCmds[] = {
-    { "matter.start", "[endpoint...=light temp contact]", "Start a Matter node on the module with the ucxmatter plug-in; endpoints as matter.endpoints lists them, none given: light temp contact", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
+    { "matter.start", "[all|light|temp|contact|<endpoints>=all]", "Start a Matter node on the module with the ucxmatter plug-in; all (the default): light temp contact, or one kind, or a list of kinds as matter.endpoints shows them (light light contact)", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
     { "matter.stop", "", "Stop the Matter node", 0, cmdStop },
     { "matter.status", "", "Is a node running, with which plug-in, and what the node says about itself", 0, cmdStatus },
+    { "matter.log", "<info|detail|error>", "How much of the Matter log is printed: info (the default), detail (the SDK's own), error", 0, cmdLog },
+    { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
     { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },
     { "matter.endpoints", "", "Endpoints of the running node and the kinds the plug-in can build", 0, cmdForward },
     { "matter.set", "<endpoint> <value...>", "Change an endpoint from this side, as a button or sensor would (matter.endpoints shows the values each takes)", 0, cmdSet },
+    { "matter.demo", "[on|off]", "The sensors change by themselves, for a demo: the temperature goes round 19 to 24 C in 2 minutes and the contact opens or closes every 30 s; controllers see it", 0, cmdForward },
     { "matter.qr", "", "Show the setup QR code and manual pairing code of the node (it does not advertise: matter.open does)", 0, cmdForward },
     { "matter.open", "[seconds]", "Open the commissioning window again and advertise over Bluetooth LE (180 to 900 s, default 900)", 0, cmdForward },
-    { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
     { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, crypto known answers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
-    { "matter.log", "<info|detail|error>", "How much of the Matter log is printed: info (the default), detail (the SDK's own), error", 0, cmdLog },
     { "matter.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | "
       "udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | mqtt [prefix|off] | off [n] | status",
       "The node over a bridge: endpoint changes, node state and events go out as lines (EP light = on, STATE ..., "

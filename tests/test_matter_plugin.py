@@ -452,6 +452,22 @@ def test_card_shows_the_node_its_codes_and_endpoints(app_exe, module, plugin, tm
     assert "STEP" not in card, card   # no commissioning under way
 
 
+def test_demo_drives_the_sensors_and_set_writes_the_data_model(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.demo on", "gatt.listen 4", "matter.card",
+               "matter.demo off", "matter.demo", "matter.set light on", "matter.endpoints", "matter.set light 40")
+    assert out.returncode == 0, out.stdout
+    # a fresh light comes on at its own level, not at the data model's minimum
+    assert re.search(r"1 +light +on 100% +Dimmable Light", out.stdout), out.stdout
+    assert "demo: on, the temperature goes round 19..24 C" in out.stdout and "demo: off" in out.stdout, out.stdout
+    card = out.stdout[out.stdout.rindex("NODE  "):]
+    assert "DEMO  on\n" in card, card
+    # the first step of the demo has moved the temperature away from its start value
+    temp = re.search(r"EP    2 temp = (-?[\d.]+) C", card)
+    assert temp and float(temp.group(1)) != 21.5 and 19 <= float(temp.group(1)) <= 24, card
+    # what the node writes itself is no controller's change: no event for it
+    assert "matter: endpoint 1 " not in out.stdout, out.stdout
+
+
 def test_node_stops_and_starts_again_in_one_session(app_exe, module, plugin, tmp_path):
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.stop", "matter.status", "matter.start",
                "matter.status")

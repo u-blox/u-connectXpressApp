@@ -21,6 +21,7 @@ struct EndpointKind
     void (*init)(Endpoint & endpoint);
     bool (*set)(Endpoint & endpoint, int argc, const char * const argv[]);
     void (*show)(const Endpoint & endpoint, char * out, size_t size);
+    uint16_t modelEndpoint; // the endpoint of this kind in data_model/ucxmatter.zap, for the first of the kind
 };
 
 struct Endpoint
@@ -40,6 +41,10 @@ Endpoint * EndpointAdd(const EndpointKind & kind); // nullptr when the node is f
 int EndpointCount();
 Endpoint & EndpointAt(int index);
 Endpoint * EndpointFind(const char * nameOrId);
+// The data model has one endpoint of each kind: the first endpoint of a kind is tied to it, the others are the
+// node's own (0)
+uint16_t EndpointModel(const Endpoint & endpoint);
+Endpoint * EndpointOfModel(uint16_t modelEndpoint);
 
 } // namespace ucxm
 

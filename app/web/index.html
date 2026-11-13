@@ -67,6 +67,13 @@ body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{
 .gv>div{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}.gv b{font:600 12px Consolas,monospace}.gv a{color:var(--k);font:600 12px Consolas,monospace}.gv .al b{color:var(--err,#ff6b6b)}
 .seg{display:inline-flex;gap:3px}.seg i{width:1.3rem;height:.65rem;border-radius:3px;background:var(--bd)}.seg i.on{background:var(--k)}.seg.s6 i{width:.9rem}
 .gv input{width:4.4rem;padding:.15rem .3rem;font:12px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.gv button{padding:.1rem .55rem;font-size:.75rem}
+.gv input[type=range]{width:7rem;padding:0;border:0;background:none;accent-color:#ffc83d}
+.gv .pic{width:30px;height:36px;flex:none;overflow:visible}.gv .pic.tap{cursor:pointer}.gv .pic.tap:hover{filter:brightness(1.25)}
+.bulb .glow{opacity:0;transition:opacity .3s}.bulb .glass{fill:#1f2734;stroke:#4a5568;stroke-width:8;transition:fill .25s}.bulb .fil{fill:none;stroke:#59657a;stroke-width:8;stroke-linecap:round}.bulb .base{fill:#6b7486}
+.bulb.on .glow{opacity:calc(.15 + .85*var(--lvl,1))}.bulb.on .glass{fill:#ffd54a;fill-opacity:calc(.3 + .7*var(--lvl,1));stroke:#ffe58a}.bulb.on .fil{stroke:#fff6c8}
+.thermo .tube{fill:#1b2433;stroke:#3a465a;stroke-width:2}.thermo .merc{fill:#66d17a}.thermo.cold .merc{fill:#4ea8ff}.thermo.hot .merc{fill:#ff6b6b}
+.door .frame{fill:#10151d;stroke:#4a5568;stroke-width:2}.door .leaf{fill:#2a3342;stroke:#59657a;stroke-width:1.5}.door .knob{fill:#c9d1dc}.door.open .leaf{fill:#3a2a1f;stroke:#ffb347}
+.gv .spark{width:7.5rem;height:26px;flex:none}.gv .spark path{fill:none;stroke:var(--k);stroke-width:2;stroke-linejoin:round}
 .dots{display:inline-flex;flex-wrap:wrap;gap:3px}.dots i{width:.6rem;height:.6rem;border-radius:50%;border:1.5px solid var(--k);box-sizing:border-box}.dots i.on{background:var(--k)}
 .bars{display:inline-flex;align-items:flex-end;gap:2px;height:1rem}.bars i{width:.35rem;background:var(--bd);border-radius:1px}.bars i.on{background:var(--k)}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
@@ -358,9 +365,9 @@ function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t
  else if(k==='s'&&x[2]&&!x[2].includes('|')&&!x[1]){e=el('span','fx',x[2]);e.val=()=>x[2];return e}
  else if(k==='o'&&x[2]){const lits=x[2].split('|'),free=nm.split('|').filter(p=>!lits.includes(p)).join(' or ')||'value',
    s=el('select'),i=el('input'),req=x[1]?'':' *';e=el('span','combo');
-  s.add(new Option('type '+free+req,''));lits.forEach(v=>s.add(new Option(v,v)));i.placeholder=free+req;
+  s.add(new Option('type '+free+req,''));lits.forEach(v=>s.add(new Option(x[1]&&v===x[3]?v+' (default)':v,v)));i.placeholder=free+req;
   if(/^(pass|pw)/.test(nm))i.type='password';
-  const v0=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm);if(lits.includes(v0))s.value=v0;else i.value=v0;
+  const v0=FV[key]!==undefined?FV[key]:x[1]?(lits.includes(x[3])?x[3]:''):x[3]||dv(c.n,nm);if(lits.includes(v0))s.value=v0;else i.value=v0;
   const sync=()=>{i.hidden=!!s.value};s.onchange=sync;sync();e.append(s,i);
   e.keep=()=>s.value||i.value.trim();e._k=SECRET.test(nm)?'':key;e.val=()=>s.value||i.value.trim();return e}
  else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
@@ -744,9 +751,9 @@ const CARD={gnss:'',cell:'',matter:''};
 function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')return cn?CN.mod:null;if(cn&&CN.n[k]&&!CN.n[k].gone)return CN.n[k].o;
  if(k==='g'&&CARD.gnss)return{k,c:'gnss',ic:'GNSS',lb:'receiver',info:[],act:[['Status','gnss.status'],['Satellites','gnss.sats']]};
  /* the Matter node (matter.card): its commands as buttons, Start alone while it is stopped */
- if(k==='x'&&CARD.matter){const on=!/^NODE\s+stopped/.test(CARD.matter),dt=/^LOG\s+detail/m.test(CARD.matter),fd=['Factory default','matter.reset',null,1];
+ if(k==='x'&&CARD.matter){const on=!/^NODE\s+stopped/.test(CARD.matter),dt=/^LOG\s+detail/m.test(CARD.matter),dm=/^DEMO\s+on/m.test(CARD.matter),fd=['Factory default','matter.reset',null,1];
   return{k,c:'matter',ic:'MATTER',lb:on?'node':'stopped',info:[],act:on?[['Status','matter.status'],['QR code','matter.qr'],['Open window','matter.open'],
-   [dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
+   [dm?'Demo off':'Demo on','matter.demo',[dm?'off':'on']],[dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
  if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
 function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
  ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
@@ -772,12 +779,51 @@ function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{con
  /* Matter: the commissioning steps as segments; an endpoint with a button or a number field for each value matter.set takes */
  else if(k==='STEP'){const f=/^failed at (\d+)\/(\d+)/.exec(v),q=f||/^(\d+)\/(\d+)/.exec(v);if(q){const s=el('span','seg s6');
   for(let i=0;i<+q[2];i++)s.appendChild(el('i',i<+q[1]-(f?1:0)?'on':''));w.appendChild(s)}if(f)w.className='al'}
- else if(k==='EP'){const p=/^(\d+) (\S+) = (.*?)  \[(.*)\]$/.exec(v);if(p){w.appendChild(el('b','',p[2]+' '+p[3]));v='';
+ else if(k==='EP'){const p=/^(\d+) (\S+) = (.*?)  \[(.*)\]$/.exec(v);if(p){const nm=p[2],kd=nm.replace(/\d+$/,''),pic=mtPic(kd,nm,p[3]);
+  if(pic)w.appendChild(pic);w.appendChild(el('b','',nm+' '+p[3]));v='';if(kd==='temp'&&(TH[nm]||[]).length>1)w.appendChild(mtSpark(TH[nm]));
   p[4].split(' | ').forEach(a=>{const r=/^(-?\d+)\.\.(-?\d+)/.exec(a),e=el(r?'input':'button','',r?null:a);e.title='matter.set '+p[2]+' '+a;
-   if(r){e.type='number';e.min=r[1];e.max=r[2];e.step='any';e.placeholder=r[1]+'..'+r[2];e.setAttribute('aria-label',p[2]+' '+a);e.onchange=()=>{if(e.value!=='')run('matter.set',[p[2],e.value])}}
+   if(r&&kd==='light'){const l=/^on (\d+)%/.exec(p[3]);e.type='range';e.min=r[1];e.max=r[2];e.step=1;e.value=l?l[1]:0;e.setAttribute('aria-label',p[2]+' level');
+    e.onpointerdown=()=>{CN.busy=1};e.onchange=()=>{CN.busy=0;run('matter.set',[p[2],e.value])};e.onblur=()=>{if(CN.busy){CN.busy=0;cnDetails()}}}
+   else if(r){const cur=parseFloat(p[3]),st=kd==='temp'?.5:1,lo=+r[1],hi=+r[2],
+     nudge=d=>{const b=isNaN(parseFloat(e.value))?(isNaN(cur)?lo:cur):parseFloat(e.value),n=clamp(Math.round((b+d)/st)*st,lo,hi);e.value=n;run('matter.set',[p[2],String(n)])},
+     dn=el('button','',"\u2212"),up=el('button','','+');
+    dn.setAttribute('aria-label',p[2]+' down');up.setAttribute('aria-label',p[2]+' up');
+    dn.onclick=()=>nudge(-st);up.onclick=()=>nudge(st);
+    e.type='number';e.min=r[1];e.max=r[2];e.step=st;e.placeholder=r[1]+'..'+r[2];if(!isNaN(cur))e.value=cur;e.setAttribute('aria-label',p[2]+' '+a);
+    e.onfocus=()=>{CN.busy=1};e.onblur=()=>{CN.busy=0;cnDetails()};e.onchange=()=>{if(e.value!=='')run('matter.set',[p[2],e.value]);e.blur()};
+    w.append(dn,e,up);return}
    else e.onclick=()=>run('matter.set',[p[2],a]);w.appendChild(e)})}}
  if(v.trim())w.appendChild(el('b','',v.trim()));g.appendChild(el('span','',k));g.appendChild(w)});return g}
 petDraw();
+/* Matter endpoints as pictures (small ones of the i.MX 93 hub demo's): a bulb that glows with its level, a thermometer
+   with a graph of the temperature, a door for the contact sensor; a click on the bulb or the door flips it */
+const TH={};
+function mtHist(t){(t||'').split('\n').forEach(l=>{const m=/^EP\s+\d+ (\S+) = (-?[\d.]+) C\b/.exec(l);if(!m)return;
+ const h=TH[m[1]]||(TH[m[1]]=[]),v=+m[2],n=Date.now(),z=h[h.length-1];if(!z||z.v!==v||n-z.t>3e4){h.push({v,t:n});if(h.length>60)h.shift()}})}
+function svg(vb,cls,body){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox',vb);s.setAttribute('class',cls);
+ s.setAttribute('aria-hidden','true');s.innerHTML=body;return s}
+function mtPic(kd,nm,val){let s=null,to=null;
+ if(kd==='light'){const on=/^on/.test(val),l=/(\d+)%/.exec(val);to=on?'off':'on';
+  s=svg('-30 -25 260 300','pic bulb'+(on?' on':''),'<defs><radialGradient id="mtglow"><stop offset="0%" stop-color="#ffd54a" stop-opacity=".85"/>'+
+   '<stop offset="45%" stop-color="#ffb300" stop-opacity="0"/></radialGradient></defs>'+
+   '<circle class="glow" cx="100" cy="105" r="130" fill="url(#mtglow)"/><path class="glass" d="M100 20 C50 20 20 58 20 100 C20 135 45 155 62 180 L66 200 L134 200 L138 180 C155 155 180 135 180 100 C180 58 150 20 100 20 Z"/>'+
+   '<path class="fil" d="M82 200 L82 150 Q91 118 100 150 Q109 118 118 150 L118 200"/><rect class="base" x="64" y="206" width="72" height="14" rx="5"/>'+
+   '<rect class="base" x="70" y="226" width="60" height="14" rx="5"/><path class="base" d="M84 246 L116 246 L108 258 L92 258 Z"/>');
+  s.style.setProperty('--lvl',on?(l?l[1]/100:1):0)}
+ else if(kd==='temp'){const c=parseFloat(val);if(isNaN(c))return null;const y=60-(clamp(c,-10,40)+10)/50*52;
+  s=svg('0 0 30 84','pic thermo '+(c<18?'cold':c>26?'hot':'comfy'),'<rect class="tube" x="9" y="3" width="12" height="64" rx="6"/><circle class="tube" cx="15" cy="71" r="10"/>'+
+   '<rect class="merc" x="12" y="'+y.toFixed(1)+'" width="6" height="'+(70-y).toFixed(1)+'" rx="3"/><circle class="merc" cx="15" cy="71" r="7"/>')}
+ else if(kd==='contact'){const op=/^open/.test(val);to=op?'closed':'open';
+  s=svg('0 0 40 48','pic door'+(op?' open':''),'<rect class="frame" x="5" y="3" width="30" height="42" rx="2"/>'+
+   (op?'<path class="leaf" d="M8 6 L21 10 L21 40 L8 43 Z"/><circle class="knob" cx="18" cy="26" r="1.6"/>'
+      :'<rect class="leaf" x="8" y="6" width="24" height="37" rx="1"/><circle class="knob" cx="27" cy="25" r="2"/>'))}
+ if(s&&to){s.classList.add('tap');s.setAttribute('role','button');s.removeAttribute('aria-hidden');s.setAttribute('aria-label',nm+' '+to);
+  s.onclick=()=>run('matter.set',[nm,to])}
+ return s}
+function mtSpark(h){const vs=h.map(x=>x.v),lo=Math.min(...vs),hi=Math.max(...vs),mid=(lo+hi)/2,hf=Math.max((hi-lo)/2+.2,.5),
+ d=vs.map((v,i)=>(i?'L':'M')+(i/(vs.length-1)*120).toFixed(1)+','+(26-(v-mid+hf)/(2*hf)*24).toFixed(1)).join(' '),
+ s=svg('0 0 120 28','spark','<path vector-effect="non-scaling-stroke" d="'+d+'"/>');s.setAttribute('preserveAspectRatio','none');
+ const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=lo.toFixed(1)+' .. '+hi.toFixed(1)+' C, the last '+vs.length+' readings';s.appendChild(t);return s}
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
 function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';
  CN.pk.forEach(p=>p.e.remove());CN.pk=[];cnReset();cnDetails();fltSet();if(CN.timer)cnTick()}
@@ -788,6 +834,8 @@ function fltSet(){const k=fltKind(),n=k&&{o:cnItem(CN.sel)},bar=$('flt-on');docu
  document.querySelectorAll('#out>.blk,#ev>.e').forEach(e=>{if(e.dataset.g!==undefined)fltMark(e,e.dataset.g)});
  if(!k)return;bar.appendChild(el('span','','Showing only '+n.o.ic+' '+n.o.lb));const x=el('button','','Show all');x.onclick=()=>{CN.sel='';cnDetails();fltSet()};bar.appendChild(x)}
 function cnDetails(){const d=$('cnd'),o=CN.sel?cnItem(CN.sel):null;if(!o)CN.sel='';Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));
+ /* not under a slider being dragged or a number being typed: the field's own blur or change draws again */
+ if(CN.busy&&o&&d.contains(document.activeElement))return;CN.busy=0;
  cnHub.classList.toggle('sel',CN.sel==='hub');petDraw();d.hidden=!o;document.body.classList.toggle('det',!!o);if(!o){d.sig='';return}
  const card=CARD[o.c]||'',sig=JSON.stringify([o.k,o.info,o.act,card,o.q]);if(d.sig===sig)return;d.sig=sig;d.textContent='';
  const h=el('h3','k-'+(o.c||'host'));h.appendChild(el('i','dot'));h.appendChild(el('span','',o.ic+'  '+o.lb));
@@ -826,7 +874,7 @@ function events(){const es=new EventSource('/events');
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>{const t=JSON.parse(e.data);addEv(t);cnPulse(t.slice(0,Math.max(0,t.indexOf(':'))),0)});
- ['gnss','cell','matter'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';cnDetails();if(s!==CN.sel)fltSet()}));
+ ['gnss','cell','matter'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';if(c==='matter')mtHist(CARD[c]);cnDetails();if(s!==CN.sel)fltSet()}));
  es.addEventListener('conn',e=>{if(CN.timer)cnUpdate(JSON.parse(e.data))});
  const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
  es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));

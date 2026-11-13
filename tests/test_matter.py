@@ -97,6 +97,9 @@ def test_default_and_chosen_endpoints(app_exe, module, stub, tmp_path):
         out.stdout
     out = _run(app_exe, module, stub, tmp_path, "matter.start contact light", "matter.endpoints")
     assert "1  contact  closed\n2  light  off\nkinds:" in out.stdout, out.stdout
+    # all (the web form's default) is the default set, not an endpoint kind
+    out = _run(app_exe, module, stub, tmp_path, "matter.start all", "matter.endpoints")
+    assert re.search(r"1  light  off\n2  temp  21.5\n3  contact  closed\nkinds:", out.stdout), out.stdout
 
 
 def test_unknown_endpoint_does_not_start(app_exe, module, stub, tmp_path):

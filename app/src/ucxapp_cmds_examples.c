@@ -180,6 +180,8 @@ static const example_t kExamples[] = {
     { "matter", "Act as the device: flip the light and trip the contact sensor from this side",
       "matter.endpoints\nmatter.set light on\nmatter.set contact open\nmatter.set temp 23.5\n"
       "# the node at a glance; the web page shows the same card, with buttons, under What's happening\nmatter.card" },
+    { "matter", "A demo: the sensors change by themselves, and a commissioned home app follows them",
+      "matter.demo on\nmatter.card\n# the light stays with you and the home app\nmatter.set light 40\nmatter.demo off" },
     { "matter", "Only some endpoints, more of the SDK's log, and a clean slate",
       "matter.stop\nmatter.log detail\nmatter.start light temp\n# forget every fabric, leave Wi-Fi and reboot the module: the node starts again, ready to be commissioned\nmatter.reset\nmatter.selftest" },
     { "matter", "The node over TCP, UDP, BLE and MQTT: changes go out, 'set light on' comes back",

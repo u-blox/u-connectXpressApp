@@ -77,6 +77,13 @@ bool NodeSnapshot(NodeState & state);
 void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribute, const uint8_t * value,
                           uint16_t size);
 
+struct Endpoint;
+// matter.set changed an endpoint: its attributes in the data model follow, so controllers see it (endpoints.h)
+void NodeEndpointChanged(const Endpoint & endpoint);
+// matter.demo: the sensors change by themselves, the temperature on a slow curve and the contact now and then
+bool NodeDemo(bool on);
+bool NodeDemoOn();
+
 } // namespace ucxm
 
 #endif // UCXM_NODE_H

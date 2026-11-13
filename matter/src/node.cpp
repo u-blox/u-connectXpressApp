@@ -1,7 +1,10 @@
 #include "node.h"
 
+#include <app-common/zap-generated/attributes/Accessors.h>
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
+#include <app/clusters/boolean-state-server/CodegenIntegration.h>
+#include <app/clusters/temperature-measurement-server/CodegenIntegration.h>
 #include <app/server/AppDelegate.h>
 #include <app/clusters/identify-server/identify-server.h>
 #include <app/clusters/network-commissioning/network-commissioning.h>
@@ -29,10 +32,13 @@
 #include <platform/ucxclient/support/DeviceConfig.h>
 
 #include "UbloxCommissionableDataProvider.h"
+#include "endpoints.h"
 #include "progress.h"
 #include "ucxm_host.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -57,6 +63,117 @@ bool gServerUp;
 bool gLoopUp;
 bool gWiFi;
 bool gWiFiUp;
+bool gOwnWrite; // the node writes its own attributes: no event for them, matter.set told already
+bool gDemo;
+unsigned gDemoStep;
+
+// matter.demo: one step every 3 s; the temperature goes round once in 2 minutes, the contact changes every 30 s
+constexpr uint32_t kDemoStepMs       = 3000;
+constexpr unsigned kDemoTempSteps    = 40;
+constexpr unsigned kDemoContactSteps = 10;
+constexpr uint32_t kLight            = 0x0101; // device types of endpoints.cpp
+constexpr uint32_t kTemp             = 0x0302;
+constexpr uint32_t kContact          = 0x0015;
+
+// With the stack lock: the attributes of an endpoint tied to the data model take its values
+void WriteModel(const Endpoint & e)
+{
+    namespace Clusters  = app::Clusters;
+    const EndpointId ep = EndpointModel(e);
+
+    if (!gServerUp || ep == 0)
+    {
+        return;
+    }
+    gOwnWrite = true;
+    if (e.kind->deviceType == kLight)
+    {
+        (void) Clusters::OnOff::Attributes::OnOff::Set(ep, e.value[0] != 0);
+        // 1 to 254 on the wire
+        (void) Clusters::LevelControl::Attributes::CurrentLevel::Set(
+            ep, static_cast<uint8_t>(std::max<int32_t>(1, (e.value[1] * 254 + 50) / 100)));
+    }
+    else if (e.kind->deviceType == kTemp)
+    {
+        (void) Clusters::TemperatureMeasurement::SetMeasuredValue(ep, chip::app::DataModel::MakeNullable(static_cast<int16_t>(e.value[0])));
+    }
+    else if (e.kind->deviceType == kContact)
+    {
+        Clusters::BooleanStateCluster * cluster = Clusters::BooleanState::FindClusterOnEndpoint(ep);
+
+        if (cluster != nullptr)
+        {
+            (void) cluster->SetStateValue(e.value[0] == 0); // true: in contact, closed
+        }
+    }
+    gOwnWrite = false;
+}
+
+// With the stack lock, when the server is up: the light as the data model kept it (a controller's last word), the
+// sensors as the node has them
+void SyncModel()
+{
+    namespace Clusters = app::Clusters;
+
+    for (int i = 0; i < EndpointCount(); i++)
+    {
+        Endpoint & e        = EndpointAt(i);
+        const EndpointId ep = EndpointModel(e);
+        bool on             = false;
+        chip::app::DataModel::Nullable<uint8_t> level;
+
+        if (e.kind->deviceType != kLight)
+        {
+            WriteModel(e);
+        }
+        else if (ep != 0 && Clusters::OnOff::Attributes::OnOff::Get(ep, &on) == Protocols::InteractionModel::Status::Success)
+        {
+            e.value[0] = on ? 1 : 0;
+            // a fresh node's level is the minimum: the light keeps its own (100%), or it would come on at 1%
+            if (Clusters::LevelControl::Attributes::CurrentLevel::Get(ep, level) == Protocols::InteractionModel::Status::Success &&
+                !level.IsNull() && level.Value() > 1)
+            {
+                e.value[1] = std::max(1, (level.Value() * 100 + 127) / 254);
+            }
+            else
+            {
+                WriteModel(e);
+            }
+        }
+    }
+}
+
+// On the Matter thread with the stack lock
+void DemoTick(System::Layer *, void *)
+{
+    if (!gDemo)
+    {
+        return;
+    }
+    gDemoStep++;
+    for (int i = 0; i < EndpointCount(); i++)
+    {
+        Endpoint & e = EndpointAt(i);
+
+        if (e.kind->deviceType == kTemp)
+        {
+            const double degrees = 21.5 + 2.5 * sin(6.283185307179586 * gDemoStep / kDemoTempSteps);
+
+            e.value[0] = static_cast<int32_t>(lround(degrees * 10.0) * 10); // 0.1 degrees, as the card shows it
+            WriteModel(e);
+        }
+        else if (e.kind->deviceType == kContact && gDemoStep % kDemoContactSteps == 0)
+        {
+            char line[64];
+
+            e.value[0] = e.value[0] != 0 ? 0 : 1;
+            WriteModel(e);
+            snprintf(line, sizeof(line), "matter: %s = %s (demo)", e.name, e.value[0] != 0 ? "open" : "closed");
+            gEvent(line);
+        }
+    }
+    (void) SystemLayer().StartTimer(System::Clock::Milliseconds32(kDemoStepMs), DemoTick, nullptr);
+}
 
 using WiFiDriver = NetworkCommissioning::UcxWiFiDriver;
 
@@ -198,6 +315,7 @@ const char * ServerStart()
         return "the Matter server did not start (matter.log detail shows why)";
     }
     gServerUp = true;
+    SyncModel();
     (void) Server::GetInstance().GetFabricTable().AddFabricDelegate(&gCommissioning);
     (void) PlatformMgr().AddEventHandler(OnDeviceEvent, 0);
     if (gWiFi)
@@ -325,6 +443,8 @@ void NodeStop()
         {
             StackLock lock;
 
+            gDemo = false;
+            SystemLayer().CancelTimer(DemoTick, nullptr);
             if (gWiFiUp)
             {
                 gWiFiCommissioning.Shutdown();
@@ -471,26 +591,66 @@ bool NodeSnapshot(NodeState & state)
 void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribute, const uint8_t * value, uint16_t size)
 {
     char line[64];
+    Endpoint * e = EndpointOfModel(endpoint);
 
-    // not while the server sets its start values
-    if (!gLoopUp || value == nullptr || size < 1)
+    // not while the server sets its start values, nor for what the node writes itself
+    if (!gLoopUp || gOwnWrite || value == nullptr || size < 1)
     {
         return;
     }
     if (cluster == app::Clusters::OnOff::Id && attribute == app::Clusters::OnOff::Attributes::OnOff::Id)
     {
+        if (e != nullptr)
+        {
+            e->value[0] = value[0] != 0 ? 1 : 0;
+        }
         snprintf(line, sizeof(line), "matter: endpoint %u switched %s", static_cast<unsigned>(endpoint),
                  value[0] != 0 ? "on" : "off");
         gEvent(line);
     }
     else if (cluster == app::Clusters::LevelControl::Id &&
-             attribute == app::Clusters::LevelControl::Attributes::CurrentLevel::Id)
+             attribute == app::Clusters::LevelControl::Attributes::CurrentLevel::Id && value[0] != 0xFF)
     {
-        // 1 to 254 on the wire
-        snprintf(line, sizeof(line), "matter: endpoint %u level %u%%", static_cast<unsigned>(endpoint),
-                 (static_cast<unsigned>(value[0]) * 100 + 127) / 254);
+        // 1 to 254 on the wire, 0xFF is null
+        const unsigned percent = (static_cast<unsigned>(value[0]) * 100 + 127) / 254;
+
+        if (e != nullptr)
+        {
+            e->value[1] = static_cast<int32_t>(std::max(1u, percent));
+        }
+        snprintf(line, sizeof(line), "matter: endpoint %u level %u%%", static_cast<unsigned>(endpoint), percent);
         gEvent(line);
     }
+}
+
+void NodeEndpointChanged(const Endpoint & endpoint)
+{
+    if (!gStackUp || !gServerUp)
+    {
+        return;
+    }
+    StackLock lock;
+
+    WriteModel(endpoint);
+}
+
+bool NodeDemo(bool on)
+{
+    if (!gLoopUp)
+    {
+        return false;
+    }
+    StackLock lock;
+
+    SystemLayer().CancelTimer(DemoTick, nullptr);
+    gDemo     = on;
+    gDemoStep = 0;
+    return !on || SystemLayer().StartTimer(System::Clock::Milliseconds32(kDemoStepMs), DemoTick, nullptr) == CHIP_NO_ERROR;
+}
+
+bool NodeDemoOn()
+{
+    return gDemo;
 }
 
 } // namespace ucxm

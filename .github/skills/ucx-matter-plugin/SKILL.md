@@ -28,8 +28,12 @@ product name too (`DefaultNodeLabel` in `node.cpp`; the SDK leaves it empty, and
 generically); a name a controller writes is kept. Checked so
 far: a whole commissioning with a phone over Bluetooth LE and Wi-Fi (the light then switches from the home app),
 the Bluetooth LE transport over the air between two modules, and a pairing request over UDP on the virtual
-module. **Not yet:** the endpoints of `matter.set`
-are not tied to the data model's attributes (a controller's change shows as an event); the module's mDNS has no
+module. `matter.set` writes the data model (on/off and level of the light, the temperature, the contact), so a
+controller sees the change, and a controller's change to the light shows in `matter.card` and as an event.
+`matter.demo on` makes the node a demo: the temperature goes round 19..24 C in two minutes and the contact opens and
+closes every 30 s, as a controller (Apple Home) shows them. A phone that kept the GATT table of an earlier start in
+the same module boot writes its handshake to the old service's C1: the node adopts that service (same layout, a
+whole number of services before its own) and goes on with it, MTU included. **Not yet:** the module's mDNS has no
 subtypes, so a commissioner cannot browse for the discriminator over the network. Thread waits for a module with
 Thread firmware.
 
@@ -89,11 +93,12 @@ linked once. Test: `tests/test_wasm.py::test_matter_node_is_built_in`.
 
 ```powershell
 .\ucxapp COM75                 # then, in the shell:
-matter.start                   # default endpoints: light, temp, contact; or: matter.start light light contact
+matter.start                   # default endpoints (or matter.start all): light, temp, contact; or: matter.start light light contact
 matter.status                  # plug-in, radios, node state; matter.qr shows the codes again
 matter.card                    # the node at a glance; the web page's Matter tab under What's happening is this card
 matter.endpoints               # endpoints of the node and the kinds the plug-in can build
 matter.set light 40            # act as the device: light on|off|0..100, temp -40..125, contact open|closed
+matter.demo on                 # the node moves its sensors itself (temperature 19..24 C, contact every 30 s); off
 matter.open                    # commissioning window for 15 minutes again, with the codes
 matter.bridge tcp              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
 matter.bridge mqtt             # after mqtt.connect: ucxapp/matter/<endpoint> (retained), ucxapp/matter/<endpoint>/set
@@ -115,8 +120,10 @@ to 115200 baud.
 The module needs Bluetooth LE with a peripheral role, and Wi-Fi or Thread (`dev.caps`). `matter.example` shows worked examples.
 
 The web page has a Matter tab in What's happening whenever the plug-in is installed: the node's state, the
-commissioning steps as segments, a button or a number field for each value an endpoint takes, and buttons for
-start, stop, QR code, open window, SDK log and factory default. It is a view of `matter.card`: the plug-in's
+commissioning steps as segments, a button or a number field for each value an endpoint takes, small pictures for
+the known kinds (a bulb that glows with its level and has a dimmer slider, a thermometer with a graph of the last
+readings, a door; a click on the bulb or the door flips it), and buttons for
+start, stop, QR code, open window, demo, SDK log and factory default. It is a view of `matter.card`: the plug-in's
 `card()` gives `TAG value` lines (`EP    1 light = on 40%  [on | off | 0..100 (percent)]`: the page builds the
 controls from the bracket, so a new endpoint kind needs no change in the page), the app adds `LOG`, and every
 button runs a `matter.*` command. `card()` is called from the web thread four times a second: it sends no AT

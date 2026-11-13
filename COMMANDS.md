@@ -434,12 +434,13 @@ The node is a root node with a dimmable light, a temperature sensor and a contac
 
 | Command | Arguments | Description |
 |---|---|---|
-| `matter.start` | `[endpoint...]` | Load the plug-in and start the node on the module. Endpoints are named as `matter.endpoints` lists the kinds (`light temp contact`); none builds the default set |
+| `matter.start` | `[all\|light\|temp\|contact\|<endpoints>]` | Load the plug-in and start the node on the module. `all` (the default) builds the default set, light, temp and contact; one kind or a list of kinds as `matter.endpoints` names them (`light light contact`) builds those |
 | `matter.stop` | | Stop the node (leaving the app or disconnecting the module does the same) |
 | `matter.status` | | Stopped or running, the plug-in and its file, the module's radios, the URCs passed on to the node, and what the node says about itself |
-| `matter.card` | | The node at a glance, one `TAG value` line each: state, commissioning step, Bluetooth LE, commissioning window, network, setup codes, every endpoint with its value and what `matter.set` takes, and the log level. The web page shows the same card as the Matter tab of What's happening, with a button or a number field for each endpoint value and buttons for start, stop, QR code, open window, SDK log and factory default (`matter.reset`) |
+| `matter.card` | | The node at a glance, one `TAG value` line each: state, commissioning step, Bluetooth LE, commissioning window, network, setup codes, every endpoint with its value and what `matter.set` takes, and the log level. The web page shows the same card as the Matter tab of What's happening, with a picture, a button, a slider or a number field with - and + for each endpoint value, and buttons for start, stop, QR code, open window, demo, SDK log and factory default (`matter.reset`) |
 | `matter.endpoints` | | Endpoints of the running node with their values, and the kinds the plug-in can build |
-| `matter.set` | `<endpoint> <value...>` | Change an endpoint from this side, as a button or a sensor would: `matter.set light on`, `matter.set temp 23.5`, `matter.set contact open` |
+| `matter.set` | `<endpoint> <value...>` | Change an endpoint from this side, as a button or a sensor would: `matter.set light on`, `matter.set temp 23.5`, `matter.set contact open`. The node writes the value to its data model, so a controller sees it |
+| `matter.demo` | `[on\|off]` | The node moves its sensors itself: the temperature goes round 19..24 C in two minutes and the contact opens or closes every 30 s, as a controller shows them; without an argument it shows whether the demo runs. The web page has a Demo button for it |
 | `matter.qr` | | Setup QR code and manual pairing code; it does not advertise (`matter.open` does) |
 | `matter.open` | `[seconds]` | Open the commissioning window again (180 to 900 seconds, default 900), advertise over Bluetooth LE and show the codes |
 | `matter.reset` | `[all]` | Forget every fabric and remove what the node stored, disconnect Wi-Fi and reboot the module; a node that ran starts again with the same endpoints and opens its commissioning window, so it can be commissioned again. Its setup codes stay, as the label on a product does; `all` draws new ones and factory-resets the module instead of rebooting it (the UART goes back to 115200 baud) |

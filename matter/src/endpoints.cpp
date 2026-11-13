@@ -105,9 +105,9 @@ void ContactShow(const Endpoint & e, char * out, size_t size)
 }
 
 const EndpointKind kKinds[] = {
-    { "light", 0x0101, "Dimmable Light", "on | off | 0..100 (percent)", LightInit, LightSet, LightShow },
-    { "temp", 0x0302, "Temperature Sensor", "-40..125 (degrees Celsius)", TempInit, TempSet, TempShow },
-    { "contact", 0x0015, "Contact Sensor", "open | closed", ContactInit, ContactSet, ContactShow },
+    { "light", 0x0101, "Dimmable Light", "on | off | 0..100 (percent)", LightInit, LightSet, LightShow, 1 },
+    { "temp", 0x0302, "Temperature Sensor", "-40..125 (degrees Celsius)", TempInit, TempSet, TempShow, 2 },
+    { "contact", 0x0015, "Contact Sensor", "open | closed", ContactInit, ContactSet, ContactShow, 3 },
 };
 
 Endpoint gEndpoints[kMaxEndpoints];
@@ -189,6 +189,23 @@ Endpoint * EndpointFind(const char * nameOrId)
     for (int i = 0; i < gCount; i++)
     {
         if (isId ? gEndpoints[i].id == id : strcmp(gEndpoints[i].name, nameOrId) == 0)
+        {
+            return &gEndpoints[i];
+        }
+    }
+    return nullptr;
+}
+
+uint16_t EndpointModel(const Endpoint & endpoint)
+{
+    return strcmp(endpoint.name, endpoint.kind->name) == 0 ? endpoint.kind->modelEndpoint : 0;
+}
+
+Endpoint * EndpointOfModel(uint16_t modelEndpoint)
+{
+    for (int i = 0; i < gCount; i++)
+    {
+        if (modelEndpoint != 0 && EndpointModel(gEndpoints[i]) == modelEndpoint)
         {
             return &gEndpoints[i];
         }

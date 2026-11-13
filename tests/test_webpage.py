@@ -186,12 +186,18 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
                             "EP    3 contact = closed  [open | closed]\nLOG   info")
         assert page.locator("#cnd .seg.s6 i").count() == 6 and page.locator("#cnd .seg.s6 i.on").count() == 3
         assert [b.inner_text() for b in page.locator("#cnd .r button").all()] == [
-            "Status", "QR code", "Open window", "SDK log on", "Stop", "Factory default", "Close"]
+            "Status", "QR code", "Open window", "Demo on", "SDK log on", "Stop", "Factory default", "Close"]
         assert "light on 40%" in page.inner_text("#cnd") and "[" not in page.inner_text("#cnd")
-        # an endpoint: a button for each word, a number field for a range
-        assert [b.inner_text() for b in page.locator("#cnd .gv button").all()] == ["on", "off", "open", "closed"]
-        assert page.locator("#cnd .gv input[type=number]").count() == 2
-        assert page.get_attribute("#cnd .gv input >> nth=1", "min") == "-40"
+        # an endpoint: a button for each word, a slider for the light's level, a number field for another range
+        assert [b.inner_text() for b in page.locator("#cnd .gv button").all()] == [
+            "on", "off", "\u2212", "+", "open", "closed"]
+        assert page.input_value("#cnd .gv input[type=range]") == "40"
+        assert page.locator("#cnd .gv input[type=number]").count() == 1
+        assert page.get_attribute("#cnd .gv input[type=number]", "min") == "-40"
+        assert page.input_value("#cnd .gv input[type=number]") == "21.5"   # steps from the value it has
+        # and a picture: the bulb glows at its level, the thermometer, the closed door
+        assert page.locator("#cnd svg.bulb.on").count() == 1 and page.locator("#cnd svg.thermo").count() == 1
+        assert page.locator("#cnd svg.door:not(.open)").count() == 1
         page.wait_for_function("() => sessionStorage.getItem('ucxs') && !busy")   # the page's own first command
 
         def posted(count):
@@ -204,6 +210,26 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         count = len(server.posted)
         page.click('#cnd .gv button >> text="open"')
         assert posted(count)[-1].endswith("cmd=matter.set&a0=contact&a1=open"), server.posted
+        page.evaluate("busy = false")
+        count = len(server.posted)
+        page.click('#cnd .gv button >> text="+"')   # half a degree up from 21.5
+        assert posted(count)[-1].endswith("cmd=matter.set&a0=temp&a1=22"), server.posted
+        page.evaluate("busy = false")
+        count = len(server.posted)
+        page.click("#cnd svg.bulb")   # the bulb is a switch
+        assert posted(count)[-1].endswith("cmd=matter.set&a0=light&a1=off"), server.posted
+        # the temperature's graph: drawn from the readings the card has had
+        page.evaluate("busy = false")
+        for t in ("21.5", "22.0", "22.4"):
+            page.evaluate("t => {mtHist(t); cnDetails()}", f"EP    2 temp = {t} C  [-40..125 (degrees Celsius)]")
+        assert page.evaluate("TH.temp.length") == 3
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE commissioned\nDEMO  on\n"
+                            "EP    2 temp = 22.4 C  [-40..125 (degrees Celsius)]\nLOG   info")
+        assert page.locator("#cnd svg.spark").count() == 1
+        assert "Demo off" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
+        count = len(server.posted)
+        page.click('#cnd .r button >> text="Demo off"')
+        assert posted(count)[-1].endswith("cmd=matter.demo&a0=off"), server.posted
         # a failed step is marked, with the steps that were done still lit
         page.evaluate("busy = false")
         page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
@@ -863,7 +889,7 @@ LAYOUT_JS = """() => {
       .map(e => Object.assign({
         ph: label(e),
         inner: !e.classList.contains('combo') ? []
-          : Array.from(e.children).map(k => Object.assign({ph: label(k)}, box(k)))
+          : Array.from(e.children).filter(k => k.offsetParent !== null).map(k => Object.assign({ph: label(k)}, box(k)))
       }, box(e)));
     out.push(Object.assign({name: c.querySelector('b').textContent, items}, box(c)));
   });

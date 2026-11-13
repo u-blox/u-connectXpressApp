@@ -273,6 +273,10 @@ size_t Card(char * out, size_t size)
         e.kind->show(e, text, sizeof(text));
         n = CardLine(out, size, n, "EP    %u %s = %s  [%s]\n", static_cast<unsigned>(e.id), e.name, text, e.kind->values);
     }
+    if (NodeDemoOn())
+    {
+        n = CardLine(out, size, n, "DEMO  on\n");
+    }
     return n;
 }
 
@@ -464,7 +468,25 @@ int Set(int argc, const char * const argv[])
         return UCXAPP_MATTER_ERR_FAILED;
     }
     e->kind->show(*e, value, sizeof(value));
+    NodeEndpointChanged(*e);
     Event("matter: %s = %s", e->name, value);
+    return UCXAPP_MATTER_OK;
+}
+
+// matter.demo [on|off]
+int Demo(int argc, const char * const argv[])
+{
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0))
+    {
+        return UCXAPP_MATTER_ERR_USAGE;
+    }
+    if (argc == 2 && !NodeDemo(strcmp(argv[1], "on") == 0))
+    {
+        Print("ERROR: the node did not start its demo\n");
+        return UCXAPP_MATTER_ERR_FAILED;
+    }
+    Print("demo: %s\n", NodeDemoOn() ? "on, the temperature goes round 19..24 C in 2 minutes, the contact changes every 30 s"
+                                     : "off");
     return UCXAPP_MATTER_OK;
 }
 
@@ -537,6 +559,10 @@ int Command(int argc, const char * const argv[])
     if (strcmp(argv[0], "set") == 0)
     {
         return Set(argc, argv);
+    }
+    if (strcmp(argv[0], "demo") == 0)
+    {
+        return Demo(argc, argv);
     }
     if (strcmp(argv[0], "qr") == 0)
     {

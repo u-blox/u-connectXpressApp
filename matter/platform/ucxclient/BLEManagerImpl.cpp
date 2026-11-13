@@ -222,6 +222,7 @@ CHIP_ERROR BLEManagerImpl::InitGattServer()
         return CHIP_ERROR_INTERNAL;
     }
     mC1CharHandle = c1Response.value_handle;
+    mDefinedC1Handle = mC1CharHandle;
     ChipLogProgress(DeviceLayer, "[BLE] C1 (RX/Write): value_handle=%d, cccd_handle=%d", 
                    mC1CharHandle, c1Response.cccd_handle);
 
@@ -1247,6 +1248,8 @@ void BLEManagerImpl::GattServerWriteCallback(uCxHandle_t * puCxHandle, int32_t c
     // Log our expected handles for debugging
     UCX_LOG_VERBOSE(DeviceLayer, "[BLE] Our handles: C1=%d, C2=%d, C2_CCCD=%d",
                    manager.mC1CharHandle, manager.mC2CharHandle, manager.mC2CccdHandle);
+
+    (void) manager.AdoptEarlierService(value_handle, value);
     
     // Check if this handle belongs to our CHIPoBLE service (excluding CCCD which is handled by BLE stack)
     bool isOurCharacteristic = (value_handle == manager.mC1CharHandle ||
@@ -1479,6 +1482,35 @@ void BLEManagerImpl::GattServerWriteCallback(uCxHandle_t * puCxHandle, int32_t c
         ChipLogProgress(DeviceLayer, "[BLE] Write to standard BLE handle %d (ignored - handled by firmware)",
                        value_handle);
     }
+}
+
+// The module's GATT server cannot remove a service, so every start in one boot of the module that the app did not
+// reboot in between (a page reloaded, an earlier app session) adds one more Matter service with the same layout below
+// ours. A phone that cached the module's GATT table writes its BTP handshake to the C1 of such a copy: unanswered,
+// it times out and disconnects. The copies are identical, so the node takes the one the phone uses (and the newest
+// one again when the next phone uses that).
+bool BLEManagerImpl::AdoptEarlierService(int32_t valueHandle, const uByteArray_t * value)
+{
+    const int32_t size = mC2CccdHandle - mCHIPoBLEServiceHandle + 1;   // handles of one Matter service
+
+    if (value == nullptr || value->length < 2 || value->pData[0] != 0x65 || value->pData[1] != 0x6C ||
+        mCHIPoBLEServiceHandle <= 0 || size <= 0 || valueHandle <= 0 || valueHandle > mDefinedC1Handle ||
+        valueHandle == mC1CharHandle || (mDefinedC1Handle - valueHandle) % size != 0)
+    {
+        return false;
+    }
+    const int32_t shift = mC1CharHandle - valueHandle;
+
+    ChipLogProgress(DeviceLayer, "[BLE] Handshake on C1 %d of %s Matter service of this module boot: using it "
+                                 "(C1 %d, C2 %d) instead of C1 %d",
+                    valueHandle, valueHandle == mDefinedC1Handle ? "the newest" : "an earlier", valueHandle,
+                    mC2CharHandle - shift, mC1CharHandle);
+    mCHIPoBLEServiceHandle -= shift;
+    mC1CharHandle = valueHandle;
+    mC2CharHandle -= shift;
+    mC2CccdHandle -= shift;
+    UcxClientManager::GetInstance().OwnGattHandles(mC1CharHandle, mC2CharHandle, mC2CccdHandle);
+    return true;
 }
 
 // Static URC callback for GATT read requests

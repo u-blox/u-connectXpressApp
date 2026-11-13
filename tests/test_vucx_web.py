@@ -91,7 +91,8 @@ def test_web_rest_field_shows_what_an_empty_field_gives(app_exe, tmp_path):
     _, replies = _serve(app_exe, tmp_path, [_get("/api/commands?g=matter")])
     cmds = json.loads(replies[0].split("\r\n\r\n", 1)[1])
     start = next(c for c in cmds if c["n"] == "matter.start")
-    assert start["f"] == [["endpoint ...", 1, "", "light temp contact", "r", ""]], start
+    # a list to pick from with the default named, or endpoints typed
+    assert start["f"] == [["all|light|temp|contact|<endpoints>", 1, "all|light|temp|contact", "all", "o", ""]], start
 
 
 def test_web_page_is_gzip_for_browsers_and_demo_flag_follows_the_module(app_exe, tmp_path):

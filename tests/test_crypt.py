@@ -157,6 +157,26 @@ def test_secure_store_seals_private_keys(app_exe, tmp_path):
     assert _export(app_exe, tmp_path, "dev.key") == PEM
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_store_files_are_owner_only_whatever_the_umask(app_exe, tmp_path):
+    """The install key, saved passwords and sealed keys are readable by their owner only, also when the umask
+    would let everybody in."""
+    import os
+    import stat
+
+    (tmp_path / "dev.pem").write_bytes(PEM.encode())
+    old = os.umask(0)
+    try:
+        out = _run(app_exe, tmp_path, "wifi.profile.add home ubx s3cret!",
+                   f"utils.encrypt dev.pem {tmp_path / 'k.enc'} pw", f"utils.decrypt {tmp_path / 'k.enc'} dev.key pw")
+    finally:
+        os.umask(old)
+    assert out.returncode == 0, out.stdout
+    modes = {p.name: stat.S_IMODE(p.stat().st_mode) for p in (tmp_path / "storage").iterdir() if p.is_file()}
+    assert {"ucxapp.key", "ucxapp.wifi", "dev.key"} <= set(modes), modes
+    assert all(mode & 0o077 == 0 for mode in modes.values()), {name: oct(mode) for name, mode in modes.items()}
+
+
 def test_a_streamed_key_file_is_never_on_disk_in_plain(app_exe, tmp_path):
     """A .key written piece by piece (web upload, ft, a saved log) is held until it is whole and sealed: no
     plain <name>.part sits in the store meanwhile."""

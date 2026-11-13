@@ -1299,7 +1299,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.open", "[seconds]", "Open the commissioning window again and advertise over Bluetooth LE (180 to 900 s, default 900)", 0, cmdForward },
     { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
     { "matter.selftest", "", "Check the plug-in, the module, the sealed store, and on the node its random numbers, crypto known answers, setup codes, Bluetooth LE and network (starts and stops a node when none runs)", UCXAPP_CMD_NEEDS_DEVICE, cmdSelftest },
-    { "matter.log", "[error|info|detail]", "How much of the Matter SDK's log is printed", 0, cmdLog },
+    { "matter.log", "<info|detail|error>", "How much of the Matter log is printed: info (the default), detail (the SDK's own), error", 0, cmdLog },
     { "matter.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | "
       "udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | cell | mqtt [prefix|off] | off [n] | status",
       "The node over a bridge: endpoint changes, node state and events go out as lines (EP light = on, STATE ..., "

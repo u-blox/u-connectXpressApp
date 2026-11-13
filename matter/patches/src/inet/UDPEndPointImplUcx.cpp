@@ -294,6 +294,8 @@ static bool TryEnqueueTx(int32_t socket,
             sTxQueueHighWater = static_cast<uint32_t>(sTxQueueCount);
         depthAfter = sTxQueueCount;
     }
+    // u-connectXpressApp: the Matter thread sends it at once instead of after its wait for the next timer
+    chip::System::UcxWake();
     // Surface every enqueue. ChipLogDetail keeps it visible in normal builds
     // but skippable via log level. Critical for diagnosing "SDK emitted <<<
     // but no AT+USOSTB on UART" — pre-May-2026 we had no signal at all.
@@ -613,7 +615,8 @@ void UDPEndPointImplUcx::ProcessTxQueue()
     {
         chip::Platform::ScopedLock lock(sTxQueueMutex);
         static uint32_t sTxProcLastLogMs = 0;
-        if (sTxProcLastLogMs == 0 || (nowMs - sTxProcLastLogMs) >= 1000)
+        // u-connectXpressApp: only with packets waiting, an idle node printed this every second
+        if (sTxQueueCount > 0 && (sTxProcLastLogMs == 0 || (nowMs - sTxProcLastLogMs) >= 1000))
         {
             ChipLogDetail(DeviceLayer,
                 "[TX-PROC] depth=%u head=%u tail=%u lastDrainMs=%u nowMs=%u",

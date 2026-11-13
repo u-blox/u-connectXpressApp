@@ -186,7 +186,7 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
                             "EP    3 contact = closed  [open | closed]\nLOG   info")
         assert page.locator("#cnd .seg.s6 i").count() == 6 and page.locator("#cnd .seg.s6 i.on").count() == 3
         assert [b.inner_text() for b in page.locator("#cnd .r button").all()] == [
-            "Status", "QR code", "Open window", "SDK log", "Stop", "Factory default", "Close"]
+            "Status", "QR code", "Open window", "SDK log on", "Stop", "Factory default", "Close"]
         assert "light on 40%" in page.inner_text("#cnd") and "[" not in page.inner_text("#cnd")
         # an endpoint: a button for each word, a number field for a range
         assert [b.inner_text() for b in page.locator("#cnd .gv button").all()] == ["on", "off", "open", "closed"]
@@ -209,9 +209,9 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
                             "STEP  failed at 5/6: the access point did not take the password\nLOG   detail")
         assert page.locator("#cnd .gv .al .seg i.on").count() == 4
-        assert "Quiet log" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
+        assert "SDK log off" in [b.inner_text() for b in page.locator("#cnd .r button").all()]
         count = len(server.posted)
-        page.click('#cnd .r button >> text="Quiet log"')
+        page.click('#cnd .r button >> text="SDK log off"')
         assert posted(count)[-1].endswith("cmd=matter.log&a0=info"), server.posted
         # the node's events and commands are the ones shown while its tab is open
         assert page.evaluate("CNK.matter.includes(fltKind())")
@@ -624,6 +624,28 @@ def test_qr_code_in_the_log_becomes_a_picture(server):
             const p = free.querySelector('svg');
             return [free.querySelectorAll('svg').length, p && p.getAttribute('viewBox')]}""", qr)
         assert got[0] == 1 and got[1] == f"-2 -2 {len(QR_MATRIX) + 4} {len(QR_MATRIX) + 4}", got
+        browser.close()
+
+
+def test_log_pane_copies_and_clears_the_log(server):
+    """Copy puts the log's text on the clipboard; Clear empties the log and keeps the events."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        page = context.new_page()
+        page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
+        page.wait_for_selector(".blk .badge.ok")
+        page.click("#lcopy")
+        page.wait_for_selector("#lcopy.on")
+        assert "Module:" in page.evaluate("navigator.clipboard.readText()")
+        events = page.locator("#ev .e").count()
+        assert events >= 1
+        page.click("#lclr")
+        assert page.locator("#out .blk").count() == 0 and page.locator("#ev .e").count() == events
         browser.close()
 
 

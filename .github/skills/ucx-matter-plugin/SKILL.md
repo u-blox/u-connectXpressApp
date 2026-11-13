@@ -96,7 +96,7 @@ matter.open                    # commissioning window for 15 minutes again, with
 matter.bridge tcp              # the node as lines on port 7540: EP light = on, STATE ..., EVT ...; send set light on, get
 matter.bridge mqtt             # after mqtt.connect: ucxapp/matter/<endpoint> (retained), ucxapp/matter/<endpoint>/set
 usecase.demo matter            # on a virtual module: start, codes, card, second window, stop (also part of demo)
-matter.log detail              # how much of the SDK's log is printed: error, info, detail
+matter.log detail              # how much of the log is printed: info (default), detail (the SDK's own), error
 matter.stop                    # also done when the app leaves
 matter.reset                   # forget what the node stored, leave Wi-Fi, reboot the module, start the node again
 matter.reset all               # as matter.reset, new setup codes, and the module factory-reset instead of rebooted

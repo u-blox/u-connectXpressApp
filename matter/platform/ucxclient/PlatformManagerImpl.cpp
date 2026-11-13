@@ -250,6 +250,10 @@ void PlatformManagerImpl::_RunEventLoop()
         systemLayer.PrepareEvents();  // Sets timeout to 0 if there's immediate work
         
         _UnlockChipStack();
+
+        // u-connectXpressApp: what HandleEvents queued (reports, acks, answers to retransmissions) goes out now,
+        // not after the wait below: with a timer seconds away the packets went stale in the queue and were dropped
+        UcxClientManager::GetInstance().ProcessUrcs();
         
         systemLayer.WaitForEvents();  // Returns immediately if timeout is 0
         

@@ -70,7 +70,7 @@ body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{
 .dots{display:inline-flex;flex-wrap:wrap;gap:3px}.dots i{width:.6rem;height:.6rem;border-radius:50%;border:1.5px solid var(--k);box-sizing:border-box}.dots i.on{background:var(--k)}
 .bars{display:inline-flex;align-items:flex-end;gap:2px;height:1rem}.bars i{width:.35rem;background:var(--bd);border-radius:1px}.bars i.on{background:var(--k)}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
-#pl{position:relative}#atlog{position:absolute;right:1.4rem;bottom:.6rem;font:700 .7rem system-ui;letter-spacing:.06em;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--mut);cursor:pointer;opacity:.85}#atlog:hover{opacity:1}#atlog.on{color:var(--ok);border-color:var(--ok)}
+#pl{position:relative}#logb{position:absolute;right:1.4rem;bottom:.6rem;display:flex;gap:.3rem}#logb button{font:700 .7rem system-ui;letter-spacing:.06em;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--mut);cursor:pointer;opacity:.85}#logb button:hover{opacity:1}#atlog.on,#lcopy.on{color:var(--ok);border-color:var(--ok)}
 .blk{border-left:3px solid var(--bd);padding-left:.6rem;margin-bottom:.5rem}.bh{display:flex;gap:.6rem;align-items:center;color:var(--ac);font-weight:600}
 .ppkc{margin:.4rem 0;max-width:46rem}.ppkc svg{width:100%;height:auto;display:block;background:rgba(127,127,127,.06);border-radius:6px}
 .ppkc text{font-size:11px;fill:currentColor;opacity:.7}.ppkc .pg{stroke:currentColor;opacity:.12}.ppkc .pb{fill:var(--ac);opacity:.25}
@@ -168,7 +168,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div id="cnv"><svg id="cn" viewBox="-538 -313 1075 625" role="img" aria-label="Live connections"></svg>
 <div id="cnz"><button data-z="1.25" title="Zoom in (wheel, pinch)">+</button><button data-z="0.8" title="Zoom out">&minus;</button><button data-z="0" title="Reset view and node positions (double-click the background)">&#x27F2;</button></div></div>
 </div></div>
-<div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></div>
+<div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><span id="logb"><button id="lcopy" title="Copy the log to the clipboard">Copy</button><button id="lclr" title="Clear the log">Clear</button><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></span></div>
 <div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
 <input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
@@ -216,7 +216,14 @@ function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=nul
 function addEv(t){const s=stick(ev),i=t.indexOf(':'),k=i>0&&i<9?t.slice(0,i):'',d=el('div','e n '+k);
  d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','g',k||'info'));d.appendChild(el('span','x',k?t.slice(i+1).trim():t));
  fltMark(d,k);ev.appendChild(d);setTimeout(()=>d.classList.remove('n'),1300);while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight}
-function clearAll(){Array.from(out.children).slice(1).forEach(c=>{if(c!==cur)c.remove()});$('trim').hidden=true;total=0;free=null;hold='';ev.textContent=''}
+function clearLog(){Array.from(out.children).slice(1).forEach(c=>{if(c!==cur)c.remove()});$('trim').hidden=true;total=0;free=null;hold=''}
+function clearAll(){clearLog();ev.textContent=''}
+/* the clipboard API needs a secure context: a page served by the module over plain HTTP copies through a text area */
+function copyLog(){const t=Array.from(out.children).slice(1).map(c=>c.innerText).join('\n').replace(/\n{3,}/g,'\n\n'),b=$('lcopy'),
+  ok=()=>{b.classList.add('on');b.textContent='Copied';setTimeout(()=>{b.classList.remove('on');b.textContent='Copy'},1200)},
+  old=()=>{const a=el('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();
+   try{if(document.execCommand('copy'))ok();else note('copy failed')}catch(e){note('copy failed')}a.remove()};
+ if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t).then(ok,old);else old()}
 function scanLinks(b){const lines=b.body.textContent.split('\n');b.body.textContent='';
  lines.forEach((l,i)=>{const m=l.match(/^\s*(\d+)\s{2}(.+?)\s+[0-9A-F]{2}(:[0-9A-F]{2}){5}/);
   if(m){const d=el('div','scan',l);d.title='Click to connect to '+m[2].trim();d.onclick=()=>{cmd.value='wifi.connect '+m[1]+' ';cmd.focus();showHint()};b.body.appendChild(d)}
@@ -318,7 +325,7 @@ async function complete(){const v=cmd.value;if(!v.trim())return;
  if(!r.n){hint.textContent='nothing to complete';return}
  cmd.value=r.l;showHint();if(r.n>1)hint.textContent=r.c}
 function submit(){let v=cmd.value.trim();cmd.value='';hint.textContent='';if(v&&$('at').checked&&!/^at(\s|$)/i.test(v)&&!CM[v.split(/\s/)[0]])v='at '+v;run(v)}
-$('run').onclick=submit;$('clr').onclick=clearAll;$('at').onchange=()=>{cmd.placeholder=$('at').checked?'AT command, e.g. AT+GMM':'command, e.g. wifi.scan (Tab completes, Up/Down history)';showHint();cmd.focus()};
+$('run').onclick=submit;$('clr').onclick=clearAll;$('lclr').onclick=clearLog;$('lcopy').onclick=copyLog;$('at').onchange=()=>{cmd.placeholder=$('at').checked?'AT command, e.g. AT+GMM':'command, e.g. wifi.scan (Tab completes, Up/Down history)';showHint();cmd.focus()};
 cmd.oninput=showHint;
 cmd.onkeydown=e=>{if(e.key==='Enter')submit();
  else if(e.key==='Tab'){e.preventDefault();complete().catch(()=>{})}
@@ -739,7 +746,7 @@ function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')
  /* the Matter node (matter.card): its commands as buttons, Start alone while it is stopped */
  if(k==='x'&&CARD.matter){const on=!/^NODE\s+stopped/.test(CARD.matter),dt=/^LOG\s+detail/m.test(CARD.matter),fd=['Factory default','matter.reset',null,1];
   return{k,c:'matter',ic:'MATTER',lb:on?'node':'stopped',info:[],act:on?[['Status','matter.status'],['QR code','matter.qr'],['Open window','matter.open'],
-   [dt?'Quiet log':'SDK log','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
+   [dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
  if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
 function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
  ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});

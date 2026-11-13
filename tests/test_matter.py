@@ -261,7 +261,7 @@ def test_log_level_filters_the_plugins_log(app_exe, module, stub, tmp_path):
     out = _run(app_exe, module, stub, tmp_path, "matter.log error", "matter.start")
     assert "[matter]" not in out.stdout.split("matter: node started")[0], out.stdout
     out = _run(app_exe, module, stub, tmp_path, "matter.log loud")
-    assert out.returncode != 0 and "<info|detail|error>" in out.stdout, out.stdout
+    assert out.returncode != 0 and "<info|detail|error=info>" in out.stdout, out.stdout
     # back from detail to info in the same session
     out = _run(app_exe, module, stub, tmp_path, "matter.log detail", "matter.log info", "matter.start")
     assert "matter: node started" in out.stdout and "stub detail line" not in out.stdout, out.stdout

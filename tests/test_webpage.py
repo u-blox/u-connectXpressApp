@@ -198,6 +198,33 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         # and a picture: the bulb glows at its level, the thermometer, the closed door
         assert page.locator("#cnd svg.bulb.on").count() == 1 and page.locator("#cnd svg.thermo").count() == 1
         assert page.locator("#cnd svg.door:not(.open)").count() == 1
+
+        # the controls keep their place when a value changes, and + stays on the row of -
+        def places():
+            return page.evaluate("""() => [...document.querySelectorAll('#cnd .gv button, #cnd .gv input')]
+                .map(e => {const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]})""")
+        before = places()
+        eps = ("EP    1 light = off  [on | off | 0..100 (percent)]\n"
+               "EP    2 temp = -12.5 C  [-40..125 (degrees Celsius)]\n"
+               "EP    3 contact = open  [open | closed]\n")
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
+                            "STEP  3/6 network credentials received\nBLE   link up\nWIN   open\n"
+                            "NET   Wi-Fi down; a commissioner gives the node its network\n"
+                            "CODE  0233-981-9486\nQR    MT:-24J06PF15I.GR1OP00\n" + eps + "LOG   detail")
+        assert places() == before
+        assert before[3][1] == before[5][1], before
+        stop = "() => document.evaluate(\"//div[@id='cnd']//button[.='Stop']\", document).iterateNext()" \
+               ".getBoundingClientRect().left"
+        left = page.evaluate(stop)
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
+                            "STEP  3/6 network credentials received\nBLE   link up\nWIN   open\n"
+                            "NET   Wi-Fi down; a commissioner gives the node its network\n"
+                            "CODE  0233-981-9486\nQR    MT:-24J06PF15I.GR1OP00\n" + eps + "DEMO  on\nLOG   info")
+        assert page.evaluate(stop) == left   # Demo on/off and SDK log on/off do not move Stop
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
+                            "EP    1 light = on 40%  [on | off | 0..100 (percent)]\n"
+                            "EP    2 temp = 21.5 C  [-40..125 (degrees Celsius)]\n"
+                            "EP    3 contact = closed  [open | closed]\nLOG   info")
         page.wait_for_function("() => sessionStorage.getItem('ucxs') && !busy")   # the page's own first command
 
         def posted(count):
@@ -241,8 +268,19 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         assert posted(count)[-1].endswith("cmd=matter.log&a0=info"), server.posted
         # the node's events and commands are the ones shown while its tab is open
         assert page.evaluate("CNK.matter.includes(fltKind())")
+        page.evaluate("busy = false")
         page.evaluate(show, "")
         assert page.locator("#pet button[data-k='x']").count() == 0 and page.is_visible("#ev")
+        # a choice with a default names it; a command that changes the device asks with Cancel focused
+        opts = page.evaluate("[...field({n:'matter.log'},['info|detail|error',0,'info|detail|error','info','',''],'')"
+                             ".querySelectorAll('option')].map(o => o.text)")
+        assert opts == ["info (default)", "detail", "error"], opts
+        page.evaluate("run('matter.reset')")
+        page.wait_for_selector("#qd[open]")
+        assert page.evaluate("document.activeElement.id") == "qn"
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#qd[open]", state="detached")
+        assert not any("matter.reset" in u and "y=1" in u for u in server.posted), server.posted
         browser.close()
     assert not js_errors, js_errors
 
@@ -383,9 +421,9 @@ class Mock(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def reply(self, body, ctype="application/json"):
+    def reply(self, body, ctype="application/json", status=200):
         data = body.encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -445,6 +483,9 @@ class Mock(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.server.posted.append(self.path)
+        if "cmd=matter.reset" in self.path and "y=1" not in self.path:   # as the app: a dangerous command asks
+            self.reply("confirm", "text/plain", 428)
+            return
         self.reply("accepted", "text/plain")
 
 

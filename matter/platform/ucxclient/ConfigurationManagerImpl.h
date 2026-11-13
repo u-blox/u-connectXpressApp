@@ -15,6 +15,8 @@ class ConfigurationManagerImpl final : public Internal::GenericConfigurationMana
 {
 public:
     static ConfigurationManagerImpl & GetDefaultInstance();
+    // u-connectXpressApp: forget the in-RAM copy (written at every change), the next start reads the store again
+    static void Unload();
 
     CHIP_ERROR GetRebootCount(uint32_t & rebootCount) override;
     CHIP_ERROR StoreRebootCount(uint32_t rebootCount) override;

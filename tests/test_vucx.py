@@ -75,6 +75,15 @@ def test_reboot_waits_for_startup_event(app_exe, vucx):
     assert "module restarted (+STARTUP)" not in out.stdout, out.stdout   # dev.reboot restores the settings itself
 
 
+def test_a_reboot_without_its_ok_still_counts_when_the_module_starts(app_exe, vucx):
+    """A module busy leaving Wi-Fi reboots without answering AT+CPWROFF: its +STARTUP is the answer."""
+    vucx.commands["AT+CPWROFF"] = [""]
+    out = _run(app_exe, vucx.port, "dev.reboot")
+    assert "module rebooted" in out.stdout and "reboot failed" not in out.stdout, out.stdout
+    assert vucx.log.count("AT+CPWROFF") == 1, vucx.log
+    assert "ATE0" in vucx.log[vucx.log.index("AT+CPWROFF"):], vucx.log
+
+
 def test_a_restart_the_app_did_not_ask_for_gets_echo_off_again(app_exe, vucx):
     """A +STARTUP (reset button, watchdog, a raw AT+CPWROFF) puts echo back on: the next command turns it off."""
     out = _run(app_exe, vucx.port, "at AT+CPWROFF", "dev.info", "dev.info")

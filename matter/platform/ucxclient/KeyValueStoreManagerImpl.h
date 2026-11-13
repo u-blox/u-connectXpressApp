@@ -57,6 +57,12 @@ public:
      */
     static CHIP_ERROR FlushNow();
 
+    /**
+     * u-connectXpressApp: flush, then forget the in-RAM copy, so the next start reads the store again. A node
+     * linked into the app (browser, boards) is never unloaded: without this, what matter.reset removed came back.
+     */
+    static void Unload();
+
     static KeyValueStoreManagerImpl & GetDefaultInstance();
 };
 

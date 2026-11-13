@@ -469,8 +469,9 @@ void NodeStop()
                 gUcxmHost->log(UCXAPP_MATTER_LOG_INFO, line);
             }
         }
-        (void) PersistedStorage::KeyValueStoreManagerImpl::FlushNow();
         PlatformMgr().Shutdown();
+        PersistedStorage::KeyValueStoreManagerImpl::Unload();
+        ConfigurationManagerImpl::Unload();
         gStackUp = false;
     }
     Platform::MemoryShutdown();

@@ -206,10 +206,11 @@ static int cmdDeviceStatus(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-/* Wait for +STARTUP so dev.uptime is exact, then restore the session settings the reboot cleared. */
-static void waitStartup(ucxapp_t *app)
+/* Wait for +STARTUP so dev.uptime is exact (unless it came already), then restore the session settings the reboot
+   cleared. */
+static void waitStartup(ucxapp_t *app, bool started)
 {
-    if (!ucxapp_events_wait(URC_FLAG_STARTUP, 10)) {
+    if (!started && !ucxapp_events_wait(URC_FLAG_STARTUP, 10)) {
         ucxapp_print("warning: no +STARTUP received\n");
     }
     U_CX_PORT_SLEEP_MS(200);
@@ -236,11 +237,23 @@ bool ucxapp_module_reboot(ucxapp_t *app)
 {
     ucxapp_events_clear(URC_FLAG_STARTUP);
     int32_t r = uCxSystemReboot(app->ucx);
+    bool started = false;
+
+    /* A module busy just then (leaving Wi-Fi) may reboot without its OK: +STARTUP decides, then one more try */
+    for (int i = 0; r == U_CX_ERROR_CMD_TIMEOUT && i < 2; i++) {
+        if (ucxapp_events_wait(URC_FLAG_STARTUP, 5)) {
+            r = 0;
+            started = true;
+        } else if (i == 0) {
+            ucxapp_print("warning: no answer to the reboot, trying again\n");
+            r = uCxSystemReboot(app->ucx);
+        }
+    }
     if (r != 0) {
         ucxapp_print("ERROR: reboot failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return false;
     }
-    waitStartup(app);
+    waitStartup(app, started);
     return true;
 }
 

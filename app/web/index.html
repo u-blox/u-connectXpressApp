@@ -67,13 +67,13 @@ body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{
 .gv>div{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}.gv b{font:600 12px Consolas,monospace}.gv a{color:var(--k);font:600 12px Consolas,monospace}.gv .al b{color:var(--err,#ff6b6b)}
 .seg{display:inline-flex;gap:3px}.seg i{width:1.3rem;height:.65rem;border-radius:3px;background:var(--bd)}.seg i.on{background:var(--k)}.seg.s6 i{width:.9rem}
 .gv input{width:4.4rem;padding:.15rem .3rem;font:12px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:6px}.gv button{padding:.1rem .55rem;font-size:.75rem}
-.gv input[type=range]{width:7rem;padding:0;border:0;background:none;accent-color:#ffc83d}
+.gv input[type=range]{width:7rem;padding:0;border:0;background:none;accent-color:#ffc83d}.gv input[type=number]{width:4rem}.gv .ev{min-width:15ch;flex:none}#cnd .r .tg{min-width:7.2rem}
 .gv .pic{width:30px;height:36px;flex:none;overflow:visible}.gv .pic.tap{cursor:pointer}.gv .pic.tap:hover{filter:brightness(1.25)}
 .bulb .glow{opacity:0;transition:opacity .3s}.bulb .glass{fill:#1f2734;stroke:#4a5568;stroke-width:8;transition:fill .25s}.bulb .fil{fill:none;stroke:#59657a;stroke-width:8;stroke-linecap:round}.bulb .base{fill:#6b7486}
 .bulb.on .glow{opacity:calc(.15 + .85*var(--lvl,1))}.bulb.on .glass{fill:#ffd54a;fill-opacity:calc(.3 + .7*var(--lvl,1));stroke:#ffe58a}.bulb.on .fil{stroke:#fff6c8}
 .thermo .tube{fill:#1b2433;stroke:#3a465a;stroke-width:2}.thermo .merc{fill:#66d17a}.thermo.cold .merc{fill:#4ea8ff}.thermo.hot .merc{fill:#ff6b6b}
 .door .frame{fill:#10151d;stroke:#4a5568;stroke-width:2}.door .leaf{fill:#2a3342;stroke:#59657a;stroke-width:1.5}.door .knob{fill:#c9d1dc}.door.open .leaf{fill:#3a2a1f;stroke:#ffb347}
-.gv .spark{width:7.5rem;height:26px;flex:none}.gv .spark path{fill:none;stroke:var(--k);stroke-width:2;stroke-linejoin:round}
+.gv .spark{flex:0 1 7.5rem;min-width:2rem;height:26px}.gv>div.ep{flex-wrap:nowrap}.gv .spark path{fill:none;stroke:var(--k);stroke-width:2;stroke-linejoin:round}
 .dots{display:inline-flex;flex-wrap:wrap;gap:3px}.dots i{width:.6rem;height:.6rem;border-radius:50%;border:1.5px solid var(--k);box-sizing:border-box}.dots i.on{background:var(--k)}
 .bars{display:inline-flex;align-items:flex-end;gap:2px;height:1rem}.bars i{width:.35rem;background:var(--bd);border-radius:1px}.bars i.on{background:var(--k)}
 #out{font:13px/1.45 Consolas,monospace}.bb{white-space:pre-wrap;word-break:break-word}
@@ -370,7 +370,7 @@ function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t
   const v0=FV[key]!==undefined?FV[key]:x[1]?(lits.includes(x[3])?x[3]:''):x[3]||dv(c.n,nm);if(lits.includes(v0))s.value=v0;else i.value=v0;
   const sync=()=>{i.hidden=!!s.value};s.onchange=sync;sync();e.append(s,i);
   e.keep=()=>s.value||i.value.trim();e._k=SECRET.test(nm)?'':key;e.val=()=>s.value||i.value.trim();return e}
- else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v,v)));if(x[1])e.add(new Option('(default)',''));
+ else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v===x[3]?v+' (default)':v,v)));if(x[1]&&!x[3])e.add(new Option('(default)',''));
   e.value=FV[key]!==undefined?FV[key]:x[3]||(x[1]?'':e.options[0].value);if(e.selectedIndex<0)e.selectedIndex=0}
  else{e=el('input');const ph=nm.split('|').join(' or ');e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
   if(/^(pass|pw)/.test(nm)){e.type='password';if(x[1]&&!x[3])e.placeholder=ph+' (empty: open network)'}
@@ -485,7 +485,7 @@ $('mt').onclick=e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault(
 $('mc').onclick=e=>{const a=e.target.closest('a[href^="#"]');if(a){e.preventDefault();const t=document.getElementById(mdSlug(a.getAttribute('href').slice(1).replace(/-/g,' ')))||document.getElementById('m-'+a.getAttribute('href').slice(1));if(t)t.scrollIntoView();return}
  const c=e.target.closest('code.ck');if(c){cmd.value=c.textContent;$('md').close();cmd.focus()}};
 function ask(t,o={}){const d=$('qd'),i=$('qi');$('qt').textContent=t;i.hidden=!o.input;i.value='';$('qn').hidden=!(o.cancel||o.input);$('qy').textContent=o.ok||'OK';
- d.returnValue='';d.showModal();(o.input?i:$('qy')).focus();return new Promise(r=>d.onclose=()=>{const y=d.returnValue==='ok';r(o.input?(y?i.value:null):y)})}
+ d.returnValue='';d.showModal();(o.input?i:o.cancel?$('qn'):$('qy')).focus();return new Promise(r=>d.onclose=()=>{const y=d.returnValue==='ok';r(o.input?(y?i.value:null):y)})}
 window.ucxAsk=ask;
 $('fref').onclick=listFiles;$('fclose').onclick=()=>$('fd').close();
 
@@ -706,10 +706,9 @@ function cnUpdate(t){const r=cnParse(t||''),keep={};
  $('cnst').textContent=(r.port||r.L.length?'live, ':'')+'updated '+new Date().toLocaleTimeString([],{hour12:false});cnDetails()}
 
 function cnCurve(x0,y0,x1,y1){const mx=(x0+x1)/2,my=(y0+y1)/2,dx=x1-x0,dy=y1-y0;return [x0,y0,mx-dy*.12,my+dx*.12,x1,y1]}
-/* keeps nodes and their labels apart: each node's box (circle plus its label lines) pushes overlapping ones and the hub away;
-   the push builds up over a few frames and fades again when there is room, so the layout settles without jumps.
-   Boxes sit where a node is heading (sx, sy), not where it is on its way there: new nodes all start at the hub, and
-   pushing them apart while they fly out blew the layout up for seconds */
+/* keeps nodes and their labels apart: each node's box (circle plus labels) pushes overlapping ones and the hub away,
+   building up over a few frames and fading when there is room. Boxes sit where a node is heading (sx, sy): new nodes
+   all start at the hub, and pushing them apart in flight blew the layout up */
 function cnBox(n,x=n.x,y=n.y){const o=n.o,w=Math.max(2*n.R+24,(o.lb||'').length*9.5,...(o.sb||[]).map(t=>(t||'').length*8.6))+14;return [x-w/2,y-n.R-14,x+w/2,y+n.R+(o.sb&&o.sb[1]?70:o.sb&&o.sb[0]?52:30)]}
 function cnSep(){const ns=Object.values(CN.n).filter(n=>!n.gone),H=[-80,-48,80,48];
  ns.forEach(n=>{n.px=n.px||0;n.py=n.py||0;n.hit=0;if(n.sx==null){n.sx=n.x;n.sy=n.y}});
@@ -725,8 +724,7 @@ function cnFrame(now){const ks=Object.keys(CN.n),ord=ks.filter(k=>!CN.n[k].o.p).
  ord.forEach(k=>{let n=CN.n[k],o=n.o,p=o.p&&CN.n[o.p],px=p?p.x:0,py=p?p.y:0,a=o.a*Math.PI/180,
    ox=Math.cos(a)*o.r+(CN.off[k]?CN.off[k][0]:0)+(n.px||0),oy=Math.sin(a)*o.r+(CN.off[k]?CN.off[k][1]:0)+(n.py||0),
    tx=px+ox+Math.cos(tm*.7+n.ph)*3,ty=py+oy+Math.sin(tm*.9+n.ph)*3,sx=(p?p.sx:0)+ox,sy=(p?p.sy:0)+oy;
-  /* a Channel Sounding distance is a magnet: the node keeps its angle but slides back onto the ring of that distance
-     unless it is being dragged */
+  /* a Channel Sounding distance is a magnet: back onto the ring of that distance unless dragged */
   if(o.cs!=null&&!o.p&&!Object.values(CNP).some(q=>q.k===k&&q.moved)){const l=Math.hypot(tx,ty)||1,R=csR(o.cs);tx=tx*R/l;ty=ty*R/l;const m=Math.hypot(sx,sy)||1;sx=sx*R/m;sy=sy*R/m}
   n.sx=sx;n.sy=sy;
   if(!n.gone){n.x+=(tx-n.x)*.07;n.y+=(ty-n.y)*.07}
@@ -753,7 +751,7 @@ function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')
  /* the Matter node (matter.card): its commands as buttons, Start alone while it is stopped */
  if(k==='x'&&CARD.matter){const on=!/^NODE\s+stopped/.test(CARD.matter),dt=/^LOG\s+detail/m.test(CARD.matter),dm=/^DEMO\s+on/m.test(CARD.matter),fd=['Factory default','matter.reset',null,1];
   return{k,c:'matter',ic:'MATTER',lb:on?'node':'stopped',info:[],act:on?[['Status','matter.status'],['QR code','matter.qr'],['Open window','matter.open'],
-   [dm?'Demo off':'Demo on','matter.demo',[dm?'off':'on']],[dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail']],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
+   [dm?'Demo off':'Demo on','matter.demo',[dm?'off':'on'],0,'tg'],[dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail'],0,'tg'],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
  if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
 function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
  ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
@@ -776,11 +774,11 @@ function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{con
   a=el('a','',v);a.href='https://www.openstreetmap.org/?mlat='+la+'&mlon='+lo+'#map=17/'+la+'/'+lo;a.target='_blank';a.rel='noopener';
   a.title='Show on a map';w.appendChild(a);v=''}}
  else if(k==='ALERT')w.className='al';
- /* Matter: the commissioning steps as segments; an endpoint with a button or a number field for each value matter.set takes */
+ /* Matter: the commissioning steps as segments; an endpoint with a control for each value matter.set takes */
  else if(k==='STEP'){const f=/^failed at (\d+)\/(\d+)/.exec(v),q=f||/^(\d+)\/(\d+)/.exec(v);if(q){const s=el('span','seg s6');
   for(let i=0;i<+q[2];i++)s.appendChild(el('i',i<+q[1]-(f?1:0)?'on':''));w.appendChild(s)}if(f)w.className='al'}
  else if(k==='EP'){const p=/^(\d+) (\S+) = (.*?)  \[(.*)\]$/.exec(v);if(p){const nm=p[2],kd=nm.replace(/\d+$/,''),pic=mtPic(kd,nm,p[3]);
-  if(pic)w.appendChild(pic);w.appendChild(el('b','',nm+' '+p[3]));v='';if(kd==='temp'&&(TH[nm]||[]).length>1)w.appendChild(mtSpark(TH[nm]));
+  w.classList.add('ep');if(pic)w.appendChild(pic);w.appendChild(el('b','ev',nm+' '+p[3]));v='';if(kd==='temp')w.appendChild(mtSpark(TH[nm]||[]));
   p[4].split(' | ').forEach(a=>{const r=/^(-?\d+)\.\.(-?\d+)/.exec(a),e=el(r?'input':'button','',r?null:a);e.title='matter.set '+p[2]+' '+a;
    if(r&&kd==='light'){const l=/^on (\d+)%/.exec(p[3]);e.type='range';e.min=r[1];e.max=r[2];e.step=1;e.value=l?l[1]:0;e.setAttribute('aria-label',p[2]+' level');
     e.onpointerdown=()=>{CN.busy=1};e.onchange=()=>{CN.busy=0;run('matter.set',[p[2],e.value])};e.onblur=()=>{if(CN.busy){CN.busy=0;cnDetails()}}}
@@ -795,8 +793,7 @@ function cardView(t,c){const g=el('div','gv k-'+c);t.split('\n').forEach(l=>{con
    else e.onclick=()=>run('matter.set',[p[2],a]);w.appendChild(e)})}}
  if(v.trim())w.appendChild(el('b','',v.trim()));g.appendChild(el('span','',k));g.appendChild(w)});return g}
 petDraw();
-/* Matter endpoints as pictures (small ones of the i.MX 93 hub demo's): a bulb that glows with its level, a thermometer
-   with a graph of the temperature, a door for the contact sensor; a click on the bulb or the door flips it */
+/* Matter endpoints as pictures: a bulb that glows with its level, a thermometer and its graph, a door; a click flips */
 const TH={};
 function mtHist(t){(t||'').split('\n').forEach(l=>{const m=/^EP\s+\d+ (\S+) = (-?[\d.]+) C\b/.exec(l);if(!m)return;
  const h=TH[m[1]]||(TH[m[1]]=[]),v=+m[2],n=Date.now(),z=h[h.length-1];if(!z||z.v!==v||n-z.t>3e4){h.push({v,t:n});if(h.length>60)h.shift()}})}
@@ -820,9 +817,9 @@ function mtPic(kd,nm,val){let s=null,to=null;
  if(s&&to){s.classList.add('tap');s.setAttribute('role','button');s.removeAttribute('aria-hidden');s.setAttribute('aria-label',nm+' '+to);
   s.onclick=()=>run('matter.set',[nm,to])}
  return s}
-function mtSpark(h){const vs=h.map(x=>x.v),lo=Math.min(...vs),hi=Math.max(...vs),mid=(lo+hi)/2,hf=Math.max((hi-lo)/2+.2,.5),
- d=vs.map((v,i)=>(i?'L':'M')+(i/(vs.length-1)*120).toFixed(1)+','+(26-(v-mid+hf)/(2*hf)*24).toFixed(1)).join(' '),
- s=svg('0 0 120 28','spark','<path vector-effect="non-scaling-stroke" d="'+d+'"/>');s.setAttribute('preserveAspectRatio','none');
+function mtSpark(h){const vs=h.map(x=>x.v),n=vs.length,lo=Math.min(...vs),hi=Math.max(...vs),mid=(lo+hi)/2,hf=Math.max((hi-lo)/2+.2,.5),
+ d=n<2?'':vs.map((v,i)=>(i?'L':'M')+(i/(n-1)*120).toFixed(1)+','+(26-(v-mid+hf)/(2*hf)*24).toFixed(1)).join(' '),
+ s=svg('0 0 120 28','spark','<path vector-effect="non-scaling-stroke" d="'+d+'"/>');s.setAttribute('preserveAspectRatio','none');if(n<2)return s;
  const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=lo.toFixed(1)+' .. '+hi.toFixed(1)+' C, the last '+vs.length+' readings';s.appendChild(t);return s}
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
 function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';
@@ -842,7 +839,7 @@ function cnDetails(){const d=$('cnd'),o=CN.sel?cnItem(CN.sel):null;if(!o)CN.sel=
  if(typeof o.q==='number')h.appendChild(bars(Math.ceil(clamp(o.q,0,1)*4),4));d.appendChild(h);if(card)d.appendChild(cardView(card,o.c));
  const g=el('div','kv');o.info.filter(x=>!card||x[0]!=='Status').forEach(x=>{g.appendChild(el('span','',x[0]));g.appendChild(el('b','',x[1]||'-'))});
  if(g.childElementCount)d.appendChild(g);
- const r=el('div','r');o.act.forEach(x=>{const b=el('button',x[3]?'dg':'',x[0]);b.title=x[1]+(x[2]?' '+x[2].join(' '):'');b.onclick=()=>run(x[1],x[2]||null);r.appendChild(b)});
+ const r=el('div','r');o.act.forEach(x=>{const b=el('button',(x[3]?'dg ':'')+(x[4]||''),x[0]);b.title=x[1]+(x[2]?' '+x[2].join(' '):'');b.onclick=()=>run(x[1],x[2]||null);r.appendChild(b)});
  const cx=el('button','cx','Close');cx.title='Back to the events';cx.onclick=()=>{CN.sel='';cnDetails();fltSet()};r.appendChild(cx);d.appendChild(r)}
 
 function cnTick(){if(document.hidden)return;api('/api/conn').then(r=>r.json()).then(j=>cnUpdate(j.t)).catch(()=>{$('cnst').textContent='no answer from the app'})}

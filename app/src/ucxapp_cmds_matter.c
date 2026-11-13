@@ -1292,7 +1292,7 @@ static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.start", "[all|light|temp|contact|<endpoints>=all]", "Start a Matter node on the module with the ucxmatter plug-in; all (the default): light temp contact, or one kind, or a list of kinds as matter.endpoints shows them (light light contact)", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
     { "matter.stop", "", "Stop the Matter node", 0, cmdStop },
     { "matter.status", "", "Is a node running, with which plug-in, and what the node says about itself", 0, cmdStatus },
-    { "matter.log", "<info|detail|error>", "How much of the Matter log is printed: info (the default), detail (the SDK's own), error", 0, cmdLog },
+    { "matter.log", "<info|detail|error=info>", "How much of the Matter log is printed: info (the default), detail (the SDK's own), error", 0, cmdLog },
     { "matter.reset", "[all]", "Forget every fabric and remove what the node stored, take the module off its Wi-Fi network and reboot it, then start the node again; all: new setup codes and a module factory reset as well", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdReset },
     { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },
     { "matter.endpoints", "", "Endpoints of the running node and the kinds the plug-in can build", 0, cmdForward },

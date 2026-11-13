@@ -86,6 +86,12 @@ ConfigurationManagerImpl & ConfigurationManagerImpl::GetDefaultInstance()
     return sInstance;
 }
 
+void ConfigurationManagerImpl::Unload()
+{
+    sConfigCache.clear();
+    sConfigLoaded = false;
+}
+
 // Public interface stubs
 CHIP_ERROR ConfigurationManagerImpl::GetRebootCount(uint32_t & rebootCount) { rebootCount = 0; return CHIP_NO_ERROR; }
 CHIP_ERROR ConfigurationManagerImpl::StoreRebootCount(uint32_t) { return CHIP_NO_ERROR; }

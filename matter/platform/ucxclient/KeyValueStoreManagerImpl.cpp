@@ -325,6 +325,16 @@ CHIP_ERROR KeyValueStoreManagerImpl::FlushNow()
     return err;
 }
 
+void KeyValueStoreManagerImpl::Unload()
+{
+    (void) FlushNow();
+    std::lock_guard<std::mutex> lock(sStorageMutex);
+    sStorage.clear();
+    sStorageLoaded   = false;
+    sDirty           = false;
+    sCoalescedWrites = 0;
+}
+
 // Global accessor function required by Matter SDK
 KeyValueStoreManager & KeyValueStoreMgr()
 {

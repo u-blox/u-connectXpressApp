@@ -162,7 +162,8 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   factory-resets it (`AT+USYFR`, `AT&W`, reboot). What the node sets (pairing and security mode, connection and advertising intervals, its GATT
   service) lasts until the module reboots. Wi-Fi is shared with the app: the node joins the network a
   commissioner gives it (as `wifi.connect` would) and uses a network that is up already. When the node stops, its mDNS service is removed and the
-  responder and its host name are put back as they were. Its UDP socket is made in buffered read mode, and the
+    responder and its host name are put back as they were, and every UDP socket it made on the module is closed
+    (`UcxClientManager::CloseUdpSockets` in `NodeStop`, for what the stack left open). Its UDP socket is made in buffered read mode, and the
   read mode the app had is restored right after. A session that ends without `matter.stop` (a reloaded web page)
   leaves that socket bound to 5540 and the next node's bind fails (`socket last error = 9`): `matter.start` first
   closes the bound UDP sockets that were on the module when the app connected (`ucxapp_sock_leftovers`).

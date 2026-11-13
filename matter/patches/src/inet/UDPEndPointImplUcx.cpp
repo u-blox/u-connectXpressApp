@@ -386,7 +386,7 @@ CHIP_ERROR UDPEndPointImplUcx::BindImpl(IPAddressType addressType, const IPAddre
     {
         ChipLogError(DeviceLayer, "[UDPUcx] FATAL: uCxSocketBind() failed with error: %d", result);
         LogSocketLastError(ucxHandle, "SocketBind");
-        uCxSocketClose(ucxHandle, mSocket);
+        ucx.CloseUdpSocket(mSocket);
         return CHIP_ERROR_INTERNAL;
     }
 
@@ -890,16 +890,8 @@ void UDPEndPointImplUcx::CloseImpl()
         {
             UCX_LOG_VERBOSE(DeviceLayer, "[UDPUcx] Closing socket %d", mSocket);
             
-            // Unregister from receive callbacks BEFORE closing socket
-            DeviceLayer::UcxClientManager::GetInstance().UnregisterUdpEndpoint(mSocket);
-            
-            auto & ucx = DeviceLayer::UcxClientManager::GetInstance();
-            uCxHandle_t * ucxHandle = ucx.GetUcxHandle();
-            
-            if (ucxHandle != nullptr)
-            {
-                uCxSocketClose(ucxHandle, mSocket);
-            }
+            // Unregister from receive callbacks and close (u-connectXpressApp: the node's record of its sockets too)
+            DeviceLayer::UcxClientManager::GetInstance().CloseUdpSocket(mSocket);
             
             // Remove from dual-stack registry
             for (size_t i = 0; i < sDualStackCount; i++)

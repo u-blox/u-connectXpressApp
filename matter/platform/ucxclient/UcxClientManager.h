@@ -79,6 +79,8 @@ public:
     // The Matter stack's UDP sockets on the module (UcxNetwork.cpp): their data goes to the endpoint, and their
     // URCs are the node's alone.
     int32_t CreateUdpSocket(int32_t * socket); // u-connectClient's result
+    void CloseUdpSocket(int32_t socket);
+    int CloseUdpSockets(); // at the node's stop: closes what the stack left open, returns how many
     void RegisterUdpEndpoint(int32_t socketHandle, Inet::UDPEndPointImplUcx * endpoint);
     void UnregisterUdpEndpoint(int32_t socketHandle);
     bool OwnsSocketUrc(const char * line, size_t length) const; // on the AT client's thread

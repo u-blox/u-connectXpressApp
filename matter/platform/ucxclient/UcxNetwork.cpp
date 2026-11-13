@@ -45,6 +45,8 @@ uint8_t sIpv6[16];
 
 std::atomic<int32_t> sSockets[kMaxSockets]{ { -1 }, { -1 }, { -1 }, { -1 }, { -1 }, { -1 }, { -1 }, { -1 } };
 Inet::UDPEndPointImplUcx * sEndpoints[kMaxSockets];
+// Every socket the node made on the module and has not closed: what the node leaves open is closed at its stop
+int32_t sCreated[kMaxSockets]{ -1, -1, -1, -1, -1, -1, -1, -1 };
 
 Inet::UDPEndPointImplUcx * FindEndpoint(int32_t socket)
 {
@@ -401,7 +403,48 @@ int32_t UcxClientManager::CreateUdpSocket(int32_t * socket)
     {
         (void) uCxSocketSetReadMode(ucx, mode);
     }
+    for (int32_t & created : sCreated)
+    {
+        if (result >= 0 && created < 0)
+        {
+            created = *socket;
+            break;
+        }
+    }
     return result;
+}
+
+void UcxClientManager::CloseUdpSocket(int32_t socket)
+{
+    uCxHandle_t * ucx = GetUcxHandle();
+
+    UnregisterUdpEndpoint(socket);
+    for (int32_t & created : sCreated)
+    {
+        if (created == socket)
+        {
+            created = -1;
+        }
+    }
+    if (ucx != nullptr && socket >= 0)
+    {
+        (void) uCxSocketClose(ucx, socket);
+    }
+}
+
+int UcxClientManager::CloseUdpSockets()
+{
+    int closed = 0;
+
+    for (int32_t created : sCreated)
+    {
+        if (created >= 0)
+        {
+            CloseUdpSocket(created);
+            closed++;
+        }
+    }
+    return closed;
 }
 
 void UcxClientManager::RegisterUdpEndpoint(int32_t socketHandle, Inet::UDPEndPointImplUcx * endpoint)

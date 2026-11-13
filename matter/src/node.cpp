@@ -336,6 +336,18 @@ void NodeStop()
                 gServerUp = false;
             }
             Internal::BLEMgr().Shutdown(); // takes the advertisement down and drops the link
+
+            // What the stack should have given back already; on the module these outlive the node otherwise
+            auto & ucx = UcxClientManager::GetInstance();
+            (void) ucx.MdnsStop();
+            const int left = ucx.CloseUdpSockets();
+            if (left > 0 && gUcxmHost != nullptr)
+            {
+                char line[80];
+
+                snprintf(line, sizeof(line), "matter: closed %d UDP socket(s) the stack left open", left);
+                gUcxmHost->log(UCXAPP_MATTER_LOG_INFO, line);
+            }
         }
         (void) PersistedStorage::KeyValueStoreManagerImpl::FlushNow();
         PlatformMgr().Shutdown();

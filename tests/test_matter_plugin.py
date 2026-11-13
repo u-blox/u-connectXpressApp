@@ -297,6 +297,27 @@ def test_an_idle_node_leaves_the_processor_and_the_module_alone(app_exe, module,
     assert len(commands) <= 2, commands
 
 
+def test_stop_leaves_no_socket_or_mdns_service_of_the_node(app_exe, module, plugin, tmp_path):
+    """matter.stop in a running session: the node's UDP sockets are closed and its mDNS services removed at once."""
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.stop", "sock.list", "mdns.status")
+    _assert_nothing_of_the_node_left(out, module.log)
+
+
+def _assert_nothing_of_the_node_left(out, log):
+    assert out.returncode == 0, out.stdout
+    after = out.stdout[out.stdout.index("> sock.list"):] if "> sock.list" in out.stdout else out.stdout
+    assert "5540" not in after and "_matterc" not in after and "_matter." not in after, out.stdout
+    created = [line for line in log if line.startswith("AT+USOCR=")]
+    closed = [line for line in log if line.startswith("AT+USOCL=")]
+    assert created and len(closed) >= len(created), (created, closed)
+
+
+def test_stop_after_commissioning_leaves_no_socket_or_mdns_service(app_exe, plugin, tmp_path):
+    """After a PASE session and a read the node has more open than at start; matter.stop still takes all of it."""
+    _, out, log = _commission(app_exe, plugin, tmp_path, after=("matter.stop", "sock.list", "mdns.status"))
+    _assert_nothing_of_the_node_left(out, log)
+
+
 def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, plugin, tmp_path):
     # the virtual module is on Wi-Fi already, as after wifi.connect
     out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status")
@@ -317,8 +338,9 @@ def test_a_node_on_wifi_is_announced_by_the_modules_own_mdns(app_exe, module, pl
     assert "AT+USOCL=0" in module.log[module.log.index("AT+USOB=0,5540"):], sent
 
 
-def _commission(app_exe, plugin, tmp_path, attribute=2):
-    """A commissioner that pairs over UDP and reads one Basic Information attribute: (it, the app's output)."""
+def _commission(app_exe, plugin, tmp_path, attribute=2, after=()):
+    """A commissioner that pairs over UDP and reads one Basic Information attribute, then the commands in after:
+    (it, the app's output), with the module's AT log as well when after is given."""
     pytest.importorskip("yaml")
     pytest.importorskip("cryptography")
     from harness.pase import Commissioner
@@ -337,12 +359,12 @@ def _commission(app_exe, plugin, tmp_path, attribute=2):
     module.start()
     try:
         out = _run(app_exe, module, plugin, tmp_path, "app.log.events.on", "matter.start", "gatt.listen 4",
-                   "matter.status")
+                   "matter.status", *after)
     finally:
         module.stop()
     assert out.returncode == 0, out.stdout
     assert commissioner.state == "read", (commissioner.state, out.stdout)
-    return commissioner, out
+    return (commissioner, out, module.log) if after else (commissioner, out)
 
 
 def test_a_commissioner_pairs_over_udp_and_reads_over_the_encrypted_session(app_exe, plugin, tmp_path):

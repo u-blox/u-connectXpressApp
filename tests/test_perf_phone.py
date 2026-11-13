@@ -104,6 +104,51 @@ def test_phone_receives_what_the_module_sends(app_exe, tmp_path):
     assert f"module: sent {sent} bytes" in text, text
 
 
+def test_a_version_2_phone_finds_the_module_itself_and_cleans_up_after_the_app(app_exe, tmp_path):
+    """With the features of remote control version 2 the phone is asked to wait for the module (no scan to poll),
+    to stop what this connection started when it ends, and its reason for an early end is shown."""
+    from harness.xplorer import V2
+
+    module = _module({"AT+USPSWB=*": ["+USPSWB:0,100", "OK"]})
+    phone = _phone(module, dict(STATS, endReason="disconnected"))
+    phone.features, phone.protocol = dict(V2), 2
+    phone.handlers["ble.waitForDevice"] = lambda p: {"found": True, "id": "ID-2", "name": p["name"], "rssi": -50}
+    phone.handlers["sps.connect"] = lambda p: (module._send([f"+UEBTC:0,{PEER}", "+UESPSC:0"]), {"ok": True})[1]
+    try:
+        _save_phone(app_exe, tmp_path, phone)
+        out = _exec(app_exe, module, "perf.phone tx 1 100", tmp_path)
+    finally:
+        module.stop()
+        phone.close()
+    text = out.stdout
+    assert phone.called("ble.waitForDevice") == [{"name": "vucx", "timeoutMs": 15000}], phone.calls
+    assert not phone.called("ble.startScan") and not phone.called("ble.getDevices"), phone.calls
+    assert phone.called("ble.connect") == [{"deviceId": "ID-2"}], phone.calls
+    assert phone.configured == [{"stopOnDisconnect": True}], phone.calls
+    names = [name for name, _ in phone.calls]
+    assert names.index("app.configure") < names.index("ble.connect"), names
+    assert "phone:  the run ended early: it lost the Bluetooth link" in text, text
+
+
+def test_a_version_2_phone_that_does_not_hear_the_module_says_so(app_exe, tmp_path):
+    from harness.xplorer import V2
+
+    module = _module()
+    phone = _phone(module)
+    phone.features, phone.protocol = dict(V2), 2
+    phone.handlers["ble.waitForDevice"] = lambda p: {"error": {"code": -32012, "message": "no device that fits"}}
+    try:
+        _save_phone(app_exe, tmp_path, phone)
+        out = _exec(app_exe, module, "perf.phone tx 1 100", tmp_path)
+    finally:
+        module.stop()
+        phone.close()
+    assert out.returncode != 0, out.stdout
+    assert "ERROR: ble.waitForDevice: no device that fits (-32012)" in out.stdout, out.stdout
+    assert 'ERROR: the phone did not see "vucx" advertising within 15 s' in out.stdout, out.stdout
+    assert not phone.called("ble.connect"), phone.calls
+
+
 def test_module_receives_and_checks_what_the_phone_sends(app_exe, tmp_path):
     module = _module()
     pattern = bytes(range(256)) * 3

@@ -7,7 +7,7 @@ import subprocess
 import threading
 
 import pytest
-from harness.xplorer import TOKEN, FakePhone
+from harness.xplorer import TOKEN, V2, FakePhone
 
 pytestmark = pytest.mark.app
 
@@ -64,6 +64,34 @@ def test_wrong_token(app_exe, tmp_path, phone):
     assert out.returncode != 0, out.stdout
     assert "Invalid token" in out.stdout and "check the token" in out.stdout
     assert not (tmp_path / "storage" / "xplorer.cfg").exists()
+
+
+def test_a_challenge_is_answered_so_the_token_is_never_sent(app_exe, tmp_path):
+    """A phone with authChallenge gets the HMAC-SHA256 of its nonce under the token; the token itself does not
+    cross the wire, on xplorer.connect or on any later command, and a wrong token is still refused."""
+    fake = FakePhone(features=V2, protocol=2)
+    try:
+        out = _connect(app_exe, tmp_path, fake)
+        assert "saved" in out.stdout and "note:" not in out.stdout, out.stdout
+        assert _run(app_exe, tmp_path, "xplorer.info").returncode == 0
+        answers = fake.called("app.authenticate")
+        assert len(answers) == 2 and all(set(params) == {"response"} for params in answers), answers
+        assert len(fake.called("app.getChallenge")) == 2 and TOKEN not in json.dumps(fake.calls), fake.calls
+        out = _run(app_exe, tmp_path, f"xplorer.connect 127.0.0.1:{fake.port} WRONG")
+        assert out.returncode != 0 and "Invalid token" in out.stdout, out.stdout
+        assert "check the token on the Remote Control screen" in out.stdout, out.stdout
+    finally:
+        fake.close()
+
+
+def test_a_phone_with_a_newer_protocol_gets_a_note(app_exe, tmp_path):
+    fake = FakePhone(protocol=3)
+    try:
+        out = _connect(app_exe, tmp_path, fake)
+        assert "note: this u-connectXplorer speaks remote control version 3, this app knows version 2" in out.stdout
+        assert "saved" in out.stdout, out.stdout
+    finally:
+        fake.close()
 
 
 def test_old_app_gets_update_notes(app_exe, tmp_path):

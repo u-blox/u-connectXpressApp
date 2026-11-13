@@ -17,6 +17,10 @@
 
 #define UCXAPP_XPLORER_PORT 8765
 
+/* The version of the remote control protocol this client was written for (docs/REMOTE_CONTROL.md of
+ * u-connectXplorer, "Protocol version"); a phone that speaks a later one gets a note. */
+#define UCXAPP_XPLORER_PROTOCOL 2
+
 /** The phone saved by xplorer.connect; false (message printed) if none. */
 bool ucxapp_xplorer_saved(char *host, size_t hostSize, uint16_t *port, char *token, size_t tokenSize);
 
@@ -75,5 +79,13 @@ void ucxapp_xplorer_echo_stop(void);
 
 /** True if app.getCapabilities lists features.<name> as true (e.g. "socketEcho", "perfSps"). */
 bool ucxapp_xplorer_has(const char *feature);
+
+/**
+ * For a command that keeps the connection for its whole test: asks the phone to stop what this connection starts
+ * (throughput run, SPS session, BLE link) when the connection ends, so a run that is cut short leaves nothing
+ * behind. Does nothing on a phone without the stopOnDisconnect feature. Not for the echo peer, which is started
+ * and read back over two connections.
+ */
+void ucxapp_xplorer_scoped(void);
 
 #endif /* UCXAPP_XPLORER_H */

@@ -24,6 +24,13 @@ bool ucxapp_xplorer_has(const char *feature)
     return on;
 }
 
+void ucxapp_xplorer_scoped(void)
+{
+    if (ucxapp_xplorer_has("stopOnDisconnect")) {
+        free(ucxapp_xplorer_call("app.configure", "{\"stopOnDisconnect\":true}", CALL_MS));
+    }
+}
+
 bool ucxapp_xplorer_echo_start(bool udp, int32_t port)
 {
     char params[96];
@@ -114,7 +121,7 @@ static void showPhone(void)
     char *v = ucxapp_xplorer_call("app.version", NULL, CALL_MS);
     char *p = ucxapp_xplorer_call("app.getPlatform", NULL, CALL_MS);
 
-    /* fullVersion (with build) is not in REMOTE_CONTROL.md; version is */
+    /* fullVersion has the build number too */
     if (!ucxapp_json_str(v, "fullVersion", version, sizeof(version))) {
         (void)ucxapp_json_str(v, "version", version, sizeof(version));
     }

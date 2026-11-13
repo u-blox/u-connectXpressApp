@@ -11,6 +11,7 @@
 
 #include "ucxapp.h"
 #include "ucxapp_crypt.h"
+#include "ucxapp_hash.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_store.h"
 
@@ -610,11 +611,90 @@ char *ucxapp_xplorer_event(const char *method, uint32_t timeoutMs)
 
 /* ---- connection ------------------------------------------------------------------------------------------------ */
 
+/* hex of HMAC-SHA256(key, msg): the answer to the phone's challenge, so the token itself is never sent. */
+static void hmacSha256Hex(const char *key, const char *msg, char hex[UCXAPP_SHA256_LEN * 2 + 1])
+{
+    uint8_t block[64] = { 0 };
+    uint8_t pad[64];
+    uint8_t inner[UCXAPP_SHA256_LEN];
+    uint8_t digest[UCXAPP_SHA256_LEN];
+    ucxapp_sha256_t ctx;
+    size_t n = strlen(key);
+
+    if (n > sizeof(block)) {   /* a key longer than a block is hashed first (RFC 2104); a token never is */
+        ucxapp_sha256_init(&ctx);
+        ucxapp_sha256_update(&ctx, key, n);
+        ucxapp_sha256_final(&ctx, block);
+    } else {
+        memcpy(block, key, n);
+    }
+    for (size_t i = 0; i < sizeof(block); i++) {
+        pad[i] = block[i] ^ 0x36u;
+    }
+    ucxapp_sha256_init(&ctx);
+    ucxapp_sha256_update(&ctx, pad, sizeof(pad));
+    ucxapp_sha256_update(&ctx, msg, strlen(msg));
+    ucxapp_sha256_final(&ctx, inner);
+    for (size_t i = 0; i < sizeof(block); i++) {
+        pad[i] = block[i] ^ 0x5cu;
+    }
+    ucxapp_sha256_init(&ctx);
+    ucxapp_sha256_update(&ctx, pad, sizeof(pad));
+    ucxapp_sha256_update(&ctx, inner, sizeof(inner));
+    ucxapp_sha256_final(&ctx, digest);
+    for (size_t i = 0; i < sizeof(digest); i++) {
+        snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    }
+}
+
+/* Authenticates: by answering a challenge when the phone offers that (authChallenge), else with the token. */
+static bool authenticate(const char *token)
+{
+    char params[XPLORER_TOKEN_MAX * 2 + 96];
+    char quoted[XPLORER_TOKEN_MAX * 2];
+    char nonce[80] = "";
+    bool challenge = false;
+    int64_t version = 1;
+    char *caps = ucxapp_xplorer_call("app.getCapabilities", NULL, 5000);   /* allowed before authentication */
+
+    (void)ucxapp_json_bool(caps, "features.authChallenge", &challenge);
+    (void)ucxapp_json_int(caps, "protocolVersion", &version);
+    free(caps);
+    if (gSock < 0) {
+        return false;
+    }
+    if (version > UCXAPP_XPLORER_PROTOCOL) {
+        ucxapp_print("note: this u-connectXplorer speaks remote control version %d, this app knows version %d; "
+                     "update the app if a phone command fails\n", (int)version, UCXAPP_XPLORER_PROTOCOL);
+    }
+    if (challenge) {
+        char *c = ucxapp_xplorer_call("app.getChallenge", NULL, 5000);
+        bool got = ucxapp_json_str(c, "nonce", nonce, sizeof(nonce)) && nonce[0] != '\0';
+        free(c);
+        if (!got) {
+            return false;
+        }
+        char hex[UCXAPP_SHA256_LEN * 2 + 1];
+        hmacSha256Hex(token, nonce, hex);
+        snprintf(params, sizeof(params), "{\"response\":\"%s\"}", hex);
+    } else {
+        if (!ucxapp_json_quote(token, quoted, sizeof(quoted))) {
+            ucxapp_print("ERROR: token too long\n");
+            return false;
+        }
+        snprintf(params, sizeof(params), "{\"token\":%s}", quoted);
+    }
+    char *r = ucxapp_xplorer_call("app.authenticate", params, 5000);
+    if (r == NULL) {
+        ucxapp_print("check the token on the Remote Control screen of u-connectXplorer\n");
+        return false;
+    }
+    free(r);
+    return true;
+}
+
 bool ucxapp_xplorer_open_to(const char *host, uint16_t port, const char *token)
 {
-    char params[XPLORER_TOKEN_MAX * 2 + 16];
-    char quoted[XPLORER_TOKEN_MAX * 2];
-
     ucxapp_xplorer_close();
     srand(ucxapp_platform_tick_ms());
     /* iOS stops the server while the app is in the background, so the first attempts can be refused. */
@@ -637,19 +717,10 @@ bool ucxapp_xplorer_open_to(const char *host, uint16_t port, const char *token)
         return false;
     }
     snprintf(gHost, sizeof(gHost), "%s", host);
-    if (!ucxapp_json_quote(token, quoted, sizeof(quoted))) {
-        ucxapp_print("ERROR: token too long\n");
-        dropConnection();
-        return false;
-    }
-    snprintf(params, sizeof(params), "{\"token\":%s}", quoted);
-    char *r = ucxapp_xplorer_call("app.authenticate", params, 5000);
-    if (r == NULL) {
-        ucxapp_print("check the token in u-connectXplorer Settings > Remote control\n");
+    if (!authenticate(token)) {
         ucxapp_xplorer_close();
         return false;
     }
-    free(r);
     return true;
 }
 

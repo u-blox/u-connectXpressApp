@@ -560,13 +560,30 @@ static int cmdTput(ucxapp_t *app, int argc, char *argv[])
 static bool phoneFind(const char *name, char *id, size_t size)
 {
     bool found = false;
+
+    ucxapp_print("phone scans for \"%s\"\n", name);
+    if (ucxapp_xplorer_has("waitForDevice")) {
+        /* the phone answers the moment it hears the module, and stops its scan itself */
+        char quoted[80];
+        char params[128];
+        if (!ucxapp_json_quote(name, quoted, sizeof(quoted))) {
+            return false;
+        }
+        snprintf(params, sizeof(params), "{\"name\":%s,\"timeoutMs\":15000}", quoted);
+        char *d = ucxapp_xplorer_call("ble.waitForDevice", params, 20000);
+        found = ucxapp_json_str(d, "id", id, size);
+        free(d);
+        if (!found) {
+            ucxapp_print("ERROR: the phone did not see \"%s\" advertising within 15 s\n", name);
+        }
+        return found;
+    }
     char *r = ucxapp_xplorer_call("ble.startScan", NULL, PHONE_CALL_MS);
 
     if (r == NULL) {
         return false;
     }
     free(r);
-    ucxapp_print("phone scans for \"%s\"\n", name);
     uint32_t t0 = ucxapp_platform_tick_ms();
     while (!found && ucxapp_platform_tick_ms() - t0 < 15000u) {
         ucxapp_platform_sleep_ms(500);
@@ -602,6 +619,14 @@ static void phoneResult(const char *stats)
     int64_t kbps = 0;
     int64_t breaks = 0;
     int64_t count = 0;
+    char reason[24] = "";
+
+    /* why the phone's run ended, when it says (perfEndReason) and it was not its full time */
+    if (ucxapp_json_str(stats, "endReason", reason, sizeof(reason)) && strcmp(reason, "completed") != 0 &&
+        strcmp(reason, "stopped") != 0) {
+        ucxapp_print("phone:  the run ended early: %s\n",
+                     strcmp(reason, "disconnected") == 0 ? "it lost the Bluetooth link" : reason);
+    }
 
     (void)ucxapp_json_int(stats, "txBytes", &tx);
     (void)ucxapp_json_int(stats, "rxBytes", &rx);
@@ -722,6 +747,7 @@ static int phoneRun(ucxapp_t *app, phone_mode_t mode, int32_t seconds, int32_t s
         ucxapp_print("ERROR: this u-connectXplorer cannot run perf over SPS (needs perfSps); update the app\n");
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_xplorer_scoped();   /* whatever ends this command, the phone stops the run and drops the link */
     if (uCxSpsSetServiceEnable(app->ucx, U_SPS_SERVICE_OPTION_ENABLE) != 0 ||
         uCxSpsSetDataMode(app->ucx, U_READ_MODE_BUFFERED) != 0) {
         ucxapp_print("ERROR: cannot enable the SPS service\n");

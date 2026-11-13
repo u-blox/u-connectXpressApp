@@ -8,6 +8,7 @@
 
 import base64
 import hashlib
+import hmac
 import json
 import socket
 import struct
@@ -15,13 +16,23 @@ import threading
 
 TOKEN = "TEST1234"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC11B65"
+# What a client may call before app.authenticate
+OPEN = ("app.ping", "app.version", "app.getCapabilities", "app.getPlatform", "app.getChallenge")
+# The features of a phone with remote control protocol version 2, on top of socketEcho and perfSps
+V2 = {"socketEcho": True, "perfSps": True, "authChallenge": True, "stopOnDisconnect": True, "waitForDevice": True,
+      "perfEndReason": True, "errorCodes": True}
 
 
 class FakePhone:
-    """Accepts any number of WebSocket clients and answers the methods in `handlers`, then the built-in ones."""
+    """Accepts any number of WebSocket clients and answers the methods in `handlers`, then the built-in ones.
+    The default is a phone from before protocol version 2 (token only); FakePhone(features=V2, protocol=2) is one
+    that takes the answer to a challenge."""
 
-    def __init__(self, features=None):
+    def __init__(self, features=None, protocol=None):
         self.features = {"socketEcho": True, "perfSps": True} if features is None else features
+        self.protocol = protocol  # protocolVersion of app.getCapabilities; None: the field is not there (version 1)
+        self.configured = []     # params of every app.configure
+        self.nonce = "00112233445566778899aabbccddeeff"
         self.bluetooth = "poweredOff"
         self.breaks = 0          # patternBreaks of the echo session (socket.getState)
         self.handlers = {}       # method -> callable(params) returning the result, or {"error": {...}}
@@ -114,11 +125,18 @@ class FakePhone:
                 self.calls.append((method, params))
                 self._conn = conn
                 if method == "app.authenticate":
-                    authed = params.get("token") == TOKEN
+                    answer = hmac.new(TOKEN.encode(), self.nonce.encode(), hashlib.sha256).hexdigest()
+                    authed = (params.get("token") == TOKEN or
+                              (self.features.get("authChallenge") and params.get("response") == answer))
                     reply = {"result": {"ok": True}} if authed else {"error": {"code": -32001,
                                                                                   "message": "Invalid token"}}
-                elif not authed:
+                elif method == "app.getChallenge" and self.features.get("authChallenge"):
+                    reply = {"result": {"nonce": self.nonce, "algorithm": "HMAC-SHA256"}}
+                elif not authed and method not in OPEN:
                     reply = {"error": {"code": -32000, "message": "Not authenticated"}}
+                elif method == "app.configure" and self.features.get("stopOnDisconnect"):
+                    self.configured.append(params)
+                    reply = {"result": {"ok": True, **params}}
                 elif method in self.handlers:
                     result = self.handlers[method](params)
                     reply = result if isinstance(result, dict) and "error" in result else {"result": result}
@@ -138,7 +156,8 @@ class FakePhone:
         if method == "app.getPlatform":
             return {"result": {"platform": "ios", "osVersion": "18.1", "bluetoothState": self.bluetooth}}
         if method == "app.getCapabilities":
-            return {"result": {"methods": [], "features": self.features}}
+            version = {} if self.protocol is None else {"protocolVersion": self.protocol}
+            return {"result": {"methods": [], "features": self.features, **version}}
         if method == "socket.startServer":
             self.echo = params
             return {"result": {"ok": True, "port": params["port"]}}

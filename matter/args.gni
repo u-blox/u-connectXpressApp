@@ -18,6 +18,11 @@ chip_crypto_keystore = "psa"
 
 chip_build_tests = false
 
+# The node starts again in the same process (matter.stop then matter.start; always where it is linked in: the
+# browser, boards). Without this the SDK keeps its clusters across Server::Shutdown, and the next Server::Init
+# dies creating them again; the SDK turns it on only for Linux, macOS, iOS and Android.
+chip_enable_server_restart_support = true
+
 # No tracing: on Linux the SDK's default backend is perfetto, a part that is never fetched. The command-line
 # tracing of the examples (loaded through src/lib/address_resolve's tool) asks for it on Linux too.
 matter_trace_config = "//connectedhomeip/src/tracing/none"

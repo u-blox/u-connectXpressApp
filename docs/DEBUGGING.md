@@ -52,9 +52,17 @@ image base) does what `--symbolize` does for the app.
 
 ## Lessons from the Matter plug-in
 
-- The plug-in is unloaded (`FreeLibrary`) on every `matter.stop` and every failed start. No pointer into it may
-  outlive it: a response prefix string of the plug-in left in the AT client (`pExpectedRsp`) crashed the next
-  `dev.reboot` in `parseLine`. `unload()` clears the client's state under its command mutex.
+- A plug-in that never started a node is unloaded (`FreeLibrary`) again. No pointer into it may outlive it: a
+  response prefix string of the plug-in left in the AT client (`pExpectedRsp`) crashed the next `dev.reboot` in
+  `parseLine`. `unload()` clears the client's state under its command mutex.
+- Once a node has run in it, the plug-in stays loaded until the app exits. The browser build links the node in,
+  and its second `matter.start` aborted: the SDK keeps its clusters over `Server::Shutdown` unless
+  `chip_enable_server_restart_support` is on (by default only on Linux, macOS, iOS and Android), and the next
+  `Server::Init` died creating them again (`VerifyOrDie` in `LazyRegisteredServerCluster::Create`). Windows hid
+  it by loading a fresh DLL for every start; now it restarts in the same process too, so the Windows tests catch it.
+  Nothing queued by one node may reach the next: work the BLE layer scheduled while shutting down (its deferred
+  disconnect) ran in the next node and closed its new link 0 (`SendInd ABORT: connection 0 not found`), so
+  `PlatformManagerImpl::_Shutdown` empties the event queue.
 - A start that fails halfway must still shut the Matter stack down: `NodeStart` marks the stack up before
   `InitChipStack`, otherwise the half-made stack's destructor runs with its thread alive (`0xC0000409`).
 - What a session leaves on the module outlives it: a reloaded web page never runs `matter.stop`, so its UDP socket

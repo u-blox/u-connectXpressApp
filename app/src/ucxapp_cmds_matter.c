@@ -40,6 +40,9 @@
 #define STORE_FILES    16
 
 static void *gLib;
+/* A library a node has run in stays loaded until the app exits, as where the node is linked in (the browser,
+   boards): every start after the first is then one in the same process, on every platform */
+static void *gKeptLib;
 static const ucxapp_matter_plugin_t *gPlugin;
 static volatile bool gRunning;
 static uCxAtClient_t *gClient;
@@ -262,7 +265,7 @@ static void unload(void)
         gClient->pExpectedRspLen = 0;
         U_CX_MUTEX_UNLOCK(gClient->cmdMutex);
     }
-    if (gLib != NULL) {
+    if (gLib != NULL && gLib != gKeptLib) {
         ucxapp_platform_lib_close(gLib);
     }
     gLib = NULL;
@@ -285,7 +288,7 @@ static bool load(void)
 #ifdef UCXAPP_MATTER_STATIC
     entry = ucxmatter_plugin;
 #else
-    gLib = ucxapp_platform_lib_open(gPath);
+    gLib = gKeptLib != NULL ? gKeptLib : ucxapp_platform_lib_open(gPath);
     if (gLib == NULL) {
         ucxapp_print("ERROR: %s does not load (built for another system, or one of its own libraries is missing)\n",
                      gPath);
@@ -523,6 +526,7 @@ static int startNodeOnce(ucxapp_t *app, int count, const char *const words[])
     uCxAtClientSetUrcCallback(gClient, urcTap, gClient->pUrcCallbackTag);
     gServiceBootMs = ucxapp_module_boot_ms(&exact);
     gServiceDefined = true;
+    gKeptLib = gLib;
     rc = gPlugin->start(&gHost, count, words);
     if (rc != UCXAPP_MATTER_OK) {
         uCxAtClientSetUrcCallback(gClient, gNextUrc, gClient->pUrcCallbackTag);
@@ -1286,7 +1290,7 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gMatterCmds[] = {
     { "matter.start", "[endpoint...=light temp contact]", "Start a Matter node on the module with the ucxmatter plug-in; endpoints as matter.endpoints lists them, none given: light temp contact", UCXAPP_CMD_NEEDS_DEVICE, cmdStart },
-    { "matter.stop", "", "Stop the Matter node and unload the plug-in", 0, cmdStop },
+    { "matter.stop", "", "Stop the Matter node", 0, cmdStop },
     { "matter.status", "", "Is a node running, with which plug-in, and what the node says about itself", 0, cmdStatus },
     { "matter.card", "", "The node at a glance: state, commissioning step, network, setup codes and endpoints (the web page shows the same card, with buttons, under What's happening)", 0, cmdCard },
     { "matter.endpoints", "", "Endpoints of the running node and the kinds the plug-in can build", 0, cmdForward },

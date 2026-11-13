@@ -425,6 +425,8 @@ def test_node_stops_and_starts_again_in_one_session(app_exe, module, plugin, tmp
     # the module cannot remove a GATT service: it is rebooted before the second start defines the service again
     assert "matter: rebooting the module, its GATT server has the Matter service of the last start" in out.stdout
     assert module.log.count("AT+UBTGS=FFF6") == 2 and module.log.count("AT+CPWROFF") == 1, module.log
+    # nothing the first node queued while stopping reaches the second: its Bluetooth LE link stays up
+    assert "Send indication failed" not in out.stdout, out.stdout
 
 
 def test_a_module_with_no_room_for_the_matter_service_is_rebooted_and_the_node_started(app_exe, plugin, tmp_path):

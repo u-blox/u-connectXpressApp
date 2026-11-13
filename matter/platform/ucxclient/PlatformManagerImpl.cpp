@@ -73,6 +73,12 @@ void PlatformManagerImpl::_Shutdown()
 {
     ChipLogProgress(DeviceLayer, "[PlatformMgr] Shutting down");
     mShouldRunEventLoop.store(false);
+    {
+        // u-connectXpressApp: the node can start again in the same process; work queued during this
+        // shutdown (the BLE layer's deferred disconnect) must not run in the next node and close its link
+        std::lock_guard<std::mutex> lock(mEventQueueMutex);
+        std::queue<ChipDeviceEvent>().swap(mEventQueue);
+    }
     mEventQueueCondition.notify_all();
 
     // Delegate to base class to release event handlers / internal state

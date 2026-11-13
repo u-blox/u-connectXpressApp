@@ -435,7 +435,7 @@ The node is a root node with a dimmable light, a temperature sensor and a contac
 | Command | Arguments | Description |
 |---|---|---|
 | `matter.start` | `[endpoint...]` | Load the plug-in and start the node on the module. Endpoints are named as `matter.endpoints` lists the kinds (`light temp contact`); none builds the default set |
-| `matter.stop` | | Stop the node and unload the plug-in (leaving the app or disconnecting the module does the same) |
+| `matter.stop` | | Stop the node (leaving the app or disconnecting the module does the same) |
 | `matter.status` | | Stopped or running, the plug-in and its file, the module's radios, the URCs passed on to the node, and what the node says about itself |
 | `matter.card` | | The node at a glance, one `TAG value` line each: state, commissioning step, Bluetooth LE, commissioning window, network, setup codes, every endpoint with its value and what `matter.set` takes, and the log level. The web page shows the same card as the Matter tab of What's happening, with a button or a number field for each endpoint value and buttons for start, stop, QR code, open window, SDK log and factory default (`matter.reset`) |
 | `matter.endpoints` | | Endpoints of the running node with their values, and the kinds the plug-in can build |

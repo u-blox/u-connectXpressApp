@@ -169,9 +169,12 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
   a second `matter.start` in the same module boot, and when the plug-in reports `UCXAPP_MATTER_ERR_GATT_FULL`
   (the module refused the service: no room) it reboots and starts once more. A service left by another app
   session in a table that still has room cannot be seen.
-- The plug-in is unloaded on every stop and failed start: no pointer into it may outlive it (`unload()` clears
-  the AT client's response prefix, which may be a string of the plug-in). A failed `NodeStart` still shuts the
-  half-made stack down. Crash recipes: `docs/DEBUGGING.md`.
+- A plug-in a node has run in stays loaded until the app exits, as where the node is linked in (browser, boards):
+  every start after the first is one in the same process, on every platform, so the node must start again where
+  it stopped (`chip_enable_server_restart_support` in `args.gni`; without it the second start aborts creating the
+  SDK's clusters again). A plug-in that never started (a failed load, `app.sbom`, `matter.selftest`) is unloaded:
+  no pointer into it may outlive it (`unload()` clears the AT client's response prefix, which may be a string of
+  the plug-in). A failed `NodeStart` still shuts the half-made stack down. Crash recipes: `docs/DEBUGGING.md`.
 - A type code the module cannot print (an engineering sample's erased one) is the hardware version as hex
   (`0xFFFF…`), not as garbage.
 - URCs reach the plug-in on the AT client's thread: it queues them for the Matter thread and returns true for the

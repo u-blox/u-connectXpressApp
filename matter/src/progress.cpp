@@ -208,10 +208,9 @@ void ProgressFailed(int step, const char * reason)
     gUcxmHost->log(UCXAPP_MATTER_LOG_ERROR, line);
     snprintf(line, sizeof(line), "matter: commissioning failed at %d/%d, %s", step, kSteps, reason);
     gUcxmHost->event(line);
-    snprintf(line, sizeof(line), "failed at %d/%d: %s", step, kSteps, reason);
     std::lock_guard<std::mutex> lock(gMutex);
 
-    snprintf(gFailed, sizeof(gFailed), "%s", line);
+    snprintf(gFailed, sizeof(gFailed), "failed at %d/%d: %s", step, kSteps, reason);
     gTimed = false; // the next attempt has a clock of its own
 }
 

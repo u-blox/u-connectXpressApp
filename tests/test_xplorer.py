@@ -44,6 +44,13 @@ def test_connect_shows_the_phone_and_saves_it(app_exe, tmp_path, phone):
     assert out.returncode == 0 and "9.9.9+99" in out.stdout, out.stdout
 
 
+def test_connect_reads_the_documented_version_field(app_exe, tmp_path, phone):
+    """REMOTE_CONTROL.md documents only "version"; fullVersion is an extra some app builds send."""
+    phone.handlers["app.version"] = lambda params: {"version": "2.1.0", "app": "u-connectXplorer"}
+    out = _connect(app_exe, tmp_path, phone)
+    assert "u-connectXplorer 2.1.0 on ios" in out.stdout, out.stdout
+
+
 def test_connect_again_with_an_existing_key(app_exe, tmp_path, phone):
     """A second run loads ucxapp.key from disk instead of creating it; sealing must still work."""
     _connect(app_exe, tmp_path, phone)

@@ -114,7 +114,10 @@ static void showPhone(void)
     char *v = ucxapp_xplorer_call("app.version", NULL, CALL_MS);
     char *p = ucxapp_xplorer_call("app.getPlatform", NULL, CALL_MS);
 
-    (void)ucxapp_json_str(v, "fullVersion", version, sizeof(version));
+    /* fullVersion (with build) is not in REMOTE_CONTROL.md; version is */
+    if (!ucxapp_json_str(v, "fullVersion", version, sizeof(version))) {
+        (void)ucxapp_json_str(v, "version", version, sizeof(version));
+    }
     (void)ucxapp_json_str(p, "platform", os, sizeof(os));
     (void)ucxapp_json_str(p, "osVersion", osVersion, sizeof(osVersion));
     (void)ucxapp_json_str(p, "bluetoothState", bt, sizeof(bt));

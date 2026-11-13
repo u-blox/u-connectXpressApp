@@ -24,6 +24,18 @@ def test_test_files_have_unique_basenames():
         seen[path.name] = path
 
 
+def test_xplorer_skill_lists_every_phone_method_the_app_uses():
+    """The ucx-xplorer-remote skill is the checklist when REMOTE_CONTROL.md changes; it must stay complete."""
+    skill = (ROOT / ".github/skills/ucx-xplorer-remote/SKILL.md").read_text(encoding="utf-8")
+    used = set()
+    for path in (ROOT / "app/src").glob("ucxapp_*.c"):
+        text = path.read_text(encoding="utf-8")
+        used |= set(re.findall(r'ucxapp_xplorer_(?:call|event|has)\("([\w.]+)"', text))
+    assert {"app.authenticate", "socket.startServer", "perf.onComplete", "perfSps"} <= used
+    missing = sorted(name for name in used if name not in skill)
+    assert not missing, f"add to .github/skills/ucx-xplorer-remote/SKILL.md: {missing}"
+
+
 # First major version of each action that runs on Node.js 24 (older ones print "Node.js 20 is deprecated").
 NODE24_ACTIONS = {
     "actions/checkout": 5, "actions/setup-python": 6, "actions/cache": 5, "actions/upload-artifact": 5,

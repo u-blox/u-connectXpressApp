@@ -706,6 +706,9 @@ def test_log_pane_copies_and_clears_the_log(server):
         page = context.new_page()
         page.goto(f"http://127.0.0.1:{server.server_address[1]}/?t=x")
         page.wait_for_selector(".blk .badge.ok")
+        # the buttons sit in the title row, never over the log's last lines
+        assert page.evaluate("document.getElementById('logb').getBoundingClientRect().bottom"
+                             " <= document.getElementById('out').getBoundingClientRect().top")
         page.click("#lcopy")
         page.wait_for_selector("#lcopy.on")
         assert "Module:" in page.evaluate("navigator.clipboard.readText()")

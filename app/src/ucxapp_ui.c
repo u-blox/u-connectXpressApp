@@ -1206,10 +1206,10 @@ int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max)
     return v[0].count;
 }
 
-/* Counts every character, writes those that fit: n >= size at the end means the line was cut. */
+/* Counts every character, writes those that fit: n >= size at the end means the line was cut. size > 0. */
 static void put(char *out, size_t size, size_t *n, char ch)
 {
-    if (*n + 1 < size) {
+    if (*n < size - 1) {
         out[*n] = ch;
     }
     (*n)++;
@@ -1226,6 +1226,9 @@ bool ucxapp_ui_compose(const char *name, const char *const *values, int count, b
 {
     size_t n = 0;
 
+    if (size == 0) {
+        return false;
+    }
     putStr(out, size, &n, name);
     while (count > 0 && values[count - 1][0] == '\0') {
         count--;

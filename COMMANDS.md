@@ -415,6 +415,7 @@ one with `perfSps`; `xplorer.info` says when the app needs an update. These comm
 | `xplorer.info` | | The same for the saved phone |
 | `xplorer.call` | `<method> [key=value]...` | Call any remote-control method and print its JSON result; numbers, `true`/`false`/`null` and `{..}`/`[..]` values are sent as they are, others as strings |
 | `xplorer.echo` | `<tcp\|udp> <port> \| state \| stop` | Make the phone an echo server; `state` shows the bytes it got and the breaks in its 0x00-0xFF check |
+| `xplorer.selftest` | `[phone\|ble\|wifi\|all]` | Check the saved phone (app, Bluetooth, features), the module as central to it (NUS both ways), `perf.phone`, and `perf.latency` udp/tcp when the module is on Wi-Fi; PASS/FAIL/SKIP per step and a summary |
 
 With host `xplorer`, `perf.latency` and `perf.throughput` start the echo server on the phone, run against it and print what the
 phone received, including its own pattern check (a break fails TCP). `perf.phone` tests Bluetooth SPS between the

@@ -36,6 +36,7 @@ class FakePhone:
         self.bluetooth = "poweredOff"
         self.breaks = 0          # patternBreaks of the echo session (socket.getState)
         self.handlers = {}       # method -> callable(params) returning the result, or {"error": {...}}
+        self.replace_on = set()  # methods that, instead of an answer, close the client with 4001 (a newer remote)
         self.calls = []
         self.echo = None
         self._conn = None        # the client that called last, for notify()
@@ -124,6 +125,10 @@ class FakePhone:
                 method, params = msg["method"], msg.get("params") or {}
                 self.calls.append((method, params))
                 self._conn = conn
+                if method in self.replace_on:   # another remote took the phone over (one client at a time)
+                    reason = b"Replaced by a newer client"
+                    conn.sendall(bytes([0x88, 2 + len(reason)]) + struct.pack(">H", 4001) + reason)
+                    return
                 if method == "app.authenticate":
                     answer = hmac.new(TOKEN.encode(), self.nonce.encode(), hashlib.sha256).hexdigest()
                     authed = (params.get("token") == TOKEN or

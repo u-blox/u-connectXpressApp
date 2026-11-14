@@ -413,6 +413,8 @@ static const example_t kExamples[] = {
       "xplorer.connect 192.168.1.200 <token>\nxplorer.info\nxplorer.call ble.getState\n"
       "xplorer.call ble.startScan\nxplorer.call ble.getDevices\nxplorer.call ble.stopScan\n"
       "xplorer.echo udp 7000\nxplorer.echo state\nxplorer.echo stop" },
+    { "xplorer", "Check the phone and the module against it",
+      "xplorer.selftest phone\nwifi.connect\nxplorer.selftest" },
 #endif
 #if UCXAPP_HOST
     { "prod", "Production test with a report per serial number",

@@ -119,6 +119,15 @@ def test_call_builds_params(app_exe, tmp_path, phone):
     assert out.returncode != 0 and "ERROR: no.such: Method not found: no.such (-32601)" in out.stdout, out.stdout
 
 
+def test_another_remote_taking_the_phone_over_is_named(app_exe, tmp_path, phone):
+    """The phone serves one remote at a time and closes the older one with 4001; say so instead of 'lost'."""
+    _connect(app_exe, tmp_path, phone)
+    phone.replace_on.add("ble.getState")
+    out = _run(app_exe, tmp_path, "xplorer.call ble.getState")
+    assert out.returncode != 0, out.stdout
+    assert "another remote took over the phone (Replaced by a newer client)" in out.stdout, out.stdout
+
+
 def test_echo_start_state_stop(app_exe, tmp_path, phone):
     _connect(app_exe, tmp_path, phone)
     out = _run(app_exe, tmp_path, "xplorer.echo tcp 7001")

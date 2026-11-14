@@ -27,6 +27,8 @@ static size_t gInLen;
 static size_t gInCap;
 static char *gMsg;            /* text message being reassembled from fragments */
 static size_t gMsgLen;
+static unsigned gCloseCode;        /* of the phone's close frame, 0 when none came */
+static char gCloseReason[64];
 static int32_t gNextId = 1;
 static char *gEvents[XPLORER_EVENTS_MAX];
 static int gEventCount;
@@ -294,6 +296,8 @@ static void dropConnection(void)
     gSock = -1;
     gHost[0] = '\0';
     gInLen = 0;
+    gCloseCode = 0;
+    gCloseReason[0] = '\0';
     free(gMsg);
     gMsg = NULL;
     gMsgLen = 0;
@@ -413,6 +417,11 @@ static char *parseMessage(bool *closed)
         char *done = NULL;
         if (op == 0x8u) {
             *closed = true;
+            gCloseCode = len >= 2u ? (unsigned)(payload[0] << 8 | payload[1]) : 0u;
+            size_t n = len > 2u ? (size_t)len - 2u : 0u;
+            n = n < sizeof(gCloseReason) - 1u ? n : sizeof(gCloseReason) - 1u;
+            memcpy(gCloseReason, payload + 2, n);
+            gCloseReason[n] = '\0';
         } else if (op == 0x9u) {
             (void)sendFrame(0xAu, payload, (size_t)len);
         } else if (op == 0x0u || op == 0x1u || op == 0x2u) {
@@ -456,7 +465,16 @@ static char *readMessage(uint32_t timeoutMs)
             return m;
         }
         if (closed) {
-            ucxapp_print("u-connectXplorer closed the remote-control connection\n");
+            if (gCloseCode == 4001u) {
+                /* The phone serves one remote at a time; the newest client wins. */
+                ucxapp_print("u-connectXplorer closed the remote-control connection: another remote took over "
+                             "the phone (%s)\n", gCloseReason[0] != '\0' ? gCloseReason : "4001");
+            } else if (gCloseCode != 0u) {
+                ucxapp_print("u-connectXplorer closed the remote-control connection (%u%s%s)\n", gCloseCode,
+                             gCloseReason[0] != '\0' ? " " : "", gCloseReason);
+            } else {
+                ucxapp_print("u-connectXplorer closed the remote-control connection\n");
+            }
             dropConnection();
             return NULL;
         }

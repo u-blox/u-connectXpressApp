@@ -310,19 +310,34 @@ static bool prepareConnect(uCxHandle_t *ucx, const char *ssid)
 #define WIFI_RETRY_AFTER_REBOOT 1000   /* startAndWait: module was stuck and has been rebooted, set up again */
 #define WIFI_ERR_ALREADY_CONNECTED (-65)
 
-static int startAndWait(ucxapp_t *app, const char *ssid, uint32_t timeoutS)
+int32_t ucxapp_wifi_station_connect(uCxHandle_t *ucx)
 {
-    uCxHandle_t *ucx = app->ucx;
-
+    if (isConnected(ucx)) {
+        /* Joined to another network (callers handle "already on this one"): leave it before the new connect. */
+        uCxWifiStationDisconnect(ucx);
+        U_CX_PORT_SLEEP_MS(1000);
+    }
     ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
     int32_t r = uCxWifiStationConnect(ucx, 0);
     if (r != 0) {
-        /* A previous attempt can still be pending in the module; stop it and try once more. */
+        /* Never hide this: a module that refuses a connect after +STARTUP is a firmware issue to report (seen on
+         * NORA-W36 3.6.0-012: -63 U_ERROR_WIFI_INVALID_MODE on the first connect after a boot). A previous attempt
+         * still pending also ends here; stop it and try once more. */
+        ucxapp_print("warning: the module refused the Wi-Fi connect (%d%s); disconnecting and trying once more\n",
+                     (int)r, ucxapp_errname(r));
         uCxWifiStationDisconnect(ucx);
         U_CX_PORT_SLEEP_MS(2000);
         ucxapp_events_clear(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
         r = uCxWifiStationConnect(ucx, 0);
     }
+    return r;
+}
+
+static int startAndWait(ucxapp_t *app, const char *ssid, uint32_t timeoutS)
+{
+    uCxHandle_t *ucx = app->ucx;
+
+    int32_t r = ucxapp_wifi_station_connect(ucx);
     if (r == WIFI_ERR_ALREADY_CONNECTED && !isConnected(ucx)) {
         /* Seen on FW 3.2: the station reports "not connected" but refuses to connect; only a reboot clears it. */
         ucxapp_print("Wi-Fi state is stuck (%d%s), rebooting the module...\n", (int)r, ucxapp_errname(r));

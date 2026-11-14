@@ -1994,8 +1994,10 @@ void ucxapp_stream_on_data(int32_t sock)
 }
 
 /* A BLE client wrote to the Nordic UART RX characteristic. */
-void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len)
+bool ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len)
 {
+    bool taken = false;
+
     regLock();
     for (int i = 0; i < MAX_STREAMS; i++) {
         for (int j = 0; gStreams[i] != NULL && j < MAX_BRIDGES; j++) {
@@ -2003,10 +2005,12 @@ void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len)
             if (b != NULL && b->bridge == BR_BLE) {
                 (void)ucxapp_stream_write(gStreams[i], data, len);
                 b->received += (uint32_t)len;
+                taken = true;
             }
         }
     }
     regUnlock();
+    return taken;
 }
 
 void ucxapp_stream_on_sps_data(void)

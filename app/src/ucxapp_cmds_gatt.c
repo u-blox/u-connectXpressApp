@@ -52,8 +52,8 @@ static const uint8_t kNusSvc[16]  = {0x6E,0x40,0x00,0x01,0xB5,0xA3,0xF3,0x93,0xE
 static const uint8_t kNusRx[16]   = {0x6E,0x40,0x00,0x02,0xB5,0xA3,0xF3,0x93,0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E};
 static const uint8_t kNusTx[16]   = {0x6E,0x40,0x00,0x03,0xB5,0xA3,0xF3,0x93,0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E};
 static const uint8_t kSpsSvc[16]  = {0x24,0x56,0xE1,0xB9,0x26,0xE2,0x8F,0x83,0xE7,0x44,0xF3,0x4F,0x01,0xE9,0xD7,0x01};
-static const uint8_t kSpsFifo[16] = {0x24,0x56,0xE1,0xB9,0x26,0xE2,0x8F,0x83,0xE7,0x44,0xF3,0x4F,0x03,0xE9,0xD7,0x01};
-static const uint8_t kSpsCred[16] = {0x24,0x56,0xE1,0xB9,0x26,0xE2,0x8F,0x83,0xE7,0x44,0xF3,0x4F,0x04,0xE9,0xD7,0x01};
+static const uint8_t kSpsFifo[16] = {0x24,0x56,0xE1,0xB9,0x26,0xE2,0x8F,0x83,0xE7,0x44,0xF3,0x4F,0x01,0xE9,0xD7,0x03};
+static const uint8_t kSpsCred[16] = {0x24,0x56,0xE1,0xB9,0x26,0xE2,0x8F,0x83,0xE7,0x44,0xF3,0x4F,0x01,0xE9,0xD7,0x04};
 
 /* Wi-Fi provisioning: 14387800-130c-49e7-b877-2881c89cb258 (info 01, control point 02, data out 03). */
 static const uint8_t kWpsSvc[16]  = {0x14,0x38,0x78,0x00,0x13,0x0C,0x49,0xE7,0xB8,0x77,0x28,0x81,0xC8,0x9C,0xB2,0x58};
@@ -678,15 +678,62 @@ static bool readHandle(ucxapp_t *app, int32_t conn, int32_t handle, uint8_t *buf
     return true;
 }
 
-/* mode: 0 = off, 1 = notifications, 2 = indications. The CCCD is assumed to follow the value handle. */
+/* Last handle of the characteristic whose value is at valueHandle, from the discovered table. */
+static int32_t charEnd(int32_t valueHandle)
+{
+    int32_t end = 0xFFFF;
+
+    for (int i = 0; i < gChrCount; i++) {
+        if (gChr[i].handle == valueHandle && gChr[i].svc >= 0 && gChr[i].svc < gSvcCount) {
+            end = gSvc[gChr[i].svc].end;
+        }
+    }
+    for (int i = 0; i < gChrCount; i++) {
+        /* The next characteristic's declaration sits just before its value. */
+        if (gChr[i].handle > valueHandle + 1 && gChr[i].handle - 2 < end) {
+            end = gChr[i].handle - 2;
+        }
+    }
+    return end;
+}
+
+/* The CCCD (0x2902) handle. Usually value + 1, but a server may put e.g. an Extended Properties descriptor
+ * first (iOS does for characteristics with property 0x80), so it is looked up. */
+static int32_t findCccd(ucxapp_t *app, int32_t conn, int32_t valueHandle)
+{
+    int32_t end = charEnd(valueHandle);
+    int32_t found = -1;
+    uCxGattClientDiscoverCharDescriptors_t d;
+
+    if (end <= valueHandle) {
+        return valueHandle + 1;
+    }
+    uCxGattClientDiscoverCharDescriptorsBegin(app->ucx, conn, valueHandle, end);
+    while (uCxGattClientDiscoverCharDescriptorsGetNext(app->ucx, &d)) {
+        if (found < 0 && d.uuid.length == 2 &&
+            ((d.uuid.pData[0] == 0x29 && d.uuid.pData[1] == 0x02) || (d.uuid.pData[0] == 0x02 && d.uuid.pData[1] == 0x29))) {
+            found = d.desc_handle;
+        }
+    }
+    (void)uCxEnd(app->ucx);
+    return found >= 0 ? found : valueHandle + 1;
+}
+
+/* mode: 0 = off, 1 = notifications, 2 = indications. */
 static bool setCccd(ucxapp_t *app, int32_t conn, int32_t valueHandle, uint8_t mode)
 {
     uGattClientConfig_t cfg = mode == 0 ? U_GATT_CLIENT_CONFIG_NONE
                             : mode == 1 ? U_GATT_CLIENT_CONFIG_ENABLE_NOTIFICATIONS
                                         : U_GATT_CLIENT_CONFIG_ENABLE_INDICATIONS;
-    int32_t r = uCxGattClientConfigWrite(app->ucx, conn, valueHandle + 1, cfg);
+    int32_t cccd = findCccd(app, conn, valueHandle);
+    int32_t r = uCxGattClientConfigWrite(app->ucx, conn, cccd, cfg);
     if (r != 0) {
-        ucxapp_print("  CCCD write to handle 0x%04X failed (%d%s)\n", (unsigned)(valueHandle + 1), (int)r, ucxapp_errname(r));
+        ucxapp_print("  CCCD write to handle 0x%04X failed (%d%s)\n", (unsigned)cccd, (int)r, ucxapp_errname(r));
+    } else if (mode != 0 && cccd != valueHandle + 1) {
+        /* NORA-W36 3.6.0 subscribes value handle cccd - 1, see docs/FW_NORA-W36_GATT_CCCD_HANDLE.md. */
+        ucxapp_print("  warning: the CCCD 0x%04X is not right after the value 0x%04X; module firmware that takes the "
+                     "value handle as CCCD - 1 drops these %s\n",
+                     (unsigned)cccd, (unsigned)valueHandle, mode == 1 ? "notifications" : "indications");
     }
     return r == 0;
 }
@@ -1566,14 +1613,12 @@ void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data,
     const srvRec_t *ctrl = findSrv("wps.ctrl");
     const srvRec_t *nusRx = findSrv("nus.rx");
     if (nusRx != NULL && nusRx->value == handle) {
-        if (!ucxapp_can_nus_rx(data, len)) {
-            ucxapp_stream_on_ble_rx(data, len);
+        if (ucxapp_can_nus_rx(data, len) || ucxapp_stream_on_ble_rx(data, len)) {
+            return;
         }
-        return;
     }
     const srvRec_t *customRx = findSrv("custom.rx");
-    if (customRx != NULL && customRx->value == handle) {
-        ucxapp_stream_on_ble_rx(data, len);
+    if (customRx != NULL && customRx->value == handle && ucxapp_stream_on_ble_rx(data, len)) {
         return;
     }
     if (ctrl != NULL && ctrl->value == handle) {
@@ -1704,7 +1749,7 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
                                                                                  : U_WIFI_WPA_THRESHOLD_WPA2);
                 if (r != 0) {
                     snprintf(resp, sizeof(resp), "ERROR:AUTH_FAILED:%d", (int)r);
-                } else if ((r = uCxWifiStationConnect(ucx, 0)) != 0) {
+                } else if ((r = ucxapp_wifi_station_connect(ucx)) != 0) {
                     snprintf(resp, sizeof(resp), "ERROR:CONNECT_FAILED:%d", (int)r);
                 } else {
                     snprintf(resp, sizeof(resp), "OK:CONNECTING:%.64s", ssid);
@@ -1728,7 +1773,7 @@ static void wpsHandle(ucxapp_t *app, int32_t conn, char *cmd)
     } else if (strcmp(cmd, "CONNECT") == 0) {
         if (!ucxapp_wifi_apply_regdomain(ucx)) {
             snprintf(resp, sizeof(resp), "ERROR:REGDOMAIN_NOT_SET");
-        } else if ((r = uCxWifiStationConnect(ucx, 0)) == 0) {
+        } else if ((r = ucxapp_wifi_station_connect(ucx)) == 0) {
             snprintf(resp, sizeof(resp), "OK:CONNECTING");
         } else {
             snprintf(resp, sizeof(resp), "ERROR:CONNECT_FAILED:%d", (int)r);
@@ -2000,7 +2045,7 @@ static int wpsPbSetConfig(ucxapp_t *app, int32_t conn, const uint8_t *cfg, size_
                                                                                         : U_WIFI_WPA_THRESHOLD_WPA2);
     }
     if (r == 0) {
-        r = uCxWifiStationConnect(app->ucx, 0);
+        r = ucxapp_wifi_station_connect(app->ucx);
     }
     memset(pass, 0, sizeof(pass));
     if (r != 0) {

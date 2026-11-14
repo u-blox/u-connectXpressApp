@@ -268,6 +268,249 @@ static int cmdEcho(ucxapp_t *app, int argc, char *argv[])
     return rc;
 }
 
+/* xplorer.selftest: the hardware test flows of tests/hardware/test_hw_xplorer.py as one command for users. */
+
+#define ST_LOG_SIZE 8192
+
+static char gStLog[ST_LOG_SIZE];
+static volatile size_t gStLogLen;
+static int gStPass;
+static int gStFail;
+static int gStSkip;
+
+static void stSink(const char *text, size_t len)
+{
+    size_t at = gStLogLen;
+
+    if (at + len >= ST_LOG_SIZE) {
+        len = ST_LOG_SIZE - 1 - at;
+    }
+    memcpy(gStLog + at, text, len);
+    gStLog[at + len] = '\0';
+    gStLogLen = at + len;
+}
+
+static void stLogClear(void)
+{
+    gStLogLen = 0;
+    gStLog[0] = '\0';
+}
+
+static bool stLogWait(const char *needle, uint32_t timeoutMs)
+{
+    uint32_t t0 = ucxapp_platform_tick_ms();
+
+    while (strstr(gStLog, needle) == NULL) {
+        if (ucxapp_platform_tick_ms() - t0 >= timeoutMs) {
+            return false;
+        }
+        ucxapp_platform_sleep_ms(20);
+    }
+    return true;
+}
+
+static void stResult(const char *step, int result, const char *why)
+{
+    static const char *const kName[] = { "PASS", "FAIL", "SKIP" };
+
+    ucxapp_print("[%s] %s%s%s\n", kName[result], step, why != NULL ? ": " : "", why != NULL ? why : "");
+    if (result == 0) {
+        gStPass++;
+    } else if (result == 1) {
+        gStFail++;
+    } else {
+        gStSkip++;
+    }
+}
+
+/* Runs one ucxapp command line, its output captured in gStLog; true when it returned UCXAPP_OK without "ERROR". */
+static bool stExec(ucxapp_t *app, const char *cmd)
+{
+    char line[160];
+
+    snprintf(line, sizeof(line), "%s", cmd);
+    ucxapp_print("> %s\n", cmd);
+    int rc = ucxapp_cmd_exec(app, line);
+    return rc == UCXAPP_OK && strstr(gStLog, "\nERROR") == NULL && strncmp(gStLog, "ERROR", 5) != 0;
+}
+
+static void stPhone(void)
+{
+    char *v = ucxapp_xplorer_call("app.version", NULL, CALL_MS);
+    char *p = ucxapp_xplorer_call("app.getPlatform", NULL, CALL_MS);
+    char *caps = ucxapp_xplorer_call("app.getCapabilities", NULL, CALL_MS);
+    char *net = ucxapp_xplorer_call("app.getNetworkInfo", NULL, CALL_MS);
+    char text[64];
+    int64_t proto = 0;
+
+    stResult("phone answers app.version", v != NULL ? 0 : 1, NULL);
+    if (p != NULL && ucxapp_json_str(p, "bluetoothState", text, sizeof(text))) {
+        stResult("phone Bluetooth is on", strcmp(text, "poweredOn") == 0 ? 0 : 1,
+                 strcmp(text, "poweredOn") == 0 ? NULL : text);
+    } else {
+        stResult("phone Bluetooth is on", 1, "app.getPlatform gave no bluetoothState");
+    }
+    if (caps != NULL && ucxapp_json_int(caps, "protocolVersion", &proto)) {
+        snprintf(text, sizeof(text), "protocol %d, ucxapp speaks %d", (int)proto, UCXAPP_XPLORER_PROTOCOL);
+        stResult("protocol version", proto >= UCXAPP_XPLORER_PROTOCOL ? 0 : 1, text);
+    } else {
+        stResult("protocol version", 1, "no protocolVersion; update u-connectXplorer");
+    }
+    static const char *const kFeatures[] = { "authChallenge", "socketEcho", "perfSps", "stopOnDisconnect",
+                                             "waitForDevice", "blePeripheral" };
+    char missing[160] = "";
+    for (size_t i = 0; i < sizeof(kFeatures) / sizeof(kFeatures[0]); i++) {
+        char path[64];
+        bool on = false;
+        snprintf(path, sizeof(path), "features.%s", kFeatures[i]);
+        if (caps == NULL || !ucxapp_json_bool(caps, path, &on) || !on) {
+            size_t n = strlen(missing);
+            snprintf(missing + n, sizeof(missing) - n, "%s%s", n > 0 ? ", " : "missing ", kFeatures[i]);
+        }
+    }
+    stResult("phone features", missing[0] == '\0' ? 0 : 1, missing[0] != '\0' ? missing : NULL);
+    stResult("phone answers app.getNetworkInfo", net != NULL ? 0 : 1, NULL);
+    free(v);
+    free(p);
+    free(caps);
+    free(net);
+}
+
+/* The event text of peripheral.onData: "text", else the "value" byte array. */
+static bool stDataHas(const char *params, const char *needle)
+{
+    char text[128];
+    char *value;
+
+    if (ucxapp_json_str(params, "text", text, sizeof(text))) {
+        return strstr(text, needle) != NULL;
+    }
+    value = ucxapp_json_get(params, "value");
+    size_t n = 0;
+    for (int i = 0; value != NULL && n + 1 < sizeof(text); i++) {
+        char *item = ucxapp_json_item(value, i);
+        if (item == NULL) {
+            break;
+        }
+        text[n++] = (char)atoi(item);
+        free(item);
+    }
+    text[n] = '\0';
+    free(value);
+    return strstr(text, needle) != NULL;
+}
+
+static void stCentral(ucxapp_t *app)
+{
+    static const char *const kStep = "module as central to the phone (nus both ways)";
+    char name[24];
+    char cmd[64];
+    char *r;
+
+    if (!ucxapp_xplorer_has("blePeripheral")) {
+        stResult(kStep, 2, "the phone app has no blePeripheral; update u-connectXplorer");
+        return;
+    }
+    snprintf(name, sizeof(name), "ucx-st-%03u", (unsigned)(ucxapp_platform_tick_ms() % 1000u));
+    snprintf(cmd, sizeof(cmd), "{\"mode\":\"nus\",\"name\":\"%s\"}", name);
+    r = ucxapp_xplorer_call("peripheral.startAdvertising", cmd, 30000u);
+    if (r == NULL) {
+        stResult(kStep, 1, "peripheral.startAdvertising failed");
+        return;
+    }
+    free(r);
+    const char *why = NULL;
+    bool connected = false;
+    snprintf(cmd, sizeof(cmd), "bt.connect %s", name);
+    /* the phone may start advertising a moment after it answers */
+    for (int i = 0; i < 3 && !connected; i++) {
+        stLogClear();
+        connected = stExec(app, cmd);
+    }
+    if (!connected) {
+        why = "bt.connect did not find or connect to the phone";
+    } else if (stLogClear(), !stExec(app, "gatt.client.nus")) {
+        why = "gatt.client.nus failed";
+    } else if (stLogClear(), !stExec(app, "gatt.send nus hello-from-module")) {
+        why = "gatt.send failed";
+    } else {
+        char *ev;
+        bool got = false;
+        uint32_t t0 = ucxapp_platform_tick_ms();
+        while (!got && ucxapp_platform_tick_ms() - t0 < 20000u &&
+               (ev = ucxapp_xplorer_event("peripheral.onData", 20000u - (ucxapp_platform_tick_ms() - t0))) != NULL) {
+            got = stDataHas(ev, "hello-from-module");
+            free(ev);
+        }
+        if (!got) {
+            why = "the phone did not get the module's data";
+        } else {
+            stLogClear();
+            free(ucxapp_xplorer_call("peripheral.send", "{\"text\":\"hello-from-phone\"}", CALL_MS));
+            if (!stLogWait("hello-from-phone", 20000u)) {
+                why = "the module did not get the phone's data";
+            }
+        }
+    }
+    char disc[] = "bt.disconnect";
+    stResult(kStep, why == NULL ? 0 : 1, why);
+    stLogClear();
+    if (connected) {
+        (void)ucxapp_cmd_exec(app, disc);
+    }
+    free(ucxapp_xplorer_call("peripheral.stopAdvertising", NULL, CALL_MS));
+}
+
+static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *what = argc > 1 ? argv[1] : "all";
+    bool all = strcmp(what, "all") == 0;
+    bool ble = all || strcmp(what, "ble") == 0;
+    bool wifi = all || strcmp(what, "wifi") == 0;
+
+    if (argc > 2 || !(all || ble || wifi || strcmp(what, "phone") == 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gStPass = gStFail = gStSkip = 0;
+    if (!ucxapp_xplorer_open()) {
+        stResult("connect to the phone", 1, "run xplorer.connect <phone-ip> <token> first");
+        return UCXAPP_ERR_FAILED;
+    }
+    stResult("connect to the phone", 0, ucxapp_xplorer_host());
+    stPhone();
+    if ((ble || wifi) && app->ucx == NULL) {
+        stResult("module tests", 2, "no module connected; start ucxapp with its port");
+        ble = wifi = false;
+    }
+    if (!ucxapp_io_add_sink(stSink)) {
+        ucxapp_xplorer_close();
+        ucxapp_print("ERROR: no free output sink\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (ble) {
+        stCentral(app);
+    }
+    ucxapp_xplorer_close();   /* perf.* open their own connection (one client at a time) */
+    if (ble) {
+        stLogClear();
+        stResult("perf.phone tx (phone as central over SPS)", stExec(app, "perf.phone tx 3") ? 0 : 1, NULL);
+    }
+    if (wifi) {
+        char dash[128];
+        if (!ucxapp_wifi_dash(app->ucx, dash, sizeof(dash))) {
+            stResult("Wi-Fi tests", 2, "the module is not on Wi-Fi; run wifi.connect first");
+        } else {
+            stLogClear();
+            stResult("perf.latency udp to the phone", stExec(app, "perf.latency udp xplorer 7401 10") ? 0 : 1, NULL);
+            stLogClear();
+            stResult("perf.latency tcp to the phone", stExec(app, "perf.latency tcp xplorer 7402 10") ? 0 : 1, NULL);
+        }
+    }
+    ucxapp_io_remove_sink(stSink);
+    ucxapp_print("selftest: %d passed, %d failed, %d skipped\n", gStPass, gStFail, gStSkip);
+    return gStFail == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
 static const ucxapp_cmd_t gXplorerCmds[] = {
     { "xplorer.connect", "<phone-ip[:port]> <token>",
       "Connect to the u-connectXplorer phone app (Settings > Remote control shows address and token, port 8765), "
@@ -281,6 +524,10 @@ static const ucxapp_cmd_t gXplorerCmds[] = {
     { "xplorer.echo", "<tcp|udp> <port> | state | stop",
       "Make the phone an echo server for perf.latency and perf.throughput (perf ... xplorer does this itself); state shows "
       "the bytes and 0x00-0xFF pattern breaks it received", 0, cmdEcho },
+    { "xplorer.selftest", "[phone|ble|wifi|all]",
+      "Check the saved phone and the module against it: app, Bluetooth and features; the module as central to the "
+      "phone (nus both ways) and perf.phone; perf.latency udp/tcp to the phone when the module is on Wi-Fi. Prints "
+      "PASS/FAIL/SKIP per step", 0, cmdSelftest },
 };
 
 void ucxapp_register_xplorer_cmds(void)

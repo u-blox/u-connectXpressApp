@@ -82,7 +82,8 @@ void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock);
 void ucxapp_stream_on_closed(int32_t sock);
 void ucxapp_stream_on_data(int32_t sock);
 void ucxapp_stream_on_sps_data(void);
-void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len);
+/* Data a client wrote to nus.rx or custom.rx, for the BLE bridges; false when no bridge took it. */
+bool ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len);
 
 /* Runs probe(port, result) on every port at once, one thread each, and waits for all of them.
  * results[i] is resultSize bytes apart; hits[i] is what probe returned. */

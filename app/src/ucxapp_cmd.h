@@ -296,6 +296,9 @@ void ucxapp_sock_clear_incoming(void);
 bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char *ip, size_t ipSize);
 /* Sets the user's regulatory domain before any scan, connect or AP; false (printed) when none is chosen yet. */
 bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx);
+/* Starts the station connect (profile 0): leaves a joined network first, and tries once more after a disconnect
+ * when the module refuses it; 0 when started. */
+int32_t ucxapp_wifi_station_connect(uCxHandle_t *ucx);
 const char *ucxapp_wifi_regdomain_name(void);   /* saved region, NULL until chosen */
 bool ucxapp_shell_interactive(void);   /* a person typed the running command at the ucxapp> prompt */
 /* "ssid  rssi dBm  ch N\nip" (AT calls; command thread only); false when not connected. */

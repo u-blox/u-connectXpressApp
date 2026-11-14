@@ -18,15 +18,15 @@ TOKEN = "TEST1234"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC11B65"
 # What a client may call before app.authenticate
 OPEN = ("app.ping", "app.version", "app.getCapabilities", "app.getPlatform", "app.getChallenge")
-# The features of a phone with remote control protocol version 2, on top of socketEcho and perfSps
-V2 = {"socketEcho": True, "perfSps": True, "authChallenge": True, "stopOnDisconnect": True, "waitForDevice": True,
+# The features of a phone with remote control protocol version 1 (app 1.2.0), on top of socketEcho and perfSps
+V1 = {"socketEcho": True, "perfSps": True, "authChallenge": True, "stopOnDisconnect": True, "waitForDevice": True,
       "perfEndReason": True, "errorCodes": True}
 
 
 class FakePhone:
     """Accepts any number of WebSocket clients and answers the methods in `handlers`, then the built-in ones.
-    The default is a phone from before protocol version 2 (token only); FakePhone(features=V2, protocol=2) is one
-    that takes the answer to a challenge."""
+    The default is a test build from before protocolVersion existed (token only); FakePhone(features=V1, protocol=1)
+    is the released version 1 phone that takes the answer to a challenge."""
 
     def __init__(self, features=None, protocol=None):
         self.features = {"socketEcho": True, "perfSps": True} if features is None else features

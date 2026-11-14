@@ -19,7 +19,7 @@
 
 /* The version of the remote control protocol this client was written for (docs/REMOTE_CONTROL.md of
  * u-connectXplorer, "Protocol version"); a phone that speaks a later one gets a note. */
-#define UCXAPP_XPLORER_PROTOCOL 2
+#define UCXAPP_XPLORER_PROTOCOL 1
 
 /** The phone saved by xplorer.connect; false (message printed) if none. */
 bool ucxapp_xplorer_saved(char *host, size_t hostSize, uint16_t *port, char *token, size_t tokenSize);

@@ -12,9 +12,10 @@ the other end of a module test. The contract is
 
 ## Pinned version
 
-ucxapp matches REMOTE_CONTROL.md at commit **`e2809a9`** (2026-11-13, blob `c9073ebc`, **protocol version 2**;
+ucxapp matches REMOTE_CONTROL.md at commit **`2111c2d`** (2026-11-14, blob `1d968a8`, **protocol version 1**;
 `UCXAPP_XPLORER_PROTOCOL` in [ucxapp_xplorer.h](../../../app/src/ucxapp_xplorer.h)). Bump this pin after every
-review, whether or not code had to change.
+review, whether or not code had to change. Version 1 is the first released one (app 1.2.0): the features that
+test builds called "version 2" were folded into it.
 
 The doc now says how it changes: `protocolVersion` (in `app.version` and `app.getCapabilities`) is raised only for
 changes that break a client, and its "Protocol history" table lists them; everything added comes as a feature flag.
@@ -24,7 +25,7 @@ Check for changes:
 
 ```powershell
 gh api "repos/u-blox/u-connectXplorer/commits?path=docs/REMOTE_CONTROL.md&per_page=5" --jq '.[] | .sha[0:7] + " " + .commit.committer.date + " " + (.commit.message | split("\n")[0])'
-gh api "repos/u-blox/u-connectXplorer/compare/e2809a9...main" --jq '.files[] | select(.filename=="docs/REMOTE_CONTROL.md") | .patch'
+gh api "repos/u-blox/u-connectXplorer/compare/2111c2d...main" --jq '.files[] | select(.filename=="docs/REMOTE_CONTROL.md") | .patch'
 ```
 
 No output from the second command means nothing changed.
@@ -37,7 +38,7 @@ Commands: [ucxapp_cmds_xplorer.c](../../../app/src/ucxapp_cmds_xplorer.c) and
 
 | Method / event | Used by | Fields read |
 |---|---|---|
-| `app.getCapabilities` | every connect (before authenticating), feature checks | `protocolVersion` (a note when above 2), `features.authChallenge`, `features.socketEcho`, `features.perfSps`, `features.stopOnDisconnect`, `features.waitForDevice` |
+| `app.getCapabilities` | every connect (before authenticating), feature checks | `protocolVersion` (a note when above 1), `features.authChallenge`, `features.socketEcho`, `features.perfSps`, `features.stopOnDisconnect`, `features.waitForDevice` |
 | `app.getChallenge` | every connect, when the phone has `authChallenge` | `nonce` |
 | `app.authenticate {response}` or `{token}` | `xplorer.connect`, every reconnect | result only; errors `-32000` (no auth) / `-32001` (bad token) / `-32002` (locked out). `response` is the hex HMAC-SHA256 of the nonce under the token; the token is sent only to a phone without `authChallenge` |
 | `app.configure {stopOnDisconnect:true}` | `perf.phone`, when the phone has `stopOnDisconnect` | result only |
@@ -66,9 +67,9 @@ Fixed assumptions:
   `perf.phone` asks for `stopOnDisconnect`.
 - Error codes are printed, never matched: the new `-32010`…`-32014` need nothing from ucxapp.
 
-A phone from before protocol version 2 (no `protocolVersion`, none of the new flags) keeps working: every new
+A phone without `protocolVersion` and without the newer flags (a test build from before 1.2.0) keeps working: every
 feature is used only when its flag is there. The fake phone of the tests is that old phone by default;
-`FakePhone(features=V2, protocol=2)` in `tests/harness/xplorer.py` is the new one.
+`FakePhone(features=V1, protocol=1)` in `tests/harness/xplorer.py` is the released version 1 phone.
 
 ## When the doc changed
 

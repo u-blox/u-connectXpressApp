@@ -7,7 +7,7 @@ import subprocess
 import threading
 
 import pytest
-from harness.xplorer import TOKEN, V2, FakePhone
+from harness.xplorer import TOKEN, V1, FakePhone
 
 pytestmark = pytest.mark.app
 
@@ -69,7 +69,7 @@ def test_wrong_token(app_exe, tmp_path, phone):
 def test_a_challenge_is_answered_so_the_token_is_never_sent(app_exe, tmp_path):
     """A phone with authChallenge gets the HMAC-SHA256 of its nonce under the token; the token itself does not
     cross the wire, on xplorer.connect or on any later command, and a wrong token is still refused."""
-    fake = FakePhone(features=V2, protocol=2)
+    fake = FakePhone(features=V1, protocol=1)
     try:
         out = _connect(app_exe, tmp_path, fake)
         assert "saved" in out.stdout and "note:" not in out.stdout, out.stdout
@@ -85,10 +85,10 @@ def test_a_challenge_is_answered_so_the_token_is_never_sent(app_exe, tmp_path):
 
 
 def test_a_phone_with_a_newer_protocol_gets_a_note(app_exe, tmp_path):
-    fake = FakePhone(protocol=3)
+    fake = FakePhone(protocol=2)
     try:
         out = _connect(app_exe, tmp_path, fake)
-        assert "note: this u-connectXplorer speaks remote control version 3, this app knows version 2" in out.stdout
+        assert "note: this u-connectXplorer speaks remote control version 2, this app knows version 1" in out.stdout
         assert "saved" in out.stdout, out.stdout
     finally:
         fake.close()

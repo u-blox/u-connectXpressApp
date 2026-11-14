@@ -104,14 +104,14 @@ def test_phone_receives_what_the_module_sends(app_exe, tmp_path):
     assert f"module: sent {sent} bytes" in text, text
 
 
-def test_a_version_2_phone_finds_the_module_itself_and_cleans_up_after_the_app(app_exe, tmp_path):
-    """With the features of remote control version 2 the phone is asked to wait for the module (no scan to poll),
+def test_a_version_1_phone_finds_the_module_itself_and_cleans_up_after_the_app(app_exe, tmp_path):
+    """With the features of remote control version 1 the phone is asked to wait for the module (no scan to poll),
     to stop what this connection started when it ends, and its reason for an early end is shown."""
-    from harness.xplorer import V2
+    from harness.xplorer import V1
 
     module = _module({"AT+USPSWB=*": ["+USPSWB:0,100", "OK"]})
     phone = _phone(module, dict(STATS, endReason="disconnected"))
-    phone.features, phone.protocol = dict(V2), 2
+    phone.features, phone.protocol = dict(V1), 1
     phone.handlers["ble.waitForDevice"] = lambda p: {"found": True, "id": "ID-2", "name": p["name"], "rssi": -50}
     phone.handlers["sps.connect"] = lambda p: (module._send([f"+UEBTC:0,{PEER}", "+UESPSC:0"]), {"ok": True})[1]
     try:
@@ -130,12 +130,12 @@ def test_a_version_2_phone_finds_the_module_itself_and_cleans_up_after_the_app(a
     assert "phone:  the run ended early: it lost the Bluetooth link" in text, text
 
 
-def test_a_version_2_phone_that_does_not_hear_the_module_says_so(app_exe, tmp_path):
-    from harness.xplorer import V2
+def test_a_version_1_phone_that_does_not_hear_the_module_says_so(app_exe, tmp_path):
+    from harness.xplorer import V1
 
     module = _module()
     phone = _phone(module)
-    phone.features, phone.protocol = dict(V2), 2
+    phone.features, phone.protocol = dict(V1), 1
     phone.handlers["ble.waitForDevice"] = lambda p: {"error": {"code": -32012, "message": "no device that fits"}}
     try:
         _save_phone(app_exe, tmp_path, phone)

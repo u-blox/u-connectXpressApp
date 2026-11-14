@@ -105,6 +105,25 @@ def test_cache_made_by_another_cmake_is_detected(tmp_path, monkeypatch):
     assert not mod.cache_moved(cache)
 
 
+def test_another_extra_command_pack_reconfigures(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("launcher", ROOT / "ucxapp.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cache, pack = tmp_path / "CMakeCache.txt", tmp_path / "pack"
+    monkeypatch.delenv("UCXAPP_EXTRA_DIR", raising=False)
+    assert mod.extra_dir() == "" and not mod.extra_changed(cache)   # no build folder yet: nothing to redo
+    cache.write_text("UCX_MODULE:STRING=MERGED\n")   # configured before the hook existed
+    assert not mod.extra_changed(cache)
+    monkeypatch.setenv("UCXAPP_EXTRA_DIR", str(pack))
+    assert mod.extra_dir() == pack.resolve().as_posix() and mod.extra_changed(cache)
+    cache.write_text(f"UCXAPP_EXTRA_DIR:PATH={pack.resolve().as_posix()}\n")
+    assert not mod.extra_changed(cache)
+    monkeypatch.delenv("UCXAPP_EXTRA_DIR")   # the pack taken away again
+    assert mod.extra_changed(cache)
+    cache.write_text("UCXAPP_EXTRA_DIR:PATH=\n")
+    assert not mod.extra_changed(cache)
+
+
 def test_no_stale_ucxclient_paths_in_build_files():
     for rel in ("ucxapp.py", "app/CMakeLists.txt"):
         text = (ROOT / rel).read_text(encoding="utf-8")

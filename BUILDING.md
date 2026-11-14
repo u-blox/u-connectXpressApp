@@ -115,6 +115,25 @@ browser app with the node); the release ships all three, the Windows plug-in sig
 commissioned over Bluetooth LE onto Wi-Fi (NORA-W36) by Apple Home, Google Home, Alexa or chip-tool; `matter.card`
 shows each step and how long the commissioning took.
 
+### Extra command pack
+
+Commands kept in another repo can be built into the host app without changing this one. Point `UCXAPP_EXTRA_DIR`
+(environment variable for the launcher, CMake cache variable otherwise) at a folder with:
+
+- `ucxapp_extra.cmake`: sets `UCXAPP_EXTRA_SOURCES` to the pack's C files (full paths)
+- `ucxapp_extra_examples.inc`: the pack's rows for the examples table, `{ "group", "title", "lines" },` each
+  (an empty file for none)
+- the sources, one of which defines `void ucxapp_register_extra_cmds(void)` and registers the commands as any
+  `ucxapp_cmds_*.c` does
+
+```powershell
+$env:UCXAPP_EXTRA_DIR = "C:\work\mypack"
+.\ucxapp --build              # reconfigures when the pack changes or is taken away
+```
+
+The folder is on the include path, the pack is compiled with the app's warning level and must build without
+warnings.
+
 ## File structure
 
 ```

@@ -738,6 +738,9 @@ static const example_t kExamples[] = {
     { "utils", "Handy tools",
       "utils.qr.wifi MyNetwork MyPassword\nutils.qr.wifi GuestNet nopass large\nutils.zip logs.zip session.txt\nutils.hash.text sha256 hello" },
 #endif
+      #ifdef UCXAPP_EXTRA
+      #include "ucxapp_extra_examples.inc"   /* rows of an extra command pack (UCXAPP_EXTRA_DIR) */
+      #endif
 };
 
 #define EX_COUNT (sizeof(kExamples) / sizeof(kExamples[0]))

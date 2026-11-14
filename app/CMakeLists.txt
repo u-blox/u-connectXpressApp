@@ -122,6 +122,21 @@ function(ucxapp_matter_stub)
   add_dependencies(ucxapp ucxmatter_stub)
 endfunction()
 
+# An extra command pack kept outside this repo (host builds). UCXAPP_EXTRA_DIR holds ucxapp_extra.cmake, which sets
+# UCXAPP_EXTRA_SOURCES, and ucxapp_extra_examples.inc with the pack's rows for the examples table (may be empty).
+# The pack defines ucxapp_register_extra_cmds(); see BUILDING.md.
+set(UCXAPP_EXTRA_DIR "" CACHE PATH "Folder of an extra command pack (ucxapp_extra.cmake), empty for none")
+function(ucxapp_extra)
+  if(NOT UCXAPP_EXTRA_DIR)
+    return()
+  endif()
+  include(${UCXAPP_EXTRA_DIR}/ucxapp_extra.cmake)
+  target_sources(ucxapp PRIVATE ${UCXAPP_EXTRA_SOURCES})
+  target_include_directories(ucxapp PRIVATE ${UCXAPP_EXTRA_DIR})
+  target_compile_definitions(ucxapp PRIVATE UCXAPP_EXTRA)
+  message(STATUS "Extra command pack: ${UCXAPP_EXTRA_DIR}")
+endfunction()
+
 # Non-Windows hosts (Linux): command-line app built from the portable command layer only
 
 if(NOT WIN32)
@@ -271,6 +286,7 @@ if(NOT WIN32)
   if(NOT EMSCRIPTEN)
     target_link_libraries(ucxapp PRIVATE ${CMAKE_DL_LIBS})
     ucxapp_matter_stub()
+    ucxapp_extra()
   endif()
 
   # Browser build: build/wasm/site is a static web site (the page, the app as WebAssembly, Web Serial shim).
@@ -443,6 +459,7 @@ target_include_directories(ucxapp PUBLIC
 
 target_link_libraries(ucxapp PRIVATE setupapi psapi ws2_32 ${UCXAPP_MBEDTLS_LIBS})
 ucxapp_matter_stub()
+ucxapp_extra()
 
 # Set different output names for Debug and Release builds
 set_target_properties(ucxapp PROPERTIES

@@ -322,6 +322,21 @@ def symbolize(exe, base, addrs):
     return 0
 
 
+def extra_dir():
+    """The folder of an extra command pack (UCXAPP_EXTRA_DIR, see BUILDING.md) in CMake's form, "" for none."""
+    path = os.environ.get("UCXAPP_EXTRA_DIR", "")
+    return Path(path).resolve().as_posix() if path else ""
+
+
+def extra_changed(cache):
+    """True when the build folder was configured with another extra command pack than the one asked for now."""
+    try:
+        found = re.search(r"^UCXAPP_EXTRA_DIR:PATH=(.*)$", cache.read_text(errors="replace"), re.M)
+    except OSError:
+        return False
+    return (found.group(1).strip() if found else "") != extra_dir()
+
+
 def newest_source():
     files = [*(ROOT / "app" / "src").iterdir(), ROOT / "app" / "CMakeLists.txt"]
     # The u-connectClient parts the host build compiles, so a library update or fix also triggers a rebuild.
@@ -329,11 +344,14 @@ def newest_source():
     for sub in ("src", "inc", "ucx_api", "ports/os", "ports/uart"):
         files += (lib / sub).rglob("*.[ch]")
     files += (lib / "ports").glob("*.h")
+    if extra_dir():
+        files += Path(extra_dir()).iterdir()
     return max(f.stat().st_mtime for f in files if f.is_file())
 
 
 def stale(exe):
-    return not exe.exists() or newest_source() > exe.stat().st_mtime
+    return (not exe.exists() or newest_source() > exe.stat().st_mtime
+            or extra_changed(build_dir() / "CMakeCache.txt"))
 
 
 def build_dir():
@@ -386,16 +404,17 @@ def host_build(configs, fresh=False):
         shutil.rmtree(bd / "CMakeFiles", ignore_errors=True)
     if fresh:
         cache.unlink(missing_ok=True)
+    extra = f"-DUCXAPP_EXTRA_DIR={extra_dir()}"
     if IS_WINDOWS and not cache.exists():
-        if subprocess.call(["cmake", "-S", "app", "-B", str(bd), "-A", "x64"], cwd=ROOT) != 0:
+        if subprocess.call(["cmake", "-S", "app", "-B", str(bd), "-A", "x64", extra], cwd=ROOT) != 0:
             fail("CMake configure failed. Visual Studio 2022 with 'Desktop development with C++' is needed: "
                  "https://aka.ms/vs/17/release/vs_BuildTools.exe")
-    elif IS_WINDOWS and not (bd / "ucxapp.vcxproj").exists():
-        # Build dir from before the exe was renamed; the cache keeps its platform.
-        check(["cmake", "-S", "app", "-B", bd], "CMake reconfigure")
+    elif IS_WINDOWS and (extra_changed(cache) or not (bd / "ucxapp.vcxproj").exists()):
+        # Another extra command pack, or a build dir from before the exe was renamed; the cache keeps its platform.
+        check(["cmake", "-S", "app", "-B", bd, extra], "CMake reconfigure")
     for c in configs:
         if not IS_WINDOWS:
-            check(["cmake", "-S", "app", "-B", bd, f"-DCMAKE_BUILD_TYPE={c}"], "CMake configure")
+            check(["cmake", "-S", "app", "-B", bd, f"-DCMAKE_BUILD_TYPE={c}", extra], "CMake configure")
         check(["cmake", "--build", bd, "--config", c, "--target", "ucxapp", "--parallel", str(os.cpu_count() or 4),
                *(["--clean-first"] if fresh else [])], f"{c} build")
 

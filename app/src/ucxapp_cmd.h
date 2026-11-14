@@ -222,6 +222,7 @@ void ucxapp_register_ppk_cmds(void);     /* ppk.* (ucxapp_cmds_ppk.c), PC builds
 /* True for a Nordic PPK2 port: other detectors must not send it bytes (each byte is an opcode). */
 bool ucxapp_port_is_ppk(const ucxapp_serial_port_t *sp);
 void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
+void ucxapp_register_extra_cmds(void);   /* a command pack from outside this repo (UCXAPP_EXTRA_DIR, host only) */
 void ucxapp_register_conn_cmds(void);    /* conn.status (ucxapp_cmds_conn.c, host only) */
 /* Size of a conn snapshot: every link as one short line (see ucxapp_cmds_conn.c). */
 #define UCXAPP_CONN_SNAPSHOT 1536

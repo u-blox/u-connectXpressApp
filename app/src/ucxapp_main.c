@@ -560,6 +560,9 @@ int main(int argc, char *argv[])
     ucxapp_register_app_cmds();
     ucxapp_register_time_cmds();
     ucxapp_register_dash_cmds();
+#ifdef UCXAPP_EXTRA
+    ucxapp_register_extra_cmds();
+#endif
     ucxapp_register_conn_cmds();
     ucxapp_register_snake_cmds();
     ucxapp_register_usecase_cmds();

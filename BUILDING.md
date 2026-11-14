@@ -117,7 +117,8 @@ shows each step and how long the commissioning took.
 
 ### Extra command pack
 
-Commands kept in another repo can be built into the host app without changing this one. Point `UCXAPP_EXTRA_DIR`
+Commands kept in another repo can be built into the host app and the browser app without changing this one.
+Point `UCXAPP_EXTRA_DIR`
 (environment variable for the launcher, CMake cache variable otherwise) at a folder with:
 
 - `ucxapp_extra.cmake`: sets `UCXAPP_EXTRA_SOURCES` to the pack's C files (full paths)
@@ -129,10 +130,12 @@ Commands kept in another repo can be built into the host app without changing th
 ```powershell
 $env:UCXAPP_EXTRA_DIR = "C:\work\mypack"
 .\ucxapp --build              # reconfigures when the pack changes or is taken away
+.\ucxapp --wasm --build       # the browser app with the pack; the same holds there
 ```
 
 The folder is on the include path, the pack is compiled with the app's warning level and must build without
-warnings.
+warnings. A site built with a pack holds the pack's code: publish it only where the pack may go. The STM32 builds
+take no pack.
 
 ## File structure
 

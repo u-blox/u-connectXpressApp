@@ -4,6 +4,7 @@ import io
 import os
 import subprocess
 import tarfile
+import time
 
 import pytest
 
@@ -230,6 +231,41 @@ def test_the_browser_build_includes_the_matter_node(monkeypatch, tmp_path, argv,
     monkeypatch.setattr(ucxapp, "wasm_build", lambda node=True: steps.append(f"site with{'' if node else 'out'} node"))
     assert ucxapp.main(argv) == 0
     assert steps == built
+
+
+def test_the_browser_build_takes_the_extra_command_pack(monkeypatch, tmp_path, capsys):
+    """UCXAPP_EXTRA_DIR goes to the browser build as to the host build, and a site built with another pack, or
+    with none, is built again before it is served."""
+    cmds, steps = [], []
+    pack, site = tmp_path / "pack", tmp_path / "wasm" / "site"
+    pack.mkdir()
+    site.mkdir(parents=True)
+    monkeypatch.setattr(ucxapp, "WASM_DIR", tmp_path / "wasm")
+    monkeypatch.setattr(ucxapp, "emsdk_env", lambda required=True: True)
+    monkeypatch.setattr(ucxapp, "require", lambda *a: None)
+    monkeypatch.setattr(ucxapp.shutil, "which", lambda name: name)
+    monkeypatch.setattr(ucxapp, "check", lambda cmd, what, **kw: cmds.append([str(c) for c in cmd]))
+    monkeypatch.setenv("UCXAPP_EXTRA_DIR", str(pack))
+    ucxapp.wasm_build(node=False)
+    assert cmds[0][0] == "emcmake" and f"-DUCXAPP_EXTRA_DIR={pack.resolve().as_posix()}" in cmds[0]
+    assert f"and the extra command pack {pack.resolve().as_posix()}" in capsys.readouterr().out
+    monkeypatch.delenv("UCXAPP_EXTRA_DIR")
+    ucxapp.wasm_build(node=False)
+    assert "-DUCXAPP_EXTRA_DIR=" in cmds[2]   # empty: a pack the build folder had is taken away
+    assert "extra command pack" not in capsys.readouterr().out
+
+    # a site that is newer than every source, built without a pack
+    (site / "ucxapp.wasm").write_text("x")
+    later = time.time() + 3600
+    os.utime(site / "ucxapp.wasm", (later, later))
+    (tmp_path / "wasm" / "CMakeCache.txt").write_text("UCXAPP_EXTRA_DIR:PATH=\n")
+    monkeypatch.setattr(ucxapp, "wasm_build", lambda node=True: steps.append("build"))
+    monkeypatch.setattr(ucxapp, "wasm_serve", lambda site, port: steps.append("serve") or 0)
+    assert ucxapp.main(["--wasm", "--no-matter"]) == 0
+    assert steps == ["serve"]
+    monkeypatch.setenv("UCXAPP_EXTRA_DIR", str(pack))
+    assert ucxapp.main(["--wasm", "--no-matter"]) == 0
+    assert steps == ["serve", "build", "serve"]
 
 
 def test_publish_web_refuses_a_branch_pages_does_not_deploy(monkeypatch):

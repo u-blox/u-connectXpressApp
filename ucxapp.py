@@ -1613,9 +1613,10 @@ def wasm_build(node=True):
     # the Matter node is linked in (a browser loads no plug-in file); --no-matter leaves it out
     lib = MATTER_WASM_LIB.as_posix() if node else ""
     check([shutil.which("emcmake"), "cmake", "-S", "app", "-B", WASM_DIR, "-G", "Ninja",
-           "-DCMAKE_BUILD_TYPE=Release", f"-DUCXAPP_MATTER_LIB={lib}"], "emcmake")
+           "-DCMAKE_BUILD_TYPE=Release", f"-DUCXAPP_MATTER_LIB={lib}", f"-DUCXAPP_EXTRA_DIR={extra_dir()}"], "emcmake")
     check(["cmake", "--build", WASM_DIR], "WebAssembly build")
-    print("Built", (WASM_DIR / "site").relative_to(ROOT), "with the Matter node" if node else "without the Matter node")
+    print("Built", shown(WASM_DIR / "site"), "with the Matter node" if node else "without the Matter node",
+          *([f"and the extra command pack {extra_dir()}"] if extra_dir() else []))
 
 
 def wasm_server(site, port):
@@ -1671,7 +1672,8 @@ def wasm(args, extra):
                                            *(ROOT / "app" / "web" / "public").iterdir(), *node])
     built = site / "ucxapp.wasm"
     if args.build or args.rebuild or (not args.clean and (not built.exists()
-                                                         or max(newest_source(), page) > built.stat().st_mtime)):
+                                                         or max(newest_source(), page) > built.stat().st_mtime
+                                                         or extra_changed(WASM_DIR / "CMakeCache.txt"))):
         wasm_build(bool(node))
     if (args.build or args.clean or args.rebuild) and not args.run:
         return 0

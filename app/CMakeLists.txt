@@ -122,8 +122,9 @@ function(ucxapp_matter_stub)
   add_dependencies(ucxapp ucxmatter_stub)
 endfunction()
 
-# An extra command pack kept outside this repo (host builds). UCXAPP_EXTRA_DIR holds ucxapp_extra.cmake, which sets
-# UCXAPP_EXTRA_SOURCES, and ucxapp_extra_examples.inc with the pack's rows for the examples table (may be empty).
+# An extra command pack kept outside this repo (host and browser builds). UCXAPP_EXTRA_DIR holds ucxapp_extra.cmake,
+# which sets UCXAPP_EXTRA_SOURCES, and ucxapp_extra_examples.inc with the pack's rows for the examples table (may be
+# empty).
 # The pack defines ucxapp_register_extra_cmds(); see BUILDING.md.
 set(UCXAPP_EXTRA_DIR "" CACHE PATH "Folder of an extra command pack (ucxapp_extra.cmake), empty for none")
 function(ucxapp_extra)
@@ -286,8 +287,8 @@ if(NOT WIN32)
   if(NOT EMSCRIPTEN)
     target_link_libraries(ucxapp PRIVATE ${CMAKE_DL_LIBS})
     ucxapp_matter_stub()
-    ucxapp_extra()
   endif()
+  ucxapp_extra()
 
   # Browser build: build/wasm/site is a static web site (the page, the app as WebAssembly, Web Serial shim).
   if(EMSCRIPTEN)

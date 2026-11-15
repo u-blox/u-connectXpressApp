@@ -84,8 +84,52 @@ So:
 The phone→module direction of SPS is fully broken for an iOS peer: neither data on FIFO nor credits on Credits
 arrive. The other direction (module writes to the peer) works.
 
-The module's own SPS client (`AT+USPSC`) against the same iOS peer also never got data. It wasn't traced at the
-GATT level, so the cause there is not confirmed but probably the same.
+The module's own SPS client (`AT+USPSC`) against the same iOS layout also never gets data or credits. The NUTS
+test `SpsClientWithIosLayout` confirms this on NORA-W36 with a Bumble peer.
+
+### Hardware results (NUTS + Bumble peer)
+
+Run with the `GattClientCccdLayout` tests against a Bumble peer on a Realtek UB500 USB HCI dongle (Linux host).
+
+| Case | NORA-W36 | NORA-B26 |
+|---|---|---|
+| CCCD at value + 1 | delivered | delivered |
+| CCCD at value + 2 (0x2900 first, iOS layout) | **dropped** | **dropped** |
+| CCCD at value + 3 | **dropped** | **dropped** |
+| Indications with CCCD at value + 2 / + 3 | **dropped** | **dropped** |
+| `AT+USPSC` against SPS with CCCD at value + 2 | **no credits, no data** | not run |
+| Rejected write to 0x2900 enables forwarding | **yes** (bug) | no |
+| CCCD disable at value + 1 stops delivery | **no**, keeps forwarding | yes |
+
+The value-handle mapping bug is common to both products, so it is most likely in shared GATT client code.
+The NORA-W36 additionally keeps a local subscription after a rejected write and after a disable.
+
+### Related findings from the Bumble interop suite
+
+Not part of the CCCD bug, but found in the same runs and worth tracking:
+
+- NORA-B26 as peripheral: when a bonded peer reconnects, `+UEBTC` is withheld until the link is encrypted.
+  A peer that stays unencrypted is connected but never reported to the host (observed for 11 s, across a
+  connection parameter update). Phones encrypt straight away, so this is mostly hidden.
+- The module as central ignores a PHY change requested by the peer and keeps its own preference (allowed by
+  the spec). Right after connecting it sets up MTU 247, data length 251 and 2M PHY by itself;   a PHY request sent during that returns `ERROR`.
+- As central the module re-encrypts with the stored bond automatically on reconnect (NORA-B26).
+
+NORA-W36 (3.6.0-012) differs from NORA-B26 in these interop runs:
+
+- **Bonded reconnect as central fails:** `AT+UBTC` to a bonded peer connects, then the link drops with
+  reason 0x3D (MIC failure) and `+UEBTB:<addr>,2`. The same peer and bond reconnect fine with NORA-B26.
+- **Bonded reconnect as peripheral is never reported:** the peer reconnects and encrypts successfully with
+  the bond, but `+UEBTC` never comes, not even after encryption (NORA-B26 reports it once encrypted).
+  Affects `BondIsReusedAfterReconnect`, `RpaPeerReconnectsWithBond` and `PeerForgetsBondAndPairsAgain`.
+- **No connection to an extended advertiser:** `AT+UBTC` to a peer using connectable extended advertising
+  times out after 10 s with `+UEBTDC`.
+- As central the module stays on 1M PHY after connecting (NORA-B26 switches to 2M by itself).
+- Connection property changes (supervision timeout, data length) show up in `AT+UBTCST` about 200 ms after the
+  controller applied them. Not a bug, but hosts reading right after an update see old values.
+
+The full NUTS Bumble interop suite (`BumbleInterop`) passes on NORA-B26: 65 passed, 0 failed, 2 skipped (one
+dongle limitation, one PHY-preference case). On NORA-W36 the only failures are the six tests above.
 
 ## Requested fix
 
@@ -104,6 +148,23 @@ u-connectXpressApp already looks up the real CCCD with `AT+UBTGCDD` (`findCccd` 
 `app/src/ucxapp_cmds_gatt.c`). `setCccd` prints a warning when the CCCD is not at value + 1, so the failure is
 visible instead of silent. ucxapp has no workaround, on purpose: the extra write
 relies on a failed request having a side effect.
+
+## Regression tests in NUTS
+
+NUTS (branch `cmag_nut_bumble`) reproduces this without a phone: a Bumble BLE peer on a USB HCI dongle
+(`uConnectTest/BumblePeer`) serves the iOS layouts.
+
+| Test | Covers |
+|---|---|
+| `GattClientCccdLayout.CccdWriteEnablesDelivery` | CCCD at value + 1, + 2 (0x2900 first, iOS) and + 3 (requested fix 1) |
+| `GattClientCccdLayout.RejectedCccdWriteChangesNothing` | Write to 0x2900 is rejected and enables nothing (requested fix 2) |
+| `GattClientCccdLayout.SpsClientWithIosLayout` | `AT+USPSC` against SPS with 0x2900 before the CCCDs (requested fix 3) |
+| `GattClientCccdLayout.CccdDisableStopsDelivery` | Writing 0 to the real CCCD stops the URCs |
+| `GattClientCccdLayout.TwoSubscriptionsKeepTheirHandles` | Two characteristics with non-+1 CCCDs report their own value handles |
+
+```
+inv run-test-selection --product NoraW36 --test-selection "class =~ GattClientCccdLayout"
+```
 
 Hardware test that shows it: `tests/hardware/test_hw_xplorer.py::test_module_connects_to_the_phone_as_a_peripheral[sps]`
 (`UCX_XPLORER`, `UCX_XPLORER_TOKEN`, `UCX_PORT_A`).

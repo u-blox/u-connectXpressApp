@@ -738,6 +738,17 @@ def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
     _handshake(store / "tls-ca.crt", *server, "localhost", client_cert=_files(app_exe, tmp_path, "alice"))
 
 
+def test_tls_certificate_is_valid_for_a_clock_that_is_behind(app_exe, tmp_path):
+    """Dated from the day before: a build made just after local midnight, east of UTC, would otherwise make
+    certificates that a UTC clock refuses until it reaches that day."""
+    import datetime
+
+    from cryptography import x509
+    assert _run_in(app_exe, tmp_path, "utils.tls.ca.create").returncode == 0
+    crt = x509.load_pem_x509_certificate((_store(tmp_path) / "tls-ca.crt").read_bytes())
+    behind = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=12)
+    assert crt.not_valid_before_utc <= behind, crt.not_valid_before_utc
+
 def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "utils.tls.server.create web 10.0.0.1")
     assert out.returncode == 1

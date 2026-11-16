@@ -159,11 +159,13 @@ static int64_t today(void)
     return now > build ? now : build;
 }
 
+/* Valid from the day before: today() may be the build's local day, ahead of a UTC clock, and a peer's clock may
+   be behind; a certificate dated from this midnight would be refused there for hours. */
 static void validity(char notBefore[32], char notAfter[32], int days)
 {
     int64_t start = today();
-    formatDay(start, notBefore);
-    formatDay(start + days, notAfter);
+    formatDay(start - 1, notBefore);
+    formatDay(start - 1 + days, notAfter);
 }
 
 static bool loadPair(const char *name, mbedtls_x509_crt *crt, mbedtls_pk_context *key, char *err, size_t errLen)

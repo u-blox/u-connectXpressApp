@@ -127,9 +127,41 @@ NORA-W36 (3.6.0-012) differs from NORA-B26 in these interop runs:
 - As central the module stays on 1M PHY after connecting (NORA-B26 switches to 2M by itself).
 - Connection property changes (supervision timeout, data length) show up in `AT+UBTCST` about 200 ms after the
   controller applied them. Not a bug, but hosts reading right after an update see old values.
+- **AT interface hangs after an oversized notification:** at ATT MTU 23 (peer sends no MTU exchange),
+  `AT+UBTGNS=<conn>,<handle>,<50 bytes>` gets no response, and from then on every AT command, including `AT`,
+  times out. A DTR/RTS toggle does not recover it; only a power cycle does. Reproduced twice
+  (`TooLongNotificationAtDefaultMtu`). Expected behavior: `ERROR`, or send the first MTU-3 bytes (Core Vol 3
+  Part F 3.4.7.1). NORA-B26 handles this correctly.
+- **Bond lost after reboot:** after `AT&W` and a reboot, reconnecting to a bonded peer fails in both roles
+  (`BondSurvivesDutReboot`). NORA-B26 passes.
+
+NORA-B26 limitations at ATT MTU 23 (peer that sends no MTU exchange; NORA-W36 passes all of these):
+
+- **No long read:** `AT+UBTGR` of a 200-byte value returns only the first 22 bytes (no Read Blob).
+- **No long write as client:** `AT+UBTGW` with 100 bytes returns `ERROR`.
+- **No long write as server:** the peer's Prepare Write Request is answered with `REQUEST_NOT_SUPPORTED`.
+
+Both modules return `+USPSWS:<conn>,0` and `ERROR` when the SPS TX buffer is full at MTU 23. A host must retry, and
+the buffer drains as expected. It would help to document this in the `AT+USPSWS` description.
 
 The full NUTS Bumble interop suite (`BumbleInterop`) passes on NORA-B26: 65 passed, 0 failed, 2 skipped (one
-dongle limitation, one PHY-preference case). On NORA-W36 the only failures are the six tests above.
+dongle limitation, one PHY-preference case). On NORA-W36 the failures are the tests above.
+
+Interop tests added after that run (`BumbleInterop`):
+
+| Test | NORA-W36 | NORA-B26 |
+|---|---|---|
+| `BondSurvivesDutReboot` (both roles) | **fail** | pass |
+| `DutDeletesBondPeerKeepsIt` | pass | pass |
+| `DutCharacteristicNeedsEncryption` (both roles) | pass | pass |
+| `PeerWritesLongValueToDut` (both roles) | pass | **fail** |
+| `DutWritesLongValueToPeer` (both roles) | pass | **fail** |
+| `GattAtDefaultMtu` (both roles) | pass | **fail** |
+| `TooLongNotificationAtDefaultMtu` | **AT hang** | pass |
+| `SpsBulkTransferAtDefaultMtu` | pass | pass |
+
+`TooLongNotificationAtDefaultMtu` leaves the NORA-W36 unusable until it is power cycled, so run it last or on
+its own.
 
 ## Requested fix
 

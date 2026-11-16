@@ -97,7 +97,7 @@ Run with the `GattClientCccdLayout` tests against a Bumble peer on a Realtek UB5
 | CCCD at value + 2 (0x2900 first, iOS layout) | **dropped** | **dropped** |
 | CCCD at value + 3 | **dropped** | **dropped** |
 | Indications with CCCD at value + 2 / + 3 | **dropped** | **dropped** |
-| `AT+USPSC` against SPS with CCCD at value + 2 | **no credits, no data** | not run |
+| `AT+USPSC` against SPS with CCCD at value + 2 | **no credits, no data** | **no credits, no data** |
 | Rejected write to 0x2900 enables forwarding | **yes** (bug) | no |
 | CCCD disable at value + 1 stops delivery | **no**, keeps forwarding | yes |
 

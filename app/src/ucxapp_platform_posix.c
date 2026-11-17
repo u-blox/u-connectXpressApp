@@ -230,6 +230,7 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     return found;
 }
 
+bool ucxapp_platform_pulse_dtr(void *uartHandle)
 {
 #ifdef __EMSCRIPTEN__
     (void)uartHandle;

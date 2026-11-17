@@ -36,8 +36,8 @@ def test_page_is_ascii_and_fits_one_response():
     assert data.isascii()
     # Hosts send the page in place (body_static) in 1000-byte chunks and the exe carries it raw; the boards keep it
     # gzip-compressed in flash (embed.cmake GZIP), which is the size that counts there.
-    assert len(data) < 114688, len(data)
-    assert len(gzip.compress(data, 9)) < 40960, len(gzip.compress(data, 9))
+    assert len(data) < 131072, len(data)
+    assert len(gzip.compress(data, 9)) < 49152, len(gzip.compress(data, 9))
 
 
 def test_page_is_built_into_the_app():

@@ -650,3 +650,26 @@ def test_matter_node_is_built_in(site):
         page.get_by_text("light on 100%").wait_for(timeout=10000)
         browser.close()
     assert not js_errors, js_errors
+
+
+def test_theme_follows_the_system_until_picked(site):
+    """Auto (the default) follows the system colour scheme; Light and Dark override it and are remembered."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page(color_scheme="light")
+        page.goto(site)
+        page.wait_for_selector("#thm")
+        light = "document.documentElement.classList.contains('lt')"
+        assert page.input_value("#thm") == "auto" and page.evaluate(light)
+        page.emulate_media(color_scheme="dark")
+        page.wait_for_function(f"!{light}")
+        page.select_option("#thm", "light")
+        assert page.evaluate(light)
+        page.reload()
+        page.wait_for_selector("#thm")
+        assert page.input_value("#thm") == "light" and page.evaluate(light)
+        browser.close()

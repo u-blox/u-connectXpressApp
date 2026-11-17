@@ -38,7 +38,7 @@ Commands: [ucxapp_cmds_xplorer.c](../../../app/src/ucxapp_cmds_xplorer.c) and
 
 | Method / event | Used by | Fields read |
 |---|---|---|
-| `app.getCapabilities` | every connect (before authenticating), feature checks | `protocolVersion` (a note when above 1), `features.authChallenge`, `features.socketEcho`, `features.perfSps`, `features.stopOnDisconnect`, `features.waitForDevice` |
+| `app.getCapabilities` | every connect (before authenticating), feature checks | `protocolVersion` (a note when above 1), `features.authChallenge`, `features.socketEcho`, `features.perfSps`, `features.stopOnDisconnect`, `features.waitForDevice`, `features.blePeripheral` (`xplorer.selftest`) |
 | `app.getChallenge` | every connect, when the phone has `authChallenge` | `nonce` |
 | `app.authenticate {response}` or `{token}` | `xplorer.connect`, every reconnect | result only; errors `-32000` (no auth) / `-32001` (bad token) / `-32002` (locked out). `response` is the hex HMAC-SHA256 of the nonce under the token; the token is sent only to a phone without `authChallenge` |
 | `app.configure {stopOnDisconnect:true}` | `perf.phone`, when the phone has `stopOnDisconnect` | result only |
@@ -53,13 +53,20 @@ Commands: [ucxapp_cmds_xplorer.c](../../../app/src/ucxapp_cmds_xplorer.c) and
 | `sps.connect {deviceId,force:true}` / `sps.disconnect` | `perf.phone` | result |
 | `perf.startThroughput {deviceId,mode,durationMs,packetSize,sps:true}` | `perf.phone` | `packetSize` |
 | `perf.onComplete` (event), `perf.stop` | `perf.phone` | `txBytes`, `rxBytes`, `throughputKbps`, `patternBreaks`, `rttMs.*`, `endReason` (shown unless `completed` or `stopped`) |
+| `app.getNetworkInfo` | `xplorer.selftest` | result only (that it answers) |
+| `peripheral.startAdvertising {mode:"nus",name}` / `peripheral.stopAdvertising` | `xplorer.selftest` (module as central), when the phone has `blePeripheral` | result only |
+| `peripheral.onData` (event), `peripheral.send {text}` | `xplorer.selftest` | `text`, else the `value` byte array |
 | any method | `xplorer.call <method> [json]` | prints the result |
 
 Fixed assumptions:
 - Port 8765 (`UCXAPP_XPLORER_PORT`), plain `ws://`. The phone can serve `wss://` instead (feature `wss`);
-  ucxapp has no TLS for this link yet, so encryption must be off on the phone. Doing it means TLS on the host
-  socket in `ucxapp_xplorer.c` and pinning the fingerprint (`certFingerprint`) saved by `xplorer.connect`.
-- The token is at most 64 characters and persists on the phone. ucxapp saves it sealed in the secure store.
+  ucxapp has no TLS for this link yet, so encryption must be off on the phone. Doing it means TLS on the module
+  socket in `ucxapp_xplorer.c` (the module's AT+USOTLS) and pinning the fingerprint (`certFingerprint`) saved by `xplorer.connect`.
+- The link is a TCP socket of the module (AT+USOC*), never the host network, so the module must be on the
+  phone's Wi-Fi. It works the same on Windows, Linux, the browser and the STM32 boards (not the lite boards,
+  nor the F401/F446, where it does not fit).
+- The token is at most 64 characters and persists on the phone. ucxapp saves it sealed in the secure store;
+  boards without one keep it in RAM until reset.
 - Events carry no `id`.
 - The data pattern is the s-center 0x00–0xFF rolling counter.
 - The phone never runs AT commands, so the module stays on ucxapp's UART.

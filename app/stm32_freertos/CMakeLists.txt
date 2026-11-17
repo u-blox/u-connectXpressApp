@@ -86,6 +86,8 @@ else()
         ${APP_SRC}/ucxapp_cmds_wifiloc.c
         ${APP_SRC}/ucxapp_cmds_cfg.c
         ${APP_SRC}/ucxapp_cmds_perf.c
+        ${APP_SRC}/ucxapp_cmds_xplorer.c
+        ${APP_SRC}/ucxapp_xplorer.c
         ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
         ${APP_SRC}/ucxapp_cmds_examples.c
@@ -180,6 +182,10 @@ if(UCXAPP_WEB AND STM32_BOARD STREQUAL "nucleo_f767zi")
 endif()
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE}
     U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h")
+# The phone remote control (xplorer.*) does not fit next to the rest in 512 KB of flash.
+if(STM32_BOARD MATCHES "^(nucleo_f401re|nucleo_f446re)$")
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_NO_XPLORER)
+endif()
 # 96-128 KB RAM boards: shorter URLs and request bodies, smaller receive buffers (same as the Zephyr build).
 if(STM32_BOARD MATCHES "^(nucleo_f401re|nucleo_f446re|f407_disc)$")
     target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE HTTP_MAX_URL=512 REQ_BODY_SIZE=2048

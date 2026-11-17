@@ -19,8 +19,25 @@ def phone():
     fake.close()
 
 
-def _run(app_exe, cwd, *commands):
-    args = [str(app_exe), "--offline"]
+_MODULE = {}
+
+
+@pytest.fixture(autouse=True)
+def module():
+    """The virtual NORA-W36: the app reaches the (fake) phone through its TCP sockets, as on the real module."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    vucx = Vucx("nora-w36.yaml")
+    vucx.net.relay = {"127.0.0.1"}
+    vucx.start()
+    _MODULE["port"] = vucx.port
+    yield vucx
+    vucx.stop()
+
+
+def _run(app_exe, cwd, *commands, offline=False):
+    args = [str(app_exe), "--offline" if offline else _MODULE["port"]]
     for command in commands:
         args += ["--exec", command]
     return subprocess.run(args, capture_output=True, text=True, timeout=120, errors="replace", cwd=cwd,
@@ -114,7 +131,7 @@ def test_call_builds_params(app_exe, tmp_path, phone):
                                                "id": "AB:CD"})
     out = _run(app_exe, tmp_path, "xplorer.call ble.getState")
     assert out.returncode == 0, out.stdout
-    assert json.loads(out.stdout)["note"] == 'a "quoted" text'
+    assert json.loads(out.stdout.split("\n", 1)[1])["note"] == 'a "quoted" text'   # after "connected to ..."
     out = _run(app_exe, tmp_path, "xplorer.call no.such")
     assert out.returncode != 0 and "ERROR: no.such: Method not found: no.such (-32601)" in out.stdout, out.stdout
 
@@ -191,6 +208,16 @@ def test_usage(app_exe, tmp_path, command):
 def test_perf_with_the_phone_needs_a_device(app_exe, tmp_path, phone, command):
     _connect(app_exe, tmp_path, phone)
     calls = len(phone.calls)
-    out = _run(app_exe, tmp_path, command)
+    out = _run(app_exe, tmp_path, command, offline=True)
     assert out.returncode != 0 and "not connected to a module" in out.stdout, out.stdout
     assert len(phone.calls) == calls, "nothing may start on the phone without a module"
+
+
+def test_connect_needs_the_module(app_exe, tmp_path, phone, module):
+    """The phone is reached through the module's Wi-Fi, never the host network."""
+    out = _run(app_exe, tmp_path, f"xplorer.connect 127.0.0.1:{phone.port} {TOKEN}", offline=True)
+    assert out.returncode != 0 and "no module connected" in out.stdout, out.stdout
+    assert not phone.calls
+    _connect(app_exe, tmp_path, phone)
+    assert any(c.startswith('AT+USOC=0,"127.0.0.1"') or c.startswith("AT+USOC=0,127.0.0.1") for c in module.log), \
+        module.log

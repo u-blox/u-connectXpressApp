@@ -14,7 +14,6 @@
 #include <windows.h>
 #include <iphlpapi.h>
 #include <conio.h>
-#include <winhttp.h>
 #include <setupapi.h>
 #include <devguid.h>
 #include <cfgmgr32.h>
@@ -27,7 +26,6 @@
 #include "u_cx_log.h"
 #include "u_port_uart.h"
 
-#pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "setupapi.lib")
@@ -174,99 +172,6 @@ bool ucxapp_platform_local_ip(char *out, size_t size)
     }
     free(all);
     return found;
-}
-
-/* Non-blocking connect so an unreachable phone (app in the background) fails within the timeout. */
-intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs)
-{
-    static bool started = false;
-    struct addrinfo hints;
-    struct addrinfo *res = NULL;
-    char service[8];
-    SOCKET s;
-    u_long nb = 1;
-
-    if (!started) {
-        WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-            return -1;
-        }
-        started = true;
-    }
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    snprintf(service, sizeof(service), "%u", (unsigned)port);
-    if (getaddrinfo(host, service, &hints, &res) != 0 || res == NULL) {
-        return -1;
-    }
-    s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (s == INVALID_SOCKET) {
-        freeaddrinfo(res);
-        return -1;
-    }
-    ioctlsocket(s, FIONBIO, &nb);
-    int rc = connect(s, res->ai_addr, (int)res->ai_addrlen);
-    freeaddrinfo(res);
-    if (rc != 0 && WSAGetLastError() == WSAEWOULDBLOCK) {
-        fd_set wr;
-        fd_set ex;
-        struct timeval tv = { (long)(timeoutMs / 1000u), (long)(timeoutMs % 1000u) * 1000 };
-        FD_ZERO(&wr);
-        FD_ZERO(&ex);
-        FD_SET(s, &wr);
-        FD_SET(s, &ex);
-        rc = select(0, NULL, &wr, &ex, &tv) == 1 && FD_ISSET(s, &wr) ? 0 : -1;
-    }
-    if (rc != 0) {
-        closesocket(s);
-        return -1;
-    }
-    nb = 0;
-    ioctlsocket(s, FIONBIO, &nb);
-    BOOL one = TRUE;
-    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
-    return (intptr_t)s;
-}
-
-bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len)
-{
-    const char *p = (const char *)data;
-
-    while (len > 0) {
-        int n = send((SOCKET)sock, p, len > 65536u ? 65536 : (int)len, 0);
-        if (n <= 0) {
-            return false;
-        }
-        p += n;
-        len -= (size_t)n;
-    }
-    return true;
-}
-
-int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs)
-{
-    fd_set rd;
-    struct timeval tv = { (long)(timeoutMs / 1000u), (long)(timeoutMs % 1000u) * 1000 };
-
-    FD_ZERO(&rd);
-    FD_SET((SOCKET)sock, &rd);
-    int ready = select(0, &rd, NULL, NULL, &tv);
-    if (ready == 0) {
-        return 0;
-    }
-    if (ready < 0) {
-        return -1;
-    }
-    int n = recv((SOCKET)sock, (char *)buf, max > 65536u ? 65536 : (int)max, 0);
-    return n > 0 ? (int32_t)n : -1;
-}
-
-void ucxapp_platform_tcp_close(intptr_t sock)
-{
-    if (sock >= 0) {
-        closesocket((SOCKET)sock);
-    }
 }
 
 bool ucxapp_platform_pulse_dtr(void *uartHandle)
@@ -598,94 +503,6 @@ void ucxapp_platform_lib_close(void *lib)
     FreeLibrary((HMODULE)lib);
 }
 
-static char *winHttpGet(const char *host, const char *path, bool binary, size_t *outSize)
-{
-    wchar_t wHost[256];
-    wchar_t wPath[512];
-    HINTERNET hSession = NULL;
-    HINTERNET hConnect = NULL;
-    HINTERNET hRequest = NULL;
-    char *buffer = NULL;
-    char *result = NULL;
-    size_t totalSize = 0;
-
-    if (outSize) *outSize = 0;
-    if (mbstowcs(wHost, host, 256) == (size_t)-1 || mbstowcs(wPath, path, 512) == (size_t)-1) {
-        return NULL;
-    }
-
-    hSession = WinHttpOpen(L"u-connectXpressApp/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) goto cleanup;
-
-    hConnect = WinHttpConnect(hSession, wHost, INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!hConnect) goto cleanup;
-
-    hRequest = WinHttpOpenRequest(hConnect, L"GET", wPath, NULL, WINHTTP_NO_REFERER,
-                                  WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-    if (!hRequest) goto cleanup;
-
-    /* GitHub release downloads redirect to a CDN */
-    DWORD dwRedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &dwRedirectPolicy, sizeof(dwRedirectPolicy));
-
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) goto cleanup;
-    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
-    {
-        DWORD status = 0, len = sizeof(status);
-        if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX) ||
-            status != 200) {
-            goto cleanup;
-        }
-    }
-
-    for (;;) {
-        DWORD dwSize = 0;
-        DWORD dwDownloaded = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &dwSize) || dwSize == 0) break;
-
-        char *newBuffer = (char *)realloc(buffer, totalSize + dwSize + 1);
-        if (!newBuffer) goto cleanup;
-        buffer = newBuffer;
-
-        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
-        totalSize += dwDownloaded;
-
-        if (binary && totalSize % 10240 == 0) {
-            printf("\rDownloaded: %zu KB", totalSize / 1024);
-            fflush(stdout);
-        }
-    }
-
-    if (totalSize > 0) {
-        buffer[totalSize] = '\0';
-        result = buffer;
-        buffer = NULL;
-        if (outSize) *outSize = totalSize;
-        if (binary) {
-            printf("\rDownloaded: %zu KB - Complete!\n", totalSize / 1024);
-        }
-    }
-
-cleanup:
-    free(buffer);
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
-    return result;
-}
-
-char *ucxapp_platform_https_get_text(const char *host, const char *path)
-{
-    return winHttpGet(host, path, false, NULL);
-}
-
-char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize)
-{
-    return winHttpGet(host, path, true, outSize);
-}
 
 // Initialize FTD2XX library (dynamic loading)
 // Resource ID for embedded FTDI DLL (must match ucxapp.rc)

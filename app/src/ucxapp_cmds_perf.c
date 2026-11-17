@@ -523,7 +523,7 @@ static int withPhone(ucxapp_t *app, int argc, char *argv[], ucxapp_cmd_fn_t run)
     if (app->ucx == NULL) {
         return UCXAPP_ERR_NOT_CONNECTED;
     }
-    if (!ucxapp_xplorer_open() || !ucxapp_xplorer_echo_start(kind == LINK_UDP, port)) {
+    if (!ucxapp_xplorer_open(app) || !ucxapp_xplorer_echo_start(kind == LINK_UDP, port)) {
         ucxapp_xplorer_close();
         return UCXAPP_ERR_FAILED;
     }
@@ -534,7 +534,7 @@ static int withPhone(ucxapp_t *app, int argc, char *argv[], ucxapp_cmd_fn_t run)
     argv[2] = gPhoneHost;
     int rc = run(app, argc, argv);
     argv[2] = host;
-    if (!ucxapp_xplorer_open() || !ucxapp_xplorer_echo_report(&breaks)) {
+    if (!ucxapp_xplorer_open(app) || !ucxapp_xplorer_echo_report(&breaks)) {
         rc = rc == UCXAPP_OK ? UCXAPP_ERR_FAILED : rc;
     }
     ucxapp_xplorer_echo_stop();
@@ -865,7 +865,7 @@ static int cmdPhone(ucxapp_t *app, int argc, char *argv[])
     }
     snprintf(name, sizeof(name), "%s", nm);
     uCxEnd(app->ucx);
-    if (!ucxapp_xplorer_open()) {
+    if (!ucxapp_xplorer_open(app)) {
         return UCXAPP_ERR_FAILED;
     }
     int rc = phoneRun(app, mode, seconds, size, name);

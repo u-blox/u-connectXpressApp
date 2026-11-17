@@ -55,6 +55,8 @@ else()
         ${APP_SRC}/ucxapp_cmds_wifiloc.c
         ${APP_SRC}/ucxapp_cmds_cfg.c
         ${APP_SRC}/ucxapp_cmds_perf.c
+        ${APP_SRC}/ucxapp_cmds_xplorer.c
+        ${APP_SRC}/ucxapp_xplorer.c
         ${APP_SRC}/ucxapp_cmds_time.c
         ${APP_SRC}/ucxapp_cmds_cert.c
         ${APP_SRC}/ucxapp_cmds_examples.c
@@ -69,6 +71,10 @@ if(CONFIG_CAN)
     target_compile_definitions(app PRIVATE UCXAPP_CAN_HW)
 endif()
 # 96-128 KB RAM boards: Zephyr's own RAM leaves no room for the full-size buffers next to a heap.
+# The phone remote control (xplorer.*) does not fit next to the rest in 512 KB of flash.
+if(BOARD MATCHES "^(nucleo_f401re|nucleo_f446re)$")
+    target_compile_definitions(app PRIVATE UCXAPP_NO_XPLORER)
+endif()
 if(BOARD MATCHES "^(nucleo_f401re|nucleo_f446re|stm32f4_disco)$")
     target_compile_definitions(app PRIVATE HTTP_MAX_URL=512 REQ_BODY_SIZE=2048
         UCXAPP_RX_BUFFER_SIZE=4096 UCXAPP_CONSOLE_RX_SIZE=1024 LISTED_MAX=32)

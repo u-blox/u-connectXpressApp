@@ -273,10 +273,11 @@ def test_fw_update_without_a_version_says_unknown(app_exe, tmp_path):
     assert "current firmware: unknown" in out.stdout and out.returncode != 0, out.stdout
 
 
-def test_fw_github_list_for_a_family(app_exe, tmp_path):
+def test_fw_github_list_for_a_family_needs_the_module(app_exe, tmp_path):
+    """GitHub is only reached through the module's Wi-Fi, never the host network."""
     out = _run(app_exe, None, "fw.github.list NORA-W36", cwd=tmp_path, timeout=120)
     assert "NORA-W36 firmware releases on GitHub, newest first:" in out.stdout, out.stdout
-    assert out.returncode == 0 or "cannot query GitHub" in out.stdout, out.stdout
+    assert out.returncode != 0 and "GitHub is reached through the module's Wi-Fi" in out.stdout, out.stdout
 
 
 def test_fw_download_url_checks_the_sha256(app_exe, tmp_path):
@@ -290,6 +291,46 @@ def test_fw_download_url_checks_the_sha256(app_exe, tmp_path):
     assert not (tmp_path / "storage" / "fw.bin").exists()
     assert good.returncode == 0 and "sha256: " in good.stdout, good.stdout
     assert (tmp_path / "storage" / "fw2.bin").exists(), good.stdout
+
+
+def test_fw_github_lookup_and_download_go_through_the_module(app_exe, tmp_path):
+    """The release list and the zip come from the module's HTTP client (AT+UHTC*), never the host network; the
+    releases JSON is scanned as it streams, so assets far apart and past the first chunks are all found."""
+    from harness.vucx import Vucx
+
+    base = "https://github.com/u-blox/u-connectXpress/releases/download"
+    assets = ["NORA-W36-3.5.1.zip", "NORA-W36-3.6.0-019-EVAL.zip", "NORA-B26-3.6.0.zip", "NORA-W36-3.4.0.zip"]
+    body = "[" + ",".join('{"notes":"' + "n" * 1500 + f'","browser_download_url" : "{base}/v/{a}"' + "}"
+                          for a in assets) + "]"
+    api = "/repos/u-blox/u-connectXpress/releases?per_page=100"
+    profile = _profile()
+    profile["state"] = {f'AT+UHTCRP=0,"{api}"': {"page": "api"},
+                        f'AT+UHTCRP=0,"/u-blox/u-connectXpress/releases/download/v/{assets[0]}"': {"page": "rel"},
+                        'AT+UHTCRP=0,"/cdn/fw.zip"': {"page": "cdn"}, **profile.get("state", {})}
+    hdr = '+UHTCGH:0,0,"HTTP/1.1 {}\\r\\n{}\\r\\n\\r\\n"'   # the module sends header escapes as text
+    profile["commands"] = {
+        "AT+UHTCGH=* [page=api]": [hdr.format("200 OK", "Content-Type: application/json"), "OK"],
+        "AT+UHTCGBB=* [page=api]": [[f"+UHTCGBB:0,{int(i + 1500 < len(body))}\x01" + body[i:i + 1500], "OK"]
+                                    for i in range(0, len(body), 1500)],
+        "AT+UHTCGH=* [page=rel]": [hdr.format("302 Found", "Location: https://objects.example/cdn/fw.zip"), "OK"],
+        "AT+UHTCGH=* [page=cdn]": [hdr.format("200 OK", "Content-Length: 7"), "OK"],
+        "AT+UHTCGBB=* [page=cdn]": ["+UHTCGBB:0,0\x01ZIPDATA", "OK"],
+        **profile["commands"]}
+    profile["urcs"] = {**profile.get("urcs", {}), "AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']}
+    module = Vucx(profile)
+    module.start()
+    try:
+        listing = _run(app_exe, module.port, "fw.github.list", cwd=tmp_path)
+        download = _run(app_exe, module.port, "fw.download", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert listing.returncode == 0, listing.stdout
+    assert ("NORA-W36-3.5.1.zip\nNORA-W36-3.6.0-019-EVAL.zip  (evaluation)\nNORA-W36-3.4.0.zip\n"
+            in listing.stdout.replace("\r", "")), listing.stdout
+    assert "NORA-B26" not in listing.stdout, listing.stdout
+    assert download.returncode == 0 and "through the module" in download.stdout, download.stdout
+    assert (tmp_path / "storage" / assets[0]).read_bytes() == b"ZIPDATA"
+    assert any(c.startswith('AT+UHTCRP=0,"/cdn/fw.zip"') for c in module.log), module.log
 
 
 def test_fw_download_url_failure_is_passed_on(app_exe, tmp_path):

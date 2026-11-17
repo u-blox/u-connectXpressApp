@@ -149,7 +149,7 @@ static int cmdConnect(ucxapp_t *app, int argc, char *argv[])
     if (argc != 3 || !parseHost(argv[1], host, sizeof(host), &port) || argv[2][0] == '\0') {
         return UCXAPP_ERR_USAGE;
     }
-    if (!ucxapp_xplorer_open_to(host, port, argv[2])) {
+    if (!ucxapp_xplorer_open_to(app, host, port, argv[2])) {
         return UCXAPP_ERR_FAILED;
     }
     bool saved = ucxapp_xplorer_save(host, port, argv[2]);
@@ -168,7 +168,7 @@ static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!ucxapp_xplorer_open()) {
+    if (!ucxapp_xplorer_open(app)) {
         return UCXAPP_ERR_FAILED;
     }
     showPhone();
@@ -221,7 +221,7 @@ static int cmdCall(ucxapp_t *app, int argc, char *argv[])
     if (argc < 2 || strchr(argv[1], '.') == NULL || !buildParams(argc - 2, argv + 2, params, sizeof(params))) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!ucxapp_xplorer_open()) {
+    if (!ucxapp_xplorer_open(app)) {
         return UCXAPP_ERR_FAILED;
     }
     char *r = ucxapp_xplorer_call(argv[1], params, 30000);
@@ -248,7 +248,7 @@ static int cmdEcho(ucxapp_t *app, int argc, char *argv[])
     if (!start && !stop && !state) {
         return UCXAPP_ERR_USAGE;
     }
-    if (!ucxapp_xplorer_open()) {
+    if (!ucxapp_xplorer_open(app)) {
         return UCXAPP_ERR_FAILED;
     }
     if (start) {
@@ -472,7 +472,7 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     gStPass = gStFail = gStSkip = 0;
-    if (!ucxapp_xplorer_open()) {
+    if (!ucxapp_xplorer_open(app)) {
         stResult("connect to the phone", 1, "run xplorer.connect <phone-ip> <token> first");
         return UCXAPP_ERR_FAILED;
     }

@@ -2,14 +2,18 @@
 #define UCXAPP_XPLORER_H
 
 /* Remote control of the u-connectXplorer phone app (Settings > Remote control): JSON-RPC 2.0 over a WebSocket.
- * ucxapp drives the module over AT and the phone over this link, so one command can run both ends of a test. */
+ * ucxapp drives the module over AT and the phone over this link, so one command can run both ends of a test.
+ * The WebSocket runs on a TCP socket of the module (AT+USOC*), never the host network, so it works the same on
+ * Windows, Linux, the browser and the STM32 boards. */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#if (defined(_WIN32) || defined(__linux__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__) && \
-    !defined(__ZEPHYR__)
+#include "ucxapp.h"
+
+/* Off on the lite boards and on the 512 KB flash boards (UCXAPP_NO_XPLORER), where it does not fit. */
+#if !defined(UCXAPP_LITE) && !defined(UCXAPP_NO_XPLORER)
 #define UCXAPP_XPLORER 1
 #else
 #define UCXAPP_XPLORER 0
@@ -24,16 +28,26 @@
 /** The phone saved by xplorer.connect; false (message printed) if none. */
 bool ucxapp_xplorer_saved(char *host, size_t hostSize, uint16_t *port, char *token, size_t tokenSize);
 
-/** Saves the phone; the token is sealed with the install key. */
+/** Saves the phone; the token is sealed with the install key (kept in RAM only on boards without a secure store). */
 bool ucxapp_xplorer_save(const char *host, uint16_t port, const char *token);
 
-/** Connects and authenticates; false with the reason printed. */
-bool ucxapp_xplorer_open_to(const char *host, uint16_t port, const char *token);
+/** Connects through the module and authenticates; false with the reason printed. */
+bool ucxapp_xplorer_open_to(ucxapp_t *app, const char *host, uint16_t port, const char *token);
 
 /** Opens the saved phone (does nothing if already open). */
-bool ucxapp_xplorer_open(void);
+bool ucxapp_xplorer_open(ucxapp_t *app);
 
 void ucxapp_xplorer_close(void);
+
+/** +UESOCL for a module socket: ends the link if it was the remote-control one. */
+#if UCXAPP_XPLORER
+void ucxapp_xplorer_on_closed(int32_t sock);
+#else
+static inline void ucxapp_xplorer_on_closed(int32_t sock)
+{
+    (void)sock;
+}
+#endif
 
 /** Host of the open connection, "" when closed. */
 const char *ucxapp_xplorer_host(void);

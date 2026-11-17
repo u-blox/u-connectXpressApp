@@ -833,8 +833,8 @@ def test_fw_list_reports_a_store_it_cannot_read(app_exe, tmp_path):
 
 
 def test_fw_update_looks_up_the_family_of_the_module(app_exe, tmp_path):
-    """fw.update reads the version and the model, then asks GitHub for that family (evaluation builds too with
-    'eval'): without the HTTPS client or the internet that fails, with them nothing newer than 99.9.9 is found."""
+    """fw.update reads the version and the model, then asks GitHub for that family through the module's HTTP client
+    (evaluation builds too with 'eval'); the virtual module serves no releases, so nothing is found or flashed."""
     def newest(profile):
         profile["identity"]["version"] = "99.9.9-001"
 
@@ -846,8 +846,6 @@ def test_fw_update_looks_up_the_family_of_the_module(app_exe, tmp_path):
     assert "current firmware: 99.9.9-001" in out.stdout, out.stdout
     assert "looking for the latest NORA-W36 firmware on GitHub (evaluation builds included)" in out.stdout, out.stdout
     assert "AT+GMR" in module.log and "AT+GMM" in module.log, module.log
-    if out.returncode == 0:
-        assert "already up to date; use 'fw.update force' to flash anyway" in out.stdout, out.stdout
-    else:
-        assert "ERROR: cannot query GitHub" in out.stdout, out.stdout
+    assert out.returncode != 0 and "ERROR: no release found for NORA-W36" in out.stdout, out.stdout
+    assert any(c.startswith('AT+UHTCRP=0,"/repos/u-blox/u-connectXpress/releases') for c in module.log), module.log
     assert not any(c.startswith("AT+USYFWUS") for c in module.log) and "flashing" not in out.stdout, out.stdout

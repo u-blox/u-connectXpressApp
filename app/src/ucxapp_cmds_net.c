@@ -320,10 +320,10 @@ static bool headerValue(const char *headers, const char *name, char *out, size_t
     return false;
 }
 
-/* One GET hop. Returns 0 on a 2xx response with the body appended to w, 1 for a redirect
+/* One GET hop. Returns 0 on a 2xx response with the body passed to sink, 1 for a redirect
    (location filled in), -1 on failure. */
-static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char *location, size_t locationSize,
-                       char *scheme, char *hostOut, size_t hostOutSize)
+static int downloadHop(ucxapp_t *app, char *url, ucxapp_http_sink_t sink, void *ctx, bool progress, char *location,
+                       size_t locationSize, char *scheme, char *hostOut, size_t hostOutSize)
 {
     char *headers = gBuf.headers;
     bool https;
@@ -410,22 +410,26 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char 
             ucxapp_print("\nERROR: reading body failed (%d%s)\n", (int)n, ucxapp_errname(n));
             goto done;
         }
-        if (!ucxapp_store_append(w, buf, (size_t)n)) {
-            ucxapp_print("\nERROR: cannot write file\n");
+        if (!sink(buf, (size_t)n, ctx)) {
+            ucxapp_print("\nERROR: cannot store the body\n");
             goto done;
         }
         total += n;
         ucxapp_stats_add(UCXAPP_STATS_HTTP, 0, (size_t)n);
-        if (expected > 0) {
+        if (progress && expected > 0) {
             ucxapp_print("\r%d/%d bytes (%d%%)", (int)total, (int)expected, (int)((int64_t)total * 100 / expected));
         }
     }
-    ucxapp_print("\n");
+    if (progress) {
+        ucxapp_print("\n");
+    }
     if (expected >= 0 && total != expected) {
         ucxapp_print("ERROR: incomplete download (%d of %d bytes)\n", (int)total, (int)expected);
         goto done;
     }
-    ucxapp_print("%d bytes saved\n", (int)total);
+    if (progress) {
+        ucxapp_print("%d bytes saved\n", (int)total);
+    }
     rc = 0;
 
 done:
@@ -433,29 +437,21 @@ done:
     return rc;
 }
 
-static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
+int ucxapp_http_fetch(ucxapp_t *app, const char *urlIn, ucxapp_http_sink_t sink, void *ctx, bool progress)
 {
     enum { URL_SIZE = sizeof(gBuf.page), MAX_REDIRECTS = 5 };
     char *url = gBuf.page, *location = gBuf.loc;
     char scheme[8];
     char host[256];
 
-    if (argc != 3 || strlen(argv[1]) >= URL_SIZE / 2) {
+    if (strlen(urlIn) >= URL_SIZE / 2) {
         return UCXAPP_ERR_USAGE;
     }
-    ucxapp_store_writer_t *w = ucxapp_store_begin(argv[2]);
-    if (w == NULL) {
-        ucxapp_print("ERROR: cannot create %s\n", argv[2]);
-        return UCXAPP_ERR_FAILED;
-    }
-    snprintf(url, URL_SIZE, "%s", argv[1]);
-
-    int rc = UCXAPP_ERR_FAILED;
+    snprintf(url, URL_SIZE, "%s", urlIn);
     for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        int r = downloadHop(app, url, w, location, sizeof(gBuf.loc), scheme, host, sizeof(host));
+        int r = downloadHop(app, url, sink, ctx, progress, location, sizeof(gBuf.loc), scheme, host, sizeof(host));
         if (r == 0) {
-            rc = UCXAPP_OK;
-            break;
+            return UCXAPP_OK;
         }
         if (r < 0) {
             break;
@@ -470,6 +466,25 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("ERROR: too many redirects\n");
         }
     }
+    return UCXAPP_ERR_FAILED;
+}
+
+static bool storeSink(const uint8_t *data, size_t len, void *ctx)
+{
+    return ucxapp_store_append((ucxapp_store_writer_t *)ctx, data, len);
+}
+
+static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
+{
+    if (argc != 3 || strlen(argv[1]) >= sizeof(gBuf.page) / 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_store_writer_t *w = ucxapp_store_begin(argv[2]);
+    if (w == NULL) {
+        ucxapp_print("ERROR: cannot create %s\n", argv[2]);
+        return UCXAPP_ERR_FAILED;
+    }
+    int rc = ucxapp_http_fetch(app, argv[1], storeSink, w, true);
     if (!ucxapp_store_end(w, rc == UCXAPP_OK)) {
         if (rc == UCXAPP_OK) {
             ucxapp_print("ERROR: cannot save %s\n", argv[2]);

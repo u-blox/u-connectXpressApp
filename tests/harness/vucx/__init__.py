@@ -61,6 +61,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -345,6 +346,38 @@ class Network:
         self.ft = ft or FtServer()
         self.socks = {}
         self.sps = {}   # SPS connection -> bytes echoed back, not read yet
+        # TCP connects to these hosts, or (host, port) pairs, are relayed to a host socket (tests only: a fake phone);
+        # notify(lines) sends the URCs of data that arrives on it later
+        self.relay = set()
+        self.notify = None
+
+    def _relay_open(self, n, host, port):
+        try:
+            conn = socket.create_connection((host, port), timeout=3)
+        except OSError:
+            return False
+        conn.settimeout(None)
+        self.socks[n]["relay"] = conn
+
+        def pump():
+            while True:
+                try:
+                    data = conn.recv(65536)
+                except OSError:
+                    data = b""
+                s = self.socks.get(n)
+                if s is None or s.get("relay") is not conn:
+                    return
+                if not data:
+                    if self.notify:
+                        self.notify([f"+UESOCL:{n}"])
+                    return
+                s["rx"].append((host, port, data))
+                if self.notify:
+                    self.notify(self._avail(n))
+
+        threading.Thread(target=pump, daemon=True).start()
+        return True
 
     def _new(self, proto, port=0):
         n = next(i for i in range(64) if i not in self.socks)
@@ -400,9 +433,18 @@ class Network:
             return [f"+USOCR:{self._new(int(m[1]))}", "OK"], []
         m = re.fullmatch(r'AT\+USOC=(\d+),"?([^",]*)"?,(\d+)', cmd)
         if m and int(m[1]) in self.socks:
+            if m[2] in self.relay or (m[2], int(m[3])) in self.relay:
+                if not self._relay_open(int(m[1]), m[2], int(m[3])):
+                    return ["ERROR"], []
             self.socks[int(m[1])].update(port=int(m[3]), status=2)
             return ["OK"], [f"+UESOC:{m[1]}"]
         m = re.fullmatch(r"AT\+USOWB=(\d+),?", cmd)
+        if m and int(m[1]) in self.socks and "relay" in self.socks[int(m[1])]:
+            try:
+                self.socks[int(m[1])]["relay"].sendall(bytes(data))
+            except OSError:
+                return ["ERROR"], []
+            return [f"+USOWB:{m[1]},{len(data)}", "OK"], []
         if m and int(m[1]) in self.socks:
             s = self.socks[int(m[1])]
             self._serve(s, data)
@@ -455,6 +497,8 @@ class Network:
             s = self.socks.pop(int(m[1]), None)
             if s is None:
                 return ["ERROR"], []
+            if "relay" in s:
+                s["relay"].close()
             return ["OK"], self._next_client(0.05) if "reply" in s else []
         m = re.fullmatch(r"AT\+USO[BL]=(\d+)(?:,(\d+))?", cmd)
         if m and int(m[1]) in self.socks:
@@ -547,6 +591,8 @@ class Vucx:
         self.ft = FtServer()
         self.ft_peer = t["ft_peer"]
         self.net = Network(p["sockets"], self.ft) if p.get("sockets") else None
+        if self.net:
+            self.net.notify = self._send_quiet
         self.commands = t["commands"]
         self.urcs = t["urcs"]
         self.setters = t["state"]

@@ -183,21 +183,6 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
     return 0;
 }
 
-char *ucxapp_platform_https_get_text(const char *host, const char *path)
-{
-    (void)host;
-    (void)path;
-    return NULL;
-}
-
-char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize)
-{
-    (void)host;
-    (void)path;
-    (void)outSize;
-    return NULL;
-}
-
 ucxapp_trust_t ucxapp_platform_root_trust(const uint8_t *der, size_t len, bool add)
 {
     (void)der;

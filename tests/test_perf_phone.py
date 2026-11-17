@@ -25,8 +25,9 @@ def _module(profile_changes=None):
     return module
 
 
-def _save_phone(app_exe, tmp_path, phone):
-    out = subprocess.run([str(app_exe), "--offline", "--exec", f"xplorer.connect 127.0.0.1:{phone.port} {TOKEN}"],
+def _save_phone(app_exe, tmp_path, phone, module):
+    module.net.relay.add(("127.0.0.1", phone.port))   # the phone is reached through the module's TCP socket
+    out = subprocess.run([str(app_exe), module.port, "--exec", f"xplorer.connect 127.0.0.1:{phone.port} {TOKEN}"],
                          capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path,
                          stdin=subprocess.DEVNULL)
     assert out.returncode == 0, out.stdout
@@ -83,7 +84,7 @@ def test_phone_receives_what_the_module_sends(app_exe, tmp_path):
     phone = _phone(module, STATS)
     phone.handlers["sps.connect"] = lambda p: (module._send([f"+UEBTC:0,{PEER}", "+UESPSC:0"]), {"ok": True})[1]
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone tx 1 100", tmp_path)
     finally:
         module.stop()
@@ -115,7 +116,7 @@ def test_a_version_1_phone_finds_the_module_itself_and_cleans_up_after_the_app(a
     phone.handlers["ble.waitForDevice"] = lambda p: {"found": True, "id": "ID-2", "name": p["name"], "rssi": -50}
     phone.handlers["sps.connect"] = lambda p: (module._send([f"+UEBTC:0,{PEER}", "+UESPSC:0"]), {"ok": True})[1]
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone tx 1 100", tmp_path)
     finally:
         module.stop()
@@ -138,7 +139,7 @@ def test_a_version_1_phone_that_does_not_hear_the_module_says_so(app_exe, tmp_pa
     phone.features, phone.protocol = dict(V1), 1
     phone.handlers["ble.waitForDevice"] = lambda p: {"error": {"code": -32012, "message": "no device that fits"}}
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone tx 1 100", tmp_path)
     finally:
         module.stop()
@@ -160,7 +161,7 @@ def test_module_receives_and_checks_what_the_phone_sends(app_exe, tmp_path):
     phone = _phone(module, {"txBytes": len(pattern), "rxBytes": 0, "throughputKbps": 6, "patternBreaks": 0},
                    on_start=phone_sends, started={"packetSize": 200})
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone rx 1", tmp_path)
     finally:
         module.stop()
@@ -184,7 +185,7 @@ def test_a_broken_pattern_from_the_phone_fails_the_run(app_exe, tmp_path):
     phone = _phone(module, {"txBytes": len(data), "rxBytes": 0, "throughputKbps": 1, "patternBreaks": 0},
                    on_start=phone_sends)
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone rx 1", tmp_path)
     finally:
         module.stop()
@@ -203,7 +204,7 @@ def test_module_echoes_what_the_phone_sends(app_exe, tmp_path):
              "rttMs": {"count": 10, "min": 3.1, "avg": 4.5, "max": 9.0, "jitter": 1.2}}
     phone = _phone(module, stats, on_start=phone_sends)
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone echo 1 64", tmp_path)
     finally:
         module.stop()
@@ -221,7 +222,7 @@ def test_the_link_closing_ends_the_run_and_asks_the_phone_for_its_result(app_exe
     phone = _phone(module, stats=None, on_start=lambda: threading.Timer(0.3, module._send_quiet,
                                                                          [["+UESPSDC:0"]]).start())
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.phone tx 2 50", tmp_path)
     finally:
         module.stop()
@@ -237,7 +238,7 @@ def test_the_link_closing_ends_the_run_and_asks_the_phone_for_its_result(app_exe
 
 def _fails(app_exe, tmp_path, phone, module, message, command="perf.phone tx 1"):
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, command, tmp_path)
     finally:
         module.stop()
@@ -323,7 +324,7 @@ def test_latency_against_the_phones_udp_echo(app_exe, tmp_path):
     module = _module()
     phone = FakePhone()
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.latency udp xplorer 7000 2 32", tmp_path)
     finally:
         module.stop()
@@ -343,7 +344,7 @@ def test_tcp_stream_that_reached_the_phone_with_gaps(app_exe, tmp_path):
     phone = FakePhone()
     phone.breaks = 2
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
         out = _exec(app_exe, module, "perf.throughput tcp xplorer 7001 1 100", tmp_path)
     finally:
         module.stop()
@@ -359,10 +360,12 @@ def test_phone_app_that_cannot_echo_starts_nothing_on_the_module(app_exe, tmp_pa
     module = _module()
     phone = FakePhone(features={})
     try:
-        _save_phone(app_exe, tmp_path, phone)
+        _save_phone(app_exe, tmp_path, phone, module)
+        saved = len(module.log)
         out = _exec(app_exe, module, "perf.latency tcp xplorer 7001", tmp_path)
     finally:
         module.stop()
         phone.close()
     assert out.returncode != 0 and "cannot echo" in out.stdout, out.stdout
-    assert not any(c.startswith("AT+USOCR") for c in module.log), module.log[-20:]
+    created = [c for c in module.log[saved:] if c.startswith("AT+USOCR")]
+    assert created == ["AT+USOCR=6"], module.log[-20:]   # only the link to the phone

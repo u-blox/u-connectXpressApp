@@ -10,17 +10,37 @@
 #include <string.h>
 
 #include "ucxapp.h"
+#include "ucxapp_cmd.h"
 #include "ucxapp_crypt.h"
 #include "ucxapp_hash.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_store.h"
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
+#include "u_cx_socket.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #define XPLORER_FILE        "xplorer.cfg"
 #define XPLORER_TOKEN_MAX   64
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__) || defined(__EMSCRIPTEN__)
 #define XPLORER_MSG_MAX     (4u * 1024u * 1024u)   /* a whole BLE scan list fits */
+#define XPLORER_IN_FIRST    16384u
+#else
+#define XPLORER_MSG_MAX     (32u * 1024u)          /* the boards' heap; a long scan list is cut short */
+#define XPLORER_IN_FIRST    4096u
+#endif
 #define XPLORER_EVENTS_MAX  32
+#define XPLORER_READ_MAX    2048
+#define XPLORER_POLL_MS     100u   /* read again even without +UESODA, in case it was missed */
 
-static intptr_t gSock = -1;
+static uCxHandle_t *gUcx;
+static int32_t gSock = -1;     /* module socket handle */
+static volatile bool gPeerClosed;
 static char gHost[64];
 static uint8_t *gIn;          /* received bytes not yet parsed as frames */
 static size_t gInLen;
@@ -292,8 +312,11 @@ static void base64(const uint8_t *in, size_t len, char *out)
 
 static void dropConnection(void)
 {
-    ucxapp_platform_tcp_close(gSock);
+    if (gSock >= 0 && gUcx != NULL) {
+        (void)uCxSocketClose(gUcx, gSock);
+    }
     gSock = -1;
+    gPeerClosed = false;
     gHost[0] = '\0';
     gInLen = 0;
     gCloseCode = 0;
@@ -311,8 +334,8 @@ static void dropConnection(void)
 static bool fill(uint32_t timeoutMs, bool *timedOut)
 {
     *timedOut = false;
-    if (gInCap - gInLen < 4096u) {
-        size_t cap = gInCap == 0 ? 16384u : gInCap * 2u;
+    if (gInCap - gInLen < (size_t)XPLORER_READ_MAX) {
+        size_t cap = gInCap == 0 ? XPLORER_IN_FIRST : gInCap * 2u;
         uint8_t *p = cap <= XPLORER_MSG_MAX * 2u ? (uint8_t *)realloc(gIn, cap) : NULL;
         if (p == NULL) {
             return false;
@@ -320,16 +343,34 @@ static bool fill(uint32_t timeoutMs, bool *timedOut)
         gIn = p;
         gInCap = cap;
     }
-    int32_t n = ucxapp_platform_tcp_recv(gSock, gIn + gInLen, gInCap - gInLen, timeoutMs);
-    if (n == 0) {
-        *timedOut = true;
-        return false;
+    uint32_t t0 = ucxapp_platform_tick_ms();
+    uint32_t lastRead = t0 - XPLORER_POLL_MS;
+    for (;;) {
+        uint32_t now = ucxapp_platform_tick_ms();
+        if (ucxapp_events_take(URC_FLAG_SOCK_DATA) || now - lastRead >= XPLORER_POLL_MS) {
+            lastRead = now;
+            size_t room = gInCap - gInLen;
+            int32_t n = ucxapp_sock_read(gUcx, gSock, gIn + gInLen,
+                                         (int32_t)(room < (size_t)XPLORER_READ_MAX ? room : (size_t)XPLORER_READ_MAX));
+            if (n > 0) {
+                gInLen += (size_t)n;
+                return true;
+            }
+            if (n < 0 || gPeerClosed) {
+                return false;
+            }
+        }
+        if (now - t0 >= timeoutMs) {
+            *timedOut = true;
+            return false;
+        }
+        ucxapp_platform_sleep_ms(1);
     }
-    if (n < 0) {
-        return false;
-    }
-    gInLen += (size_t)n;
-    return true;
+}
+
+static bool sendRaw(const void *data, size_t len)
+{
+    return gSock >= 0 && !gPeerClosed && ucxapp_sock_write_all(gUcx, gSock, (const uint8_t *)data, len) == 0;
 }
 
 static bool sendFrame(uint8_t opcode, const void *data, size_t len)
@@ -365,7 +406,7 @@ static bool sendFrame(uint8_t opcode, const void *data, size_t len)
     for (size_t i = 0; i < len; i++) {
         buf[h + i] = ((const uint8_t *)data)[i] ^ mask[i & 3u];
     }
-    ok = ucxapp_platform_tcp_send(gSock, buf, h + len);
+    ok = sendRaw(buf, h + len);
     free(buf);
     return ok;
 }
@@ -508,7 +549,7 @@ static bool handshake(const char *host, uint16_t port)
     int n = snprintf(req, sizeof(req),
                      "GET / HTTP/1.1\r\nHost: %s:%u\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                      "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", host, (unsigned)port, key);
-    if (n <= 0 || (size_t)n >= sizeof(req) || !ucxapp_platform_tcp_send(gSock, req, (size_t)n)) {
+    if (n <= 0 || (size_t)n >= sizeof(req) || !sendRaw(req, (size_t)n)) {
         return false;
     }
     uint32_t t0 = ucxapp_platform_tick_ms();
@@ -711,22 +752,40 @@ static bool authenticate(const char *token)
     return true;
 }
 
-bool ucxapp_xplorer_open_to(const char *host, uint16_t port, const char *token)
+bool ucxapp_xplorer_open_to(ucxapp_t *app, const char *host, uint16_t port, const char *token)
 {
     ucxapp_xplorer_close();
+    if (app == NULL || app->ucx == NULL) {
+        ucxapp_print("ERROR: no module connected; the phone is reached through the module's Wi-Fi\n");
+        return false;
+    }
+    gUcx = app->ucx;
     srand(ucxapp_platform_tick_ms());
     /* iOS stops the server while the app is in the background, so the first attempts can be refused. */
     for (int attempt = 0; attempt < 3 && gSock < 0; attempt++) {
+        int32_t s = -1;
         if (attempt > 0) {
             ucxapp_platform_sleep_ms(500);
         }
-        gSock = ucxapp_platform_tcp_connect(host, port, 3000);
+        if (uCxSocketCreate1(gUcx, U_SOCKET_PROTOCOL_TCP, &s) != 0) {
+            break;
+        }
+        ucxapp_events_clear(URC_FLAG_SOCK_CONNECTED);
+        if (uCxSocketConnect(gUcx, s, host, port) == 0 && ucxapp_events_wait(URC_FLAG_SOCK_CONNECTED, 5)) {
+            (void)uCxSocketSetOption(gUcx, s, U_SOCKET_OPTION_NO_DELAY, 1);
+            gSock = s;
+        } else {
+            (void)uCxSocketClose(gUcx, s);
+        }
     }
     if (gSock < 0) {
-        ucxapp_print("ERROR: cannot reach u-connectXplorer at %s:%u; open the app on the phone (Settings > Remote "
-                     "control on, app in the foreground, same Wi-Fi)\n", host, (unsigned)port);
+        ucxapp_print("ERROR: cannot reach u-connectXplorer at %s:%u through the module; open the app on the phone "
+                     "(Settings > Remote control on, app in the foreground) and put the module on the same Wi-Fi\n",
+                     host, (unsigned)port);
         return false;
     }
+    gPeerClosed = false;
+    ucxapp_events_clear(URC_FLAG_SOCK_DATA);
     gInLen = 0;
     if (!handshake(host, port)) {
         ucxapp_print("ERROR: %s:%u is not the u-connectXplorer remote control (WebSocket upgrade failed)\n", host,
@@ -742,6 +801,37 @@ bool ucxapp_xplorer_open_to(const char *host, uint16_t port, const char *token)
     return true;
 }
 
+#ifndef UCXAPP_SECURE
+/* No secure store on this board: the phone (and its token) stays in RAM until a reset, never in plain text in flash. */
+static char gSavedHost[64];
+static uint16_t gSavedPort;
+static char gSavedToken[XPLORER_TOKEN_MAX + 1];
+
+bool ucxapp_xplorer_saved(char *host, size_t hostSize, uint16_t *port, char *token, size_t tokenSize)
+{
+    if (gSavedPort == 0) {
+        ucxapp_print("ERROR: no phone saved; run xplorer.connect <phone-ip> <token> first\n");
+        return false;
+    }
+    snprintf(host, hostSize, "%s", gSavedHost);
+    snprintf(token, tokenSize, "%s", gSavedToken);
+    *port = gSavedPort;
+    return true;
+}
+
+bool ucxapp_xplorer_save(const char *host, uint16_t port, const char *token)
+{
+    if (strlen(token) > XPLORER_TOKEN_MAX || strlen(host) >= sizeof(gSavedHost)) {
+        ucxapp_print("ERROR: cannot save the phone\n");
+        return false;
+    }
+    snprintf(gSavedHost, sizeof(gSavedHost), "%s", host);
+    snprintf(gSavedToken, sizeof(gSavedToken), "%s", token);
+    gSavedPort = port;
+    ucxapp_print("note: this board has no secure store; the phone is kept until reset\n");
+    return true;
+}
+#else
 bool ucxapp_xplorer_saved(char *host, size_t hostSize, uint16_t *port, char *token, size_t tokenSize)
 {
     size_t len = 0;
@@ -787,8 +877,9 @@ bool ucxapp_xplorer_save(const char *host, uint16_t port, const char *token)
     ucxapp_store_make_private(XPLORER_FILE);
     return true;
 }
+#endif
 
-bool ucxapp_xplorer_open(void)
+bool ucxapp_xplorer_open(ucxapp_t *app)
 {
     char host[64];
     char token[XPLORER_TOKEN_MAX + 1];
@@ -800,12 +891,19 @@ bool ucxapp_xplorer_open(void)
     if (!ucxapp_xplorer_saved(host, sizeof(host), &port, token, sizeof(token))) {
         return false;
     }
-    return ucxapp_xplorer_open_to(host, port, token);
+    return ucxapp_xplorer_open_to(app, host, port, token);
+}
+
+void ucxapp_xplorer_on_closed(int32_t sock)
+{
+    if (gSock >= 0 && sock == gSock) {
+        gPeerClosed = true;
+    }
 }
 
 void ucxapp_xplorer_close(void)
 {
-    if (gSock >= 0) {
+    if (gSock >= 0 && !gPeerClosed) {
         (void)sendFrame(0x8u, "\x03\xe8", 2);
     }
     dropConnection();

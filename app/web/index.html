@@ -178,7 +178,7 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 <div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><span id="logb"><button id="lcopy" title="Copy the log to the clipboard">Copy</button><button id="lclr" title="Clear the log">Clear</button><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></span></div>
 <div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
 <footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
-<input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
+<datalist id="fwl"></datalist><input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><label id="upl" title="Upload a file to the app's file store"><input type="file" id="up" hidden>&#x2B06; Upload file&hellip;</label><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
@@ -372,7 +372,8 @@ function field(c,x,pre){let e;const key=pre+x[0]+(x[5]||''),k=x[4]||(x[2]?'s':'t
   e.keep=()=>s.value||i.value.trim();e._k=SECRET.test(nm)?'':key;e.val=()=>s.value||i.value.trim();return e}
  else if(k==='s'&&x[2]){e=el('select');x[2].split('|').forEach(v=>e.add(new Option(v===x[3]?v+' (default)':v,v)));if(x[1]&&!x[3])e.add(new Option('(default)',''));
   e.value=FV[key]!==undefined?FV[key]:x[3]||(x[1]?'':e.options[0].value);if(e.selectedIndex<0)e.selectedIndex=0}
- else{e=el('input');const ph=nm.split('|').join(' or ');e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
+ else{e=el('input');const ph=nm.split('|').join(' or ');if(/\.zip/.test(nm)){e.setAttribute('list','fwl');
+  api('/api/files').then(r=>r.json()).then(fs=>{$('fwl').replaceChildren(...fs.filter(f=>/\.(bin|zip)$/i.test(f.n)).map(f=>new Option(f.n)))})}e.placeholder=x[1]?ph+(x[3]?' (default '+x[3]+')':''):ph+' *';
   if(/^(pass|pw)/.test(nm)){e.type='password';if(x[1]&&!x[3])e.placeholder=ph+' (empty: open network)'}
   if(k==='r')e.className='rest';e.value=FV[key]!==undefined?FV[key]:x[1]?'':x[3]||dv(c.n,nm)}
  e._k=SECRET.test(nm)?'':key;

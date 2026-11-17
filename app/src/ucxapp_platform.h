@@ -73,19 +73,6 @@ bool ucxapp_platform_pulse_dtr(void *uartHandle);
 bool ucxapp_platform_recover_dtr(void *uartHandle, uint32_t holdMs);
 #define UCXAPP_DTR_HOLD_MS 1200
 
-/* Host TCP client (Windows, Linux, macOS; the browser build fails every call). Used for the phone remote control. */
-
-/** Connects to host (name or IPv4) within timeoutMs; returns the socket, or -1. */
-intptr_t ucxapp_platform_tcp_connect(const char *host, uint16_t port, uint32_t timeoutMs);
-
-/** Sends all of data; false on error. */
-bool ucxapp_platform_tcp_send(intptr_t sock, const void *data, size_t len);
-
-/** Waits up to timeoutMs for data: bytes read, 0 on timeout, -1 when the peer closed or on error. */
-int32_t ucxapp_platform_tcp_recv(intptr_t sock, void *buf, size_t max, uint32_t timeoutMs);
-
-void ucxapp_platform_tcp_close(intptr_t sock);
-
 /** The host's location from the OS location service (Windows Location, GeoClue); false if unknown. Can take seconds. */
 bool ucxapp_platform_location(double *lat, double *lon, double *alt);
 
@@ -105,14 +92,6 @@ void ucxapp_platform_lib_close(void *lib);
  * @return number of entries written (at most maxPorts).
  */
 int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts);
-
-/**
- * HTTPS GET with redirects followed. The body is returned in a malloc'ed buffer (caller frees),
- * NULL on failure or empty body. The text variant is NUL terminated; the binary variant
- * reports the length in outSize and prints download progress.
- */
-char *ucxapp_platform_https_get_text(const char *host, const char *path);
-char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize);
 
 typedef enum { UCXAPP_TRUST_UNSUPPORTED, UCXAPP_TRUST_NO, UCXAPP_TRUST_YES } ucxapp_trust_t;
 

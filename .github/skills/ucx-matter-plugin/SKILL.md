@@ -25,7 +25,11 @@ A module that is on Wi-Fi already (`wifi.connect`) is used as it is. To a contro
 `support/DeviceConfig.h`): the module's type code is its hardware version and part number, the module's serial
 number its own and the module's firmware version its software version (`matter.status` shows them). A new node's NodeLabel is the
 product name too (`DefaultNodeLabel` in `node.cpp`; the SDK leaves it empty, and Apple Home then names the accessory
-generically); a name a controller writes is kept. Checked so
+generically); a name a controller writes is kept. Apple Home takes the device name and type from the DCL MainNet
+model entry of the node's vendor and product ID, not from the node: the node still has the test vendor 0xFFF1 /
+product 0x8000 (`DeviceConfig.h`), which MainNet does not list (nor u-blox as a vendor, checked 2026-11), so Home
+falls back to the node's own `u-connectXpressApp`. A u-blox VID and product ID moved to MainNet must be registered
+with ProductName and ProductLabel `u-connectXpressApp`, the same as `DeviceConfig.h`. Checked so
 far: a whole commissioning with a phone over Bluetooth LE and Wi-Fi (the light then switches from the home app),
 the Bluetooth LE transport over the air between two modules, and a pairing request over UDP on the virtual
 module. `matter.set` writes the data model (on/off and level of the light, the temperature, the contact), so a

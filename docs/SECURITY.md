@@ -109,7 +109,8 @@ Limitations:
 
 - **Attestation certificates are the Matter SDK's test ones** (vendor 0xFFF1). Their private key is public, so
   attestation proves nothing and home apps show the node as a test device. A product needs its own vendor ID,
-  DAC and PAI, with the DAC key in the secure store.
+  DAC and PAI, with the DAC key in the secure store, and a DCL MainNet model entry named `u-connectXpressApp`
+  (home apps such as Apple Home take the device name and type from it).
 - **mbedTLS updates** reach the node with the app's: update `third-party/mbedtls` (and `app/third-party/mbedtls-gen`)
   and rebuild both. `app.sbom` shows the version and commit the plug-in was built with.
 - **Key log builds.** `ucxapp --matter --keylog --build` makes a debug plug-in that writes the node's session

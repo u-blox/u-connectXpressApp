@@ -321,13 +321,71 @@ static bool connectedFamily(ucxapp_t *app, char *family, size_t size)
     return true;
 }
 
-static char *fetchReleases(void)
+typedef void (*assetFn_t)(const char *path, const char *name, void *ctx);
+
+/* The releases JSON is large, so it is scanned as it streams in from the module: a window keeps enough of the
+   previous chunk that an asset URL split across two chunks is still found once, whole. */
+#define SCAN_KEEP 768   /* longer than "browser_download_url": "<url>" for any URL we accept */
+typedef struct {
+    char window[SCAN_KEEP + 2048 + 1];
+    size_t len;
+    const char *family;
+    bool allowEval;
+    assetFn_t fn;
+    void *ctx;
+} releaseScan_t;
+
+static bool scanSink(const uint8_t *data, size_t n, void *ctx)
 {
-    char *json = ucxapp_platform_https_get_text(FW_API_HOST, FW_RELEASES_PATH);
-    if (json == NULL) {
-        ucxapp_print("ERROR: cannot query GitHub (needs the Windows build and internet access)\n");
+    releaseScan_t *s = ctx;
+
+    while (n > 0) {
+        size_t take = sizeof(s->window) - 1 - s->len;
+        take = take < n ? take : n;
+        memcpy(s->window + s->len, data, take);
+        s->len += take;
+        s->window[s->len] = '\0';
+        data += take;
+        n -= take;
+
+        char path[512];
+        char name[128];
+        const char *p = s->window;
+        const char *consumed = s->window;
+        while ((p = nextFirmwareAsset(p, s->family, s->allowEval, path, sizeof(path), name, sizeof(name))) != NULL) {
+            s->fn(path, name, s->ctx);
+            consumed = p;
+        }
+        size_t keepFrom = s->len > SCAN_KEEP ? s->len - SCAN_KEEP : 0;
+        if ((size_t)(consumed - s->window) > keepFrom) {
+            keepFrom = (size_t)(consumed - s->window);
+        }
+        memmove(s->window, s->window + keepFrom, s->len - keepFrom);
+        s->len -= keepFrom;
+        s->window[s->len] = '\0';
     }
-    return json;
+    return true;
+}
+
+/* Asks GitHub for the releases over the module's HTTP client (never the host network) and calls fn per asset. */
+static bool scanReleases(ucxapp_t *app, const char *family, bool allowEval, assetFn_t fn, void *ctx)
+{
+    static releaseScan_t scan;
+
+    if (app->ucx == NULL) {
+        ucxapp_print("ERROR: not connected; GitHub is reached through the module's Wi-Fi\n");
+        return false;
+    }
+    memset(&scan, 0, sizeof(scan));
+    scan.family = family;
+    scan.allowEval = allowEval;
+    scan.fn = fn;
+    scan.ctx = ctx;
+    if (ucxapp_http_fetch(app, "https://" FW_API_HOST FW_RELEASES_PATH, scanSink, &scan, false) != UCXAPP_OK) {
+        ucxapp_print("ERROR: cannot query GitHub through the module (is it on Wi-Fi with internet? wifi.status)\n");
+        return false;
+    }
+    return true;
 }
 
 /* "3.5.0-156" or "NORA-W36-3.6.0-019-EVAL.zip" -> major, minor, patch, build (0 if none); false if no x.y.z. */
@@ -358,6 +416,29 @@ static int compareVersion(const int a[4], const int b[4])
 /* Finds the newest GitHub firmware zip for the connected module family (evaluation builds only if allowEval).
    The API lists by release date, which is not version order (3.5.1 was published after the 3.6.0 evaluation
    builds), so every match is compared and the highest version wins. */
+typedef struct {
+    const char *family;
+    char *path;
+    size_t pathSize;
+    char *name;
+    size_t nameSize;
+    int best[4];
+    bool found;
+} latestScan_t;
+
+static void keepNewest(const char *path, const char *name, void *ctx)
+{
+    latestScan_t *l = ctx;
+    int v[4] = { 0 };
+
+    if (parseVersion(name + strlen(l->family) + 1, v) && (!l->found || compareVersion(v, l->best) > 0)) {
+        l->found = true;
+        memcpy(l->best, v, sizeof(l->best));
+        snprintf(l->path, l->pathSize, "%s", path);
+        snprintf(l->name, l->nameSize, "%s", name);
+    }
+}
+
 static bool fwLookupLatest(ucxapp_t *app, bool allowEval, char *path, size_t pathSize, char *name, size_t nameSize)
 {
     char family[16];
@@ -367,51 +448,48 @@ static bool fwLookupLatest(ucxapp_t *app, bool allowEval, char *path, size_t pat
     }
     ucxapp_print("looking for the latest %s firmware on GitHub%s\n", family,
                  allowEval ? " (evaluation builds included)" : "");
-    char *json = fetchReleases();
-    if (json == NULL) {
+    latestScan_t l = { family, path, pathSize, name, nameSize, { 0 }, false };
+    if (!scanReleases(app, family, allowEval, keepNewest, &l)) {
         return false;
     }
-    char candPath[512];
-    char candName[128];
-    int best[4] = { 0 };
-    bool found = false;
-    const char *p = json;
-
-    while ((p = nextFirmwareAsset(p, family, allowEval, candPath, sizeof(candPath), candName,
-                                  sizeof(candName))) != NULL) {
-        int v[4] = { 0 };
-        if (!parseVersion(candName + strlen(family) + 1, v)) {
-            continue;
-        }
-        if (!found || compareVersion(v, best) > 0) {
-            found = true;
-            memcpy(best, v, sizeof(best));
-            snprintf(path, pathSize, "%s", candPath);
-            snprintf(name, nameSize, "%s", candName);
-        }
-    }
-    free(json);
-    if (!found) {
+    if (!l.found) {
         ucxapp_print("ERROR: no release found for %s\n", family);
     } else {
         (void)ucxapp_store_save(UCXAPP_FW_LATEST_FILE, name, strlen(name));
     }
-    return found;
+    return l.found;
 }
 
-static bool fwFetch(const char *path, const char *name, const char *file)
+static bool storeSink(const uint8_t *data, size_t len, void *ctx)
 {
+    return ucxapp_store_append((ucxapp_store_writer_t *)ctx, data, len);
+}
+
+/* Downloads a release asset over the module's HTTP client into the store. */
+static bool fwFetch(ucxapp_t *app, const char *path, const char *name, const char *file)
+{
+    char url[600];
     size_t size = 0;
     char hex[UCXAPP_SHA256_HEX_LEN];
 
-    ucxapp_print("downloading %s\n", name);
-    char *data = ucxapp_platform_https_get_binary(FW_GITHUB_HOST, path, &size);
-    if (data == NULL || !ucxapp_store_save(file, data, size)) {
-        ucxapp_print("ERROR: download of %s failed\n", name);
-        free(data);
+    ucxapp_print("downloading %s through the module\n", name);
+    snprintf(url, sizeof(url), "https://%s%s", FW_GITHUB_HOST, path);
+    ucxapp_store_writer_t *w = ucxapp_store_begin(file);
+    if (w == NULL) {
+        ucxapp_print("ERROR: cannot create %s\n", file);
         return false;
     }
-    ucxapp_sha256_hex((const uint8_t *)data, size, hex);
+    int rc = ucxapp_http_fetch(app, url, storeSink, w, true);
+    if (!ucxapp_store_end(w, rc == UCXAPP_OK) || rc != UCXAPP_OK) {
+        ucxapp_print("ERROR: download of %s failed\n", name);
+        return false;
+    }
+    uint8_t *data = ucxapp_store_load(file, &size);
+    if (data == NULL) {
+        ucxapp_print("ERROR: cannot read back %s\n", file);
+        return false;
+    }
+    ucxapp_sha256_hex(data, size, hex);
     free(data);
     ucxapp_print("saved %s (%u bytes)\nsha256: %s\n", file, (unsigned)size, hex);
     return true;
@@ -427,7 +505,7 @@ static int fwDownloadLatest(ucxapp_t *app, int argc, char *argv[], bool allowEva
         return UCXAPP_ERR_FAILED;
     }
     const char *file = argc == 3 ? argv[2] : name;
-    if (!fwFetch(path, name, file)) {
+    if (!fwFetch(app, path, name, file)) {
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("flash it with: fw.flash %s\n", file);
@@ -491,7 +569,7 @@ static int cmdFwUpdate(ucxapp_t *app, int argc, char *argv[])
     free(existing);
     if (have) {
         ucxapp_print("using %s already in the store\n", name);
-    } else if (!fwFetch(path, name, name)) {
+    } else if (!fwFetch(app, path, name, name)) {
         return UCXAPP_ERR_FAILED;
     }
 
@@ -577,26 +655,18 @@ static int cmdFwList(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-static void printGithubAssets(const char *json, const char *family)
+static void printAsset(const char *path, const char *name, void *ctx)
 {
-    char path[512];
-    char name[128];
-    const char *p = json;
-    int count = 0;
-
-    while ((p = nextFirmwareAsset(p, family, true, path, sizeof(path), name, sizeof(name))) != NULL) {
-        ucxapp_print("%s%s\n", name, strstr(name, FW_EVAL_TAG) != NULL ? "  (evaluation)" : "");
-        count++;
-    }
-    if (count == 0) {
-        ucxapp_print("no firmware releases for %s\n", family);
-    }
+    (void)path;
+    ucxapp_print("%s%s\n", name, strstr(name, FW_EVAL_TAG) != NULL ? "  (evaluation)" : "");
+    (*(int *)ctx)++;
 }
 
 /* Every firmware release on GitHub for the connected module (or the family given), newest first. */
 static int cmdFwGithubList(ucxapp_t *app, int argc, char *argv[])
 {
     char family[16];
+    int count = 0;
 
     if (argc > 2 || (argc == 2 && (strncmp(argv[1], "NORA-", 5) != 0 || strlen(argv[1]) < 8 ||
                                    strlen(argv[1]) >= sizeof(family)))) {
@@ -608,22 +678,22 @@ static int cmdFwGithubList(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("%s firmware releases on GitHub, newest first:\n", family);
-    char *json = fetchReleases();
-    if (json == NULL) {
+    if (!scanReleases(app, family, true, printAsset, &count)) {
         return UCXAPP_ERR_FAILED;
     }
-    printGithubAssets(json, family);
-    free(json);
+    if (count == 0) {
+        ucxapp_print("no firmware releases for %s\n", family);
+    }
     return UCXAPP_OK;
 }
 
 static const ucxapp_cmd_t gFwCmds[] = {
-    { "fw.download", "[latest|eval [file]] | <url> <file> [sha256]", "Download the newest GitHub firmware for this module (default, needs Windows; 'eval' includes evaluation builds), or a URL via the module with a SHA-256 check", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
+    { "fw.download", "[latest|eval [file]] | <url> <file> [sha256]", "Download the newest GitHub firmware for this module (default; 'eval' includes evaluation builds), or a URL; always through the module with a SHA-256 check", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
     { "fw.bootloader", "<port> <file.bin|file.zip> [baud=921600]", "Flash a module stuck in bootloader mode (no AT interface); disconnect first", UCXAPP_CMD_DANGER, cmdFwBootloader },
     { "fw.flash",    "<file.bin|file.zip> [baud=921600]", "Update the module firmware over XMODEM", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwFlash },
-    { "fw.update",   "[force] [eval] [baud=921600]", "If GitHub has newer firmware: download it to the store, flash and verify the version (needs Windows; 'eval' includes evaluation builds)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwUpdate },
+    { "fw.update",   "[force] [eval] [baud=921600]", "If GitHub has newer firmware: download it to the store, flash and verify the version (through the module's Wi-Fi; 'eval' includes evaluation builds)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwUpdate },
     { "fw.list",     "", "List the firmware zips and bins downloaded to the app store", 0, cmdFwList },
-    { "fw.github.list", "[NORA-W36]", "List all firmware releases on GitHub for the connected module (or the family given), newest first; evaluation builds are marked (needs Windows)", 0, cmdFwGithubList },
+    { "fw.github.list", "[NORA-W36]", "List all firmware releases on GitHub for the connected module (or the family given), newest first; evaluation builds are marked (through the module's Wi-Fi)", 0, cmdFwGithubList },
 };
 
 void ucxapp_register_fw_cmds(void)

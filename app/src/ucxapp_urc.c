@@ -13,6 +13,7 @@
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
 #include "ucxapp_cmd.h"
+#include "ucxapp_xplorer.h"
 #include "ucxapp_ui.h"
 #include "u_cx_http.h"
 #ifndef UCXAPP_LITE
@@ -130,7 +131,7 @@ static void linkDownUrc(struct uCxHandle *h, int32_t wlan, int32_t reason)
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_DOWN);
 }
 static void sockConnectedUrc(struct uCxHandle *h, int32_t s)                           { (void)h; evt("sock: %d connected", (int)s); ucxapp_events_signal(URC_FLAG_SOCK_CONNECTED); }
-static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_ft_on_sock_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
+static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_ft_on_sock_closed(s); ucxapp_xplorer_on_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
 static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_stream_on_data(s); ucxapp_ft_on_sock_data(s); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
 /* NORA-W36 3.2.0 and 3.5.0 send +UESOIC:<listening socket>,<ip>,<new socket> (traced: listen on 0, accept gives
  * "+UESOIC:0,<ip>,1"), the reverse of the AT command reference that the generated parser follows, so the two

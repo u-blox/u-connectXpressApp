@@ -7,12 +7,44 @@
   let M = null, port = null, writer = null, reader = null, loop = null, reading = false, virt = null, opening = false, closing = null;
   const LAST_PORT = 'ucxapp.lastPort';
 
-  /* Without cross-origin isolation (first visit, before the service worker reloads the page) threads cannot start. */
-  const ready = !self.crossOriginIsolated ? new Promise(() => {}) : createUcxapp({
+  /* Without cross-origin isolation (first visit, before the service worker reloads the page) threads cannot start.
+     One tab at a time (Web Locks): two would share the serial port and overwrite each other's storage/. */
+  const single = !navigator.locks ? Promise.resolve(true) : new Promise(res => navigator.locks.request('ucxapp',
+    { ifAvailable: true }, lock => { res(!!lock); return lock ? new Promise(() => {}) : null; }));
+  const ready = !self.crossOriginIsolated ? new Promise(() => {}) : single.then(mine => !mine ? otherTab() : createUcxapp({
     print: t => console.log(t),
     printErr: t => console.warn(t),
     preRun: [m => { mod = m; m.ucxStoreChanged = storeChanged; m.addRunDependency('opfs'); opfsLoad(m).finally(() => m.removeRunDependency('opfs')); }],
-  }).then(m => { M = m; m.ucxSerialWrite = serialWrite; return m; });
+  })).then(m => { M = m; m.ucxSerialWrite = serialWrite; keepAwake(); return m; });
+
+  function otherTab() {
+    const show = () => {
+      const d = document.createElement('div');
+      d.id = 'wstab';
+      d.textContent = 'u-connectXpressApp is already open in another tab or window: use that one, or close it and reload.';
+      d.style.cssText = 'background:#7a2e48;color:#fff;padding:.6rem 1rem;font-weight:600';
+      document.body.prepend(d);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    return new Promise(() => {});
+  }
+
+  /* The screen (and with it the tab) stays awake while a command runs: a sleeping tab would stop fw.flash halfway. */
+  function keepAwake() {
+    if (!navigator.wakeLock) return;
+    let lock = null, asking = false;
+    setInterval(async () => {
+      const busy = M._ucxapp_web_local_busy() !== 0;
+      if (busy && (!lock || lock.released) && !asking && document.visibilityState === 'visible') {
+        asking = true;
+        lock = await navigator.wakeLock.request('screen').catch(() => null);
+        asking = false;
+      } else if (!busy && lock && !lock.released) {
+        lock.release().catch(() => {});
+        lock = null;
+      }
+    }, 1000);
+  }
 
   /* ---- storage/ lives in the browser's private file system (OPFS), so files and settings outlast the tab ---- */
   const STORE = 'storage';
@@ -29,6 +61,8 @@
     }
   }
   async function opfsLoad(m) {
+    /* best effort: without it the browser may clear storage/ (keys, certificates, firmware) when the disk runs low */
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     const dir = await opfsDir(false);
     try { if (dir) await opfsCopyIn(m, dir, '/' + STORE); } catch (e) { console.warn('OPFS: cannot load storage/', e); }
   }
@@ -696,7 +730,34 @@
     ['vnora-b26.json', 'BLE', 'NORA-B26'],
   ];
 
+  /* Files dropped on the page, or opened with the installed app (manifest file_handlers), go into storage/ through
+     the page's own upload, one after the other. */
+  async function importFiles(files) {
+    const up = document.getElementById('up'), open = document.getElementById('files');
+    if (!up || !up.onchange || !files.length) return;
+    await ready;
+    if (open && !document.getElementById('fd').open) open.click();
+    for (const f of files) {
+      const dt = new DataTransfer();
+      dt.items.add(f);
+      up.files = dt.files;
+      await up.onchange();
+    }
+  }
+  function addImport() {
+    document.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); });
+    document.addEventListener('drop', e => {
+      if (!e.dataTransfer.files.length) return;
+      e.preventDefault();
+      importFiles([...e.dataTransfer.files]);
+    });
+    if (window.launchQueue) {
+      window.launchQueue.setConsumer(async p => importFiles(await Promise.all((p.files || []).map(h => h.getFile()))));
+    }
+  }
+
   function addButtons() {
+    addImport();
     const files = document.getElementById('more') || document.getElementById('files');
     if (!files) return;
     const reason = noSerialReason();

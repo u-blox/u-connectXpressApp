@@ -415,6 +415,53 @@ def test_storage_outlasts_the_tab(site):
     assert not js_errors, js_errors
 
 
+def test_a_second_tab_does_not_start_the_app(site):
+    """Only one tab owns the serial port and storage/: a second one in the same browser says so and stays idle."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        context = browser.new_context()
+        first = context.new_page()
+        first.goto(site)
+        first.wait_for_selector("#st.ok", timeout=30000)
+        second = context.new_page()
+        second.goto(site)
+        second.wait_for_selector("#wstab", timeout=30000)
+        assert "already open" in second.inner_text("#wstab")
+        first.close()
+        second.reload()
+        second.wait_for_selector("#st.ok", timeout=30000)
+        assert second.query_selector("#wstab") is None
+        browser.close()
+
+
+def test_a_dropped_file_lands_in_storage(site):
+    """A file dropped on the page is uploaded into storage/ (and so into OPFS)."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        page.evaluate("""() => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([new Uint8Array(3000).fill(7)], 'dropped.bin'));
+            document.body.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        }""")
+        page.wait_for_function("fetch('/api/files').then(r => r.json()).then(fs => fs.some(f => f.n === 'dropped.bin' "
+                               "&& f.s === 3000))", timeout=30000)
+        browser.close()
+    assert not js_errors, js_errors
+
+
 def test_a_lost_port_closes_and_connects_again(site):
     """A port lost under the app (unplugged) rejects the writer's close: the lock is still released and the port
     closed, so Connect opens it again instead of failing with 'already open', also when it is clicked while the

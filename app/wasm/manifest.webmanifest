@@ -7,5 +7,14 @@
   "display": "standalone",
   "background_color": "#0a0e15",
   "theme_color": "#0a0e15",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "file_handlers": [{
+    "action": "./",
+    "accept": {
+      "application/zip": [".zip"],
+      "application/octet-stream": [".bin"],
+      "application/x-pem-file": [".pem", ".crt", ".key"]
+    },
+    "launch_type": "single-client"
+  }]
 }

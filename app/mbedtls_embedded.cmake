@@ -32,6 +32,7 @@ set(UCXAPP_MBEDTLS_INCLUDES
   ${_psa}/dispatch
   ${_psa}/drivers/builtin/include
   ${_psa}/drivers/builtin/src
+  ${_psa}/drivers/pqcp/include
   ${_psa}/extras
   ${_psa}/platform
   ${_psa}/utilities)

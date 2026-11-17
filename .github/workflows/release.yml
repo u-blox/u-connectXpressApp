@@ -64,9 +64,6 @@ jobs:
           - board: nucleo_f446re
             repo: STM32CubeF4
             ref: master
-          - board: nucleo_f103rb
-            repo: STM32CubeF1
-            ref: master
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)

@@ -374,6 +374,47 @@ def test_last_port_is_reopened_until_disconnected(site):
     assert not js_errors, js_errors
 
 
+def test_storage_outlasts_the_tab(site):
+    """storage/ is kept in OPFS: a remembered setting written by a command is still there after a reload, and a
+    removed file is gone from OPFS too."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    opfs = ("(async n => { try { const d = await (await navigator.storage.getDirectory())"
+            ".getDirectoryHandle('storage'); return await (await (await d.getFileHandle(n)).getFile()).text(); }"
+            " catch { return null; } })")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+
+        def run(cmd):
+            page.evaluate(f"fetch('/api/exec?cmd={cmd}', {{method: 'POST'}}).then(r => r.text())")
+
+        def wait_opfs(name, want, timeout_s=10):
+            for _ in range(timeout_s * 10):
+                got = page.evaluate(opfs + f"('{name}')")
+                if want(got):
+                    return got
+                page.wait_for_timeout(100)
+            raise AssertionError(f"OPFS storage/{name}: {got!r}")
+
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        run("app.log.at.on")
+        wait_opfs("ucxapp.log", lambda t: t is not None and "at=1" in t)
+        page.reload()
+        page.wait_for_selector("#st.ok", timeout=30000)
+        files = page.evaluate("fetch('/api/files').then(r => r.json())")
+        assert "ucxapp.log" in [f["n"] for f in files]
+        run("app.defaults&a0=confirm&y=1")
+        wait_opfs("ucxapp.log", lambda t: t is None)
+        browser.close()
+    assert not js_errors, js_errors
+
+
 def test_a_lost_port_closes_and_connects_again(site):
     """A port lost under the app (unplugged) rejects the writer's close: the lock is still released and the port
     closed, so Connect opens it again instead of failing with 'already open', also when it is clicked while the

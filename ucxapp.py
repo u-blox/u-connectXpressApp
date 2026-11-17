@@ -64,7 +64,7 @@ BOARDS = {
     "g071": ("nucleo_g071rb", "NUCLEO-G071RB", "G0", "STM32CubeG0", "stm32g0"),
 }
 # Kept and buildable with --board, but left out of --board all, --everything, CI and releases.
-PAUSED_BOARDS = ("g071",)
+PAUSED_BOARDS = ("g071", "f103")
 ACTIVE_BOARDS = [b for b in BOARDS if b not in PAUSED_BOARDS]
 # Zephyr only: f103 overflows its 128 KB flash.
 PAUSED_ZEPHYR_BOARDS = ("f103",)

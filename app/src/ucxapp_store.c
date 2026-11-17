@@ -25,6 +25,30 @@
 
 static char gDir[NAME_MAX_LEN];
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/em_asm.h>
+
+static bool isAbsolute(const char *name);
+
+/* The browser keeps storage/ in OPFS (app/wasm/ucxapp-wasm.js): tell it which file changed. Async on the main
+   thread, which owns the file system; the copied name is freed there. */
+static void storeChanged(const char *name, bool removed)
+{
+    char *copy;
+
+    if (gDir[0] == '\0' || isAbsolute(name) || (copy = strdup(name)) == NULL) {
+        return;
+    }
+    MAIN_THREAD_ASYNC_EM_ASM({
+        const name = UTF8ToString($0);
+        _free($0);
+        if (Module.ucxStoreChanged) Module.ucxStoreChanged(name, !!$1);
+    }, copy, removed ? 1 : 0);
+}
+#else
+#define storeChanged(name, removed) ((void)(name), (void)(removed))
+#endif
+
 static bool isAbsolute(const char *name)
 {
     return name[0] == '/' || name[0] == '\\' || (name[0] != '\0' && name[1] == ':');
@@ -81,7 +105,11 @@ static void stdioClose(void *h)
 static bool stdioRemove(const char *name)
 {
     char path[NAME_MAX_LEN * 2];
-    return fullPath(name, path, sizeof(path)) && remove(path) == 0;
+    bool ok = fullPath(name, path, sizeof(path)) && remove(path) == 0;
+    if (ok) {
+        storeChanged(name, true);
+    }
+    return ok;
 }
 
 static bool stdioRename(const char *from, const char *to)
@@ -95,7 +123,15 @@ static bool stdioRename(const char *from, const char *to)
     /* replaces in one step: a crash leaves the old file or the new one, never none */
     return MoveFileExA(a, b, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #elif defined(__unix__) || defined(__APPLE__)
-    return rename(a, b) == 0;
+    if (rename(a, b) != 0) {
+        return false;
+    }
+    size_t fromLen = strlen(from);
+    if (fromLen < sizeof(TMP_SUFFIX) - 1 || strcmp(from + fromLen - (sizeof(TMP_SUFFIX) - 1), TMP_SUFFIX) != 0) {
+        storeChanged(from, true);   /* a file moved from its old name */
+    }
+    storeChanged(to, false);
+    return true;
 #else
     remove(b);
     return rename(a, b) == 0;

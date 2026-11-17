@@ -11,7 +11,41 @@
   const ready = !self.crossOriginIsolated ? new Promise(() => {}) : createUcxapp({
     print: t => console.log(t),
     printErr: t => console.warn(t),
+    preRun: [m => { mod = m; m.ucxStoreChanged = storeChanged; m.addRunDependency('opfs'); opfsLoad(m).finally(() => m.removeRunDependency('opfs')); }],
   }).then(m => { M = m; m.ucxSerialWrite = serialWrite; return m; });
+
+  /* ---- storage/ lives in the browser's private file system (OPFS), so files and settings outlast the tab ---- */
+  const STORE = 'storage';
+  let opfsQueue = Promise.resolve(), mod = null;
+  async function opfsDir(create) {
+    if (!navigator.storage || !navigator.storage.getDirectory) return null;
+    try { return await (await navigator.storage.getDirectory()).getDirectoryHandle(STORE, { create }); } catch { return null; }
+  }
+  async function opfsCopyIn(m, dir, path) {
+    m.FS.mkdirTree(path);
+    for await (const [name, h] of dir.entries()) {
+      if (h.kind === 'directory') await opfsCopyIn(m, h, path + '/' + name);
+      else if (!name.endsWith('.part')) m.FS.writeFile(path + '/' + name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
+    }
+  }
+  async function opfsLoad(m) {
+    const dir = await opfsDir(false);
+    try { if (dir) await opfsCopyIn(m, dir, '/' + STORE); } catch (e) { console.warn('OPFS: cannot load storage/', e); }
+  }
+  /* Called by the store after a file is committed or removed; name is relative to storage/. Writes run in order. */
+  function storeChanged(name, removed) {
+    let data = null;
+    if (!removed) { try { data = mod.FS.readFile('/' + STORE + '/' + name); } catch { removed = true; } }
+    opfsQueue = opfsQueue.then(async () => {
+      let dir = await opfsDir(true);
+      if (!dir) return;
+      const parts = name.split('/'), leaf = parts.pop();
+      for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: !removed });
+      if (removed) { await dir.removeEntry(leaf).catch(() => {}); return; }
+      const w = await (await dir.getFileHandle(leaf, { create: true })).createWritable();
+      await w.write(data); await w.close();
+    }).catch(e => console.warn('OPFS: cannot save ' + name, e));
+  }
 
   /* ---- the page's /api calls go to the app ---- */
   async function local(method, url, body) {

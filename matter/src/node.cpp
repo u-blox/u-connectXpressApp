@@ -4,6 +4,7 @@
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
 #include <app/clusters/boolean-state-server/CodegenIntegration.h>
+#include <app/clusters/switch-server/CodegenIntegration.h>
 #include <app/clusters/temperature-measurement-server/CodegenIntegration.h>
 #include <app/server/AppDelegate.h>
 #include <app/clusters/identify-server/identify-server.h>
@@ -39,6 +40,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -74,9 +76,39 @@ constexpr unsigned kDemoContactSteps = 10;
 constexpr uint32_t kLight            = 0x0101; // device types of endpoints.cpp
 constexpr uint32_t kTemp             = 0x0302;
 constexpr uint32_t kContact          = 0x0015;
+constexpr uint32_t kSwitch           = 0x000F;
+constexpr uint32_t kButtonPollMs     = 50;
+
+// The board (ABI 5): its user button presses the first switch endpoint, its LED shows the first light
+bool HostHasBoard()
+{
+    return gUcxmHost != nullptr && gUcxmHost->abi >= 5 &&
+        gUcxmHost->size >= offsetof(ucxapp_matter_host_t, boardLed) + sizeof(gUcxmHost->boardLed) &&
+        gUcxmHost->boardButton != nullptr && gUcxmHost->boardLed != nullptr;
+}
+
+Endpoint * FirstOfKind(uint32_t deviceType)
+{
+    for (int i = 0; i < EndpointCount(); i++)
+    {
+        if (EndpointAt(i).kind->deviceType == deviceType)
+        {
+            return &EndpointAt(i);
+        }
+    }
+    return nullptr;
+}
+
+void MirrorLed(const Endpoint & e)
+{
+    if (HostHasBoard() && &e == FirstOfKind(kLight))
+    {
+        (void) gUcxmHost->boardLed(e.value[0] != 0);
+    }
+}
 
 // With the stack lock: the attributes of an endpoint tied to the data model take its values
-void WriteModel(const Endpoint & e)
+void WriteModel(Endpoint & e)
 {
     namespace Clusters  = app::Clusters;
     const EndpointId ep = EndpointModel(e);
@@ -89,6 +121,7 @@ void WriteModel(const Endpoint & e)
     if (e.kind->deviceType == kLight)
     {
         (void) Clusters::OnOff::Attributes::OnOff::Set(ep, e.value[0] != 0);
+        MirrorLed(e);
         // 1 to 254 on the wire
         (void) Clusters::LevelControl::Attributes::CurrentLevel::Set(
             ep, static_cast<uint8_t>(std::max<int32_t>(1, (e.value[1] * 254 + 50) / 100)));
@@ -105,6 +138,36 @@ void WriteModel(const Endpoint & e)
         {
             (void) cluster->SetStateValue(e.value[0] == 0); // true: in contact, closed
         }
+    }
+    else if (e.kind->deviceType == kSwitch)
+    {
+        // momentary switch: position 1 while pressed; InitialPress and ShortRelease are what a controller acts on
+        Clusters::SwitchCluster * cluster = Clusters::Switch::FindClusterOnEndpoint(ep);
+        Endpoint & s                      = e;
+
+        if (cluster != nullptr)
+        {
+            if (s.value[2] != 0 && s.value[1] == 0)
+            {
+                (void) cluster->SetCurrentPosition(1);
+                (void) cluster->OnInitialPress(1);
+                s.value[1] = 1;
+            }
+            if (s.value[0] != s.value[1])
+            {
+                (void) cluster->SetCurrentPosition(static_cast<uint8_t>(s.value[0]));
+                if (s.value[0] != 0)
+                {
+                    (void) cluster->OnInitialPress(1);
+                }
+                else
+                {
+                    (void) cluster->OnShortRelease(1);
+                }
+            }
+        }
+        s.value[1] = s.value[0];
+        s.value[2] = 0;
     }
     gOwnWrite = false;
 }
@@ -129,6 +192,7 @@ void SyncModel()
         else if (ep != 0 && Clusters::OnOff::Attributes::OnOff::Get(ep, &on) == Protocols::InteractionModel::Status::Success)
         {
             e.value[0] = on ? 1 : 0;
+            MirrorLed(e);
             // a fresh node's level is the minimum: the light keeps its own (100%), or it would come on at 1%
             if (Clusters::LevelControl::Attributes::CurrentLevel::Get(ep, level) == Protocols::InteractionModel::Status::Success &&
                 !level.IsNull() && level.Value() > 1)
@@ -173,6 +237,31 @@ void DemoTick(System::Layer *, void *)
         }
     }
     (void) SystemLayer().StartTimer(System::Clock::Milliseconds32(kDemoStepMs), DemoTick, nullptr);
+}
+
+// On the Matter thread with the stack lock: the board's button drives the switch endpoint
+int gButtonLast = -1;
+
+void ButtonTick(System::Layer *, void *)
+{
+    Endpoint * s      = FirstOfKind(kSwitch);
+    const int pressed = HostHasBoard() ? gUcxmHost->boardButton() : -1;
+
+    if (pressed < 0 || s == nullptr)
+    {
+        return; // no button: the timer stops
+    }
+    if (gButtonLast >= 0 && pressed != gButtonLast)
+    {
+        char line[64];
+
+        s->value[0] = pressed;
+        WriteModel(*s);
+        snprintf(line, sizeof(line), "matter: %s %s (board button)", s->name, pressed ? "pressed" : "released");
+        gEvent(line);
+    }
+    gButtonLast = pressed;
+    (void) SystemLayer().StartTimer(System::Clock::Milliseconds32(kButtonPollMs), ButtonTick, nullptr);
 }
 
 using WiFiDriver = NetworkCommissioning::UcxWiFiDriver;
@@ -338,6 +427,8 @@ const char * ServerStart()
     }
     gServerUp = true;
     SyncModel();
+    gButtonLast = -1;
+    (void) SystemLayer().StartTimer(System::Clock::Milliseconds32(kButtonPollMs), ButtonTick, nullptr);
     (void) Server::GetInstance().GetFabricTable().AddFabricDelegate(&gCommissioning);
     (void) PlatformMgr().AddEventHandler(OnDeviceEvent, 0);
     if (gWiFi)
@@ -468,6 +559,7 @@ void NodeStop()
 
             gDemo = false;
             SystemLayer().CancelTimer(DemoTick, nullptr);
+            SystemLayer().CancelTimer(ButtonTick, nullptr);
             if (gWiFiUp)
             {
                 gWiFiCommissioning.Shutdown();
@@ -627,6 +719,7 @@ void NodeAttributeChanged(uint16_t endpoint, uint32_t cluster, uint32_t attribut
         if (e != nullptr)
         {
             e->value[0] = value[0] != 0 ? 1 : 0;
+            MirrorLed(*e);
         }
         snprintf(line, sizeof(line), "matter: endpoint %u switched %s", static_cast<unsigned>(endpoint),
                  value[0] != 0 ? "on" : "off");

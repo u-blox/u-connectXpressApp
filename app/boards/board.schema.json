@@ -11,6 +11,14 @@
   "properties": {
     "board": { "type": "string" },
     "gpio": { "$ref": "#/definitions/pins", "maxItems": 32 },
+    "button": {
+      "description": "The board's user button, one of the gpio pins; pressed is the level it reads when pressed",
+      "type": "object",
+      "required": ["pin"],
+      "additionalProperties": false,
+      "properties": { "pin": { "$ref": "#/definitions/pin" }, "pressed": { "enum": [0, 1] } }
+    },
+    "led": { "description": "The board's user LED, one of the gpio pins", "$ref": "#/definitions/pin" },
     "adc": { "$ref": "#/definitions/pins", "maxItems": 16 },
     "pwm": {
       "type": "array",

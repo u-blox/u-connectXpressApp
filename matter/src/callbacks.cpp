@@ -25,7 +25,29 @@ void emberAfLevelControlClusterInitCallback(EndpointId) {}
 void emberAfNetworkCommissioningClusterInitCallback(EndpointId) {}
 void emberAfOnOffClusterInitCallback(EndpointId) {}
 void emberAfOperationalCredentialsClusterInitCallback(EndpointId) {}
+void emberAfSoftwareDiagnosticsClusterInitCallback(EndpointId) {}
+void emberAfSwitchClusterInitCallback(EndpointId) {}
 void emberAfTemperatureMeasurementClusterInitCallback(EndpointId) {}
+void emberAfWiFiNetworkDiagnosticsClusterInitCallback(EndpointId) {}
+
+void emberAfAccessControlClusterShutdownCallback(EndpointId) {}
+void emberAfAdministratorCommissioningClusterShutdownCallback(EndpointId) {}
+void emberAfBasicInformationClusterShutdownCallback(EndpointId) {}
+void emberAfBooleanStateClusterShutdownCallback(EndpointId) {}
+void emberAfDescriptorClusterShutdownCallback(EndpointId) {}
+void emberAfGeneralCommissioningClusterShutdownCallback(EndpointId) {}
+void emberAfGeneralDiagnosticsClusterShutdownCallback(EndpointId) {}
+void emberAfGroupKeyManagementClusterShutdownCallback(EndpointId) {}
+void emberAfGroupsClusterShutdownCallback(EndpointId) {}
+void emberAfIdentifyClusterShutdownCallback(EndpointId) {}
+void emberAfLevelControlClusterShutdownCallback(EndpointId) {}
+void emberAfNetworkCommissioningClusterShutdownCallback(EndpointId) {}
+void emberAfOnOffClusterShutdownCallback(EndpointId) {}
+void emberAfOperationalCredentialsClusterShutdownCallback(EndpointId) {}
+void emberAfSoftwareDiagnosticsClusterShutdownCallback(EndpointId) {}
+void emberAfSwitchClusterShutdownCallback(EndpointId) {}
+void emberAfTemperatureMeasurementClusterShutdownCallback(EndpointId) {}
+void emberAfWiFiNetworkDiagnosticsClusterShutdownCallback(EndpointId) {}
 
 // Every attribute of the data model may be read and written (the access control list decides who may)
 bool emberAfAttributeReadAccessCallback(EndpointId, ClusterId, AttributeId)

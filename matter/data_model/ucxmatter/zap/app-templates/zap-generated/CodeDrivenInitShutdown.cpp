@@ -48,6 +48,15 @@ void MatterClusterServerInitCallback(EndpointId endpoint, ClusterId  clusterId) 
     case app::Clusters::GeneralDiagnostics::Id:
         MatterGeneralDiagnosticsClusterInitCallback(endpoint);
         break;
+    case app::Clusters::SoftwareDiagnostics::Id:
+        MatterSoftwareDiagnosticsClusterInitCallback(endpoint);
+        break;
+    case app::Clusters::WiFiNetworkDiagnostics::Id:
+        MatterWiFiNetworkDiagnosticsClusterInitCallback(endpoint);
+        break;
+    case app::Clusters::Switch::Id:
+        MatterSwitchClusterInitCallback(endpoint);
+        break;
     case app::Clusters::AdministratorCommissioning::Id:
         MatterAdministratorCommissioningClusterInitCallback(endpoint);
         break;
@@ -89,6 +98,15 @@ void MatterClusterServerShutdownCallback(EndpointId endpoint, ClusterId clusterI
         break;
     case app::Clusters::GeneralDiagnostics::Id:
         MatterGeneralDiagnosticsClusterShutdownCallback(endpoint, shutdownType);
+        break;
+    case app::Clusters::SoftwareDiagnostics::Id:
+        MatterSoftwareDiagnosticsClusterShutdownCallback(endpoint, shutdownType);
+        break;
+    case app::Clusters::WiFiNetworkDiagnostics::Id:
+        MatterWiFiNetworkDiagnosticsClusterShutdownCallback(endpoint, shutdownType);
+        break;
+    case app::Clusters::Switch::Id:
+        MatterSwitchClusterShutdownCallback(endpoint, shutdownType);
         break;
     case app::Clusters::AdministratorCommissioning::Id:
         MatterAdministratorCommissioningClusterShutdownCallback(endpoint, shutdownType);

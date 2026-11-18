@@ -78,7 +78,8 @@ pw_python_venv("build_venv") {
   source_packages = [ "${chip_root}/scripts/py_matter_idl:matter-idl" ]
 }
 
-# The node's data model: root node, dimmable light, temperature sensor, contact sensor. The code generated from
+# The node's data model: root node (with Wi-Fi and software diagnostics), dimmable light, temperature sensor,
+# contact sensor, generic switch. The code generated from
 # it is checked in under data_model/ucxmatter ("ucxapp --matter --zap" makes it), so a build needs no ZAP tool.
 chip_data_model("ucxmatter-data-model") {
   zap_file = "data_model/ucxmatter.zap"
@@ -120,6 +121,7 @@ target(_ucxmatter_type, "ucxmatter") {
     ":ucx_api",
     ":ucxmatter-data-model",
     "${chip_root}/src/app/clusters/boolean-state-server",
+    "${chip_root}/src/app/clusters/switch-server",
     "${chip_root}/src/app/server",
     "${chip_root}/src/crypto",
     "${chip_root}/src/lib",

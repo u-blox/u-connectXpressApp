@@ -1,6 +1,8 @@
 {
   "board": "NUCLEO-F401RE",
   "gpio": ["PB0", "PA5", "PC13", "PA8", "PB10", "PB4", "PB5"],
+  "button": { "pin": "PC13", "pressed": 0 },
+  "led": "PA5",
   "adc": ["PA0", "PA1", "PA4", "PC1"],
   "pwm": [
     { "pin": "PB6", "timer": "TIM4_CH1" },

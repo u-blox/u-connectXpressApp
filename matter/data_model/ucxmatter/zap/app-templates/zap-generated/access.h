@@ -109,16 +109,19 @@
 // Parallel array data (*cluster*, command, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__CLUSTER { \
     0x00000003, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    0x00000034, /* Cluster: Software Diagnostics, Command: ResetWatermarks, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, *command*, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__COMMAND { \
     0x00000000, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    0x00000000, /* Cluster: Software Diagnostics, Command: ResetWatermarks, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, command, *privilege*) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__PRIVILEGE { \
     chip::Access::Privilege::kManage, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    chip::Access::Privilege::kManage, /* Cluster: Software Diagnostics, Command: ResetWatermarks, Privilege: manage */ \
 }
 
 ////////////////////////////////////////////////////////////////////////////////

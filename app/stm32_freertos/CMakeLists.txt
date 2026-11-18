@@ -101,6 +101,26 @@ if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc|nu
     list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_can.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_can_stm32.c)
     set(UCXAPP_CAN_HW ON)
 endif()
+# Boards with room get hw.* on their own pins: hw_config.h is made from the board profile at configure time.
+set(_hwprofile_nucleo_h753zi h753)
+set(_hwprofile_nucleo_f767zi f767)
+set(_hwprofile_nucleo_f439zi f439)
+set(_hwprofile_f407_disc f407)
+if(DEFINED _hwprofile_${STM32_BOARD})
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(_hwprofile ${CMAKE_CURRENT_SOURCE_DIR}/../boards/${_hwprofile_${STM32_BOARD}}.json)
+    set(_hwgen ${CMAKE_CURRENT_BINARY_DIR}/hwgen)
+    file(MAKE_DIRECTORY ${_hwgen})
+    execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/hw_config.py ${_hwprofile}
+                            --out ${_hwgen}/hw_config.h
+                    RESULT_VARIABLE _hwrc)
+    if(NOT _hwrc EQUAL 0)
+        message(FATAL_ERROR "board profile ${_hwprofile} is not valid")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_hwprofile})
+    list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_hw.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_hw_stm32.c)
+    set(UCXAPP_HW_BOARD ON)
+endif()
 # Boards with a hardware TRNG and RAM to spare serve the web UI over HTTPS only (mbedTLS, keys from the RNG
 # peripheral; see docs/SECURITY.md). The F439/F407 (128-192 KB RAM) cannot hold the page buffers and a TLS
 # session next to the app, the F401 has no RNG, the F446 and the lite boards lack the RAM.
@@ -150,6 +170,10 @@ target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${APP_SRC} ${LITTLEF
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE LFS_THREADSAFE LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)
 if(UCXAPP_CAN_HW)
     target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_CAN_HW)
+endif()
+if(UCXAPP_HW_BOARD)
+    target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_hwgen})
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_HW_BOARD)
 endif()
 if(UCXAPP_WEB)
     target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})

@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define UCXAPP_MATTER_ABI 4
+#define UCXAPP_MATTER_ABI 5
 
 /* The symbol the host looks up in the plug-in. */
 #define UCXAPP_MATTER_ENTRY "ucxmatter_plugin"
@@ -71,6 +71,10 @@ typedef struct {
     int32_t (*storeLoad)(const char *name, void *buffer, size_t size);   /* length stored, -1 if there is none */
     bool (*storeRemove)(const char *name);
     uint32_t (*tickMs)(void);
+    /* ABI 5: the board's user button (1 pressed, 0 released, -1 none) and LED (false when there is none), from
+       hw.*: the board's pins in firmware, the emulated ones of a loaded board profile on a PC. */
+    int (*boardButton)(void);
+    bool (*boardLed)(bool on);
 } ucxapp_matter_host_t;
 
 /* What the plug-in gives the host. */

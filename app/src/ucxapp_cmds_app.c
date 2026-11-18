@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef UCXAPP_CRYPTO
@@ -342,7 +343,26 @@ static int cmdComplete(ucxapp_t *app, int argc, char *argv[])
     return count > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+/* For --exec scripts: give what runs in the background (a node, a bridge) time between two steps. */
+static int cmdWait(ucxapp_t *app, int argc, char *argv[])
+{
+    char *end;
+    long ms;
+
+    (void)app;
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ms = strtol(argv[1], &end, 10);
+    if (*end != '\0' || ms < 1 || ms > 60000) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_platform_sleep_ms((uint32_t)ms);
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gAppCmds[] = {
+    { "app.wait", "<ms 1..60000>", "Wait, e.g. between two --exec steps", 0, cmdWait },
     { "app.complete", "<text...>", "What Tab completes a typed line to: the command, then its keywords (quote a trailing space)", 0, cmdComplete },
     { "app.info", "", "About this app: maker, platform and links", 0, cmdInfo },
     { "app.memory", "", "App RAM, heap and flash (disk on a PC); task stacks on STM32, in the dev.stack layout", 0, cmdMemory },

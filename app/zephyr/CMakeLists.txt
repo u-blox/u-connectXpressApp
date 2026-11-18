@@ -70,6 +70,27 @@ if(CONFIG_CAN)
     target_sources(app PRIVATE ucxapp_can_zephyr.c ${APP_SRC}/ucxapp_cmds_can.c)
     target_compile_definitions(app PRIVATE UCXAPP_CAN_HW)
 endif()
+# Boards with room get hw.* on their own pins, as in the FreeRTOS build: hw_config.h from the board profile.
+set(_hwprofile_nucleo_h753zi h753)
+set(_hwprofile_nucleo_f767zi f767)
+set(_hwprofile_nucleo_f439zi f439)
+set(_hwprofile_stm32f4_disco f407)
+if(DEFINED _hwprofile_${BOARD} AND CONFIG_GPIO)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(_hwprofile ${REPO_ROOT}/app/boards/${_hwprofile_${BOARD}}.json)
+    set(_hwgen ${CMAKE_CURRENT_BINARY_DIR}/hwgen)
+    file(MAKE_DIRECTORY ${_hwgen})
+    execute_process(COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/scripts/hw_config.py ${_hwprofile}
+                            --out ${_hwgen}/hw_config.h
+                    RESULT_VARIABLE _hwrc)
+    if(NOT _hwrc EQUAL 0)
+        message(FATAL_ERROR "board profile ${_hwprofile} is not valid")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_hwprofile})
+    target_sources(app PRIVATE ucxapp_hw_zephyr.c ${APP_SRC}/ucxapp_cmds_hw.c)
+    target_include_directories(app PRIVATE ${_hwgen})
+    target_compile_definitions(app PRIVATE UCXAPP_HW_BOARD)
+endif()
 # 96-128 KB RAM boards: Zephyr's own RAM leaves no room for the full-size buffers next to a heap.
 # The phone remote control (xplorer.*) does not fit next to the rest in 512 KB of flash.
 if(BOARD MATCHES "^(nucleo_f401re|nucleo_f446re)$")

@@ -11,7 +11,7 @@ from pathlib import Path
 
 PIN = re.compile(r"^P([A-K])(\d{1,2})$")
 SINGLE = (("i2c", ("scl", "sda")), ("spi", ("sck", "miso", "mosi", "cs")), ("can", ("rx", "tx")))
-KNOWN = {"board", "gpio", "adc", "pwm", "i2c", "spi", "can", "reserved", "emu"}
+KNOWN = {"board", "gpio", "button", "led", "adc", "pwm", "i2c", "spi", "can", "reserved", "emu"}
 
 
 def pins_of(cfg):
@@ -32,6 +32,13 @@ def validate(cfg):
         errors.append(f"pin {p} is assigned twice")
     for p in sorted(set(pins) & set(cfg.get("reserved", []))):
         errors.append(f"pin {p} is reserved")
+    gpio = list(cfg.get("gpio", []))
+    button = cfg.get("button", {})
+    for role, pin in (("button", button.get("pin")), ("led", cfg.get("led"))):
+        if (role in cfg) and pin not in gpio:
+            errors.append(f"{role} pin {pin} is not one of the gpio pins")
+    if button.get("pressed", 1) not in (0, 1):
+        errors.append("button.pressed must be 0 or 1")
     return errors
 
 
@@ -53,6 +60,12 @@ def header(cfg):
         for n in names:
             if n in cfg.get(group, {}):
                 out.append(f"#define HW_{group.upper()}_{n.upper()} {x(cfg[group][n])}")
+    gpio = list(cfg.get("gpio", []))
+    if "button" in cfg:
+        out.append(f"#define HW_BUTTON_INDEX {gpio.index(cfg['button']['pin'])}")
+        out.append(f"#define HW_BUTTON_PRESSED {cfg['button'].get('pressed', 1)}")
+    if "led" in cfg:
+        out.append(f"#define HW_LED_INDEX {gpio.index(cfg['led'])}")
     return "\n".join(out) + "\n"
 
 

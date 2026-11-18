@@ -4,6 +4,7 @@
  * and pushes "EVT ..." lines for GPIO input changes and received CAN frames. */
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_hw.h"
 #include "ucxapp_hwcfg.h"
 #include "ucxapp_platform.h"
 #include "ucxapp_stream.h"
@@ -28,19 +29,8 @@
 #define MAX_BYTES 32
 #define VREF_MV   3300
 
-enum { GPIO_IN, GPIO_OUT, GPIO_PULLUP, GPIO_PULLDOWN };
 
-typedef struct {
-    const char *name;
-    bool (*gpioMode)(int pin, int mode);
-    bool (*gpioWrite)(int pin, int level);
-    int (*gpioRead)(int pin);
-    /* write wl bytes, then read rl bytes (repeated start); returns 0 on ACK, negative on NACK */
-    int (*i2cXfer)(int addr, const uint8_t *w, size_t wl, uint8_t *r, size_t rl);
-    bool (*spiXfer)(const uint8_t *tx, uint8_t *rx, size_t n);
-    int (*adcRead)(int ch);   /* 12-bit raw, negative on error */
-    bool (*pwmSet)(int ch, uint32_t hz, int permille);
-} hwBackend_t;
+typedef ucxapp_hw_backend_t hwBackend_t;
 
 /* ---- emulated backend ---- */
 
@@ -73,9 +63,9 @@ static void emuInit(void)
 static bool emuGpioMode(int pin, int mode)
 {
     gEmuMode[pin] = mode;
-    if (mode == GPIO_PULLUP) {
+    if (mode == UCXAPP_GPIO_PULLUP) {
         gEmuLevel[pin] = 1;
-    } else if (mode == GPIO_PULLDOWN) {
+    } else if (mode == UCXAPP_GPIO_PULLDOWN) {
         gEmuLevel[pin] = 0;
     }
     return true;
@@ -145,7 +135,16 @@ static const hwBackend_t kEmu = {
     "emulated", emuGpioMode, emuGpioWrite, emuGpioRead, emuI2cXfer, emuSpiXfer, emuAdcRead, emuPwmSet
 };
 
+#ifdef UCXAPP_HW_BOARD
+static const hwBackend_t *gBe;   /* the board's, set when the commands register */
+#else
 static const hwBackend_t *gBe = &kEmu;
+#endif
+
+/* The user button and LED: gpio indexes from the board or the loaded profile, -1 for none */
+static int gButton = -1;
+static int gButtonPressed = 1;
+static int gLed = -1;
 
 static U_CX_MUTEX_HANDLE gLock;
 static bool gLockInit;
@@ -155,12 +154,23 @@ static bool gLockInit;
 static int gSpiMode;
 static int32_t gSpiHz = 1000000;
 static struct { uint32_t hz; int permille; } gPwm[HWCFG_MAX_PWM];
+#ifndef UCXAPP_HW_BOARD
 static ucxapp_stream_t *gStream;
+#endif
 
 typedef struct {
     char buf[1024];
     size_t n;
 } hwOut_t;
+
+static const char *pinName(int p)
+{
+#ifdef UCXAPP_HW_BOARD
+    return p < ucxapp_hw_board.nGpio ? ucxapp_hw_board.gpio[p] : NULL;
+#else
+    return gCfg != NULL ? gCfg->gpio[p] : NULL;
+#endif
+}
 
 static void outf(hwOut_t *o, const char *fmt, ...)
 {
@@ -318,8 +328,10 @@ static int opGpioList(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_USAGE;
     }
     for (int p = 0; p < gNGpio; p++) {
-        if (gCfg != NULL) {
-            outf(o, "%s%d:%s=%d", p ? " " : "", p, gCfg->gpio[p], gBe->gpioRead(p));
+        const char *name = pinName(p);
+
+        if (name != NULL) {
+            outf(o, "%s%d:%s=%d", p ? " " : "", p, name, gBe->gpioRead(p));
         } else {
             outf(o, "%s%d=%d", p ? " " : "", p, gBe->gpioRead(p));
         }
@@ -327,25 +339,33 @@ static int opGpioList(int argc, char *argv[], hwOut_t *o)
     return UCXAPP_OK;
 }
 
-/* A user LED is a GPIO output: configure the pin as out, then drive it. */
+/* A user LED is a GPIO output: configure the pin as out, then drive it. Without a pin: the board's LED. */
 static int opLed(int argc, char *argv[], hwOut_t *o)
 {
-    int pin;
+    int pin = gLed;
     int level;
+    const char *how = argv[argc - 1];
 
-    if (argc != 3 || !parsePin(argv[1], &pin)) {
+    if (argc == 2 && strcasecmp(how, "on") != 0 && strcasecmp(how, "off") != 0 && strcasecmp(how, "toggle") != 0) {
         return UCXAPP_ERR_USAGE;
     }
-    if (strcasecmp(argv[2], "on") == 0) {
+    if (argc == 2 ? gLed < 0 : (argc != 3 || !parsePin(argv[1], &pin))) {
+        if (argc == 2) {
+            outf(o, "no user LED on this board; give the pin");
+            return UCXAPP_ERR_FAILED;
+        }
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcasecmp(how, "on") == 0) {
         level = 1;
-    } else if (strcasecmp(argv[2], "off") == 0) {
+    } else if (strcasecmp(how, "off") == 0) {
         level = 0;
-    } else if (strcasecmp(argv[2], "toggle") == 0) {
+    } else if (strcasecmp(how, "toggle") == 0) {
         level = -1;
     } else {
         return UCXAPP_ERR_USAGE;
     }
-    if (!gBe->gpioMode(pin, GPIO_OUT)) {
+    if (!gBe->gpioMode(pin, UCXAPP_GPIO_OUT)) {
         outf(o, "cannot drive LED on pin %d", pin);
         return UCXAPP_ERR_FAILED;
     }
@@ -357,6 +377,28 @@ static int opLed(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_FAILED;
     }
     outf(o, "led on pin %d = %d", pin, level);
+    return UCXAPP_OK;
+}
+
+static int buttonLevel(void)
+{
+    return gButton < 0 ? -1 : (gBe->gpioRead(gButton) == gButtonPressed ? 1 : 0);
+}
+
+static int opButton(int argc, char *argv[], hwOut_t *o)
+{
+    int pressed;
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    pressed = buttonLevel();
+    if (pressed < 0) {
+        outf(o, "no user button on this board");
+        return UCXAPP_ERR_FAILED;
+    }
+    outf(o, "button on pin %d %s", gButton, pressed ? "pressed" : "released");
     return UCXAPP_OK;
 }
 
@@ -550,7 +592,17 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
+#ifdef UCXAPP_HW_BOARD
+    outf(o, "backend %s, board %s\n", gBe->name, ucxapp_hw_board.board);
+#else
     outf(o, "backend %s, board %s\n", gBe->name, gCfg != NULL ? gCfg->board : "(none loaded)");
+#endif
+    if (gButton >= 0) {
+        outf(o, "user button on pin %d\n", gButton);
+    }
+    if (gLed >= 0) {
+        outf(o, "user LED on pin %d\n", gLed);
+    }
     outf(o, "gpio %d pins, i2c, spi mode %d at %d Hz, adc %d ch\n", gNGpio, gSpiMode, (int)gSpiHz, gNAdc);
     for (int c = 0; c < gNPwm; c++) {
         if (gPwm[c].hz > 0) {
@@ -568,7 +620,8 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     X(opGpioRead, "gpio.read", "<pin>", "Read a GPIO pin") \
     X(opGpioToggle, "gpio.toggle", "<pin>", "Invert a GPIO output") \
     X(opGpioList, "gpio.list", "", "Levels of all GPIO pins") \
-    X(opLed, "led", "<pin> <on|off|toggle>", "Drive a user LED (configures the pin as an output)") \
+    X(opLed, "led", "[pin] <on|off|toggle>", "Drive a user LED (configures the pin as an output); without a pin the board's LED") \
+    X(opButton, "button", "", "Read the board's user button") \
     X(opI2cScan, "i2c.scan", "", "Scan the I2C bus for devices") \
     X(opI2cWrite, "i2c.write", "<addr> <hex...>", "Write bytes to an I2C device") \
     X(opI2cRead, "i2c.read", "<addr> <len>", "Read bytes from an I2C device") \
@@ -684,6 +737,9 @@ static int cmdExec(ucxapp_t *app, int argc, char *argv[])
 
 /* ---- bridge ---- */
 
+#ifndef UCXAPP_HW_BOARD
+/* A board has no streams; its console is the way in. */
+
 static char gRx[200];
 static size_t gRxLen;
 static int gLastLevel[HWCFG_MAX_GPIO];
@@ -763,6 +819,17 @@ static int cmdLoad(ucxapp_t *app, int argc, char *argv[])
     lockHw();
     emuInit();
     gNGpio = c->nGpio;
+    gButton = gLed = -1;
+    gButtonPressed = c->buttonPressed;
+    for (int p = 0; p < c->nGpio; p++) {
+        gButton = c->button[0] != '\0' && strcmp(c->gpio[p], c->button) == 0 ? p : gButton;
+        gLed = c->led[0] != '\0' && strcmp(c->gpio[p], c->led) == 0 ? p : gLed;
+    }
+    if (gButton >= 0) {
+        /* released until hw.gpio.write simulates a press */
+        gEmuMode[gButton] = UCXAPP_GPIO_IN;
+        gEmuLevel[gButton] = !gButtonPressed;
+    }
     gNAdc = c->nAdc;
     gNPwm = c->nPwm;
     memset(gPwm, 0, sizeof(gPwm));
@@ -813,15 +880,18 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     }
     return r;
 }
+#endif
 
 #define X_ENTRY(opf, name, usage, help) { "hw." name, usage, help, 0, sh_##opf },
 static const ucxapp_cmd_t kCmds[] = {
     HW_OPS(X_ENTRY)
-    { "hw.profile.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
     { "hw.exec", "<command...>", "Run a bridge line such as 'gpio.read 3' and print the OK/ERR reply", 0, cmdExec },
+#ifndef UCXAPP_HW_BOARD
+    { "hw.profile.load", "<file.json>", "Load a board profile (pin names, counts, emulated I2C devices)", 0, cmdLoad },
     { "hw.bridge", "tcps [port] | tcpc <host> <port> | udpc <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | "
       "uart <port> [baud] | off [n] | status", "Expose these commands as a line protocol, with EVT lines for events; up to 4 bridges at once", 0,
       cmdBridge },
+#endif
 };
 
 void ucxapp_register_hw_cmds(void)
@@ -831,5 +901,35 @@ void ucxapp_register_hw_cmds(void)
         gLockInit = true;
     }
     emuInit();
+#ifdef UCXAPP_HW_BOARD
+    gBe = ucxapp_hw_board.backend != NULL ? ucxapp_hw_board.backend : &kEmu;
+    gNGpio = ucxapp_hw_board.nGpio;
+    gButton = ucxapp_hw_board.button;
+    gButtonPressed = ucxapp_hw_board.buttonPressed;
+    gLed = ucxapp_hw_board.led;
+    if (gButton >= 0) {
+        (void)gBe->gpioMode(gButton, UCXAPP_GPIO_IN);
+    }
+#endif
     (void)ucxapp_cmd_register(kCmds, sizeof(kCmds) / sizeof(kCmds[0]));
+}
+
+int ucxapp_hw_button(void)
+{
+    int pressed;
+
+    lockHw();
+    pressed = buttonLevel();
+    unlockHw();
+    return pressed;
+}
+
+bool ucxapp_hw_led(bool on)
+{
+    bool ok;
+
+    lockHw();
+    ok = gLed >= 0 && gBe->gpioMode(gLed, UCXAPP_GPIO_OUT) && gBe->gpioWrite(gLed, on ? 1 : 0);
+    unlockHw();
+    return ok;
 }

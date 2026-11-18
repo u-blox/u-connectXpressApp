@@ -458,6 +458,21 @@ def test_hw_load_board_profiles(app_exe, tmp_path, board):
     assert "usage: hw.adc.read" in out.stdout
 
 
+def test_hw_board_button_and_led(app_exe, tmp_path):
+    """h753: user button PC13 (pressed high), LED PB0; hw.gpio.write on the button pin simulates a press."""
+    out = _run(app_exe, tmp_path, "COM255", f"hw.profile.load {BOARDS / 'h753.json'}", "hw.button",
+               "hw.gpio.write PC13 1", "hw.button", "hw.led on", "hw.gpio.read PB0", "hw.led toggle")
+    assert out.returncode == 0, out.stdout
+    assert "released" in out.stdout and "pressed" in out.stdout.split("released", 1)[1]
+    assert "led on pin 0 = 1" in out.stdout and "led on pin 0 = 0" in out.stdout
+
+
+def test_hw_board_without_button_or_led(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.button")
+    assert out.returncode == 1 and "no user button" in out.stdout
+    out = _run(app_exe, tmp_path, "COM255", "hw.led on")
+    assert out.returncode == 1 and "no user LED" in out.stdout
+
 @pytest.mark.parametrize("text, message", [
     ('{"board":"x","gpio":["PB0","PB0"]}', "pin PB0 is assigned twice"),
     ('{"board":"x","gpio":["PB7"],"reserved":["PB7"]}', "pin PB7 is reserved"),

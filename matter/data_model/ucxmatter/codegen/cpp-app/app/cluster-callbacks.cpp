@@ -50,8 +50,17 @@ void emberAfClusterInitCallback(EndpointId endpoint, ClusterId clusterId) {
   case app::Clusters::OperationalCredentials::Id:
     emberAfOperationalCredentialsClusterInitCallback(endpoint);
     break;
+  case app::Clusters::SoftwareDiagnostics::Id:
+    emberAfSoftwareDiagnosticsClusterInitCallback(endpoint);
+    break;
+  case app::Clusters::Switch::Id:
+    emberAfSwitchClusterInitCallback(endpoint);
+    break;
   case app::Clusters::TemperatureMeasurement::Id:
     emberAfTemperatureMeasurementClusterInitCallback(endpoint);
+    break;
+  case app::Clusters::WiFiNetworkDiagnostics::Id:
+    emberAfWiFiNetworkDiagnosticsClusterInitCallback(endpoint);
     break;
   default:
     // Unrecognized cluster ID
@@ -104,8 +113,17 @@ void emberAfClusterShutdownCallback(EndpointId endpoint, ClusterId clusterId) {
   case app::Clusters::OperationalCredentials::Id:
     emberAfOperationalCredentialsClusterShutdownCallback(endpoint);
     break;
+  case app::Clusters::SoftwareDiagnostics::Id:
+    emberAfSoftwareDiagnosticsClusterShutdownCallback(endpoint);
+    break;
+  case app::Clusters::Switch::Id:
+    emberAfSwitchClusterShutdownCallback(endpoint);
+    break;
   case app::Clusters::TemperatureMeasurement::Id:
     emberAfTemperatureMeasurementClusterShutdownCallback(endpoint);
+    break;
+  case app::Clusters::WiFiNetworkDiagnostics::Id:
+    emberAfWiFiNetworkDiagnosticsClusterShutdownCallback(endpoint);
     break;
   default:
     // Unrecognized cluster ID

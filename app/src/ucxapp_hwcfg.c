@@ -152,6 +152,16 @@ static bool apply(ctx_t *x, const char *path, const char *v)
     if (strcmp(path, "can.tx") == 0) {
         return setPin(x, c->canTx, path, v);
     }
+    if (strcmp(path, "button.pin") == 0) {
+        return setPin(x, c->button, path, v);
+    }
+    if (strcmp(path, "button.pressed") == 0 && (strcmp(v, "0") == 0 || strcmp(v, "1") == 0)) {
+        c->buttonPressed = v[0] - '0';
+        return true;
+    }
+    if (strcmp(path, "led") == 0) {
+        return setPin(x, c->led, path, v);
+    }
     if (strncmp(path, "emu.", 4) == 0 && applyEmu(x, path, v)) {
         return true;
     }
@@ -299,6 +309,18 @@ static void checkPins(ctx_t *x)
             return;
         }
     }
+    for (int r = 0; r < 2; r++) {
+        const char *pin = r == 0 ? c->button : c->led;
+        bool found = pin[0] == '\0';
+
+        for (int i = 0; i < c->nGpio && !found; i++) {
+            found = strcmp(pin, c->gpio[i]) == 0;
+        }
+        if (!found) {
+            fail(x, "%s is not one of the gpio pins", pin);
+            return;
+        }
+    }
 }
 
 bool ucxapp_hwcfg_parse(const char *json, hwcfg_t *cfg, char *err, size_t errSize)
@@ -309,6 +331,7 @@ bool ucxapp_hwcfg_parse(const char *json, hwcfg_t *cfg, char *err, size_t errSiz
 
     err[0] = '\0';
     memset(cfg, 0, sizeof(*cfg));
+    cfg->buttonPressed = 1;
     end = skipWs(json);
     if (*end != '{') {
         snprintf(err, errSize, "not a JSON object");

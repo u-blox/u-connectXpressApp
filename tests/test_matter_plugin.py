@@ -61,7 +61,7 @@ def test_start_runs_the_matter_service_on_the_module_and_shows_the_setup_codes(a
     discriminator, passcode = setup_codes(out.stdout)
     assert codes_allowed(discriminator, passcode), out.stdout
     assert "matter: node started (Matter SDK v" in out.stdout, out.stdout
-    assert re.search(r"node: NORA-\S+ over Wi-Fi, 3 endpoint\(s\)", out.stdout), out.stdout
+    assert re.search(r"node: NORA-\S+ over Wi-Fi, 4 endpoint\(s\)", out.stdout), out.stdout
     # the virtual module connects a host as soon as a GATT service is activated
     assert "state: Bluetooth LE link up, not commissioned" in out.stdout, out.stdout
     assert f"discriminator {discriminator}, vendor 0xFFF1, product 0x8001, passcode {passcode:08d}" in out.stdout
@@ -456,13 +456,13 @@ def test_card_shows_the_node_its_codes_and_endpoints(app_exe, module, plugin, tm
     assert out.returncode == 0, out.stdout
     discriminator, passcode = setup_codes(out.stdout)
     card = out.stdout[out.stdout.rindex("NODE  "):]
-    assert re.match(r"NODE  NORA-\S+ over Wi-Fi, 3 endpoint\(s\)\nSTATE not commissioned\n", card), card
+    assert re.match(r"NODE  NORA-\S+ over Wi-Fi, 4 endpoint\(s\)\nSTATE not commissioned\n", card), card
     # the virtual module's host has connected and the window is open; the module is on Wi-Fi
     assert "BLE   link up\nWIN   open\nNET   Wi-Fi up, 192.168.1.50, channel 6\n" in card, card
     assert re.search(rf"CODE  {manual_code(discriminator, passcode)}\d\nQR    MT:[0-9A-Z.\-]{{19}}\n", card), card
     assert "EP    1 light = on 40%  [on | off | 0..100 (percent)]\n" in card, card
     assert "EP    2 temp = 21.5 C  [-40..125 (degrees Celsius)]\n" in card, card
-    assert "EP    3 contact = closed  [open | closed]\nLOG   info\n" in card, card
+    assert "EP    3 contact = closed  [open | closed]\nEP    4 switch = released  [press | release | click]\nLOG   info\n" in card, card
     assert "STEP" not in card, card   # no commissioning under way
 
 
@@ -534,3 +534,17 @@ def test_unknown_endpoint_does_not_start_or_advertise(app_exe, module, plugin, t
     assert out.returncode != 0, out.stdout
     assert "unknown endpoint fridge; this plug-in builds: light temp contact" in out.stdout, out.stdout
     assert "AT+UBTAL" not in module.log, module.log
+
+BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
+
+
+def test_board_button_is_the_switch_and_the_led_shows_the_light(app_exe, module, plugin, tmp_path):
+    """h753 profile: the user button (PC13, pressed high) drives the switch endpoint, the LED (PB0) follows the light."""
+    out = _run(app_exe, module, plugin, tmp_path, f"hw.profile.load {BOARDS / 'h753.json'}", "matter.start",
+               "matter.set light off", "hw.gpio.read PB0", "matter.set light on", "hw.gpio.read PB0",
+               "hw.gpio.write PC13 1", "app.wait 300", "matter.card", "hw.gpio.write PC13 0", "app.wait 300",
+               "matter.card")
+    assert out.returncode == 0, out.stdout
+    assert out.stdout.index("pin 0 = 0") < out.stdout.index("pin 0 = 1"), out.stdout
+    assert "EP    4 switch = pressed" in out.stdout, out.stdout
+    assert out.stdout.rstrip().rfind("EP    4 switch = released") > out.stdout.find("EP    4 switch = pressed")

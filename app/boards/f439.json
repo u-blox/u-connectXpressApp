@@ -1,6 +1,8 @@
 {
   "board": "NUCLEO-F439ZI",
   "gpio": ["PB0", "PB14", "PC13", "PF15", "PF14", "PF13", "PF12", "PD15", "PD14"],
+  "button": { "pin": "PC13", "pressed": 1 },
+  "led": "PB0",
   "adc": ["PA3", "PC0", "PC3", "PF10"],
   "pwm": [
     { "pin": "PE9", "timer": "TIM1_CH1" },

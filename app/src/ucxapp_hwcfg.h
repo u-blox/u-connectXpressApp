@@ -36,6 +36,9 @@ typedef struct {
     char i2cScl[HWCFG_PIN_LEN], i2cSda[HWCFG_PIN_LEN];
     char spiSck[HWCFG_PIN_LEN], spiMiso[HWCFG_PIN_LEN], spiMosi[HWCFG_PIN_LEN], spiCs[HWCFG_PIN_LEN];
     char canRx[HWCFG_PIN_LEN], canTx[HWCFG_PIN_LEN];
+    char button[HWCFG_PIN_LEN];   /* the user button, one of gpio; "" when the board has none */
+    int buttonPressed;            /* level the button reads when pressed */
+    char led[HWCFG_PIN_LEN];      /* the user LED, one of gpio */
     hwcfgI2cDev_t emuI2c[HWCFG_MAX_EMU];
     int nEmuI2c;
 } hwcfg_t;

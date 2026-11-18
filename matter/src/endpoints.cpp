@@ -104,10 +104,45 @@ void ContactShow(const Endpoint & e, char * out, size_t size)
     snprintf(out, size, "%s", e.value[0] != 0 ? "open" : "closed");
 }
 
+// switch: a momentary push button (a board's user button). value[0] 1 while pressed, value[1] the position the
+// data model has, value[2] 1 for a click (press and release) not yet given to the data model
+void SwitchInit(Endpoint & e)
+{
+    e.value[0] = 0;
+    e.value[1] = 0;
+    e.value[2] = 0;
+}
+
+bool SwitchSet(Endpoint & e, int argc, const char * const argv[])
+{
+    if (argc != 1)
+    {
+        return false;
+    }
+    if (strcmp(argv[0], "press") == 0 || strcmp(argv[0], "release") == 0)
+    {
+        e.value[0] = argv[0][0] == 'p';
+        return true;
+    }
+    if (strcmp(argv[0], "click") == 0)
+    {
+        e.value[0] = 0;
+        e.value[2] = 1;
+        return true;
+    }
+    return false;
+}
+
+void SwitchShow(const Endpoint & e, char * out, size_t size)
+{
+    snprintf(out, size, "%s", e.value[0] != 0 ? "pressed" : "released");
+}
+
 const EndpointKind kKinds[] = {
     { "light", 0x0101, "Dimmable Light", "on | off | 0..100 (percent)", LightInit, LightSet, LightShow, 1 },
     { "temp", 0x0302, "Temperature Sensor", "-40..125 (degrees Celsius)", TempInit, TempSet, TempShow, 2 },
     { "contact", 0x0015, "Contact Sensor", "open | closed", ContactInit, ContactSet, ContactShow, 3 },
+        { "switch", 0x000F, "Generic Switch", "press | release | click", SwitchInit, SwitchSet, SwitchShow, 4 },
 };
 
 Endpoint gEndpoints[kMaxEndpoints];

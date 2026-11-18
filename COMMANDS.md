@@ -734,7 +734,8 @@ not wired in yet.
 | `hw.gpio.read` | `<pin>` | Read a GPIO pin |
 | `hw.gpio.toggle` | `<pin>` | Invert a GPIO output |
 | `hw.gpio.list` |  | Levels of all GPIO pins |
-| `hw.led` | `<pin> <on\|off\|toggle>` | Drive a user LED; configures the pin as an output (pins can be given by name) |
+| `hw.led` | `[pin] <on\|off\|toggle>` | Drive a user LED; configures the pin as an output (pins can be given by name); without a pin the board's LED (`led` in the board profile) |
+| `hw.button` |  | Read the board's user button (`button` in the board profile: pin and the level it reads when pressed) |
 | `hw.i2c.scan` |  | Scan the I2C bus |
 | `hw.i2c.write` | `<addr> <hex...>` | Write bytes to a device |
 | `hw.i2c.read` | `<addr> <len>` | Read bytes from a device |
@@ -844,6 +845,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `dev.stack` |
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
+| `app.wait` | `<ms 1..60000>` | Wait, e.g. between two `--exec` steps so a node or bridge can act |
 | `app.snake` | `[demo [steps=300] [seed=1]]` | Break time: the snake eats data packets (`<>`); arrows or WASD steer, `p` pauses, `q` quits, Enter or `r` plays again after the link is lost. Full screen in the console and in the TUI (type it on the input line); `--exec` and the web command line have no keyboard, so they print a hint. `demo` lets the app steer for `steps` moves from a fixed `seed` and prints the board and the score. On the web page type `snake` outside a field, or right-click or hold FX and pick Snake |
 | `app.hunt` | `[ssid] [rounds=20]` | Signal hunt: walk the module (a laptop with the EVK, or an STM32 board on a power bank) towards an access point, the strongest one or `ssid`. Every Wi-Fi scan prints the RSSI, a bar from -95 to -40 dBm and `hotter!`, `colder`, `same` (3 dB steps) or `out of range`; -40 dBm wins. A good way to feel how antenna, walls and body change the signal. Any key stops; ends with the best RSSI against the start |
 | `app.time` | `[sync [ntp\|http\|module\|gnss] [host] \| set <unix\|YYYY-MM-DDTHH:MM:SS> \| push \| geo \| zone [<+HH:MM>\|off] \| selftest]` | App wall clock in UTC with its source and age, the local time when a zone is set, and the place (GNSS fix, else the last `wifi.locate` or `geo` answer, else unknown). `geo` asks `ip-api.com` (plain HTTP over the module) for the public IP, the city and the time zone with its current UTC offset, daylight saving included; later `sync`s refresh it. `zone` sets a fixed offset by hand (no daylight saving) or `off`. `sync` uses SNTP over a module UDP socket (default `pool.ntp.org`), falling back to the `Date` header of an HTTP `HEAD` (default `www.google.com`); `sync module` reads `AT+USYTU`; `sync gnss` takes the UTC of the open receiver's fix. With a fresh GNSS fix the clock follows the receiver by itself (checked once a minute, source `gnss`) unless it was `set` by hand; a replayed recording is never used. `set` sets it by hand, `push` writes it to the module (`AT+USYTU`). On STM32 it sets the clock `time()` reads; on a PC the OS keeps the clock and the offset is shown |

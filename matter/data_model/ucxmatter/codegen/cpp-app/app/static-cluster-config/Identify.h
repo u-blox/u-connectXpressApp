@@ -45,6 +45,17 @@ inline constexpr CommandId kEndpoint3EnabledCommands[] = {
     Commands::Identify::Id,
 };
 
+inline constexpr AttributeId kEndpoint4EnabledAttributes[] = {
+    Attributes::ClusterRevision::Id,
+    Attributes::FeatureMap::Id,
+    Attributes::IdentifyTime::Id,
+    Attributes::IdentifyType::Id,
+};
+
+inline constexpr CommandId kEndpoint4EnabledCommands[] = {
+    Commands::Identify::Id,
+};
+
 } // namespace detail
 
 using FeatureBitmapType =
@@ -52,7 +63,7 @@ using FeatureBitmapType =
 
 inline constexpr std::array<
     Clusters::StaticApplicationConfig::ClusterConfiguration<FeatureBitmapType>,
-    3>
+    4>
     kFixedClusterConfig = {{
         {
             .endpointNumber = 0,
@@ -76,6 +87,14 @@ inline constexpr std::array<
                 Span<const AttributeId>(detail::kEndpoint3EnabledAttributes),
             .enabledCommands =
                 Span<const CommandId>(detail::kEndpoint3EnabledCommands),
+        },
+        {
+            .endpointNumber = 4,
+            .featureMap = BitFlags<FeatureBitmapType>{},
+            .enabledAttributes =
+                Span<const AttributeId>(detail::kEndpoint4EnabledAttributes),
+            .enabledCommands =
+                Span<const CommandId>(detail::kEndpoint4EnabledCommands),
         },
     }};
 

@@ -53,6 +53,18 @@ void MatterGeneralDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
 
 void MatterGeneralDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId, MatterClusterShutdownType shutdownType);
 
+void MatterSoftwareDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
+
+void MatterSoftwareDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId, MatterClusterShutdownType shutdownType);
+
+void MatterWiFiNetworkDiagnosticsClusterInitCallback(chip::EndpointId endpointId);
+
+void MatterWiFiNetworkDiagnosticsClusterShutdownCallback(chip::EndpointId endpointId, MatterClusterShutdownType shutdownType);
+
+void MatterSwitchClusterInitCallback(chip::EndpointId endpointId);
+
+void MatterSwitchClusterShutdownCallback(chip::EndpointId endpointId, MatterClusterShutdownType shutdownType);
+
 void MatterAdministratorCommissioningClusterInitCallback(chip::EndpointId endpointId);
 
 void MatterAdministratorCommissioningClusterShutdownCallback(chip::EndpointId endpointId, MatterClusterShutdownType shutdownType);

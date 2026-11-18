@@ -3,6 +3,7 @@
  * module's AT client and hands it a copy of every URC (ucxapp_matter.h), so the other commands, the AT trace and
  * the web page keep working while the node runs. */
 #include "ucxapp_cmd.h"
+#include "ucxapp_hw.h"
 #include "ucxapp_matter.h"
 #include "ucxapp_store.h"
 #include "ucxapp_stream.h"
@@ -187,6 +188,8 @@ static ucxapp_matter_host_t gHost = {
     .storeLoad = hostStoreLoad,
     .storeRemove = hostStoreRemove,
     .tickMs = ucxapp_platform_tick_ms,
+    .boardButton = ucxapp_hw_button,
+    .boardLed = ucxapp_hw_led,
 };
 
 /* ---- URCs: the plug-in first, then the app's own handlers ---------------- */

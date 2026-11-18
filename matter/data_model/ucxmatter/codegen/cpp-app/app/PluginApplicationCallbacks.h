@@ -13,7 +13,10 @@ void MatterLevelControlPluginServerInitCallback();
 void MatterNetworkCommissioningPluginServerInitCallback();
 void MatterOnOffPluginServerInitCallback();
 void MatterOperationalCredentialsPluginServerInitCallback();
+void MatterSoftwareDiagnosticsPluginServerInitCallback();
+void MatterSwitchPluginServerInitCallback();
 void MatterTemperatureMeasurementPluginServerInitCallback();
+void MatterWiFiNetworkDiagnosticsPluginServerInitCallback();
 void MatterAccessControlPluginServerShutdownCallback();
 void MatterAdministratorCommissioningPluginServerShutdownCallback();
 void MatterBasicInformationPluginServerShutdownCallback();
@@ -28,7 +31,10 @@ void MatterLevelControlPluginServerShutdownCallback();
 void MatterNetworkCommissioningPluginServerShutdownCallback();
 void MatterOnOffPluginServerShutdownCallback();
 void MatterOperationalCredentialsPluginServerShutdownCallback();
+void MatterSoftwareDiagnosticsPluginServerShutdownCallback();
+void MatterSwitchPluginServerShutdownCallback();
 void MatterTemperatureMeasurementPluginServerShutdownCallback();
+void MatterWiFiNetworkDiagnosticsPluginServerShutdownCallback();
 
 #define MATTER_PLUGINS_INIT                                                    \
   MatterAccessControlPluginServerInitCallback();                               \
@@ -45,7 +51,10 @@ void MatterTemperatureMeasurementPluginServerShutdownCallback();
   MatterNetworkCommissioningPluginServerInitCallback();                        \
   MatterOnOffPluginServerInitCallback();                                       \
   MatterOperationalCredentialsPluginServerInitCallback();                      \
-  MatterTemperatureMeasurementPluginServerInitCallback();
+  MatterSoftwareDiagnosticsPluginServerInitCallback();                         \
+  MatterSwitchPluginServerInitCallback();                                      \
+  MatterTemperatureMeasurementPluginServerInitCallback();                      \
+  MatterWiFiNetworkDiagnosticsPluginServerInitCallback();
 
 #define MATTER_PLUGINS_SHUTDOWN                                                \
   MatterAccessControlPluginServerShutdownCallback();                           \
@@ -62,4 +71,7 @@ void MatterTemperatureMeasurementPluginServerShutdownCallback();
   MatterNetworkCommissioningPluginServerShutdownCallback();                    \
   MatterOnOffPluginServerShutdownCallback();                                   \
   MatterOperationalCredentialsPluginServerShutdownCallback();                  \
-  MatterTemperatureMeasurementPluginServerShutdownCallback();
+  MatterSoftwareDiagnosticsPluginServerShutdownCallback();                     \
+  MatterSwitchPluginServerShutdownCallback();                                  \
+  MatterTemperatureMeasurementPluginServerShutdownCallback();                  \
+  MatterWiFiNetworkDiagnosticsPluginServerShutdownCallback();

@@ -29,7 +29,7 @@ struct Endpoint
     const EndpointKind * kind;
     uint16_t id;      // endpoint number on the node; 0 is the root node
     char name[16];    // the kind, numbered from the second of a kind: light, light2
-    int32_t value[2]; // meaning is the kind's
+    int32_t value[3]; // meaning is the kind's
 };
 
 int KindCount();

@@ -1,6 +1,8 @@
 {
   "board": "STM32F4DISCOVERY",
   "gpio": ["PB0", "PA0", "PC13", "PE7", "PE8", "PE9", "PE10", "PE11", "PE12"],
+  "button": { "pin": "PA0", "pressed": 1 },
+  "led": "PB0",
   "adc": ["PA1", "PB1", "PC1", "PC2"],
   "pwm": [
     { "pin": "PD12", "timer": "TIM4_CH1" },

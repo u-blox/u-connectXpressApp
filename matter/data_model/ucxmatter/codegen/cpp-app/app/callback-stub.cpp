@@ -142,12 +142,42 @@ emberAfOperationalCredentialsClusterShutdownCallback(EndpointId endpoint) {
   (void)endpoint;
 }
 void __attribute__((weak))
+emberAfSoftwareDiagnosticsClusterInitCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
+emberAfSoftwareDiagnosticsClusterShutdownCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
+emberAfSwitchClusterInitCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
+emberAfSwitchClusterShutdownCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
 emberAfTemperatureMeasurementClusterInitCallback(EndpointId endpoint) {
   // To prevent warning
   (void)endpoint;
 }
 void __attribute__((weak))
 emberAfTemperatureMeasurementClusterShutdownCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
+emberAfWiFiNetworkDiagnosticsClusterInitCallback(EndpointId endpoint) {
+  // To prevent warning
+  (void)endpoint;
+}
+void __attribute__((weak))
+emberAfWiFiNetworkDiagnosticsClusterShutdownCallback(EndpointId endpoint) {
   // To prevent warning
   (void)endpoint;
 }

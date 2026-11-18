@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -612,6 +613,67 @@ def test_page_in_a_browser(server):
         assert page.is_visible("#pc")
         browser.close()
     assert not js_errors, js_errors
+
+
+class _Reconnect(Mock):
+    """/events for a tab that first sees no module, then a module, and later connects again from the page."""
+
+    def do_GET(self):
+        if not self.path.startswith("/events"):
+            Mock.do_GET(self)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+
+        def send(name, data):
+            self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.flush()
+
+        send("state", "Wi-Fi - | BLE -")    # no module yet: no summary, and the once-per-tab flag is cleared
+        time.sleep(0.5)
+        send("state", "Wi-Fi up | BLE -")   # a module appeared
+        acked = 0
+        while not self.server.stop.wait(0.05):
+            for url in self.server.posted[acked:]:
+                acked += 1
+                if re.search(r"cmd=dev\.(summary|connect)(&|$)", url):
+                    send("out", "Module: vucx\n")
+                    send("done", 0)
+
+
+def test_summary_runs_after_each_connect():
+    """dev.summary runs when a module appears and again right after every dev.connect from the page (switching
+    from the virtual module to a real device), without waiting for the next 5 s state resend."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Reconnect)
+    srv.posted, srv.stop = [], threading.Event()
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def summaries():
+        return [u for u in srv.posted if "cmd=dev.summary" in u]
+
+    try:
+        with sync_api.sync_playwright() as p:
+            try:
+                browser = p.chromium.launch()
+            except Exception as exc:
+                pytest.skip(f"no browser: {exc}")
+            page = browser.new_page()
+            js_errors = []
+            page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+            page.goto(f"http://127.0.0.1:{srv.server_address[1]}/?t=x")
+            page.wait_for_selector(".blk .badge.ok")        # the summary of the module that appeared
+            assert len(summaries()) == 1, srv.posted
+            page.evaluate("run('dev.connect', ['webserial'])")
+            page.wait_for_function("document.querySelectorAll('.blk .badge.ok').length >= 3")
+            assert len(summaries()) == 2, srv.posted        # once per connect, not once per tab
+            assert not js_errors, js_errors
+            browser.close()
+    finally:
+        srv.stop.set()
+        srv.shutdown()
 
 
 def test_connections_view_keeps_every_node_on_screen(server):

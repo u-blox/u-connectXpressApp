@@ -410,9 +410,10 @@ static void pumpLoop(void *arg)
         }
         bool pending = flushOutput(0, LOCAL_SLOT - 1);
         flushEvents(0, LOCAL_SLOT - 1);
+        /* "done" before the state the command caused: the page is no longer busy when the state arrives */
+        flushDone(0, LOCAL_SLOT - 1);
         flushState(0, LOCAL_SLOT - 1);
         flushCards(0, LOCAL_SLOT - 1);
-        flushDone(0, LOCAL_SLOT - 1);
         if (U_CX_PORT_GET_TIME_MS() - lastKeepAlive > KEEPALIVE_MS) {
             uWebServerBroadcastSSEEvent(gServer, "ka", "");
             lastKeepAlive = U_CX_PORT_GET_TIME_MS();
@@ -1595,9 +1596,10 @@ const char *ucxapp_web_local_poll(void)
     if (gLocal) {
         flushOutput(LOCAL_SLOT, LOCAL_SLOT);
         flushEvents(LOCAL_SLOT, LOCAL_SLOT);
+        /* "done" before the state the command caused: the page is no longer busy when the state arrives */
+        flushDone(LOCAL_SLOT, LOCAL_SLOT);
         flushState(LOCAL_SLOT, LOCAL_SLOT);
         flushCards(LOCAL_SLOT, LOCAL_SLOT);
-        flushDone(LOCAL_SLOT, LOCAL_SLOT);
     }
     return gLocalEvents;
 }

@@ -901,6 +901,14 @@ def coverage(pytest_args):
     report.write_text("\n".join(rows) + "\n", encoding="utf-8")
     print("\n".join(rows))
     print("Report:", report)
+    # The same gcovr check as the c-coverage CI job (its parser rejects gcov's negative hit counts, GCC bug 68080).
+    if shutil.which("gcovr"):
+        gc = subprocess.call(["gcovr", "-r", str(ROOT), "--filter", "app/src/", "--object-directory", str(bd),
+                              "--gcov-ignore-parse-errors", "negative_hits.warn_once_per_file",
+                              "--txt", "--fail-under-line", "80"], cwd=ROOT)
+        rc = rc or gc
+    else:
+        print("gcovr not found: the CI coverage gate (c-coverage job) was not checked here; pip install gcovr")
     return rc
 
 

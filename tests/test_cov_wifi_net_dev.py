@@ -156,7 +156,7 @@ SCAN = [
 
 def test_working_module_wifi_profiles_power_and_diagnose(app_exe, tmp_path):
     _store(tmp_path, "ucxapp.fwlatest", "NORA-W36-9.9.9.zip\n")
-    _store(tmp_path, "ucxapp.blelast", "mybulb\n")
+    _store(tmp_path, "ucxapp.blelast.virtual", "mybulb\n")
     profile = _yaml_profile(tmp_path, {"include": ["nora-w36.yaml"], "commands": {"AT+UWSSC*": SCAN}})
     out, log = _shell(app_exe, profile, [
         "wifi.regdomain 2", "wifi.regdomain europe", 'wifi.regdomain "New Zealand"', "wifi.regdomain -1",

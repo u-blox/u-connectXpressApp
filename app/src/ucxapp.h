@@ -44,7 +44,9 @@ typedef struct {
     void (*putraw)(const uint8_t *data, size_t len);
 } ucxapp_io_t;
 
-extern const ucxapp_io_t ucxapp_io_stdio;      /* ucxapp_io_stdio.c (PC targets) */
+extern ucxapp_io_t ucxapp_io_stdio;            /* ucxapp_io_stdio.c (PC targets) */
+/* --raw-console: raw byte access on stdin/stdout (YMODEM through a pipe); false if the reader cannot start. */
+bool ucxapp_io_stdio_raw(void);
 
 void ucxapp_io_set(const ucxapp_io_t *io);
 const ucxapp_io_t *ucxapp_io_get(void);

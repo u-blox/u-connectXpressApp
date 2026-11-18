@@ -366,6 +366,9 @@ static const example_t kExamples[] = {
 
     { "coap", "CoAP GET",
       "coap.get coap.me 5683 test" },
+    { "lwm2m", "LwM2M client on Eclipse Leshan",
+      "wifi.connect MyNetwork MyPassword\nlwm2m.run leshan.eclipseprojects.io 5683 my-nora 120\n"
+      "# open https://leshan.eclipseprojects.io, find my-nora and read /3/0 (Device)" },
     { "tftp", "TFTP server for the working folder",
       "wifi.connect MyNetwork MyPassword\ntftp.on rw\n# from a PC: curl -T fw.bin tftp://<module-ip>/\n"
       "# or: tftp -i <module-ip> GET notes.txt\ntftp.status\ntftp.off" },

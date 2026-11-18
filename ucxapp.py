@@ -801,6 +801,10 @@ def detect(exe, ports=None, force=False):
     else:
         print("  none")
 
+    stm32 = [n for n, _, role in serial_ports if role == "STM32 console"]
+    if stm32:
+        env["UCX_STM32_PORT"] = stm32[0]   # file.recv / file.send over the board's console (test_stm32_files.py)
+
     if env:
         print("Test variables:")
         for k, v in env.items():
@@ -869,7 +873,7 @@ def coverage(pytest_args):
     if not (bd / "ucxapp").is_file():
         fail(f"instrumented exe not found: {bd / 'ucxapp'}")
     absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT",
-                              "UCX_PPK_PORT")}
+                              "UCX_PPK_PORT", "UCX_STM32_PORT")}
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
     partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
@@ -2469,7 +2473,8 @@ def main(argv):
             if not args.test:
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.
-            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT", "UCX_PPK_PORT"):
+            for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT", "UCX_PPK_PORT",
+                        "UCX_STM32_PORT"):
                 found.setdefault(key, "")
         if not (args.detect or args.ports) and "hardware" not in " ".join(extra):
             # Plain --test is offline; hardware tests run only with --detect or --ports.

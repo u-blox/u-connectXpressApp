@@ -1,6 +1,7 @@
 """fw.*, dtls.* and file.* paths that need a module or a peer: fw.flash and fw.bootloader against a vucx that turns
 into an XMODEM receiver, DTLS client and server bridged through two vucx modules, and the usage and error paths."""
 
+import io
 import socket
 import subprocess
 import threading
@@ -31,15 +32,16 @@ def _profile(**identity):
     return profile
 
 
-def _fw_module(modes, **identity):
+def _fw_module(modes, pages=None, flashed=None, **identity):
     """A vucx served over TCP whose connections after the first behave as listed: at, startup (AT that sends
     +STARTUP), xmodem, xmodem-cancel, xmodem-close (closes the listener after the transfer), at-close, bootloader,
-    bootloader-cancel."""
-    from harness.vucx import Vucx
+    bootloader-cancel. pages: its fake HTTP server (vucx.http_pages); flashed: the version it reports after a
+    transfer."""
+    from harness.vucx import Vucx, http_pages
 
     class FwModule(Vucx):
         def __init__(self):
-            super().__init__(_profile(**identity))
+            super().__init__(http_pages(_profile(**identity), pages) if pages else _profile(**identity))
             self.modes = list(modes)
             self.received = bytearray()
             self.prompted = False
@@ -115,6 +117,8 @@ def _fw_module(modes, **identity):
                 while buf:
                     if buf[0] == EOT:
                         conn.sendall(ACK)
+                        if flashed:
+                            self.commands["AT+GMR"] = [f'"{flashed}"', "OK"]
                         return
                     if buf[0] not in (SOH, STX):
                         del buf[0]
@@ -293,31 +297,34 @@ def test_fw_download_url_checks_the_sha256(app_exe, tmp_path):
     assert (tmp_path / "storage" / "fw2.bin").exists(), good.stdout
 
 
+_RELEASES = "/repos/u-blox/u-connectXpress/releases?per_page=100"
+_DOWNLOAD = "https://github.com/u-blox/u-connectXpress/releases/download"
+
+
+def _releases(*assets, pad=1500):
+    """The GitHub releases JSON listing the assets, padded so it streams in several chunks."""
+    return "[" + ",".join('{"notes":"' + "n" * pad + f'","browser_download_url" : "{_DOWNLOAD}/v/{a}"' + "}"
+                          for a in assets) + "]"
+
+
+def _fw_zip(version, data):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(f"NORA-W36X-SW-{version}.bin", data)
+    return buf.getvalue()
+
+
 def test_fw_github_lookup_and_download_go_through_the_module(app_exe, tmp_path):
     """The release list and the zip come from the module's HTTP client (AT+UHTC*), never the host network; the
     releases JSON is scanned as it streams, so assets far apart and past the first chunks are all found."""
-    from harness.vucx import Vucx
+    from harness.vucx import Vucx, http_pages
 
-    base = "https://github.com/u-blox/u-connectXpress/releases/download"
     assets = ["NORA-W36-3.5.1.zip", "NORA-W36-3.6.0-019-EVAL.zip", "NORA-B26-3.6.0.zip", "NORA-W36-3.4.0.zip"]
-    body = "[" + ",".join('{"notes":"' + "n" * 1500 + f'","browser_download_url" : "{base}/v/{a}"' + "}"
-                          for a in assets) + "]"
-    api = "/repos/u-blox/u-connectXpress/releases?per_page=100"
-    profile = _profile()
-    profile["state"] = {f'AT+UHTCRP=0,"{api}"': {"page": "api"},
-                        f'AT+UHTCRP=0,"/u-blox/u-connectXpress/releases/download/v/{assets[0]}"': {"page": "rel"},
-                        'AT+UHTCRP=0,"/cdn/fw.zip"': {"page": "cdn"}, **profile.get("state", {})}
-    hdr = '+UHTCGH:0,0,"HTTP/1.1 {}\\r\\n{}\\r\\n\\r\\n"'   # the module sends header escapes as text
-    profile["commands"] = {
-        "AT+UHTCGH=* [page=api]": [hdr.format("200 OK", "Content-Type: application/json"), "OK"],
-        "AT+UHTCGBB=* [page=api]": [[f"+UHTCGBB:0,{int(i + 1500 < len(body))}\x01" + body[i:i + 1500], "OK"]
-                                    for i in range(0, len(body), 1500)],
-        "AT+UHTCGH=* [page=rel]": [hdr.format("302 Found", "Location: https://objects.example/cdn/fw.zip"), "OK"],
-        "AT+UHTCGH=* [page=cdn]": [hdr.format("200 OK", "Content-Length: 7"), "OK"],
-        "AT+UHTCGBB=* [page=cdn]": ["+UHTCGBB:0,0\x01ZIPDATA", "OK"],
-        **profile["commands"]}
-    profile["urcs"] = {**profile.get("urcs", {}), "AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']}
-    module = Vucx(profile)
+    module = Vucx(http_pages(_profile(), {
+        _RELEASES: ("200 OK", ["Content-Type: application/json"], _releases(*assets)),
+        f"/u-blox/u-connectXpress/releases/download/v/{assets[0]}":
+            ("302 Found", ["Location: https://objects.example/cdn/fw.zip"], ""),
+        "/cdn/fw.zip": ("200 OK", ["Content-Length: 7"], "ZIPDATA")}))
     module.start()
     try:
         listing = _run(app_exe, module.port, "fw.github.list", cwd=tmp_path)
@@ -345,6 +352,94 @@ def test_fw_download_url_failure_is_passed_on(app_exe, tmp_path):
     finally:
         module.stop()
     assert out.returncode != 0 and "sha256:" not in out.stdout, out.stdout
+
+
+_ZIP_PATH = "/u-blox/u-connectXpress/releases/download/v/"
+_W36 = ["NORA-W36-3.6.0-019-EVAL.zip", "NORA-W36-3.5.1.zip", "NORA-W36-3.4.0.zip"]
+
+
+def test_fw_update_downloads_flashes_and_checks_the_newest_release(app_exe, tmp_path):
+    """fw.update picks the highest release (not the newest published, evaluation builds left out), downloads it
+    through the module, flashes the image inside the zip and checks the version the module reports after."""
+    image = bytes((i * 11) & 0xFF for i in range(1500))
+    module = _fw_module(["at", "xmodem", "startup"], version="3.4.0-0", flashed="3.5.1-0", pages={
+        _RELEASES: ("200 OK", [], _releases(*_W36)),
+        _ZIP_PATH + _W36[1]: ("200 OK", [], _fw_zip("3.5.1", image))})
+    try:
+        out = _run(app_exe, module.port, "fw.update 115200", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert out.returncode == 0, out.stdout
+    assert "latest firmware:  3.5.1-0 (NORA-W36-3.5.1.zip)" in out.stdout, out.stdout
+    assert "downloading NORA-W36-3.5.1.zip through the module" in out.stdout, out.stdout
+    assert "updated to 3.5.1-0" in out.stdout, out.stdout
+    assert bytes(module.received[:len(image)]) == image
+    assert (tmp_path / "storage" / "ucxapp.fwlatest").read_text().startswith("NORA-W36-3.5.1.zip")
+
+
+def test_fw_update_uses_a_stored_zip_and_notices_a_wrong_version(app_exe, tmp_path):
+    """A zip already in the store is not downloaded again; a module that still reports the old version after the
+    flash is an error."""
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / _W36[0]).write_bytes(_fw_zip("3.6.0", b"\x5a" * 300))
+    module = _fw_module(["at", "xmodem", "startup"], version="3.5.1-0",
+                        pages={_RELEASES: ("200 OK", [], _releases(*_W36))})
+    try:
+        out = _run(app_exe, module.port, "fw.update eval", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert "using NORA-W36-3.6.0-019-EVAL.zip already in the store" in out.stdout, out.stdout
+    assert out.returncode != 0 and "ERROR: module reports 3.5.1-0, expected 3.6.0-19" in out.stdout, out.stdout
+    assert not any(_ZIP_PATH in c for c in module.log), module.log
+
+
+@pytest.mark.parametrize("command,version,expect", [
+    ("fw.update", "3.5.1-0", "already up to date; use 'fw.update force' to flash anyway"),
+    ("fw.update force", "3.5.1-0", "ERROR: download of NORA-W36-3.5.1.zip failed"),
+    ("fw.download eval my.zip", "3.5.1-0", "flash it with: fw.flash my.zip"),
+    ("fw.github.list", "3.5.1-0", "NORA-W36-3.4.0.zip\n"),
+])
+def test_fw_github_update_paths(app_exe, tmp_path, command, version, expect):
+    module = _fw_module([], version=version, pages={
+        _RELEASES: ("200 OK", [], _releases(*_W36, pad=10)),
+        _ZIP_PATH + _W36[0]: ("200 OK", [], "EVALZIP"),
+        _ZIP_PATH + _W36[1]: ("404 Not Found", [], "")})
+    try:
+        out = _run(app_exe, module.port, command, cwd=tmp_path)
+    finally:
+        module.stop()
+    assert expect in out.stdout.replace("\r", ""), out.stdout
+    assert (out.returncode == 0) == ("ERROR" not in expect), out.stdout
+    if "my.zip" in command:
+        assert (tmp_path / "storage" / "my.zip").read_bytes() == b"EVALZIP"
+
+
+def test_fw_github_list_with_no_release_for_the_family(app_exe, tmp_path):
+    module = _fw_module([], pages={_RELEASES: ("200 OK", [], _releases(*_W36, pad=10))})
+    try:
+        out = _run(app_exe, module.port, "fw.github.list NORA-B26", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert "no firmware releases for NORA-B26" in out.stdout, out.stdout
+
+
+def test_fw_github_lookup_reports_a_module_without_internet(app_exe, tmp_path):
+    module = _fw_module([], pages={_RELEASES: ("503 Service Unavailable", [], "")})
+    module.commands["AT+UHTCGBB=*"] = ["ERROR"]
+    try:
+        out = _run(app_exe, module.port, "fw.update", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert out.returncode != 0 and "cannot query GitHub through the module" in out.stdout, out.stdout
+
+
+def test_fw_list_shows_the_firmware_in_the_store(app_exe, tmp_path):
+    (tmp_path / "storage").mkdir()
+    for name in ("a.zip", "b.BIN", "notes.txt"):
+        (tmp_path / "storage" / name).write_bytes(b"x" * 3)
+    out = _run(app_exe, None, "fw.list", cwd=tmp_path)
+    assert out.returncode == 0 and "a.zip" in out.stdout and "b.BIN" in out.stdout, out.stdout
+    assert "notes.txt" not in out.stdout and "no firmware downloaded" not in out.stdout, out.stdout
 
 
 # ---- dtls.* on a module that is not virtual (no VUCX serial number) ----

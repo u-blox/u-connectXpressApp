@@ -53,6 +53,12 @@ FAKE_SERIAL = """
     getInfo: () => ({ usbVendorId: 0x0403, usbProductId: 0x6015 }),
   };
   window.__asked = [];
+  /* a recoverable read error, as Chrome reports a buffer overrun: the stream errors, port.readable is new */
+  window.__overrun = () => {
+    const old = push;
+    rd = new ReadableStream({ start(c) { push = c; } });
+    old.error(new DOMException('Buffer overrun', 'BufferOverrunError'));
+  };
   Object.defineProperty(navigator, 'serial', { value: {
     requestPort: async options => {
       window.__asked.push(options || null);
@@ -522,6 +528,37 @@ def test_a_port_lost_during_a_command_ends_the_command_at_once(site):
                                    timeout=8000)
         except sync_api.TimeoutError:
             pytest.fail("the lost port held the app; the page shows:\n" + page.inner_text("#out")[-1500:])
+        browser.close()
+
+
+def test_a_recoverable_read_error_keeps_the_module(site):
+    """A buffer overrun (a busy page under heavy traffic, e.g. Matter commissioning) is not a lost port: the page
+    reads on from the new stream, so the app keeps its module and a running Matter node is not stopped."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        page.add_init_script(FAKE_SERIAL)
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        page.click("#wsc")
+        page.wait_for_function("document.getElementById('out').innerText.includes('connected to webserial')",
+                               timeout=60000)
+        page.evaluate("window.__overrun()")
+        page.wait_for_timeout(500)
+        assert page.inner_text("#wsc") == "Disconnect module"
+        page.fill("#cmd", "dev.connect webserial")
+        page.click("#run")
+        try:
+            page.wait_for_function("document.getElementById('out').innerText.includes('already connected')",
+                                   timeout=30000)
+        except sync_api.TimeoutError:
+            pytest.fail("the module was dropped after the overrun; the page shows:\n" +
+                        page.inner_text("#out")[-1500:])
+        assert "read() failed" not in page.inner_text("#out")
         browser.close()
 
 

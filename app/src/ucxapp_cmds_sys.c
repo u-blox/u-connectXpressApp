@@ -21,7 +21,8 @@ static ucxapp_store_writer_t *gSaveWriter;
 
 /* Host settings files; app.defaults removes them all. */
 static const char *const kSettingsFiles[] = {
-    LOG_SETTINGS_FILE, "ucxapp.wifi", "ucxapp.wifilast", "ucxapp.regdomain", "ucxapp.ble", "ucxapp.blelast"
+    LOG_SETTINGS_FILE, "ucxapp.wifi", "ucxapp.wifilast", "ucxapp.regdomain", "ucxapp.ble", "ucxapp.blelast",
+    "ucxapp.wifilast.virtual", "ucxapp.blelast.virtual"
 };
 
 static void saveLogSettings(void)

@@ -165,8 +165,8 @@ static int cmdDeviceSummary(ucxapp_t *app, int argc, char *argv[])
     if (ble > 0 || socks > 0) {
         ucxapp_print("Open:             %d BLE link(s), %d socket(s)\n", ble, socks);
     }
-    lastWifi = wifi && !wifiUp && firstLine(UCXAPP_WIFI_LAST_FILE, ssid, sizeof(ssid));
-    lastBle = ble == 0 && firstLine(UCXAPP_BLE_LAST_FILE, last, sizeof(last));
+    lastWifi = wifi && !wifiUp && firstLine(UCXAPP_WIFI_LAST_FILE(app), ssid, sizeof(ssid));
+    lastBle = ble == 0 && firstLine(UCXAPP_BLE_LAST_FILE(app), last, sizeof(last));
     if (lastWifi || lastBle) {
         ucxapp_print("Last used:        ");
         if (lastWifi) {

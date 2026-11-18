@@ -161,6 +161,7 @@ int ucxapp_wifi_scan(ucxapp_t *app, ucxapp_wifi_ap_t *out, int max);
 void ucxapp_register_sock_cmds(void);
 void ucxapp_register_dtls_cmds(void);    /* dtls.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_coap_cmds(void);    /* coap.* (host only, empty in UCXAPP_LITE builds) */
+void ucxapp_register_lwm2m_cmds(void);   /* lwm2m.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_tftp_cmds(void);    /* tftp.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_ft_cmds(void);      /* ft.* BLE file transfer (host only) */
 void ucxapp_register_ancs_cmds(void);    /* ancs.* iPhone notifications (host only) */
@@ -196,8 +197,9 @@ void ucxapp_register_thread_cmds(void);
 const char *ucxapp_thread_role_name(int32_t role);
 /* Store files shared between command packs */
 #define UCXAPP_FW_LATEST_FILE "ucxapp.fwlatest"   /* newest release zip name fw.update found */
-#define UCXAPP_WIFI_LAST_FILE "ucxapp.wifilast"
-#define UCXAPP_BLE_LAST_FILE  "ucxapp.blelast"
+/* Last used Wi-Fi profile and BLE peer; a virtual module keeps its own, so a real one never tries its networks. */
+#define UCXAPP_WIFI_LAST_FILE(app) (ucxapp_module_is_virtual(app) ? "ucxapp.wifilast.virtual" : "ucxapp.wifilast")
+#define UCXAPP_BLE_LAST_FILE(app)  (ucxapp_module_is_virtual(app) ? "ucxapp.blelast.virtual" : "ucxapp.blelast")
 /* Thread role ("leader", ...) or "off"; false on a module without Thread firmware. */
 bool ucxapp_thread_dash(ucxapp_t *app, char *out, size_t size);
 int32_t ucxapp_thread_joiner_result(void);

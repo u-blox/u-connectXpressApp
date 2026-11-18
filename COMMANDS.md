@@ -23,6 +23,7 @@ ucxapp dev.info
 
 - Without a port argument, `--exec` and `--shell` use the saved port from the ini file.
 - `--offline` skips the module auto-detection, for commands that need no device (`tls.*`, `help`).
+- `--raw-console` makes stdin/stdout a raw serial line, so `file.recv` / `file.send` (YMODEM) run through a pipe on a PC (the tests use it as a fake console).
 - If the module cannot be connected, commands that need it fail with `not connected`; `help` still works.
 - Arguments are whitespace separated; use double quotes for values with spaces
   (`wifi.connect "My Network" "my password"`). `\"` and `\\` escape inside quotes.
@@ -286,6 +287,7 @@ Passwords given on the command line are visible in the process list and shell hi
 | `net.ntp` | `<status\|on\|off\|server> [args...]` | NTP client: `status`, `on [manual\|auto]`, `off`, `server <0\|1> <host\|->` (`-` removes) |
 | `coap.get` | `<host> <port> [path]` | CoAP GET over UDP via a module socket (confirmable, 3 tries, 2 s each) |
 | `coap.selftest` | | Offline check of CoAP request encoding and response parsing |
+| `lwm2m.run` | `<host> [port] [endpoint] [seconds]` | OMA LwM2M 1.1 client on a module UDP socket (port 5683, no DTLS): registers as `endpoint` (default `ucxapp-<serial>`, lifetime 120 s), answers Read (text or TLV) and Discover of the Server (1) and Device (3) objects with the module's manufacturer, model, serial, firmware and time, executes Registration Update Trigger (`/1/0/8`), sends updates every 60 s, and deregisters after `seconds` (default 60, `0` runs until a key). Try it with the public Eclipse Leshan server: `lwm2m.run leshan.eclipseprojects.io` |
 | `tftp.on` | `[rw] [port=69] [seconds]` | TFTP server (RFC 1350, with `blksize`/`tsize` options) on a module UDP socket, default port 69; serves plain file names from the working folder, read only unless `rw`. Uploads land as `<name>.part` and are renamed when complete. With `seconds` it blocks that long, then stops. No authentication: trusted networks only |
 | `tftp.off` | | Stop the TFTP server |
 | `tftp.status` | | Server port, mode, transfer count and the last transfer |

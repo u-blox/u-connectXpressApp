@@ -609,9 +609,9 @@ static int findProfile(const profile_t *list, int count, const char *name)
     return -1;
 }
 
-#define LAST_FILE       UCXAPP_WIFI_LAST_FILE
+#define LAST_FILE       UCXAPP_WIFI_LAST_FILE(app)
 
-static bool loadLastUsed(char *name, size_t size)
+static bool loadLastUsed(ucxapp_t *app, char *name, size_t size)
 {
     size_t len = 0;
     char *data = (char *)ucxapp_store_load(LAST_FILE, &len);
@@ -1116,7 +1116,7 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
 
-    if (loadLastUsed(last, sizeof(last)) && (idx = findProfile(list, count, last)) >= 0) {
+    if (loadLastUsed(app, last, sizeof(last)) && (idx = findProfile(list, count, last)) >= 0) {
         ucxapp_print("Trying last used profile '%s'...\n", last);
         if (connectProfile(app, list, idx, AUTO_FIRST_TRY_S, true) == UCXAPP_OK) {
             return UCXAPP_OK;

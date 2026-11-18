@@ -144,6 +144,25 @@ def load(profile):
     return merged
 
 
+def http_pages(profile, pages):
+    """Fake HTTP server behind the module's HTTP client (AT+UHTC*). pages maps a request path ("/a/b?c=1") to
+    (status, headers, body), e.g. ("302 Found", ["Location: https://cdn.example/x"], ""); the body (str or bytes)
+    is served in 1500-byte chunks as the module does. Returns a copy of the profile."""
+    p = load(profile)
+    hdr = '+UHTCGH:0,0,"HTTP/1.1 {}\\r\\n{}\\r\\n\\r\\n"'   # the module sends header escapes as text
+    state, commands = {}, {}
+    for i, (path, (status, headers, body)) in enumerate(pages.items()):
+        page = f"http{i}"
+        body = body.decode("latin-1") if isinstance(body, bytes) else body
+        chunks = [body[n:n + 1500] for n in range(0, len(body), 1500)] or [""]
+        state[f'AT+UHTCRP=0,"{path}"'] = {"page": page}
+        commands[f"AT+UHTCGH=* [page={page}]"] = [hdr.format(status, "\\r\\n".join(headers)), "OK"]
+        commands[f"AT+UHTCGBB=* [page={page}]"] = [[f"+UHTCGBB:0,{int(n + 1 < len(chunks))}\x01{c}", "OK"]
+                                                   for n, c in enumerate(chunks)]
+    return {**p, "state": {**state, **(p.get("state") or {})}, "commands": {**commands, **(p.get("commands") or {})},
+            "urcs": {"AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"'], **(p.get("urcs") or {})}}
+
+
 def table(profile=None):
     """What the module answers: {commands, urcs, default}, with the setup and identity commands filled in."""
     p = load(profile) if profile is not None else {}

@@ -217,6 +217,7 @@ static void printUsage(const char *prog)
     ucxapp_print("  --web only serves the web UI from the module (Wi-Fi: the best known network unless connected; web.start\n");
     ucxapp_print("        unless an --exec started it); q, Esc or Ctrl+C stops\n");
     ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
+    ucxapp_print("  --raw-console makes stdin/stdout a raw serial line, so file.recv / file.send (YMODEM) work through a pipe\n");
     ucxapp_print("  --json prints one JSON object per command: command, success, code, error, output lines, data\n");
     ucxapp_print("  ${NAME} in --exec and shell commands is replaced by the environment variable (keeps secrets off the command line)\n");
 }
@@ -489,6 +490,13 @@ int main(int argc, char *argv[])
             webMode = true;
         } else if (strcmp(argv[i], "--offline") == 0) {
             offline = true;
+        } else if (strcmp(argv[i], "--raw-console") == 0) {
+#ifndef __EMSCRIPTEN__
+            if (!ucxapp_io_stdio_raw()) {
+                ucxapp_print("ERROR: cannot start the raw console\n");
+                return 2;
+            }
+#endif
         } else if (strcmp(argv[i], "--json") == 0) {
             json = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
@@ -575,6 +583,7 @@ int main(int argc, char *argv[])
     ucxapp_register_tls_cmds();
     ucxapp_register_dtls_cmds();
     ucxapp_register_coap_cmds();
+    ucxapp_register_lwm2m_cmds();
     ucxapp_register_tftp_cmds();
     ucxapp_register_ft_cmds();
     ucxapp_register_xplorer_cmds();

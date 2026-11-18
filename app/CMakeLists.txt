@@ -195,6 +195,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_dtls.c
     src/ucxapp_dtls.c
     src/ucxapp_cmds_coap.c
+    src/ucxapp_cmds_lwm2m.c
     src/ucxapp_cmds_tftp.c
     src/ucxapp_cmds_ft.c
     src/ucxapp_cmds_ancs.c
@@ -384,6 +385,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_dtls.c
   src/ucxapp_dtls.c
   src/ucxapp_cmds_coap.c
+  src/ucxapp_cmds_lwm2m.c
   src/ucxapp_cmds_tftp.c
   src/ucxapp_cmds_ft.c
   src/ucxapp_cmds_ancs.c

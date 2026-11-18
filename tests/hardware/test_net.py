@@ -387,6 +387,42 @@ def test_coap_get_public_server(app_exe, port_a):
     assert "coap 2.05" in out.stdout, out.stdout
 
 
+LESHAN = "leshan.eclipseprojects.io"
+
+
+@pytest.mark.hardware
+def test_lwm2m_client_on_public_leshan(app_exe, port_a):
+    """The module registers with the public Eclipse Leshan server; Leshan's REST API then reads the Device object's
+    model and the Server object's lifetime from it, and the client deregisters by itself."""
+    import json
+    import urllib.request
+
+    def leshan(path):
+        with urllib.request.urlopen(f"https://{LESHAN}/api/clients{path}", timeout=30) as rsp:
+            return json.loads(rsp.read())
+
+    try:
+        leshan("")
+    except OSError as e:
+        pytest.skip(f"{LESHAN} unreachable from this PC: {e}")
+    ep = f"ucxapp-hwtest-{int(time.time())}"
+    _reboot(app_exe, port_a)
+    proc, seen, lines = _background(app_exe, port_a, _wifi_connect_command(), f"lwm2m.run {LESHAN} 5683 {ep} 40",
+                                    ready=r"^lwm2m: registered|^ERROR", timeout=180)
+    try:
+        assert "registered" in seen[-1], "".join(seen)
+        model = leshan(f"/{ep}/3/0/1")
+        lifetime = leshan(f"/{ep}/1/0/1")
+        device = leshan(f"/{ep}/3/0")
+    finally:
+        out = _finish(proc, seen, lines)
+    assert model["success"] and model["content"]["value"].startswith("NORA"), model
+    assert int(lifetime["content"]["value"]) == 120, lifetime   # Leshan sends integers as text
+    assert {r["id"] for r in device["content"]["resources"]} >= {0, 1, 2, 3}, device
+    assert "lwm2m: GET /3/0/1 -> 2.05" in out and "lwm2m: deregistered (2.02)" in out, out
+    assert proc.returncode == 0, out
+
+
 @pytest.mark.two_devices
 @pytest.mark.parametrize("proto", ["udp", "tcp"])
 def test_sock_echo_between_two_modules(app_exe, wifi_peers, port_a, port_b, proto):

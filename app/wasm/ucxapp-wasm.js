@@ -542,8 +542,9 @@
           rx(value);
         }
       } catch (e) {
+        /* overrun, framing, parity and break errors are recoverable: port.readable is a new stream and the
+           loop goes on; a lost port (unplugged) leaves port.readable null and ends it */
         if (reading) console.warn('serial read', e);
-        break;
       } finally {
         reader.releaseLock();
         reader = null;

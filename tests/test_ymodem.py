@@ -4,6 +4,7 @@ import importlib.util
 import queue
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -84,3 +85,98 @@ def test_launcher_ymodem_packet_format():
     pkt = ym.ymodem_packet(1, b"123456789", 1024)
     assert len(pkt) == 1029 and pkt[0] == 0x02 and pkt[12] == 0x1A
     assert ym.binascii.crc_hqx(b"123456789", 0) == 0x31C3
+
+class _Console:
+    """Fake serial console: the app runs with --raw-console and its stdin/stdout are the line."""
+
+    def __init__(self, app_exe, cwd, command):
+        self.proc = subprocess.Popen([str(app_exe), "--offline", "--raw-console", "--exec", command], cwd=cwd,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.rx, self.seen, self.lose_first = queue.Queue(), bytearray(), False
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self):
+        while b := self.proc.stdout.read1(4096):
+            self.seen += b
+            for x in b:
+                self.rx.put(x)
+
+    read = _Pipe.read
+
+    def write(self, data):
+        if self.lose_first and len(data) > 1000:
+            self.lose_first = False
+            data = data[:-1] + bytes([data[-1] ^ 1])
+        self.proc.stdin.write(data)
+        self.proc.stdin.flush()
+
+    def finish(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=60)
+        time.sleep(0.2)
+        return self.proc.returncode, self.seen.decode(errors="replace")
+
+
+@pytest.mark.app
+@pytest.mark.parametrize("size,forced", [(3000, None), (100, "other.bin")])
+def test_file_recv_stores_an_upload_from_the_console(app_exe, tmp_path, size, forced):
+    data = bytes((i * 5 + 1) & 0xFF for i in range(size))
+    con = _Console(app_exe, tmp_path, "file.recv" + (f" {forced}" if forced else ""))
+    con.lose_first = True
+    _launcher().ymodem_send(con, "dir/up.bin", data)
+    rc, out = con.finish()
+    name = forced or "up.bin"
+    assert rc == 0 and f"file.recv: {name}, {size} bytes" in out, out
+    assert (tmp_path / "storage" / name).read_bytes() == data
+
+
+@pytest.mark.app
+def test_file_send_downloads_a_stored_file_to_the_console(app_exe, tmp_path):
+    data = bytes((i * 3) & 0xFF for i in range(2500))
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "down.bin").write_bytes(data)
+    con = _Console(app_exe, tmp_path, "file.send down.bin")
+    got = _launcher().ymodem_recv(con)
+    rc, out = con.finish()
+    assert got == ("down.bin", data)
+    assert rc == 0 and "file.send: down.bin, 2500 bytes" in out, out
+
+
+@pytest.mark.app
+@pytest.mark.parametrize("command,peer,expect", [
+    ("file.recv", b"\x18\x18", "ERROR: file.recv cancelled"),
+    ("file.recv", b"", "ERROR: file.recv timeout"),
+    ("file.send up.bin", b"\x18\x18", "ERROR: file.send cancelled"),
+])
+def test_file_transfer_ends_cleanly_when_the_peer_cancels_or_leaves(app_exe, tmp_path, command, peer, expect):
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "up.bin").write_bytes(b"x" * 10)
+    con = _Console(app_exe, tmp_path, command)
+    time.sleep(0.5)
+    if peer:
+        con.write(peer)
+    rc, out = con.finish()
+    assert rc != 0 and expect in out, out
+
+
+@pytest.mark.app
+def test_file_recv_refuses_a_header_without_a_file_name(app_exe, tmp_path):
+    ym = _launcher()
+    con = _Console(app_exe, tmp_path, "file.recv")
+    assert ym._ym_wait(con, ym.YM_C, 10) == ym.YM_C
+    try:
+        ym._ym_send_packet(con, ym.ymodem_header("..", 5))
+    except RuntimeError:
+        pass   # the app cancels the transfer
+    rc, out = con.finish()
+    assert rc != 0 and "ERROR: file.recv" in out, out
+    assert not (tmp_path / "storage" / "..").is_file()
+
+
+@pytest.mark.app
+def test_file_commands_check_their_arguments(app_exe, tmp_path):
+    out = "".join(_run(app_exe, tmp_path, c).stdout for c in ("file.recv a b", "file.recv dir/..", "file.send",
+                                                              "file.send ..", "file.send missing.bin",
+                                                              "file.selftest x"))
+    assert out.count("usage: file.") == 5, out
+    assert "ERROR: cannot open missing.bin" in out, out

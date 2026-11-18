@@ -411,6 +411,92 @@ def test_coap_get_sends_the_request_three_times_before_giving_up(app_exe, tmp_pa
     assert module.payloads == [("AT+USOWB=0", b"\x40\x01\x4b\x1d\xb4temp")] * 3, module.payloads
 
 
+# ---- lwm2m.run: a server's datagrams as answers to AT+USORFB; what the client sends is in module.payloads ----
+
+def _coap(kind, code, mid, token=b"", path="", accept=None, location=()):
+    """One CoAP message (options under 13 bytes and 13 apart) as a latin-1 string for _datagram."""
+    out = bytes([0x40 | (kind << 4) | len(token), code, mid >> 8, mid & 0xFF]) + token
+    options = [(8, s.encode()) for s in location] + [(11, s.encode()) for s in path.strip("/").split("/") if s]
+    if accept is not None:
+        options.append((17, accept.to_bytes(2 if accept > 0xFF else 1, "big")))
+    prev = 0
+    for number, value in options:
+        out += bytes([((number - prev) << 4) | len(value)]) + value
+        prev = number
+    return out.decode("latin-1")
+
+
+LW_IDENTITY = {"AT+CGMI": ["u-blox", "OK"], "AT+CGMM": ["NORA-W36", "OK"], "AT+CGSN": ["VUCX1234", "OK"],
+               "AT+CGMR": ["3.6.0-019", "OK"], "AT+USOWB=*": ["+USOWB:0,10", "OK"]}
+LW_RD = b"\xb2rd\x045a3f"   # Uri-Path rd/5a3f, the location the server gave
+LW_DEVICE_LINKS = b"</3/0>,</3/0/0>,</3/0/1>,</3/0/2>,</3/0/3>,</3/0/13>,</3/0/16>"
+
+
+def test_lwm2m_client_registers_serves_updates_and_deregisters(app_exe, tmp_path):
+    """Registration with endpoint, lifetime, version, binding and the object links; reads of one resource (text),
+    an instance and an object (TLV), a discover, an unknown object (4.04), a write (4.05), the Registration Update
+    Trigger that sends an update at once, a ping answered with a reset, and the deregistration at the end. The
+    server's last datagram (the answer to the deregistration) is repeated while the client waits, and is ignored
+    until the client asks for it."""
+    CON, ACK = 0, 2
+    server = [
+        _coap(ACK, 0x41, 0x1D00, b"\x4c\x00", location=("rd", "5a3f")),
+        _coap(CON, 0x01, 1, b"\xaa", "/3/0/1"),
+        _coap(CON, 0x01, 2, b"\xab", "/3/0", accept=11542),
+        _coap(CON, 0x01, 3, b"\xac", "/1"),
+        _coap(CON, 0x01, 4, b"\xad", "/3", accept=40),
+        _coap(CON, 0x01, 5, b"\xae", "/5/0"),
+        _coap(CON, 0x03, 6, b"\xaf", "/3/0/1"),
+        _coap(CON, 0x02, 7, b"\xb0", "/1/0/8"),
+        _coap(ACK, 0x44, 0x1D01, b"\x4c\x01"),
+        _coap(CON, 0x00, 8),
+    ] + [""] * 100 + [_coap(ACK, 0x42, 0x1D02, b"\x4c\x02")] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, module = _exec(app_exe, profile, tmp_path, "lwm2m.run 192.168.1.10 5683 nora-test 1")
+    assert out.returncode == 0, out.stdout
+    assert "lwm2m: registered at 192.168.1.10:5683 as nora-test (/rd/5a3f), lifetime 120 s" in out.stdout, out.stdout
+    for line in ("GET /3/0/1 -> 2.05", "GET /3 (discover) -> 2.05", "GET /5/0 -> 4.04", "PUT /3/0/1 -> 4.05",
+                 "POST /1/0/8 -> 2.04", "update -> 2.04", "deregistered (2.02), 7 request(s) served"):
+        assert f"lwm2m: {line}\n" in out.stdout, (line, out.stdout)
+    sent = [data for command, data in module.payloads]
+    assert all(command == "AT+USOWB=0" for command, _ in module.payloads), module.payloads
+    instance = sent[2][9:]   # after the header, token and Content-Format TLV (0x2D16)
+    assert sent[0] == (b"\x42\x02\x1d\x00\x4c\x00\xb2rd\x11\x28\x3cep=nora-test\x06lt=120\x09lwm2m=1.1\x03b=U"
+                       b"\xff</1/0>,</3/0>"), sent[0]
+    assert sent[1] == b"\x61\x45\x00\x01\xaa\xc0\xffNORA-W36", sent[1]
+    assert sent[2][:9] == b"\x61\x45\x00\x02\xab\xc2\x2d\x16\xff", sent[2]
+    assert instance.startswith(b"\xc6\x00u-blox\xc8\x01\x08NORA-W36\xc8\x02\x0eVUCX0123456789\xc7\x033.5.0-0"), instance
+    assert instance.endswith(b"\xc1\x10U") and b"\xc4\x0d" in instance, instance   # binding; the time in 4 bytes
+    assert sent[3] == b"\x61\x45\x00\x03\xac\xc2\x2d\x16\xff\x08\x00\x0c\xc1\x00\x01\xc1\x01\x78\xc1\x06\x00\xc1\x07U"
+    assert sent[4] == b"\x61\x45\x00\x04\xad\xc1\x28\xff" + LW_DEVICE_LINKS, sent[4]
+    assert sent[5:8] == [b"\x61\x84\x00\x05\xae", b"\x61\x85\x00\x06\xaf", b"\x61\x44\x00\x07\xb0"], sent[5:8]
+    assert sent[8:] == [b"\x42\x02\x1d\x01\x4c\x01" + LW_RD, b"\x70\x00\x00\x08",
+                        b"\x42\x04\x1d\x02\x4c\x02" + LW_RD], sent[8:]
+    assert "AT+USOCL=0" in module.log, module.log
+
+
+LW_ERRORS = {
+    "usage": ("lwm2m.run", {}, "  lwm2m.run <host> [port] [endpoint] [seconds]"),
+    "seconds": ("lwm2m.run 192.168.1.10 5683 ep -1", {}, "usage: lwm2m.run"),
+    "endpoint": ("lwm2m.run 192.168.1.10 5683 " + "e" * 65, {}, "ERROR: the endpoint name takes 1 to 64 characters"),
+    "socket": ("lwm2m.run 192.168.1.10", {"AT+USOCR=*": ERROR}, "ERROR: failed to create a UDP socket"),
+    "connect": ("lwm2m.run 192.168.1.10", {"AT+USOC=*": ERROR, "AT+USOCL=0": ["OK"]},
+                "ERROR: connect to 192.168.1.10:5683 failed"),
+    "refused": ("lwm2m.run 192.168.1.10", {"AT+USORFB=*": _datagram(_coap(2, 0x83, 0x1D00, b"\x4c\x00")),
+                                           "AT+USOCL=0": ["OK"]}, "ERROR: registration refused: 4.03"),
+}
+
+
+@pytest.mark.parametrize("case", LW_ERRORS)
+def test_lwm2m_run_says_what_failed(app_exe, tmp_path, case):
+    """Bad arguments are refused before a socket is made; a socket that cannot be made or connected, and a server
+    that refuses the registration, are reported, and a socket that was made is closed again."""
+    command, answers, message = LW_ERRORS[case]
+    out, module = _exec(app_exe, _profile(WIFI, {**LW_IDENTITY, **answers}), tmp_path, command)
+    assert message in out.stdout and out.returncode != 0, (out.returncode, out.stdout)
+    _asked(module, answers)
+
+
 # ---- mqtt.* ----
 
 def test_mqtt_connect_with_only_a_user_name_or_only_a_ca(app_exe, tmp_path):

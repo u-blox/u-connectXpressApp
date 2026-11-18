@@ -324,7 +324,7 @@ static int cmdBtScan(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
-#define BT_LAST_FILE  UCXAPP_BLE_LAST_FILE
+#define BT_LAST_FILE  UCXAPP_BLE_LAST_FILE(app)
 
 /* Starts a connect and waits until the link is listed; *up tells whether it came up. */
 static void centralSecurity(ucxapp_t *app);
@@ -399,7 +399,7 @@ static int32_t connectAddr(ucxapp_t *app, uBtLeAddress_t *addr, int waitTenthsS,
     }
 }
 
-static void rememberLast(const char *addrText)
+static void rememberLast(ucxapp_t *app, const char *addrText)
 {
     ucxapp_store_save(BT_LAST_FILE, addrText, strlen(addrText));
 }
@@ -608,7 +608,7 @@ static int cmdBtConnect(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     if (up) {
-        rememberLast(text);
+        rememberLast(app, text);
     }
     ucxapp_print("connection %d (current)\n", (int)handle);
     if (up && label[0] != '\0' && strchr(label, '"') == NULL && !addrIsSaved(&addr)) {

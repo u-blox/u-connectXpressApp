@@ -276,7 +276,7 @@ def _store(tmp_path, **files):
 def test_dev_summary_of_a_connected_wifi_module(app_exe, tmp_path, monkeypatch):
     pytest.importorskip("yaml")
     monkeypatch.setenv("UCX_REGDOMAIN", "etsi")
-    _store(tmp_path, wifilast="home", blelast="tag")
+    _store(tmp_path, **{"wifilast.virtual": "home", "blelast.virtual": "tag"})
     out = _summary(app_exe, "wifi.yaml", tmp_path, "wifi.connect vucx-net secret123")
     assert "NORA-W36, firmware 3.5.0" in out, out
     assert re.search(r"^Radios:\s+Wi-Fi, Bluetooth LE$", out, re.M), out
@@ -291,11 +291,23 @@ def test_dev_summary_notes_old_firmware_and_last_used(app_exe, tmp_path):
 
     profile = load("basic.yaml")
     profile["identity"] = {**profile.get("identity", {}), "version": "3.2.0-0"}
-    _store(tmp_path, wifilast="home", blelast="tag", fwlatest="NORA-W36-3.4.0.zip")
+    _store(tmp_path, **{"wifilast.virtual": "home", "blelast.virtual": "tag"}, fwlatest="NORA-W36-3.4.0.zip")
     out = _summary(app_exe, profile, tmp_path)
     assert re.search(r"^Update:\s+firmware 3\.5\.0 is out, update with fw\.update$", out, re.M), out
     assert "Last used:        Wi-Fi 'home' (wifi.profile.auto), BLE 'tag' (bt.profile.auto)" in out, out
     assert "Open:" not in out, out
+
+
+def test_a_virtual_module_keeps_its_own_last_used(app_exe, tmp_path):
+    """The networks and peers of a virtual module (vucx, the browser's) do not exist for a real one: a virtual
+    module neither shows nor overwrites what a real module used last, so a real module never tries them."""
+    pytest.importorskip("yaml")
+    _store(tmp_path, wifilast="office", blelast="sensor")
+    out = _summary(app_exe, "wifi.yaml", tmp_path, "wifi.connect vucx-net secret123", "wifi.disconnect")
+    assert "Last used:        Wi-Fi 'vucx-net' (wifi.profile.auto)\n" in out, out
+    assert "office" not in out and "sensor" not in out, out
+    assert (tmp_path / "storage" / "ucxapp.wifilast").read_text() == "office\n"
+    assert (tmp_path / "storage" / "ucxapp.wifilast.virtual").read_text().startswith("vucx-net")
 
 
 def test_dev_summary_uses_the_release_fw_update_found(app_exe, tmp_path):

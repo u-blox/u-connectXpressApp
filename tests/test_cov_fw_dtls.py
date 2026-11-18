@@ -331,6 +331,8 @@ def test_fw_github_lookup_and_download_go_through_the_module(app_exe, tmp_path):
     assert download.returncode == 0 and "through the module" in download.stdout, download.stdout
     assert (tmp_path / "storage" / assets[0]).read_bytes() == b"ZIPDATA"
     assert any(c.startswith('AT+UHTCRP=0,"/cdn/fw.zip"') for c in module.log), module.log
+    # GitHub redirects to another host, so the firmware download always follows redirects in the app
+    assert "AT+UHTCFRE=0" in module.log and "AT+UHTCFRE=1" not in module.log, module.log
 
 
 def test_fw_download_url_failure_is_passed_on(app_exe, tmp_path):

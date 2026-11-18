@@ -381,7 +381,7 @@ static bool scanReleases(ucxapp_t *app, const char *family, bool allowEval, asse
     scan.allowEval = allowEval;
     scan.fn = fn;
     scan.ctx = ctx;
-    if (ucxapp_http_fetch(app, "https://" FW_API_HOST FW_RELEASES_PATH, scanSink, &scan, false) != UCXAPP_OK) {
+    if (ucxapp_http_fetch(app, "https://" FW_API_HOST FW_RELEASES_PATH, scanSink, &scan, false, true) != UCXAPP_OK) {
         ucxapp_print("ERROR: cannot query GitHub through the module (is it on Wi-Fi with internet? wifi.status)\n");
         return false;
     }
@@ -479,7 +479,7 @@ static bool fwFetch(ucxapp_t *app, const char *path, const char *name, const cha
         ucxapp_print("ERROR: cannot create %s\n", file);
         return false;
     }
-    int rc = ucxapp_http_fetch(app, url, storeSink, w, true);
+    int rc = ucxapp_http_fetch(app, url, storeSink, w, true, true);
     if (!ucxapp_store_end(w, rc == UCXAPP_OK) || rc != UCXAPP_OK) {
         ucxapp_print("ERROR: download of %s failed\n", name);
         return false;

@@ -144,6 +144,8 @@ static const example_t kExamples[] = {
 
     { "http", "Fetch a page and download a file",
       "http.get https://www.u-blox.com 200\nhttp.download https://example.com/file.bin file.bin\nfile.hash sha256 file.bin" },
+    { "http", "Redirects followed by this app instead of the module (firmware 3.6.0)",
+      "http.redirect host\nhttp.get http://google.com\nhttp.redirect module" },
     { "http", "Post form data",
       "http.post http://httpbin.org/post name=ucx&value=1" },
     { "http", "HTTPS with a server check, and mutual TLS with a client certificate",

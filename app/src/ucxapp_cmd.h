@@ -338,10 +338,14 @@ int ucxapp_cell_connect(ucxapp_t *app, const char *host, int32_t port);
 bool ucxapp_cell_relink(void);
 /* HTTP(S) POST over the module (ucxapp_cmds_net.c): the status (-1 on failure), *resp the response body text. */
 int ucxapp_http_post(ucxapp_t *app, const char *url, const char *body, const char *ctype, const char **resp);
-/* HTTP(S) GET over the module, following redirects; the body goes to sink in chunks (false from sink aborts).
-   progress prints bytes/percent and the saved size. UCXAPP_OK on a complete 2xx body. */
+/* HTTP(S) GET over the module, following redirects: on the module itself (AT+UHTCFRE, firmware 3.6.0) unless
+   http.redirect host, with a hop loop here as the fallback for older firmware; hostRedirects forces the loop
+   (GitHub redirects to another host, and the TLS and connection parameters are per host). The body goes to sink
+   in chunks (false from sink aborts). progress prints bytes/percent and the saved size. UCXAPP_OK on a complete
+   2xx body. */
 typedef bool (*ucxapp_http_sink_t)(const uint8_t *data, size_t len, void *ctx);
-int ucxapp_http_fetch(ucxapp_t *app, const char *url, ucxapp_http_sink_t sink, void *ctx, bool progress);
+int ucxapp_http_fetch(ucxapp_t *app, const char *url, ucxapp_http_sink_t sink, void *ctx, bool progress,
+                      bool hostRedirects);
 bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len);
 /* Short dashboard fragments for the TUI and web status line; empty when inactive. */
 size_t ucxapp_gatt_summary(char *out, size_t size);

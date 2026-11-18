@@ -199,6 +199,62 @@ static int32_t configureSession(ucxapp_t *app, bool https, const char *host, con
     return err;
 }
 
+/* ---- HTTP redirects: who follows them ----
+   u-connectXpress 3.6.0 follows redirects on the module itself (AT+UHTCFRE, on by default there); http.redirect
+   host turns that off and leaves them to this app. The hop loop in ucxapp_http_fetch stays as the fallback for
+   older firmware, firmware downloads force it (GitHub redirects to another host, and the TLS and connection
+   parameters are per host), and wifi.portal always turns the module's following off: a login page *is* a
+   redirect. */
+
+static bool gRedirectHost;   /* http.redirect host: this app follows redirects, never the module */
+static int gUhtcfre;         /* AT+UHTCFRE: 0 not asked yet, 1 the module took it, -1 no such command (pre-3.6.0) */
+
+/* Tells the module to follow redirects itself (or not); false when the firmware has no AT+UHTCFRE. */
+static bool setModuleRedirect(ucxapp_t *app, bool enable)
+{
+    if (gUhtcfre < 0) {
+        return false;
+    }
+    int32_t err = uCxAtClientExecSimpleCmdF(app->ucx->pAtClient, "AT+UHTCFRE=", "d", enable ? 1 : 0,
+                                            U_CX_AT_UTIL_PARAM_LAST);
+    gUhtcfre = err == 0 ? 1 : -1;
+    return err == 0;
+}
+
+static int cmdHttpRedirect(ucxapp_t *app, int argc, char *argv[])
+{
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2) {
+        if (strcmp(argv[1], "module") == 0) {
+            gRedirectHost = false;
+        } else if (strcmp(argv[1], "host") == 0) {
+            gRedirectHost = true;
+        } else {
+            return UCXAPP_ERR_USAGE;
+        }
+        gUhtcfre = 0;   /* ask the (maybe different) module again */
+    }
+    ucxapp_print("HTTP redirects are followed by %s\n",
+                 gRedirectHost ? "this app" : "the module (by this app on firmware before 3.6.0)");
+    if (app->ucx != NULL) {
+        uCxAtClient_t *client = app->ucx->pAtClient;
+        char *line;
+        int on = -1;
+        uCxAtClientCmdBeginF(client, "AT+UHTCFRE?", "", NULL);
+        while ((line = uCxAtClientCmdGetRspParamLine(client, "+UHTCFRE:", NULL, NULL)) != NULL) {
+            on = atoi(line);
+        }
+        if (uCxAtClientCmdEnd(client) == 0 && on >= 0) {
+            ucxapp_print("module: redirect following %s (AT+UHTCFRE)\n", on != 0 ? "on" : "off");
+        } else {
+            ucxapp_print("module: no redirect following (firmware before 3.6.0)\n");
+        }
+    }
+    return UCXAPP_OK;
+}
+
 static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
 {
     bool https;
@@ -218,6 +274,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
 
+    setModuleRedirect(app, !gRedirectHost);
     err = configureSession(app, https, host, path);
     if (err < 0) {
         ucxapp_print("ERROR: cannot configure HTTP session (%d%s)\n", (int)err, ucxapp_errname(err));
@@ -437,7 +494,8 @@ done:
     return rc;
 }
 
-int ucxapp_http_fetch(ucxapp_t *app, const char *urlIn, ucxapp_http_sink_t sink, void *ctx, bool progress)
+int ucxapp_http_fetch(ucxapp_t *app, const char *urlIn, ucxapp_http_sink_t sink, void *ctx, bool progress,
+                      bool hostRedirects)
 {
     enum { URL_SIZE = sizeof(gBuf.page), MAX_REDIRECTS = 5 };
     char *url = gBuf.page, *location = gBuf.loc;
@@ -447,6 +505,7 @@ int ucxapp_http_fetch(ucxapp_t *app, const char *urlIn, ucxapp_http_sink_t sink,
     if (strlen(urlIn) >= URL_SIZE / 2) {
         return UCXAPP_ERR_USAGE;
     }
+    setModuleRedirect(app, !hostRedirects && !gRedirectHost);
     snprintf(url, URL_SIZE, "%s", urlIn);
     for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
         int r = downloadHop(app, url, sink, ctx, progress, location, sizeof(gBuf.loc), scheme, host, sizeof(host));
@@ -484,7 +543,7 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot create %s\n", argv[2]);
         return UCXAPP_ERR_FAILED;
     }
-    int rc = ucxapp_http_fetch(app, argv[1], storeSink, w, true);
+    int rc = ucxapp_http_fetch(app, argv[1], storeSink, w, true, false);
     if (!ucxapp_store_end(w, rc == UCXAPP_OK)) {
         if (rc == UCXAPP_OK) {
             ucxapp_print("ERROR: cannot save %s\n", argv[2]);
@@ -511,9 +570,11 @@ static char gReqBody[REQ_BODY_SIZE];
 static char gPortalUrl[HTTP_MAX_URL + 2];
 static char gCookie[256];
 
-/* GET when body is NULL, else POST. Fills gReqHdr and gReqBody (truncated, NUL-terminated).
+/* GET when body is NULL, else POST. Fills gReqHdr and gReqBody (truncated, NUL-terminated). follow lets the
+   module chase redirects itself (3.6.0, unless http.redirect host); wifi.portal passes false, it must see them.
    Returns the HTTP status, 0 if the module gave no status line, -1 on failure. */
-static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const char *ctype, const char *cookie)
+static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const char *ctype, const char *cookie,
+                       bool follow)
 {
     char *url = gBuf.url;
     bool https;
@@ -531,6 +592,7 @@ static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const
     if (!splitUrl(url, &https, &host, &path)) {
         return -1;
     }
+    setModuleRedirect(app, follow && !gRedirectHost);
     err = configureSession(app, https, host, path);
     (void)uCxHttpClearHeaderCustom(app->ucx, HTTP_SESSION);
     if (err >= 0) {
@@ -607,7 +669,8 @@ static int cmdHttpPost(ucxapp_t *app, int argc, char *argv[])
     if (argc < 3 || argc > 4) {
         return UCXAPP_ERR_USAGE;
     }
-    int status = httpRequest(app, argv[1], argv[2], argc > 3 ? argv[3] : "application/x-www-form-urlencoded", NULL);
+    int status = httpRequest(app, argv[1], argv[2], argc > 3 ? argv[3] : "application/x-www-form-urlencoded", NULL,
+                             true);
     if (status < 0) {
         return UCXAPP_ERR_FAILED;
     }
@@ -620,7 +683,7 @@ static int cmdHttpPost(ucxapp_t *app, int argc, char *argv[])
 
 int ucxapp_http_post(ucxapp_t *app, const char *url, const char *body, const char *ctype, const char **resp)
 {
-    int status = httpRequest(app, url, body, ctype, NULL);
+    int status = httpRequest(app, url, body, ctype, NULL, true);
     *resp = gReqBody;
     return status;
 }
@@ -731,7 +794,7 @@ static void grabCookie(void)
 static int portalCheck(ucxapp_t *app, const char *probe)
 {
     char *loc = gBuf.loc;
-    int s = httpRequest(app, probe, NULL, NULL, NULL);
+    int s = httpRequest(app, probe, NULL, NULL, NULL, false);
 
     if (s == 204) {
         ucxapp_print("online: %s answered 204, no login page\n", probe);
@@ -835,7 +898,7 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
     gCookie[0] = '\0';
     snprintf(page, pageSize, "%s", gPortalUrl);
     for (int hop = 0; hop < 5; hop++) {
-        s = httpRequest(app, page, NULL, NULL, gCookie);
+        s = httpRequest(app, page, NULL, NULL, gCookie, false);
         grabCookie();
         if (s < 300 || s >= 400 || !headerValue(gReqHdr, "Location:", loc, sizeof(gBuf.loc))) {
             break;
@@ -853,7 +916,7 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
     }
     ucxapp_print("submitting the form (%s %s), fields:%s\n", post ? "POST" : "GET", next, names);
     if (post) {
-        s = httpRequest(app, next, form, "application/x-www-form-urlencoded", gCookie);
+        s = httpRequest(app, next, form, "application/x-www-form-urlencoded", gCookie, false);
     } else {
         size_t urlLen = strlen(next) + 1 + strlen(form);
         if (urlLen >= pageSize) {
@@ -863,7 +926,7 @@ static int portalLogin(ucxapp_t *app, const char *probe, int nOv, char *ov[])
         memcpy(page, next, strlen(next));
         page[strlen(next)] = strchr(next, '?') != NULL ? '&' : '?';
         memcpy(&page[strlen(next) + 1], form, strlen(form) + 1);
-        s = httpRequest(app, page, NULL, NULL, gCookie);
+        s = httpRequest(app, page, NULL, NULL, gCookie, false);
     }
     if (s < 0) {
         return UCXAPP_ERR_FAILED;
@@ -1070,8 +1133,9 @@ static const ucxapp_cmd_t gNetCmds[] = {
     { "net.iperf", "server [tcp|udp] [port] | client <ip> [tcp|udp] [seconds] [port] | stop", "iperf throughput: server or client against an iperf on the PC, stop", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
     { "http.get", "<url> [show_bytes] [ca=<name> [cert=<name> key=<name>]]", "HTTP(S) GET, prints status and body; ca= verifies the server, cert/key add a client certificate (mutual TLS), all from cert.upload", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGetTls },
-    { "http.download", "<url> <file> [ca=<name> [cert=<name> key=<name>]]", "Download to a file, following redirects; TLS options as http.get", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownloadTls },
+    { "http.download", "<url> <file> [ca=<name> [cert=<name> key=<name>]]", "Download to a file, following redirects (http.redirect); TLS options as http.get", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownloadTls },
     { "http.post", "<url> <body> [content_type] [ca=<name> [cert=<name> key=<name>]]", "HTTP(S) POST (default form-urlencoded), prints status and body; TLS options as http.get", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpPostTls },
+    { "http.redirect", "[module|host]", "Who follows HTTP redirects: the module itself (default, firmware 3.6.0+; this app on older firmware) or this app; firmware downloads always follow them in the app", 0, cmdHttpRedirect },
     { "wifi.portal", "<check|login> [probe_url] [field=value ...]", "Hotel or guest Wi-Fi login page: check detects it (fails only without internet), login fills in and submits its form", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiPortal },
     { "wifi.portal.form", "<html_file> <page_url> [field=value ...]", "What wifi.portal login would submit for a saved login page (no module needed)", 0, cmdWifiPortalForm },
 };

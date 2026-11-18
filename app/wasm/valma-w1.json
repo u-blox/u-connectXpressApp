@@ -413,6 +413,14 @@
    "+UHTCRPOB:0,64",
    "OK"
   ],
+  "AT+UHTCFRE? [fre=0]": [
+   "+UHTCFRE:0",
+   "OK"
+  ],
+  "AT+UHTCFRE?": [
+   "+UHTCFRE:1",
+   "OK"
+  ],
   "AT+UNTE?": [
    "+UNTE:1",
    "OK"
@@ -966,6 +974,12 @@
   "AT+UHTCRPOB=*": {
    "page": "posted",
    "portal": "open"
+  },
+  "AT+UHTCFRE=0": {
+   "fre": "0"
+  },
+  "AT+UHTCFRE=1": {
+   "fre": "1"
   },
   "AT+UBTC=*": {
    "link": "up"

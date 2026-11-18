@@ -295,3 +295,69 @@ def test_portal_form_offline(app_exe, tmp_path):
     for text in ("POST http://h/login\nfields: a go extra\nbody: a=2&go=Go&extra=x+y%2Fz", "GET http://abs/x",
                  "no <form> in f3.html", "ERROR: cannot read missing.html", "GET http://h/rel"):
         assert text in out, f"{text!r} missing:\n{out[-3000:]}"
+
+
+# ---- HTTP redirects followed by the module itself (AT+UHTCFRE, u-connectXpress 3.6.0) ----
+
+REDIR36 = {
+    "identity": {**NORA, "version": "3.6.0-019"},
+    "default": ["OK"],
+    "state": {
+        "AT+UHTCFRE=1": {"fre": "1"}, "AT+UHTCFRE=0": {"fre": "0"},
+        'AT+UHTCRP=0,"/redir"': {"page": "redir"}, "AT+UHTCRP=*": {"page": "other"},
+    },
+    "commands": {
+        # with following on, the module answers with the final page straight away, as 3.6.0 does
+        "AT+UHTCGH=* [page=redir fre=1]": _hdr("HTTP/1.1 200 OK", "Content-Length: 5"),
+        "AT+UHTCGH=* [page=redir]": _hdr("HTTP/1.1 302 Found", "Location: /final"),
+        "AT+UHTCGH=*": _hdr("HTTP/1.1 200 OK", "Content-Length: 5"),
+        "AT+UHTCGBB=*": _body("abcde"),
+        "AT+UHTCFRE? [fre=0]": ["+UHTCFRE:0", "OK"],
+        "AT+UHTCFRE?": ["+UHTCFRE:1", "OK"],   # following is enabled by default on 3.6.0
+    },
+    "urcs": {"AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']},
+}
+
+
+def test_http_redirect_followed_on_the_module(app_exe, tmp_path):
+    out, log = _shell(app_exe, REDIR36, [
+        "http.redirect",                           # module mode is the default; the module reports its setting
+        "http.download http://h/redir a.bin",      # the module follows: no redirect hop in the app
+        "http.get http://h/redir",                 # the final status comes from the module
+        "http.redirect host",
+        "http.download http://h/redir b.bin",      # the app follows and says so
+        "http.get http://h/redir",                 # the raw 302 stays visible
+        "wifi.portal check http://h/redir",        # the portal probe must see the redirect itself
+        "http.redirect module", "http.redirect both",
+    ], tmp_path)
+    for text in ("HTTP redirects are followed by the module", "module: redirect following on (AT+UHTCFRE)",
+                 "HTTP redirects are followed by this app", "module: redirect following off (AT+UHTCFRE)",
+                 "redirect (HTTP 302)", "HTTP/1.1 200 OK", "HTTP/1.1 302 Found",
+                 "login page: http://h/final (redirected, HTTP 302)", "usage: http.redirect [module|host]"):
+        assert text in out, f"{text!r} missing:\n{out[-5000:]}"
+    assert out.count("redirect (HTTP 302)") == 1, out[-5000:]   # only the host-mode download hops in the app
+    assert (tmp_path / "storage" / "a.bin").read_bytes() == b"abcde"
+    assert (tmp_path / "storage" / "b.bin").read_bytes() == b"abcde"
+    assert "AT+UHTCFRE=1" in log and "AT+UHTCFRE=0" in log, log[-40:]
+
+
+def test_http_redirect_falls_back_before_3_6_0(app_exe, tmp_path):
+    """Firmware without AT+UHTCFRE answers ERROR once; the app remembers it and follows redirects itself."""
+    profile = {
+        "identity": NORA, "default": ["OK"],
+        "state": {'AT+UHTCRP=0,"/redir"': {"page": "redir"}, "AT+UHTCRP=*": {"page": "other"}},
+        "commands": {
+            "AT+UHTCFRE=*": ["ERROR"], "AT+UHTCFRE?": ["ERROR"],
+            "AT+UHTCGH=* [page=redir]": _hdr("HTTP/1.1 302 Found", "Location: /final"),
+            "AT+UHTCGH=*": _hdr("HTTP/1.1 200 OK", "Content-Length: 5"),
+            "AT+UHTCGBB=*": _body("abcde"),
+        },
+        "urcs": {"AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']},
+    }
+    out, log = _shell(app_exe, profile, [
+        "http.redirect", "http.download http://h/redir a.bin", "http.download http://h/redir b.bin",
+    ], tmp_path)
+    assert "module: no redirect following (firmware before 3.6.0)" in out, out[-4000:]
+    assert out.count("redirect (HTTP 302)") == 2 and "5 bytes saved" in out, out[-4000:]
+    assert (tmp_path / "storage" / "a.bin").read_bytes() == b"abcde"
+    assert [c for c in log if c.startswith("AT+UHTCFRE=")] == ["AT+UHTCFRE=1"], log[-40:]

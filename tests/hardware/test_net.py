@@ -158,6 +158,25 @@ def test_http_download_saves_a_file(app_exe, port_a, tmp_path):
 
 
 @pytest.mark.hardware
+def test_http_redirects_followed_by_the_module(app_exe, port_a):
+    """AT+UHTCFRE (firmware 3.6.0): by default the module chases a redirect itself, so http.get shows the final
+    page; http.redirect host turns that off and the raw 301 comes back to the app."""
+    wifi = _wifi_connect_command()
+    out = _run(app_exe, port_a, wifi, "http.redirect", timeout=120)
+    assert out.returncode == 0, out.stdout
+    if "module: no redirect following" in out.stdout:
+        pytest.skip("module firmware has no AT+UHTCFRE (3.6.0 or later)")
+    url = "http://google.com/"   # a stable 301 to http://www.google.com/
+    out = _run(app_exe, port_a, wifi, f"http.get {url} 50", "http.redirect host", f"http.get {url} 50",
+               "http.redirect module", timeout=180)
+    if "timeout waiting for the HTTP response" in out.stdout or "GET request failed" in out.stdout:
+        pytest.skip("google.com unreachable from the module")
+    assert out.returncode == 0, out.stdout
+    statuses = re.findall(r"^HTTP/1\.\d (\d+)", out.stdout, re.M)
+    assert statuses == ["200", "301"], out.stdout   # the module followed; the app saw the raw redirect
+
+
+@pytest.mark.hardware
 def test_wifi_portal_logs_in_to_fake_hotel_page(app_exe, port_a):
     """tests/harness/captive_portal.py on this PC stands in for a hotel login page; http.post is exercised too."""
     from harness.captive_portal import serve

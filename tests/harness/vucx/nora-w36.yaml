@@ -21,6 +21,9 @@ state:
   "AT+UHTCRPOB=* [page=ztp]": {page: ztp}
   "AT+UHTCRPOB=* [page=locate]": {page: locate}
   "AT+UHTCRPOB=*": {page: posted, portal: open}
+  # HTTP redirect following on the module (AT+UHTCFRE, 3.6.0); pages are served as defined either way
+  "AT+UHTCFRE=0": {fre: "0"}
+  "AT+UHTCFRE=1": {fre: "1"}
   # BLE: the link to the peer, and numeric comparison once (bt.defaults secure sets Display Yes/No)
   "AT+UBTC=*": {link: up}
   "AT+UBTDC=*": {link: down}
@@ -111,6 +114,8 @@ commands:
     - "OK"
   "AT+UHTCGBB=*": ["+UHTCGBB:0,0\x01<html>vucx</html>", "OK"]
   "AT+UHTCRPOB=*": ["+UHTCRPOB:0,64", "OK"]
+  "AT+UHTCFRE? [fre=0]": ["+UHTCFRE:0", "OK"]
+  "AT+UHTCFRE?": ["+UHTCFRE:1", "OK"]
   "AT+UNTE?": ["+UNTE:1", "OK"]
   "AT+UNTSC?": ['+UNTSC:0,"pool.ntp.org",162.159.200.1,1', "OK"]
   "AT+UBTA?": ["+UBTA:1,0,[]", "OK"]

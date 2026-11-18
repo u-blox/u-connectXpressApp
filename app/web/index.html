@@ -757,7 +757,7 @@ function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')
    [dm?'Demo off':'Demo on','matter.demo',[dm?'off':'on'],0,'tg'],[dt?'SDK log off':'SDK log on','matter.log',[dt?'info':'detail'],0,'tg'],['Stop','matter.stop',null,1],fd]:[['Start','matter.start'],fd]}}
  if(k==='c'&&CARD.cell)return{k,c:'cell',ic:'CELL',lb:'modem',info:[],act:[['Status','cell.status']]};return null}
 function petDraw(){const p=$('pet'),cn=document.body.classList.contains('cn'),ks=['',...(cn&&CN.mod?['hub']:[]),
- ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k))ks.push(k)});
+ ...(cn?Object.keys(CN.n).filter(k=>!CN.n[k].gone&&!CN.n[k].o.p):[])];['g','c','x'].forEach(k=>{if(!ks.includes(k)&&cnItem(k)&&!(k==='x'&&/^NODE\s+stopped/.test(CARD.matter)&&CN.sel!=='x'))ks.push(k)});
  const sig=ks.join(',')+'|'+CN.sel;if(p.sig===sig)return;p.sig=sig;p.textContent='';ks.forEach(k=>{const o=k?cnItem(k):null,
  b=el('button',(o?'k-'+(o.c||'host'):'')+(k===CN.sel?' on':''));b.setAttribute('role','tab');b.dataset.k=k;b.appendChild(el('i'));
  b.appendChild(document.createTextNode(!k?'Events':k==='hub'?'Module':o.ic));b.title=o?o.ic+' '+o.lb:'What happened, newest last';

@@ -172,10 +172,13 @@ def test_matter_card_shows_state_and_runs_the_nodes_commands(server):
         page.wait_for_selector("#st.ok")
         assert page.locator("#pet button[data-k='x']").count() == 0   # no plug-in, no tab
         show = "t => {CARD.matter = t; cnDetails()}"
-        # stopped: Start, and Factory default for what an earlier node stored
         page.evaluate(show, "NODE  stopped\nLOG   info")
+        assert page.locator("#pet button[data-k='x']").count() == 0   # a stopped node has no tab
+        page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 0 endpoint(s)\nLOG   info")
         page.click("#pet button[data-k='x']")
         assert page.is_visible("#cnd") and page.is_hidden("#ev") and page.is_visible("#flt-on")
+        # stopped while open: Start, and Factory default for what an earlier node stored
+        page.evaluate(show, "NODE  stopped\nLOG   info")
         assert [b.inner_text() for b in page.locator("#cnd .r button").all()] == ["Start", "Factory default", "Close"]
         page.evaluate(show, "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n"
                             "STEP  3/6 network credentials received\nBLE   link up\nWIN   open\n"

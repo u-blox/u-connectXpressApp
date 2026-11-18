@@ -601,6 +601,7 @@ int main(int argc, char *argv[])
 #ifdef __EMSCRIPTEN__
     /* Browser: the page drives the app (ucxapp-wasm.js); the module comes in through Web Serial. */
     static ucxapp_t webApp;
+    ucxapp_secure_set_key_store(NULL, "the browser's storage, sealed under a WebCrypto key that cannot be read out");
     (void)port;
     (void)shellMode;
     (void)tuiMode;

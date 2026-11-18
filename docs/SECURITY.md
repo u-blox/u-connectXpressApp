@@ -67,6 +67,7 @@ the cipher text and the 16-byte tag; the header and the file name are authentica
 | Linux, macOS | `storage/ucxapp.key`, readable only by the owner | other users; not root or a copied disk |
 | STM32 H753, F767 (FreeRTOS) | internal flash (littlefs), also when files are on the SD card | a pulled SD card; with readout protection level 1, reading the flash over SWD |
 | Zephyr web boards | RAM (lost at reset, like the files) | nothing beyond RAM |
+| Browser (WebAssembly) | `storage/ucxapp.key` in OPFS sealed with AES-256-GCM under a WebCrypto key that is not extractable, kept in IndexedDB (`ucxapp-keys`); in memory only where the browser has neither | a copied OPFS or profile folder read by a tool; not a script running in the page itself |
 
 These STM32 parts (Cortex-M7/M4/M3/M0+) have no TrustZone or secure element, so readout protection is the hardware
 barrier: set RDP level 1 with STM32CubeProgrammer (`-ob RDP=0xBB`) once the board is flashed; `utils.secure` shows

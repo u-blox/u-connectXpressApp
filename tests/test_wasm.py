@@ -421,6 +421,47 @@ def test_storage_outlasts_the_tab(site):
     assert not js_errors, js_errors
 
 
+def test_the_install_key_is_sealed_in_opfs_and_secrets_outlast_the_tab(site):
+    """ucxapp.key lies in OPFS only sealed, under a WebCrypto key that is not extractable (IndexedDB), and a Wi-Fi
+    password saved with it still opens after a reload."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    opfs = ("(async n => { try { const d = await (await navigator.storage.getDirectory())"
+            ".getDirectoryHandle('storage'); return [...new Uint8Array(await (await (await d.getFileHandle(n))"
+            ".getFile()).arrayBuffer())]; } catch { return null; } })")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            pytest.skip(f"no browser: {exc}")
+        page = browser.new_page()
+        js_errors = []
+        page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+        page.goto(site)
+        page.wait_for_selector("#st.ok", timeout=30000)
+        run(page, "wifi.profile.add office office-net pw-for-the-test")
+        key = None
+        for _ in range(100):
+            key = page.evaluate(opfs + "('ucxapp.key')")
+            if key:
+                break
+            page.wait_for_timeout(100)
+        assert key and bytes(key[:5]) == b"UCXW\x01" and len(key) == 5 + 12 + 32 + 16, key
+        assert page.evaluate("""new Promise(done => { const r = indexedDB.open('ucxapp-keys');
+            r.onsuccess = () => { const g = r.result.transaction('keys').objectStore('keys').get('install');
+            g.onsuccess = () => done([g.result.extractable, g.result.algorithm.name]) } })""") == [False, "AES-GCM"]
+        profiles = page.evaluate(opfs + "('ucxapp.wifi')")
+        assert profiles and b"pw-for-the-test" not in bytes(profiles)
+        page.reload()
+        page.wait_for_selector("#st.ok", timeout=30000)
+        run(page, "utils.secure")
+        page.wait_for_function("document.getElementById('out').innerText.includes('cannot be read out')", timeout=30000)
+        run(page, "wifi.profile.list")
+        page.wait_for_function("document.getElementById('out').innerText.includes('office-net')", timeout=30000)
+        assert "cannot" not in page.inner_text("#out").split("wifi.profile.list")[-1]
+        browser.close()
+    assert not js_errors, js_errors
+
+
 def test_a_second_tab_does_not_start_the_app(site):
     """Only one tab owns the serial port and storage/: a second one in the same browser says so and stays idle."""
     sync_api = pytest.importorskip("playwright.sync_api")

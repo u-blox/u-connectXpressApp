@@ -57,14 +57,63 @@
     m.FS.mkdirTree(path);
     for await (const [name, h] of dir.entries()) {
       if (h.kind === 'directory') await opfsCopyIn(m, h, path + '/' + name);
+      else if (path === '/' + STORE && name === INSTALL_KEY) await keyIn(m, new Uint8Array(await (await h.getFile()).arrayBuffer()));
       else if (!name.endsWith('.part')) m.FS.writeFile(path + '/' + name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
     }
+  }
+  /* The install key (ucxapp.key), which seals every *.key file and secret in storage/, never lies in OPFS as it is:
+     there it is sealed with AES-256-GCM under a WebCrypto key that is not extractable and lives in IndexedDB, so
+     the page can use it but no script and no copy of OPFS can read it out (the browser's DPAPI). Where WebCrypto or
+     IndexedDB is missing the install key stays in memory only: sealed files then do not open after a reload,
+     which is safer than a key lying next to them. */
+  const INSTALL_KEY = 'ucxapp.key', WRAP_MAGIC = [0x55, 0x43, 0x58, 0x57, 0x01];   /* "UCXW", 1 */
+  let wrapKey = null;
+  function wrapper() {
+    return wrapKey || (wrapKey = new Promise(done => {
+      if (!self.indexedDB || !self.crypto || !crypto.subtle) return done(null);
+      const req = indexedDB.open('ucxapp-keys', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('keys');
+      req.onerror = () => done(null);
+      req.onsuccess = () => {
+        const db = req.result, get = db.transaction('keys').objectStore('keys').get('install');
+        get.onerror = () => done(null);
+        get.onsuccess = async () => {
+          if (get.result) return done(get.result);
+          try {
+            const k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+            const put = db.transaction('keys', 'readwrite').objectStore('keys').put(k, 'install');
+            put.onsuccess = () => done(k); put.onerror = () => done(null);
+          } catch { done(null); }
+        };
+      };
+    }));
+  }
+  let keyRewrap = false;
+  async function keyIn(m, data) {
+    const magic = data.length > 17 && WRAP_MAGIC.every((b, i) => data[i] === b);
+    if (!magic) { m.FS.writeFile('/' + STORE + '/' + INSTALL_KEY, data); keyRewrap = true; return; }   /* older, plain: seal it */
+    const k = await wrapper();
+    if (!k) return;
+    try {
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: data.slice(5, 17) }, k, data.slice(17));
+      m.FS.writeFile('/' + STORE + '/' + INSTALL_KEY, new Uint8Array(plain));
+    } catch { console.warn('OPFS: ' + INSTALL_KEY + ' does not open with this browser\'s key'); }
+  }
+  async function keyOut(data) {
+    const k = await wrapper();
+    if (!k) return null;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, data));
+    const out = new Uint8Array(17 + sealed.length);
+    out.set(WRAP_MAGIC); out.set(iv, 5); out.set(sealed, 17);
+    return out;
   }
   async function opfsLoad(m) {
     /* best effort: without it the browser may clear storage/ (keys, certificates, firmware) when the disk runs low */
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     const dir = await opfsDir(false);
     try { if (dir) await opfsCopyIn(m, dir, '/' + STORE); } catch (e) { console.warn('OPFS: cannot load storage/', e); }
+    if (keyRewrap) { keyRewrap = false; storeChanged(INSTALL_KEY, false); }
   }
   /* Called by the store after a file is committed or removed; name is relative to storage/. Writes run in order. */
   function storeChanged(name, removed) {
@@ -76,6 +125,7 @@
       const parts = name.split('/'), leaf = parts.pop();
       for (const p of parts) dir = await dir.getDirectoryHandle(p, { create: !removed });
       if (removed) { await dir.removeEntry(leaf).catch(() => {}); return; }
+      if (name === INSTALL_KEY && !(data = await keyOut(data))) { await dir.removeEntry(leaf).catch(() => {}); return; }
       const w = await (await dir.getFileHandle(leaf, { create: true })).createWritable();
       await w.write(data); await w.close();
     }).catch(e => console.warn('OPFS: cannot save ' + name, e));

@@ -462,7 +462,11 @@ def test_card_shows_the_node_its_codes_and_endpoints(app_exe, module, plugin, tm
     assert re.search(rf"CODE  {manual_code(discriminator, passcode)}\d\nQR    MT:[0-9A-Z.\-]{{19}}\n", card), card
     assert "EP    1 light = on 40%  [on | off | 0..100 (percent)]\n" in card, card
     assert "EP    2 temp = 21.5 C  [-40..125 (degrees Celsius)]\n" in card, card
-    assert "EP    3 contact = closed  [open | closed]\nEP    4 switch = released  [press | release | click]\nLOG   info\n" in card, card
+    assert (
+        "EP    3 contact = closed  [open | closed]\n"
+        "EP    4 switch = released  [press | release | click]\n"
+        "LOG   info\n"
+    ) in card, card
     assert "STEP" not in card, card   # no commissioning under way
 
 
@@ -539,7 +543,7 @@ BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
 
 
 def test_board_button_is_the_switch_and_the_led_shows_the_light(app_exe, module, plugin, tmp_path):
-    """h753 profile: the user button (PC13, pressed high) drives the switch endpoint, the LED (PB0) follows the light."""
+    """h753 profile: the user button (PC13, pressed high) drives the switch, the LED (PB0) follows the light."""
     out = _run(app_exe, module, plugin, tmp_path, f"hw.profile.load {BOARDS / 'h753.json'}", "matter.start",
                "matter.set light off", "hw.gpio.read PB0", "matter.set light on", "hw.gpio.read PB0",
                "hw.gpio.write PC13 1", "app.wait 300", "matter.card", "hw.gpio.write PC13 0", "app.wait 300",

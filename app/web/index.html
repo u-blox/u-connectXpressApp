@@ -257,10 +257,10 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  const sh=c+(a&&a.length?' '+a.join(' '):'');
  if(!yes)remember(sh);
  let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
- free=null;cnPulse(c.split('.')[0],1);const b=block('> '+sh);b.t0=Date.now();b.cmd=c;fltMark(b,c.split('.')[0]);cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
+ free=null;cnPulse(c.split('.')[0],1);const b=block('> '+masked(sh));b.t0=Date.now();b.cmd=c;fltMark(b,c.split('.')[0]);cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
  try{const r=await api(u,{method:'POST'});
-  if(r.status===428){b.remove();cur=null;setBusy('');ask('Run "'+sh+'"? It changes or deletes data on the device.',{cancel:1,ok:'Run'}).then(y=>{if(y)run(c,a,raw,1)});return}
+  if(r.status===428){b.remove();cur=null;setBusy('');ask('Run "'+masked(sh)+'"? It changes or deletes data on the device.',{cancel:1,ok:'Run'}).then(y=>{if(y)run(c,a,raw,1)});return}
   if(r.status===409)fail('busy: another command is running');else if(!r.ok)fail('error '+r.status)}
  catch(x){fail('send failed')}}
 function finish(rc){if(hold)add('',1);const b=cur;cur=null;setBusy('');if(!b)return;
@@ -406,13 +406,22 @@ function recent(){const r=$('rc'),seen=[];r.textContent='';
   b.onclick=()=>{if(open){$('at').checked=false;cmd.value=s;cmd.focus();showHint()}else run(s)};r.appendChild(b)})}
 /* History never keeps a secret: the line is cut before its password/PSK/token field and ends in a space, so the
    chip fills the command line instead of running. Field names come from the command list (CM, as the forms use). */
-const PW=/^(pass|pw|psk|secret|token)/i;
+const PW=/^(pass|pw|psk|secret|token|sim_pin|network_key|api-?key)|token$/i;
+/* key=value secrets (mqtt.connect pass=..., xplorer.call token=...) wherever they stand */
+const KV=/^(pass|password|pw|psk|secret|token|api-?key)=/i;
 function tokens(s){return s.match(/"(?:\\.|[^"\\])*"|\S+/g)||[]}
-function scrub(line){const t=tokens(line),c=CM[t[0]];if(!c)return null;
+function pwAt(t){const c=CM[t[0]];if(!c)return null;
  const vs=c.v||[{p:'',f:c.f||[]}],pw=v=>(v.p?v.p.split(' '):[]);
  const f=vs.find(v=>v.p&&t.slice(1,1+pw(v).length).join(' ')===v.p)||vs.find(v=>!v.p)||vs[0];
- const at=f.f.findIndex(x=>!x[5]&&x[4]!=='f'&&PW.test(x[0])),cut=at<0?-1:1+pw(f).length+at;
+ const at=f.f.findIndex(x=>!x[5]&&x[4]!=='f'&&PW.test(x[0]));return at<0?-1:1+pw(f).length+at}
+function scrub(line){const t=tokens(line);let cut=pwAt(t);if(cut===null)return null;
+ const kv=t.findIndex((x,i)=>i>0&&KV.test(x));if(kv>0&&(cut<0||kv<cut))cut=kv;
  return cut>=0&&cut<t.length?t.slice(0,cut).join(' ')+' ':line}
+/* the echo above a command's output shows its password as stars ('-' prompts, so it stays) */
+function masked(line){const t=tokens(line),i=pwAt(t);
+ if(i===null)return t.length>1?t[0]+' ...':line;
+ if(i>=0&&i<t.length&&t[i]!=='-'&&!KV.test(t[i]))t[i]='********';
+ return t.map((x,j)=>j>0&&KV.test(x)?x.split('=')[0]+'=********':x).join(' ')}
 function keep(s){if(H[H.length-1]!==s){H.push(s);if(H.length>100)H.shift()}localStorage.setItem('ucxh',JSON.stringify(H));hi=H.length;recent()}
 function remember(sh){const n=tokens(sh)[0]||'';if(!/\s/.test(sh.trim())){keep(sh);return}
  if(CM[n]){keep(scrub(sh));return}

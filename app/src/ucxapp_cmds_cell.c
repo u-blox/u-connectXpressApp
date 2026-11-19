@@ -2018,7 +2018,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.radio", "[on|off|reboot]", "Show or switch the radio (off is airplane mode) or restart the modem", 0, cmdRadio },
     { "cell.rat", "[ltem] [nbiot] [2g]", "u-blox: show or set the radio access technologies, in order of preference", 0, cmdRat },
     { "cell.profile", "[<name>|<n>]", "u-blox: show or set the MNO profile: global, europe, sim (from the SIM), vodafone, dt, at&t, verizon, telstra, t-mobile or a number (the modem reboots)", 0, cmdProfile },
-    { "cell.pin", "<pin>", "Unlock the SIM with its PIN", 0, cmdPin },
+    { "cell.pin", "<sim_pin>", "Unlock the SIM with its PIN", 0, cmdPin },
     { "cell.power", "on|off|cycle", "XPLR-IOT-1: switch the SARA-R5 on, off or off and on through the NORA-B106 shell (on leaves its port free, e.g. for EasyFlash; cycle after a firmware update or when it hangs)", 0, cmdPower },
     { "cell.at", "<command>", "Send a raw AT command to the cellular modem", 0, cmdAt },
     { "cell.apn", "[<apn> [ip|ipv6|ipv4v6]]", "Show or set the default APN (context 1)", 0, cmdApn },

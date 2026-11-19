@@ -579,7 +579,7 @@ def test_page_in_a_browser(server):
                 break
             page.wait_for_timeout(100)
         assert any("cmd=wifi.connect" in u and "a0=stenmo" in u and "a1=secret" in u for u in server.posted)
-        assert "wifi.connect stenmo secret" in page.locator(".blk .bh").last.inner_text()
+        assert "wifi.connect stenmo ********" in page.locator(".blk .bh").last.inner_text()
         assert page.is_disabled("#run")
         # the password is not remembered, the ssid is
         assert "secret" not in page.evaluate("localStorage.getItem('ucxf')")

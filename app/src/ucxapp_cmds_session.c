@@ -58,9 +58,11 @@ static bool isSecretArg(const char *usage, int idx)
             size_t n = (size_t)(p - s);
             char tok[48];
             snprintf(tok, sizeof(tok), "%.*s", (int)(n < sizeof(tok) - 1 ? n : sizeof(tok) - 1), s);
-            /* password, passphrase, pass, token, secret, psk */
-            return (strstr(tok, "pass") != NULL && strstr(tok, "nopass") == NULL) || strcmp(tok, "[pw]") == 0 ||
-                   strstr(tok, "token") != NULL || strstr(tok, "secret") != NULL || strstr(tok, "psk") != NULL;
+            /* password, passphrase, pass, pw, token, secret, psk(d), SIM PIN, Thread network key, API key */
+            return (strstr(tok, "pass") != NULL && strstr(tok, "nopass") == NULL) || strcmp(tok, "[pw]") == 0 || strcmp(tok, "<pw>") == 0 ||
+                   strstr(tok, "token") != NULL || strstr(tok, "secret") != NULL || strstr(tok, "psk") != NULL ||
+                   strstr(tok, "sim_pin") != NULL || strstr(tok, "network_key") != NULL ||
+                   strstr(tok, "api-key") != NULL;
         }
     }
     return false;
@@ -70,12 +72,21 @@ static bool isSecretArg(const char *usage, int idx)
 static void formatLine(const ucxapp_cmd_t *cmd, int argc, char *argv[], char *out, size_t size)
 {
     size_t n = 0;
+    static const char *const kKv[] = { "pass=", "password=", "pw=", "psk=", "secret=", "token=", "api-key=", "apikey=" };
+    char kv[32];
 
     out[0] = '\0';
     for (int i = 0; i < argc && n + 1 < size; i++) {
         const char *a = argv[i];
-        if (i > 0 && isSecretArg(cmd->usage, i) && strcmp(a, "-") != 0) {
+        if (i > 0 && isSecretArg(cmd->usage, i) && strcmp(a, "-") != 0 && strchr(a, '=') == NULL) {
             a = strncmp(cmd->name, "wifi.", 5) == 0 ? "${UCX_WIFI_PASS}" : "${UCX_SECRET}";
+        }
+        for (size_t k = 0; i > 0 && k < sizeof(kKv) / sizeof(kKv[0]); k++) {
+            if (strncmp(a, kKv[k], strlen(kKv[k])) == 0) {
+                snprintf(kv, sizeof(kv), "%s${UCX_SECRET}", kKv[k]);
+                a = kv;
+                break;
+            }
         }
         bool quote = a[0] == '\0' || strpbrk(a, " \t") != NULL;
         n += (size_t)snprintf(out + n, size - n, "%s%s%s%s", i > 0 ? " " : "", quote ? "\"" : "", a, quote ? "\"" : "");
@@ -698,6 +709,29 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
     if (strcmp(line, "cert.upload key k.pem k ${UCX_SECRET}") != 0) {
         ucxapp_print("ERROR: session selftest: key password not masked (%s)\n", line);
         return UCXAPP_ERR_FAILED;
+    }
+    {
+        static const ucxapp_cmd_t kPin = { "cell.pin", "<sim_pin>", "", 0, NULL };
+        static const ucxapp_cmd_t kMqtt = { "mqtt.connect", "[host] [port] [id=<client>] [user=<name>] [pass=<pw>]", "", 0, NULL };
+        static const ucxapp_cmd_t kLoc = { "wifi.locate", "[google|skyhook] [api-key]", "", 0, NULL };
+        char *pin[] = { "cell.pin", "1234" };
+        char *mqtt[] = { "mqtt.connect", "h", "1883", "pass=s3cret", "user=u" };
+        char *loc[] = { "wifi.locate", "google", "AIzaXYZ" };
+        formatLine(&kPin, 2, pin, line, sizeof(line));
+        if (strcmp(line, "cell.pin ${UCX_SECRET}") != 0) {
+            ucxapp_print("ERROR: session selftest: SIM PIN not masked (%s)\n", line);
+            return UCXAPP_ERR_FAILED;
+        }
+        formatLine(&kMqtt, 5, mqtt, line, sizeof(line));
+        if (strcmp(line, "mqtt.connect h 1883 pass=${UCX_SECRET} user=u") != 0) {
+            ucxapp_print("ERROR: session selftest: pass= not masked (%s)\n", line);
+            return UCXAPP_ERR_FAILED;
+        }
+        formatLine(&kLoc, 3, loc, line, sizeof(line));
+        if (strcmp(line, "wifi.locate google ${UCX_WIFI_PASS}") != 0) {
+            ucxapp_print("ERROR: session selftest: API key not masked (%s)\n", line);
+            return UCXAPP_ERR_FAILED;
+        }
     }
     static const char *const kTrace[] = {
         "\33[0;36m[AT TX][0] ", "AT+UWSSW=", "0", ",", "\"hun,ter2\"", ",", "0", "\33[0m\n",

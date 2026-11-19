@@ -763,7 +763,7 @@ static const example_t kExamples[] = {
 };
 
 #define EX_COUNT (sizeof(kExamples) / sizeof(kExamples[0]))
-#define GROUP_MAX 40
+#define GROUP_MAX 64
 
 bool ucxapp_example_get(size_t index, const char **group, const char **title, const char **lines)
 {

@@ -594,6 +594,8 @@ int main(int argc, char *argv[])
     ucxapp_register_imu_cmds();
     ucxapp_register_cell_cmds();
     ucxapp_register_ppk_cmds();
+    ucxapp_register_sniff_cmds();
+    ucxapp_register_wlanpi_cmds();
     ucxapp_register_can_cmds();
     ucxapp_register_hw_cmds();
     ucxapp_register_examples_cmds();

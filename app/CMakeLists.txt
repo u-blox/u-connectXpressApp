@@ -220,6 +220,10 @@ if(NOT WIN32)
     src/ucxapp_cmds_gnss.c
     src/ucxapp_cmds_imu.c
     src/ucxapp_cmds_ppk.c
+    src/ucxapp_proc.c
+    src/ucxapp_capture.c
+    src/ucxapp_cmds_sniff.c
+    src/ucxapp_cmds_wlanpi.c
     src/ucxapp_cmds_matter.c
     src/ucxapp_cmds_hw.c
     src/ucxapp_hwcfg.c
@@ -410,6 +414,10 @@ add_executable(ucxapp
   src/ucxapp_cmds_gnss.c
   src/ucxapp_cmds_imu.c
   src/ucxapp_cmds_ppk.c
+  src/ucxapp_proc.c
+  src/ucxapp_capture.c
+  src/ucxapp_cmds_sniff.c
+  src/ucxapp_cmds_wlanpi.c
   src/ucxapp_cmds_matter.c
   src/ucxapp_cmds_hw.c
   src/ucxapp_hwcfg.c

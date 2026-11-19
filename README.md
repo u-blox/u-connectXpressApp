@@ -111,6 +111,20 @@ matter.set light 40              # act as the device; the home app sees the chan
 
 The web page (`--web`) gets a Matter tab with the node's state, the commissioning steps with a timeline of how long each took, and a control per endpoint; the browser app (`--wasm`) has the node built in. How-to, layout and tests: [the ucx-matter-plugin skill](.github/skills/ucx-matter-plugin/SKILL.md) and [BUILDING.md](BUILDING.md).
 
+## Packet captures
+
+See what the module sends over the air, live in Wireshark (Windows and Linux):
+
+```powershell
+sniff.start follow=module live             # BLE: nRF Sniffer dongle through nrfutil ble-sniffer
+wlanpi.host 192.168.1.202                  # Wi-Fi: a WLAN Pi in monitor mode over ssh, once
+wlanpi.setup                               # checks the key login and sudo, prints the one-time recipe
+wlanpi.start channel=module live           # tcpdump on the module's channel
+wlanpi.stop                                # sniff.stop for BLE; both print the packet count
+```
+
+`sniff.*` needs [nrfutil](https://www.nordicsemi.com/Products/Development-tools/nRF-Util) with `nrfutil install ble-sniffer` and an nRF52840 dongle or DK with the nRF Sniffer for Bluetooth LE firmware; `wlanpi.*` needs the OpenSSH client and an ssh key on the Pi. Captures go to `ble-<date>-<time>.pcap` / `wifi-<date>-<time>.pcap` unless a file is given; `sniff.view <file>` opens one in Wireshark.
+
 ## Small enough for a microcontroller
 
 The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Updated by `.\ucxapp --everything --build` ([details](docs/STM32_MEMORY.md)).

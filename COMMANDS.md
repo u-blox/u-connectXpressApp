@@ -657,6 +657,37 @@ ppk.vdd 3300
 ppk.measure 5000 idle.csv
 ```
 
+### BLE sniffer (PC only)
+
+Captures Bluetooth LE with an nRF Sniffer for Bluetooth LE (an nRF52840 dongle or DK with Nordic's sniffer firmware, USB 1915:522A) through `nrfutil ble-sniffer sniff` into a pcap file. nrfutil comes from `UCXAPP_NRFUTIL`, PATH or `~/.nrfutil/bin` (`nrfutil install ble-sniffer` once). `live` shows the capture in Wireshark as it grows (`UCXAPP_WIRESHARK` overrides where Wireshark is); Wireshark stays open after the stop. The other detectors skip sniffer ports.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `sniff.detect` | | The sniffers on USB, nrfutil and Wireshark |
+| `sniff.start` | `[file.pcap] [follow=module\|<addr>\|name:<name>] [port=<port>] [adv] [coded] [rssi=<-dBm>] [live]` | Start a capture (default `ble-<date>-<time>.pcap`); `follow=module` follows the connected module's address, `adv` keeps only advertising, `coded` listens on LE Coded PHY, `rssi` drops weaker packets |
+| `sniff.stop` | | Stop it (Ctrl-Break so nrfutil closes the file) and print the packet count |
+| `sniff.status` | | Port, time, file and packets so far; nrfutil's output if it ended |
+| `sniff.view` | `<file.pcap>` | Open a capture in Wireshark |
+
+### WLAN Pi capture (PC only)
+
+Captures Wi-Fi in monitor mode on a [WLAN Pi](https://www.wlanpi.com) (or any Linux box with a monitor-capable adapter) over the system OpenSSH client with key login: the Pi switches the adapter to monitor mode, sets the channel and runs `tcpdump -w -`; ssh brings the packets into a local pcap file. `UCXAPP_SSH` overrides the ssh command. Passwords are never used: `wlanpi.setup` prints the one-time recipe (`ssh-keygen`, copying the key, a sudoers rule for tcpdump, iw, ip and kill).
+
+| Command | Arguments | Description |
+|---|---|---|
+| `wlanpi.host` | `[<host> [user=wlanpi] [iface=wlan0]]` | Show or set the Pi (saved in `ucxapp.wlanpi`) |
+| `wlanpi.setup` | | Check the key, the key login and sudo without a password; prints the missing steps |
+| `wlanpi.start` | `[file.pcap] [channel=<n>\|module] [width=20\|40+\|40-\|80] [filter=<bpf>] [live]` | Start a capture (default `wifi-<date>-<time>.pcap`); `channel=module` takes the module's current channel, `filter` is a tcpdump filter (quote it when it has spaces) |
+| `wlanpi.stop` | | Stop tcpdump on the Pi (SIGINT) and print the packet count |
+| `wlanpi.status` | | The running capture, else `iw dev <iface> info` from the Pi |
+
+```text
+wlanpi.host 192.168.1.202
+wlanpi.setup
+wlanpi.start channel=module live
+wlanpi.stop
+```
+
 ### Bridges
 
 Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `can.bridge`, `hw.bridge`), up to 4 per source, and they all run at the same time.

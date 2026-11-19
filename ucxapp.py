@@ -74,6 +74,7 @@ MEMORY_DOC = ROOT / "docs" / "STM32_MEMORY.md"
 UBLOX_VID = 0x1546
 FTDI_VID = 0x0403
 PPK_VID, PPK_PID = 0x1915, 0xC00A   # Nordic Power Profiler Kit II
+SNIFFER_PID = 0x522A                # nRF Sniffer for Bluetooth LE firmware (sniff.*)
 FTDI_PIDS = {0x6010, 0x6011, 0x6014, 0x601C, 0x6015}
 UBLOX_GNSS_PIDS = {0x01A4, 0x01A5, 0x01A6, 0x01A7, 0x01A8, 0x01A9}
 GNSS_DESC = re.compile(r"gnss|gps|\b(?:zed|neo|max|lea|evk)-[a-z]?\d", re.IGNORECASE)
@@ -655,6 +656,8 @@ def classify(vid, pid, desc):
     d = desc.lower()
     if (vid == PPK_VID and pid == PPK_PID) or "ppk2" in d:
         return "PPK2"
+    if (vid == PPK_VID and pid == SNIFFER_PID) or "nrf sniffer" in d:
+        return "nRF Sniffer"
     if "stlink" in d or "st-link" in d:
         return "STM32 console"
     if "bluetooth" in d or "active management" in d:
@@ -746,7 +749,8 @@ def detect(exe, ports=None, force=False):
     with concurrent.futures.ThreadPoolExecutor() as pool:
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60), modules))
         if force and not ports:
-            others = [n for n, _, role in serial_ports if role not in ("skip", "PPK2") and n not in modules]
+            others = [n for n, _, role in serial_ports if role not in ("skip", "PPK2", "nRF Sniffer")
+                      and n not in modules]
             for port, info in zip(others, pool.map(lambda p: app_output(exe, p, "--exec", "dev.info", timeout=60),
                                                    others), strict=True):
                 if re.search(r"\bNORA-[A-Z0-9]", info):
@@ -800,6 +804,10 @@ def detect(exe, ports=None, force=False):
         print(f"  {ppk[0]} {ppk[2]}")
     else:
         print("  none")
+
+    print("nRF Sniffer for Bluetooth LE (sniff.start):")
+    sniffers = [n for n, _, role in serial_ports if role == "nRF Sniffer"]
+    print("  " + (", ".join(sniffers) if sniffers else "none"))
 
     stm32 = [n for n, _, role in serial_ports if role == "STM32 console"]
     if stm32:

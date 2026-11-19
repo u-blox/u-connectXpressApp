@@ -192,6 +192,7 @@ def test_every_stm32_board_has_a_zephyr_overlay():
         (None, None, "USB-SERIAL CH340 (COM15)", "USB-UART (IMU/GNSS?)"),
         (None, None, "STMicroelectronics STLink Virtual COM Port (COM9)", "STM32 console"),
         (None, None, "Intel(R) Active Management Technology - SOL (COM3)", "skip"),
+        (0x1915, 0x522A, "USB Serial Device (COM21)", "nRF Sniffer"),
     ],
 )
 def test_launcher_port_roles(vid, pid, desc, role):

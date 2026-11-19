@@ -223,6 +223,9 @@ void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
 void ucxapp_register_ppk_cmds(void);     /* ppk.* (ucxapp_cmds_ppk.c), PC builds only */
 /* True for a Nordic PPK2 port: other detectors must not send it bytes (each byte is an opcode). */
 bool ucxapp_port_is_ppk(const ucxapp_serial_port_t *sp);
+void ucxapp_register_sniff_cmds(void);   /* sniff.* nRF Sniffer for BLE via nrfutil (ucxapp_cmds_sniff.c), PC builds only */
+bool ucxapp_port_is_sniffer(const ucxapp_serial_port_t *sp);
+void ucxapp_register_wlanpi_cmds(void);  /* wlanpi.* Wi-Fi capture on a WLAN Pi over ssh (ucxapp_cmds_wlanpi.c), PC builds only */
 void ucxapp_register_dash_cmds(void);    /* dash (ucxapp_cmds_dash.c, host only) */
 void ucxapp_register_extra_cmds(void);   /* a command pack from outside this repo (UCXAPP_EXTRA_DIR, host only) */
 void ucxapp_register_conn_cmds(void);    /* conn.status (ucxapp_cmds_conn.c, host only) */

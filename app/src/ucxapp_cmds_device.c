@@ -743,11 +743,18 @@ bool ucxapp_port_is_ppk(const ucxapp_serial_port_t *sp)
     return (sp->vid == 0x1915 && sp->pid == 0xC00A) || strstr(sp->desc, "PPK2") != NULL;
 }
 
+/* nRF Sniffer for Bluetooth LE firmware (nRF52840 dongle or DK, USB 1915:522A): sniff.* owns it, so no detector
+ * may probe it either. */
+bool ucxapp_port_is_sniffer(const ucxapp_serial_port_t *sp)
+{
+    return (sp->vid == 0x1915 && sp->pid == 0x522A) || strstr(sp->desc, "nRF Sniffer") != NULL;
+}
+
 bool ucxapp_port_skip(const ucxapp_serial_port_t *sp)
 {
     static const char *const kSkip[] = { "Virtual", "Bluetooth", "Management", "SOL", "NORA-" };
 
-    if (!sp->available || sp->label[0] != '\0' || ucxapp_port_is_ppk(sp)) {
+    if (!sp->available || sp->label[0] != '\0' || ucxapp_port_is_ppk(sp) || ucxapp_port_is_sniffer(sp)) {
         return true;
     }
     for (size_t i = 0; i < sizeof(kSkip) / sizeof(kSkip[0]); i++) {

@@ -105,7 +105,19 @@ static const example_t kExamples[] = {
     { "ppk", "Power the module from the PPK2 and measure a scan",
       "ppk.open\nppk.mode source\nppk.vdd 3300\nppk.power on\n# open the module, then start a scan and measure:\n"
       "ppk.measure 10000\nppk.power off" },
+
+#ifndef __EMSCRIPTEN__   /* sniff.* and wlanpi.* start external tools */
+    { "sniff", "Watch this module's BLE traffic live in Wireshark",
+      "sniff.detect\nsniff.start follow=module live\n# connect to the module from a phone, then:\nsniff.stop" },
+    { "sniff", "Capture advertising only into a file",
+      "sniff.start adv.pcap adv rssi=-60\napp.wait 10000\nsniff.stop\nsniff.view adv.pcap" },
+
+    { "wlanpi", "Set up a WLAN Pi once",
+      "wlanpi.host 192.168.1.202 user=wlanpi iface=wlan0\nwlanpi.setup" },
+    { "wlanpi", "Capture the module's Wi-Fi channel live in Wireshark",
+      "wifi.status\nwlanpi.start channel=module live\n# run the traffic, then:\nwlanpi.stop" },
 #endif
+      #endif
 
     { "wifi", "Join a network and check it (choose your country's regulatory domain once first)",
       "wifi.regdomain etsi\nwifi.scan\nwifi.connect 1 MyPassword\nwifi.status\nnet.ping u-blox.com" },

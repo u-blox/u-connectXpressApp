@@ -61,7 +61,7 @@ button:not(:disabled):hover{transform:translateY(-1px);box-shadow:var(--glow)}bu
 #run:disabled{background:repeating-linear-gradient(45deg,#29b6f6 0 10px,#1e88c7 10px 20px);background-size:28px 28px;animation:fx-stripes .6s linear infinite;opacity:.8}
 @keyframes fx-stripes{to{background-position:28px 0}}
 #busy:not(:empty){text-shadow:0 0 8px #ffd54a88}
-#cmd{transition:border-color .3s,box-shadow .3s}#cmd:focus{box-shadow:0 0 0 3px #29b6f633,0 0 24px #29b6f622}
+#bar{transition:border-color .3s,box-shadow .3s}#bar:focus-within{box-shadow:0 0 0 3px #29b6f633,0 0 24px #29b6f622}
 
 /* log blocks and events */
 .blk.fx-in{animation:fx-slide .45s cubic-bezier(.2,.9,.3,1)}

@@ -2,26 +2,28 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0a0e15">
 <style>
-:root{color-scheme:dark;--bg:#0a0e15;--card:#121a26;--bd:#1f2a3a;--tx:#e8edf4;--mut:#7d8899;--ac:#29b6f6;--ble:#4f8cff;--ok:#66d17a;--warm:#ffd54a;--err:#ff3b3b;--pu:#a07cff;--bg2:#0d131c}
+:root{color-scheme:dark;--bg:#0a0e15;--card:#121a26;--bd:#1f2a3a;--tx:#e8edf4;--mut:#7d8899;--ac:#29b6f6;--ble:#4f8cff;--ok:#66d17a;--warm:#ffd54a;--err:#ff3b3b;--pu:#a07cff;--bg2:#0d131c;--bd2:#33415a;--btn:#1b2433}
 html{background:radial-gradient(ellipse at 50% 30%,#142033 0%,var(--bg) 70%) fixed;min-height:100%}
 body{margin:0;font:14px 'Segoe UI',Inter,system-ui,sans-serif;color:var(--tx)}
-header{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.55rem 1rem;background:#0d131ccc;border-bottom:1px solid var(--bd)}
+header{display:flex;align-items:flex-start;gap:.8rem;padding:.55rem 1rem;background:#0d131ccc;border-bottom:1px solid var(--bd)}
+#hd{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}#hd>#ha{flex:0 1 auto;display:flex;align-items:center;justify-content:flex-end;gap:.8rem;flex-wrap:wrap;margin-left:auto}
 h1{margin:0;font-size:1.05rem;font-weight:700}.logo{height:1.9rem;width:auto}
 #st{font-size:.8rem;color:var(--warm);display:flex;align-items:center;gap:.4rem}#st::before{content:'';width:.6rem;height:.6rem;border-radius:50%;background:currentColor}
 #st.ok{color:var(--ok)}#st.bad{color:var(--err)}#st.bad::before{animation:bl 1s steps(2) infinite}@keyframes bl{50%{opacity:0}}
 .chip{font-size:.72rem;font-weight:600;padding:.05rem .5rem;border-radius:1rem;border:1px solid currentColor;color:var(--ok);white-space:nowrap}.chip.off{color:var(--mut);opacity:.7}.chip.ck{cursor:pointer}#state{display:flex;gap:.3rem;flex-wrap:nowrap;flex:1 1 0;min-width:0;overflow-x:auto;scrollbar-width:none;mask-image:linear-gradient(90deg,#000 calc(100% - 1.5rem),transparent)}#state::-webkit-scrollbar{display:none}
-header>*:not(#state),#vw button{white-space:nowrap;flex:none}#state{min-width:6rem}
-@media(min-width:801px){#state{flex:none;overflow:visible;mask-image:none;-webkit-mask-image:none}}.chip u{text-decoration-thickness:2px;text-underline-offset:2px}
+#hd>*:not(#state),#ha>*,#vw button,#meta{white-space:nowrap;flex:none}#state{min-width:6rem}
+@media(min-width:801px){#state{flex:1 1 16rem;flex-wrap:wrap;align-content:center;row-gap:.25rem;overflow:visible;mask-image:none;-webkit-mask-image:none}}.chip u{text-decoration-thickness:2px;text-underline-offset:2px}
 #more{position:relative}#morb{font-weight:800;letter-spacing:.05em}#morm{position:absolute;right:0;top:calc(100% + .35rem);z-index:60;display:flex;flex-direction:column;gap:.3rem;min-width:9rem;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:.4rem;box-shadow:0 8px 30px #0008}#morm[hidden]{display:none}#morm button{text-align:left}
 #out .bh .tm,#ev .t{color:var(--mut);font:12px Consolas,monospace;font-weight:400}#ev{scroll-padding-top:.6rem}
 #flt-on{display:flex;gap:.4rem;align-items:center;font-size:.8rem;color:var(--ac);margin:0 0 .3rem}#flt-on[hidden]{display:none}#flt-on button{padding:.1rem .5rem;font-size:.75rem}
 body.flt #out>.blk:not(.hit),body.flt #ev>.e:not(.hit){display:none}
 #cn .nd.ping .b{animation:cnping .9s ease-out}@keyframes cnping{0%{stroke-width:7;filter:drop-shadow(0 0 16px var(--k))}}
 #verdict{position:fixed;left:50%;top:4.2rem;transform:translateX(-50%);z-index:70;display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;border-radius:12px;font-weight:600;box-shadow:0 10px 40px #000a;background:#0f2a1a;border:1px solid var(--ok);color:var(--ok)}#verdict.bad{background:#2a1214;border-color:var(--bad,#ff5c6c);color:var(--bad,#ff5c6c)}#verdict[hidden]{display:none}#verdict button{padding:.15rem .6rem}
-@media(min-width:801px) and (max-width:1280px){header{gap:.5rem;padding:.45rem .7rem}h1{font-size:.92rem}.logo{height:1.5rem}header>button,#vw button{padding:.3rem .55rem;font-size:.85rem}#ver{display:none}}
+@media(min-width:801px) and (max-width:1280px){header,#hd,#hd>#ha{gap:.5rem}header{padding:.45rem .7rem}h1{font-size:.92rem}.logo{height:1.5rem}#ha>button,#vw button{padding:.3rem .55rem;font-size:.85rem}#meta .tag{max-width:7rem}}
+@media(min-width:1101px) and (max-width:1280px){#state{flex-basis:9rem}}
 @media(min-width:801px) and (max-width:1100px){h1{display:none}main{grid-template-columns:15rem 1fr 1fr}}
 #vw{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}#vw button{border:0;border-radius:0;background:none}#vw button.on{background:var(--ac);color:#04121c;font-weight:600}
-#busy{margin-left:auto;font-size:.85rem;color:var(--warm);display:block;flex:0 0 14rem;width:14rem;height:1.2rem;line-height:1.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#busy{flex:0 1 auto;max-width:45%;font-size:.8rem;color:var(--warm);line-height:1.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#busy:empty{display:none}
 #busy:not(:empty)::before{content:'';display:inline-block;vertical-align:-.1rem;margin-right:.4rem;box-sizing:border-box;width:.8rem;height:.8rem;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 main{display:grid;grid-template-columns:19rem 3fr 2fr;gap:.7rem;padding:.7rem;height:calc(100vh - 11rem)}
@@ -90,12 +92,22 @@ body.det #ev{display:none}#cnd{flex:1 1 auto;overflow:auto;min-height:0}#cnd h3{
 .e .g{font:700 .62rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:0 .3rem;border:1px solid currentColor;border-radius:4px;min-width:3rem;text-align:center;color:var(--mut)}
 .e .x{flex:1;color:#b7c0cd;word-break:break-word}.e.n{animation:gl 1.2s ease-out}@keyframes gl{from{background:#a07cff40}}
 .e.wifi .g,.e.net .g,.e.http .g,.e.ping .g{color:var(--c-wifi)}.e.ap .g{color:var(--c-ap)}.e.bt .g,.e.gatt .g,.e.sps .g,.e.hid .g{color:var(--c-ble)}.e.thread .g{color:var(--c-thr)}.e.sock .g,.e.tls .g{color:var(--c-sock)}.e.mqtt .g{color:var(--c-mqtt)}.e.gnss .g{color:var(--c-gnss)}.e.cell .g{color:var(--c-cell)}.e.matter .g{color:var(--c-mat)}
-footer{padding:0 .7rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
-#cmd,#flt,#mb{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:8px}
+/* command bar: AT switch, prompt, command line, what is running, Run; the last commands to its right */
+footer{min-height:3.1rem;padding:.1rem .7rem 0;display:flex;gap:.9rem;align-items:center}
+#bar{position:relative;flex:1 1 0;min-width:0;display:flex;align-items:center;gap:.5rem;height:2.75rem;padding:0 .3rem;background:var(--bg2);border:1px solid var(--bd2);border-radius:999px;transition:border-color .2s,box-shadow .2s}
+#bar:focus-within{border-color:var(--ac);box-shadow:0 0 0 3px #29b6f626}#bar:has(#at:checked){border-color:var(--warm)}#bar:has(#at:checked):focus-within{box-shadow:0 0 0 3px #ffd54a2e}
+#bar::after{content:'';position:absolute;left:1.4rem;right:1.4rem;bottom:-1px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--warm),transparent) 0 0/35% 100% no-repeat;opacity:0;transition:opacity .2s}
+#bar:has(#busy:not(:empty))::after{opacity:1;animation:bz 1.1s ease-in-out infinite alternate}@keyframes bz{to{background-position:100% 0}}
+#atl{position:relative;flex:none;cursor:pointer}#at{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+#at+span{padding:.32rem .7rem;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.08em;background:var(--btn);color:var(--mut);transition:background .15s,color .15s}
+#atl:hover span{color:var(--tx)}#at:checked+span{background:var(--warm);color:var(--bg)}#at:focus-visible+span{outline:2px solid var(--ac);outline-offset:1px}
+#pr{flex:none;font:700 1.15rem/1 Consolas,monospace;color:var(--ac)}#bar:has(#at:checked) #pr{color:var(--warm)}
+#cmd{flex:1;min-width:3rem;padding:.5rem 0;font:14px Consolas,monospace;background:none;color:var(--tx);border:0}
+#flt,#mb{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:8px}
 #flt{flex:none;margin-bottom:.35rem;padding:.3rem .5rem}#mb{flex:none;min-width:0;width:5rem;padding:.3rem}
 #hint{padding:.2rem .7rem;min-height:1.2rem;font:12px Consolas,monospace;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button{padding:.4rem .8rem;background:#1b2433;color:var(--tx);border:1px solid #33415a;border-radius:8px;cursor:pointer;transition:background .15s,border-color .15s}
-button:hover{border-color:var(--ac)}button:disabled{opacity:.45;cursor:wait}#run{background:var(--ac);border-color:var(--ac);color:#04121c;font-weight:600}button.dg{border-color:#7a2e48;color:#ff8fa8}
+button:hover{border-color:var(--ac)}button:disabled{opacity:.45;cursor:wait}#run{display:flex;align-items:center;gap:.45rem;flex:none;height:2.15rem;padding:0 1.15rem;border-radius:999px;background:var(--ac);border-color:var(--ac);color:#04121c;font-weight:700}#run kbd{font:inherit;font-size:.85rem;opacity:.6}button.dg{border-color:#7a2e48;color:#ff8fa8}
 #cmd:focus,#flt:focus,.c input:focus,.c select:focus{outline:none;border-color:var(--ac)}
 summary:focus-visible,button:focus-visible,#out:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
 label{color:var(--mut);font-size:.85rem;display:flex;align-items:center;gap:.2rem}
@@ -104,7 +116,10 @@ summary{cursor:pointer;padding:.3rem .2rem;font-weight:700;text-transform:upperc
 .wh{font-weight:700;font-size:.7rem;letter-spacing:.1em;margin:.6rem 0 .1rem;color:var(--ac)}
 .ws{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;margin:.45rem 0 0;padding-left:.2rem;color:var(--mut);border-bottom:1px solid var(--bd)}
 details.sub{margin-left:.6rem;border-left:2px solid var(--bd);padding-left:.4rem}details.sub summary{text-transform:none;letter-spacing:0;font-size:.8rem}
-#rc{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.35rem}#rc button{font:12px Consolas,monospace;padding:.15rem .5rem;border-radius:1rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#rcw{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:.6rem}.rl{flex:none;color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}
+#rc{flex:1;min-width:0;max-height:3rem;display:flex;flex-wrap:wrap;gap:.3rem;overflow:hidden}#rc:empty::before{content:'the commands you run show up here: one click runs them again';color:var(--mut);font-size:.78rem}
+#rc button{font:12px Consolas,monospace;padding:.15rem .6rem;border-radius:1rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#rc button.more::after{content:'\2026';margin-left:.15rem;color:var(--ac)}
+#rc button.rok::before,#rc button.rbad::before{content:'';display:inline-block;width:.4rem;height:.4rem;margin-right:.4rem;vertical-align:.05rem;border-radius:50%;background:var(--ok)}#rc button.rbad::before{background:var(--err)}
 .c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--bd)}
 .c b{width:100%;font:12px Consolas,monospace;color:var(--ac);cursor:help}.c.dgr b{color:#ff8fa8}
 .c small{width:100%;color:var(--mut);font-size:11px;max-height:2.6em;overflow:hidden}
@@ -132,18 +147,21 @@ dialog::backdrop{background:#0008}#fl{max-height:50vh;overflow:auto;margin:.5rem
 input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-color:#33415a transparent}
 #fst{color:var(--mut);font-size:.85rem;min-height:1.1rem}
 #tabs{display:none}
-#ver{white-space:nowrap;font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--mut);margin-left:-.35rem;align-self:center;padding:.05rem .4rem;border:1px solid var(--bd,#2a3a4d);border-radius:999px}#lv{display:flex;gap:.8rem;justify-content:flex-end;align-items:baseline}
-#meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.15rem;min-width:0;max-width:100%}
-#clock,#loc{font-variant-numeric:tabular-nums;font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--mut);overflow-wrap:anywhere;text-align:right}
-#clock .t{color:var(--tx);font-size:.8rem;font-weight:600;margin-left:.4em}#clock .sep{display:none}
+/* header corner: the clock and its source, then the place and the build */
+#ver{font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--mut);padding:.05rem .45rem;border:1px solid var(--bd2);border-radius:999px}#ver:empty{display:none}#lv{display:flex;gap:.5rem;justify-content:flex-end;align-items:center}
+#meta{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:.2rem;min-height:2.1rem;padding-left:.8rem;border-left:1px solid var(--bd)}
+#clock,#loc{font-variant-numeric:tabular-nums;font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--mut);text-align:right}
+#clock .t{color:var(--tx);font-size:.9rem;font-weight:700;margin-left:.45em}#clock .sep{display:none}#meta .tag,#loc a{max-width:11rem;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}#loc a{display:inline-block;max-width:15rem}
 .tag{display:inline-block;margin-left:.4rem;padding:0 .45em;border:1px solid var(--bd);border-radius:999px;font-size:11px;line-height:1.45;color:var(--mut);white-space:nowrap}
 .tag.ok{color:var(--ok);border-color:var(--ok)}.tag.warn{color:var(--warm);border-color:var(--warm)}
 #loc a{color:var(--ac);text-decoration:none}#loc a:hover{text-decoration:underline}#loc a::before{content:'\1F4CD  '}
-@media(max-width:800px){header{padding:.4rem .6rem;gap:.4rem}.logo{height:1.4rem}h1{font-size:.95rem}#state{order:9;width:100%;flex:1 1 100%;overflow-x:auto;flex-wrap:nowrap}
- #busy{margin-left:0;flex:1 1 8rem;width:auto;min-width:0}#keys,#vw,#ver{display:none}
+@media(max-width:800px){header{flex-wrap:wrap;padding:.4rem .6rem;gap:.3rem .4rem}#hd{flex:1 1 100%;gap:.4rem}#hd>#ha{gap:.4rem}.logo{height:1.4rem}
+ #meta{flex:1 1 100%;flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:0 .8rem;min-height:0;padding:0;border:0}#clock .d{display:none}#clock .t{margin-left:0}#meta .tag{max-width:7rem}h1{font-size:.95rem}#state{order:9;width:100%;flex:1 1 100%;overflow-x:auto;flex-wrap:nowrap}
+ #keys,#vw,#ver{display:none}
  #tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}#tabs button{flex:1;padding:.4rem .2rem}#tabs button.on{background:var(--ac);border-color:var(--ac);color:#04121c}
  main,body.uc main,body.cn main{display:block;height:auto;padding:.4rem}.pane,body.uc .pane,body.cn .pane{display:none;height:calc(100dvh - 13rem)}.pane.on,body.uc .pane.on,body.cn .pane.on{display:flex}.pane h2{display:none}#logb{position:static;justify-content:flex-end;margin-top:.3rem}
- footer{position:sticky;bottom:0;background:var(--bg);padding:.4rem}#cmd,#flt,.c input,.c select{font-size:16px}
+ footer{position:sticky;bottom:0;background:var(--bg);padding:.4rem;flex-wrap:wrap;gap:.35rem}#bar,#rcw{flex:1 1 100%}#rcw{order:-1}#rcw:has(#rc:empty),.rl{display:none}
+ #rc{max-height:none;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}#rc::-webkit-scrollbar{display:none}#rc button{flex:none;min-height:2rem}#cmd,#flt,.c input,.c select{font-size:16px}
  button{min-height:2.4rem}.c button{min-height:2.2rem}#hint{white-space:normal}}
 #md{width:min(1200px,94vw);height:88vh;padding:0;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px}#md[open]{display:flex;flex-direction:column}
 .mh{display:flex;gap:.6rem;align-items:center;padding:.5rem .8rem;border-bottom:1px solid var(--bd)}#mq{flex:1;padding:.4rem;background:var(--bg2);color:var(--tx);border:1px solid var(--bd);border-radius:8px}
@@ -151,18 +169,19 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 #mc{flex:1;overflow:auto;padding:.4rem 1.2rem 2rem;line-height:1.5}#mc h1,#mc h2{color:var(--ac);border-bottom:1px solid var(--bd)}#mc h3{color:var(--ac)}
 #mc pre{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:.6rem;overflow:auto;font:12px Consolas,monospace}#mc code{font-family:Consolas,monospace;color:var(--warm)}#mc code.ck{cursor:pointer}#mc code.ck:hover{text-decoration:underline}
 #mc table{border-collapse:collapse;margin:.4rem 0;font-size:.84rem}#mc th,#mc td{border:1px solid var(--bd);padding:.25rem .5rem;vertical-align:top;text-align:left}#mc th{background:var(--bg2)}#mc table{width:100%;table-layout:auto}#mc td{overflow-wrap:anywhere}#mc td:first-child code{white-space:nowrap}@media(max-width:820px){#mt{display:none}#mc{padding:.4rem .6rem}}#mc a{color:var(--ac)}#mc mark{background:#5a4a00;color:inherit}
-html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd8e3;--tx:#18202c;--mut:#5a6577;--bg2:#fff;--ac:#0277bd;--ok:#2a8c42;--warm:#9a6b00;--err:#d32f2f;--bad:#d32f2f}.lt header{background:#fffc}.lt .bx{fill:#18202c}.lt button,.lt .thermo .tube{background:#e3e9f1;fill:#e3e9f1;border-color:#c3ccd8}.lt .scan:hover,.lt code:hover,.lt #mt a:hover{background:#dbe6f3}.lt #verdict{background:#e6f6ea}.lt #verdict.bad{background:#fde8e8}
+html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd8e3;--tx:#18202c;--mut:#5a6577;--bg2:#fff;--ac:#0277bd;--ok:#2a8c42;--warm:#9a6b00;--err:#d32f2f;--bad:#d32f2f;--bd2:#c3ccd8;--btn:#e3e9f1}.lt header{background:#fffc}.lt .bx{fill:#18202c}.lt button,.lt .thermo .tube{background:#e3e9f1;fill:#e3e9f1;border-color:#c3ccd8}.lt .scan:hover,.lt code:hover,.lt #mt a:hover{background:#dbe6f3}.lt #verdict{background:#e6f6ea}.lt #verdict.bad{background:#fde8e8}
 </style></head><body>
-<header><svg class="logo" viewBox="0 0 1024 400" role="img" aria-label="u-blox">
+<header><div id="hd"><svg class="logo" viewBox="0 0 1024 400" role="img" aria-label="u-blox">
 <circle cx="200" cy="200" r="190" fill="#e60000"/><circle cx="165" cy="130" r="32" fill="#fff"/>
 <g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="300">
 <text x="205" y="325" fill="#fff" textLength="190">u</text>
 <text class="bx" x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
-<h1>u-connectXpressApp</h1><span id="ver"></span><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated">Connections</button></span><select id="thm" title="Colour theme" aria-label="Theme" onchange="th(this.value)"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>
-<span id="state"></span><span id="busy"></span>
-<button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></header>
+<h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated">Connections</button></span><select id="thm" title="Colour theme" aria-label="Theme" onchange="th(this.value)"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>
+<span id="state"></span>
+<span id="ha"><button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></span></div>
+<div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pn">Links</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
-<div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands"><div id="rc"></div>
+<div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands">
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
 <div class="pane" id="pu"><h2>Use case</h2><div class="sc"><select id="ucs" aria-label="Use case"></select><div class="uh" id="uh">Connected tool</div>
 <div class="ud" id="ud"></div>
@@ -178,9 +197,10 @@ html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd
 </div></div>
 <div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><span id="logb"><button id="lcopy" title="Copy the log to the clipboard">Copy</button><button id="lclr" title="Clear the log">Clear</button><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></span></div>
 <div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
-<footer><label title="Send every line as an AT command"><input type="checkbox" id="at">AT</label>
+<footer><div id="bar"><label id="atl" title="Send every line as an AT command"><input type="checkbox" id="at"><span>AT</span></label><span id="pr" aria-hidden="true">&rsaquo;</span>
 <datalist id="fwl"></datalist><input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
-<button id="run">Run</button><div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span></span></div></footer><div id="hint"></div><div id="keys"></div>
+<span id="busy"></span><button id="run" title="Run the command line (Enter)">Run<kbd>&crarr;</kbd></button></div>
+<div id="rcw"><span class="rl">Recent</span><div id="rc"></div></div></footer><div id="hint"></div><div id="keys"></div>
 <dialog id="fd"><b>Files</b><div id="fl"></div><div id="fst"></div>
 <div class="frow"><label id="upl" title="Upload a file to the app's file store"><input type="file" id="up" hidden>&#x2B06; Upload file&hellip;</label><button id="fref">Refresh</button><button id="fclose">Close</button></div></dialog>
 <dialog id="md"><div class="mh"><b>Command manual</b><input id="mq" placeholder="Search the manual" autocomplete="off"><button id="mclose">Close</button></div>
@@ -193,6 +213,7 @@ const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('
  K={'X-Token':T},CM={},LOG_MAX=300000,UP_CHUNK=768,DL_CHUNK=16384;
 sessionStorage.setItem('t',T);history.replaceState(null,'',location.pathname);
 let H=[];try{H=JSON.parse(localStorage.getItem('ucxh')||'[]')}catch(x){}
+const RS={};   /* how each command line ended in this session: the dot on its recent chip */
 let hi=H.length,busy=false,cur=null,free=null,pend='',hold='',total=0,fg='',bold=0;
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e},
  stick=e=>e.scrollTop+e.clientHeight>=e.scrollHeight-20,
@@ -257,13 +278,13 @@ async function run(c,a,raw,yes){c=c.trim();if(!c)return;
  const sh=c+(a&&a.length?' '+a.join(' '):'');
  if(!yes)remember(sh);
  let u='/api/exec?cmd='+enc(c);if(a){a.forEach((v,i)=>u+='&a'+i+'='+enc(v));if(raw)u+='&r=1'}if(yes)u+='&y=1';
- free=null;cnPulse(c.split('.')[0],1);const b=block('> '+masked(sh));b.t0=Date.now();b.cmd=c;fltMark(b,c.split('.')[0]);cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
+ free=null;cnPulse(c.split('.')[0],1);const b=block('> '+masked(sh));b.t0=Date.now();b.cmd=c;b.sh=sh;fltMark(b,c.split('.')[0]);cur=b;setBusy(c);tab('pl');out.scrollTop=out.scrollHeight;
  const fail=t=>{b.badge.className='badge bad';b.badge.textContent=t;if(cur===b)cur=null;setBusy('')};
  try{const r=await api(u,{method:'POST'});
   if(r.status===428){b.remove();cur=null;setBusy('');ask('Run "'+masked(sh)+'"? It changes or deletes data on the device.',{cancel:1,ok:'Run'}).then(y=>{if(y)run(c,a,raw,1)});return}
   if(r.status===409)fail('busy: another command is running');else if(!r.ok)fail('error '+r.status)}
  catch(x){fail('send failed')}}
-function finish(rc){if(hold)add('',1);const b=cur;cur=null;setBusy('');if(!b)return;
+function finish(rc){if(hold)add('',1);const b=cur;cur=null;setBusy('');if(!b)return;RS[b.sh]=rc?'rbad':'rok';recent();
  b.badge.className='badge '+(rc?'bad':'ok');b.badge.textContent=(rc?'exit '+rc:'ok')+', '+((Date.now()-b.t0)/1000).toFixed(1)+' s';
  if(/^wifi\.scan/.test(b.cmd))scanLinks(b);
  if(/^Where are you located\?/m.test(b.body.textContent))regLinks(b);
@@ -401,8 +422,8 @@ function mk(c){CM[c.n]=c;const d=el('div','c'+(c.d?' dgr':'')),b=el('b','',c.n),
  show(vs.length>1?Math.min(+FV[c.n+'|#']||0,vs.length-1):0);d.appendChild(g);return d}
 function recent(){const r=$('rc'),seen=[];r.textContent='';
  for(let i=H.length-1;i>=0&&seen.length<6;i--)if(!seen.includes(H[i]))seen.push(H[i]);
- seen.forEach(s=>{const b=el('button','',s.trim()),open=s.endsWith(' ');
-  b.title=open?'Put in the command line (the password is not stored)':'Run again: '+s;
+ seen.forEach(s=>{const open=s.endsWith(' '),b=el('button',open?'more':RS[s]||'',s.trim());
+  b.title=open?'Put in the command line (the password is not stored)':'Run again: '+s+(RS[s]?' ('+(RS[s]==='rok'?'ok':'failed')+' last time)':'');
   b.onclick=()=>{if(open){$('at').checked=false;cmd.value=s;cmd.focus();showHint()}else run(s)};r.appendChild(b)})}
 /* History never keeps a secret: the line is cut before its password/PSK/token field and ends in a space, so the
    chip fills the command line instead of running. Field names come from the command list (CM, as the forms use). */
@@ -865,7 +886,7 @@ function view(v){v=+v||0;document.body.classList.toggle('uc',v===1);document.bod
 document.querySelectorAll('#vw button').forEach(b=>b.onclick=()=>view(+b.dataset.v));
 
 /* ---- start: the groups call checks the token and sets the cookie the event stream uses ---- */
-/* footer: the clock (time bright, date dim, source as a tag) and the place as a Google Maps link */
+/* header corner: the clock (time bright, date dim, source as a tag) and the place as a Google Maps link */
 let metaC='',metaL=null,metaT=null;
 /* The server resends the clock every 5 s; the seconds in between tick here. */
 setInterval(()=>{const t=document.querySelector('#clock .t');if(!metaT||!t)return;const m=metaT.clk.match(/(\d\d):(\d\d):(\d\d)/);if(!m)return;
@@ -876,8 +897,8 @@ function meta(clk,src,loc){metaT={clk,at:Date.now()};if(metaC!==clk+src){metaC=c
   const tg=el('span','tag'+(/^(gnss|ntp)/.test(src)?' ok':/^unsynced/.test(src)?' warn':''),src.split(',')[0]);tg.title='Clock source: '+src;
   c.append(el('span','sep',' / '),tg)}
  if(metaL===loc)return;metaL=loc;const l=$('loc');l.textContent='';if(!loc)return;
- const p=loc.match(/^(.*?)(?: \(([^)]*)\))?$/),place=p[1];l.append(el('span','lb','Location: '));
- if(place==='unknown'){l.append(place);return}
+ const p=loc.match(/^(.*?)(?: \(([^)]*)\))?$/),place=p[1];
+ if(place==='unknown'){l.append(el('span','lb','Location: '),place);return}
  const a=el('a','',place);a.href='https://www.google.com/maps/search/?api=1&query='+enc(place);a.target='_blank';a.rel='noopener';
  a.title='Open in Google Maps';l.append(a);if(p[2])l.append(el('span','tag'+(/^gnss/.test(p[2])?' ok':''),p[2]))}
 function events(){const es=new EventSource('/events');

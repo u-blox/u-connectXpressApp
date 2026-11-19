@@ -314,7 +314,7 @@ def test_app_runs_in_the_browser(site):
         page.wait_for_function("document.getElementById('wsc').textContent === 'Disconnect module'", timeout=30000)
         page.wait_for_function("document.getElementById('out').innerText.split('connected to webserial').length > 2",
                                timeout=60000)
-        # the app's own state: advertising and listening sockets as chips, its clock and source in the footer
+        # the app's own state: advertising and listening sockets as chips, its clock and source in the header corner
         page.wait_for_function("[...document.querySelectorAll('#state .chip')].some(c => c.textContent === "
                                "'Advertising on')", timeout=30000)
         assert "Listening off" in page.locator("#state .chip").all_inner_texts()

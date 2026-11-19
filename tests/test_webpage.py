@@ -534,7 +534,7 @@ def test_page_in_a_browser(server):
         assert page.inner_text("#out .fg") == "green"
         assert "\x1b" not in page.inner_text("#out")
         assert page.inner_text(".chip.on >> nth=0") == "Wi-Fi up" and page.inner_text(".chip.off") == "BLE -"
-        # advertising and listening sockets get their own chips; the clock and its source go to the footer
+        # advertising and listening sockets get their own chips; the clock and its source go to the header corner
         assert page.locator("#state .chip").all_inner_texts() == [
             "Wi-Fi up", "BLE -", "Sockets 1 +2", "Advertising on", "Listening 2"]
         # +2: sockets the app opened itself (web server); only handle 1 is offered for commands
@@ -554,15 +554,28 @@ def test_page_in_a_browser(server):
         assert page.get_attribute("#loc a", "target") == "_blank"
         assert page.inner_text("#ev .e.wifi .x") == "link up"
         assert page.locator("#ev .e.wifi .t").count() == 1
-        # a module that is up gets its summary once, and the version sits in the footer
+        # a module that is up gets its summary once, and the build joins the clock and the place: all three sit
+        # in the upper right corner of the header, right of the wrapping controls
         page.wait_for_selector(".blk .badge.ok")
         assert "cmd=dev.summary&y=1" in server.posted[0] and "Module:" in page.inner_text("#out")
         page.wait_for_function("document.getElementById('ver').textContent === 'v3.5.0.261104'")
+        assert page.evaluate("""() => { const b = i => document.getElementById(i).getBoundingClientRect(),
+            m = b('meta');
+          return ['clock', 'loc', 'ver'].every(i => document.querySelector('header #meta #' + i).offsetWidth > 0)
+            && m.left >= b('hd').right && innerWidth - m.right < 24 && m.top < 24 }""")
         # a status chip runs its status command
         assert page.get_attribute(".chip.on >> nth=0", "title") == "Run wifi.status"
         page.click(".chip.on >> nth=0")
         page.wait_for_selector(".blk .badge.ok >> nth=1")
         assert server.posted[1].endswith("cmd=wifi.status")
+        # the command bar: Run ends near the middle, the last commands follow it and show how they ended
+        assert page.locator("#rc button").all_inner_texts() == ["wifi.status"]
+        assert page.get_attribute("#rc button", "class") == "rok"
+        assert page.get_attribute("#rc button", "title") == "Run again: wifi.status (ok last time)"
+        run_end, beside = page.evaluate("""() => { const b = s => document.querySelector(s).getBoundingClientRect(),
+            run = b('#run'), chip = b('#rc button');
+          return [run.right / innerWidth, chip.left > run.right && chip.top < run.bottom && chip.bottom > run.top] }""")
+        assert 0.4 < run_end < 0.6 and beside, (run_end, beside)
         server.posted.clear()
         page.click("summary:has-text('wifi')")
         page.wait_for_selector(".c")
@@ -1116,6 +1129,7 @@ def test_history_never_stores_a_password():
                 assert secret not in stored, stored
             assert "wifi.connect 4 " in stored and "wifi.profile.add home homenet " in stored, stored
             page.fill("#cmd", "")
+            assert page.get_attribute("#rc button:has-text('wifi.connect 4')", "class") == "more"   # marked: it fills
             page.click("#rc button:has-text('wifi.connect 4')")
             assert page.input_value("#cmd") == "wifi.connect 4 "
             browser.close()

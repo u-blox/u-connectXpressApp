@@ -109,7 +109,8 @@ def test_wlanpi_capture_and_stop(app_exe, tmp_path):
 
 
 def test_wlanpi_start_takes_a_bare_channel_number(app_exe, tmp_path):
-    out, calls = _run(app_exe, tmp_path, "wlanpi.host 10.0.0.5", PASS, "wlanpi.start 11", "app.wait 1500", "wlanpi.stop")
+    out, calls = _run(app_exe, tmp_path, "wlanpi.host 10.0.0.5", PASS, "wlanpi.start 11", "app.wait 1500",
+                      "wlanpi.stop")
     assert out.returncode == 0, out.stdout + out.stderr
     assert "Capturing on 10.0.0.5 wlan0 channel 11" in out.stdout
     assert "iw dev wlan0 set channel 11" in calls

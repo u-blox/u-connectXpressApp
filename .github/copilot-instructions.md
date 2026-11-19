@@ -97,6 +97,7 @@ git submodule update --init u-connectClient
 - **Zero warnings**: every target (Windows, Linux, all STM32 boards) must build with no compiler warnings. Fix the code; only vendor HAL/FreeRTOS/CubeMX sources may be silenced (in `cmake/stm32.cmake`).
 - C11 standard
 - MSVC compiler with /W4 warning level
+- Lines at most 120 characters (ruff E501; `ruff check .` must pass before a push)
 - Functions prefixed with module name (e.g., `uCxAtClient_`)
 - Use `_CRT_SECURE_NO_WARNINGS` for Windows APIs
 

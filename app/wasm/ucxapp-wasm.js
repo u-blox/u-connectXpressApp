@@ -215,6 +215,8 @@
   /* ---- the virtual module: exact command or * ? pattern [state] -> response lines, then URCs; lists of lists
      answer in turn, \x01 starts binary data (like tests/harness/vucx) */
   function lookup(v, table, cmd) {
+    /* the module takes "ati9" as well as "ATI9"; parameters keep their case */
+    if (/^at/i.test(cmd)) cmd = cmd.replace(/^[^=?]*/, s => s.toUpperCase());
     for (const exact of [true, false]) {
       for (const [key, lines] of Object.entries(table || {})) {
         const at = key.indexOf(' ['), pattern = at < 0 ? key : key.slice(0, at);

@@ -92,6 +92,9 @@ bool ucxapp_platform_terminal_enter(void)
 {
     struct termios raw;
 
+#ifdef __EMSCRIPTEN__
+    return false;   /* stdin looks like a tty, but every read would pop up the browser's prompt() box */
+#endif
     if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO) || tcgetattr(STDIN_FILENO, &gSavedTermios) != 0) {
         return false;
     }
@@ -105,6 +108,11 @@ bool ucxapp_platform_terminal_enter(void)
     }
     gTermActive = true;
     return true;
+}
+
+void ucxapp_platform_terminal_select(bool on)
+{
+    (void)on;   /* the terminal keeps the mouse: selecting works as it is */
 }
 
 void ucxapp_platform_terminal_leave(void)
@@ -187,6 +195,7 @@ int ucxapp_platform_read_key(void)
                 case 5: return UCXAPP_KEY_PGUP;
                 case 6: return UCXAPP_KEY_PGDN;
                 case 11: return UCXAPP_KEY_F1;
+                case 19: return UCXAPP_KEY_F8;
                 case 21: return UCXAPP_KEY_F10;
                 default: break;
                 }

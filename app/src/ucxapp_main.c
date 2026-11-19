@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "ucxapp_cmd.h"
@@ -466,6 +467,13 @@ int main(int argc, char *argv[])
     bool json = false;
     const char *pos[MAX_POS];
     int posCount = 0;
+    const char *askpass = getenv("UCXAPP_ASKPASS");
+
+    /* wlanpi.setup pass=: ssh runs this program as SSH_ASKPASS and reads the password from its output. */
+    if (askpass != NULL && askpass[0] != '\0') {
+        printf("%s\n", askpass);
+        return 0;
+    }
 
     /* The port's clock starts here, not at the first dev.connect: times taken before it would be in the future */
     uPortInit();

@@ -667,23 +667,25 @@ Captures Bluetooth LE with an nRF Sniffer for Bluetooth LE (an nRF52840 dongle o
 | `sniff.start` | `[file.pcap] [follow=module\|<addr>\|name:<name>] [port=<port>] [adv] [coded] [rssi=<-dBm>] [live]` | Start a capture (default `ble-<date>-<time>.pcap`); `follow=module` follows the connected module's address, `adv` keeps only advertising, `coded` listens on LE Coded PHY, `rssi` drops weaker packets |
 | `sniff.stop` | | Stop it (Ctrl-Break so nrfutil closes the file) and print the packet count |
 | `sniff.status` | | Port, time, file and packets so far; nrfutil's output if it ended |
+| `sniff.show` | `[file.pcap] [count=50] [skip=0] [filter=<text>] [summary]` | The capture as text: time, channel, dBm, PDU, address, name; `summary` gives one line per device (default: the running or last capture) |
 | `sniff.view` | `<file.pcap>` | Open a capture in Wireshark |
 
 ### WLAN Pi capture (PC only)
 
-Captures Wi-Fi in monitor mode on a [WLAN Pi](https://www.wlanpi.com) (or any Linux box with a monitor-capable adapter) over the system OpenSSH client with key login: the Pi switches the adapter to monitor mode, sets the channel and runs `tcpdump -w -`; ssh brings the packets into a local pcap file. `UCXAPP_SSH` overrides the ssh command. Passwords are never used: `wlanpi.setup` prints the one-time recipe (`ssh-keygen`, copying the key, a sudoers rule for tcpdump, iw, ip and kill).
+Captures Wi-Fi in monitor mode on a [WLAN Pi](https://www.wlanpi.com) (or any Linux box with a monitor-capable adapter) over the system OpenSSH client: the Pi switches the adapter to monitor mode, sets the channel and runs `tcpdump -w -`; ssh brings the packets into a local pcap file. `UCXAPP_SSH` overrides the ssh command. `wlanpi.setup <password>` saves the Pi's password sealed in the secure store (`ucxapp.wlanpi.key`) and adds a sudoers rule for tcpdump, iw, ip and kill; every ssh login then gets the password through ucxapp as `SSH_ASKPASS`, no SSH key needed.
 
 | Command | Arguments | Description |
 |---|---|---|
 | `wlanpi.host` | `[<host> [user=wlanpi] [iface=wlan0]]` | Show or set the Pi (saved in `ucxapp.wlanpi`) |
-| `wlanpi.setup` | | Check the key, the key login and sudo without a password; prints the missing steps |
+| `wlanpi.setup` | `[<password>]` | Save the password (secure store), check the login and add the sudo rule; without a password it checks with the saved one |
 | `wlanpi.start` | `[file.pcap] [channel=<n>\|module] [width=20\|40+\|40-\|80] [filter=<bpf>] [live]` | Start a capture (default `wifi-<date>-<time>.pcap`); `channel=module` takes the module's current channel, `filter` is a tcpdump filter (quote it when it has spaces) |
 | `wlanpi.stop` | | Stop tcpdump on the Pi (SIGINT) and print the packet count |
+| `wlanpi.show` | `[file.pcap] [count=50] [skip=0] [filter=<text>] [summary]` | The capture as text: time, channel, dBm, frame type, addresses, SSID, EAPOL step; `summary` per transmitter |
 | `wlanpi.status` | | The running capture, else `iw dev <iface> info` from the Pi |
 
 ```text
 wlanpi.host 192.168.1.202
-wlanpi.setup
+wlanpi.setup <WLAN Pi password>
 wlanpi.start channel=module live
 wlanpi.stop
 ```
@@ -961,6 +963,7 @@ ucxapp COM13 --tui
 | Tab | Complete the command name |
 | Esc | Switch between the input line and the Commands pane |
 | PgUp / PgDn | Scroll the log |
+| F8 | Select text: the screen stands still and the mouse selects (Windows: right-click or Enter copies); F8 or Esc goes back |
 | F10, Ctrl-C | Quit |
 
 The text UI and the web page share one core (`ucxapp_ui.c`): the command table and its usage parsing, the

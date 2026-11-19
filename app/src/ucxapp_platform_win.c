@@ -246,6 +246,16 @@ bool ucxapp_platform_terminal_enter(void)
     return true;
 }
 
+void ucxapp_platform_terminal_select(bool on)
+{
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD base = gSavedInMode & ~(DWORD)(ENABLE_PROCESSED_INPUT | ENABLE_QUICK_EDIT_MODE | ENABLE_MOUSE_INPUT);
+
+    if (gTermActive) {
+        SetConsoleMode(in, base | ENABLE_EXTENDED_FLAGS | (on ? ENABLE_QUICK_EDIT_MODE : ENABLE_MOUSE_INPUT));
+    }
+}
+
 void ucxapp_platform_terminal_leave(void)
 {
     if (gTermActive) {
@@ -305,6 +315,7 @@ int ucxapp_platform_read_key(void)
         case VK_DELETE: return UCXAPP_KEY_DEL;
         case VK_F1:    return UCXAPP_KEY_F1;
         case VK_F10:   return UCXAPP_KEY_F10;
+        case VK_F8:    return UCXAPP_KEY_F8;
         default:       break;
         }
         if (k->uChar.AsciiChar != 0) {

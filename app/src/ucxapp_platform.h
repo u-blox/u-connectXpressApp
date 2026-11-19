@@ -49,12 +49,14 @@ enum {
     UCXAPP_KEY_UP = 0x100, UCXAPP_KEY_DOWN, UCXAPP_KEY_LEFT, UCXAPP_KEY_RIGHT,
     UCXAPP_KEY_HOME, UCXAPP_KEY_END, UCXAPP_KEY_PGUP, UCXAPP_KEY_PGDN,
     UCXAPP_KEY_DEL, UCXAPP_KEY_F1, UCXAPP_KEY_F10,
-    UCXAPP_KEY_CPGUP, UCXAPP_KEY_CPGDN, UCXAPP_KEY_WHEELUP, UCXAPP_KEY_WHEELDN
+    UCXAPP_KEY_CPGUP, UCXAPP_KEY_CPGDN, UCXAPP_KEY_WHEELUP, UCXAPP_KEY_WHEELDN, UCXAPP_KEY_F8
 };
 
 /** Raw mode and VT output on; call leave to restore. Returns false if not a terminal. */
 bool ucxapp_platform_terminal_enter(void);
 void ucxapp_platform_terminal_leave(void);
+/* Gives the mouse back to the terminal for selecting text (Windows: Quick Edit) while on; no-op elsewhere. */
+void ucxapp_platform_terminal_select(bool on);
 void ucxapp_platform_terminal_size(int *cols, int *rows);
 
 /** Next key without blocking, or -1. Enter is 13, Backspace 8, Esc 27, Ctrl-C 3, others as above or ASCII. */

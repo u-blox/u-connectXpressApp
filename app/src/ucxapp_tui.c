@@ -920,7 +920,7 @@ static void drawFrame(int rows, bool busy)
             char state[280];
 
             ucxapp_ui_state(state, sizeof(state));
-            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, PgUp/PgDn log, Ctrl+PgUp/PgDn events, F10 quit)", state);
+            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, PgUp/PgDn log, Ctrl+PgUp/PgDn events, F8 select text, F10 quit)", state);
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 90, false);
         }
     }
@@ -1058,11 +1058,39 @@ static bool activateEntry(void)
     return false;
 }
 
+static bool gSelectMode;   /* F8: the mouse belongs to the terminal for selecting text, the screen stands still */
+
+static void selectMode(bool on)
+{
+    gSelectMode = on;
+    ucxapp_platform_terminal_select(on);
+    if (on) {
+        /* the footer line: rows are 1-based, the bottom one is the hint bar */
+        int cols = 80, rows = 24;
+
+        ucxapp_platform_terminal_size(&cols, &rows);
+        printf("\033[%d;1H\033[2K\033[7m SELECT: drag to select, right-click or Enter copies; F8 or Esc goes back \033[0m",
+               rows);
+        fflush(stdout);
+    }
+}
+
 /* Returns true to quit. */
 static bool handleKey(int key, int rows)
 {
     int page = (rows - TUI_FOOTER) / 2 > 1 ? (rows - TUI_FOOTER) / 2 : 1;
 
+    if (gSelectMode) {
+        if (key == UCXAPP_KEY_F8 || key == 27) {
+            selectMode(false);
+            rowsInvalidate();
+        }
+        return false;   /* Ctrl+C copies here, it must not quit */
+    }
+    if (key == UCXAPP_KEY_F8) {
+        selectMode(true);
+        return false;
+    }
     if (key == 3 || key == UCXAPP_KEY_F10) {
         return true;
     }
@@ -1332,7 +1360,7 @@ int ucxapp_tui_run(ucxapp_t *app)
                 dirty = true;
             }
             /* repaint everything now and then: stray console output is otherwise kept by the row diff */
-            if (++repaintTick >= 5) {
+            if (!gSelectMode && ++repaintTick >= 5) {
                 repaintTick = 0;
                 rowsInvalidate();
                 dirty = true;
@@ -1404,13 +1432,16 @@ int ucxapp_tui_run(ucxapp_t *app)
                 gTop = r - body + 1;
             }
         }
-        if (dirty && !quit) {
+        if (dirty && !quit && !gSelectMode) {
             drawFrame(rows, busy);
             dirty = false;
         }
         ucxapp_platform_wait_key(20);
     }
 
+    if (gSelectMode) {
+        selectMode(false);
+    }
     fputs("\033[0m\033[?25h\033[?1049l", stdout);
     fflush(stdout);
     ucxapp_io_set(&ucxapp_io_stdio);

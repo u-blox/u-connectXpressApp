@@ -1,11 +1,16 @@
 /* wlanpi.*: Wi-Fi capture on a WLAN Pi (or any Linux box with a monitor-mode adapter) over the system OpenSSH
- * client with key login: the Pi puts its adapter in monitor mode on a channel and runs "tcpdump -w -", ssh brings
- * the packets back into a local pcap file, optionally live in Wireshark. wlanpi.setup checks the key login and
- * prints the one-time recipe. ssh comes from UCXAPP_SSH (a command, used as given) or PATH. PC builds only. */
+ * client: the Pi puts its adapter in monitor mode on a channel and runs "tcpdump -w -", ssh brings the packets
+ * back into a local pcap file, optionally live in Wireshark. wlanpi.setup saves the password (sealed in the secure
+ * store; ssh gets it through ucxapp as SSH_ASKPASS) and adds a sudo rule for tcpdump, iw, ip and kill. ssh comes from UCXAPP_SSH (a command, used as given) or PATH. PC builds only. */
 
 #include "ucxapp_cmd.h"
 
 #include <ctype.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +26,9 @@
 #define CFG_FILE        "ucxapp.wlanpi"
 #define START_WAIT_MS   15000
 #define STOP_WAIT_MS    8000
-#define SSH_OPTS        " -T -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "
+#define SSH_OPTS        " -T -o BatchMode=no -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new " \
+                        "-o PreferredAuthentications=password,keyboard-interactive -o NumberOfPasswordPrompts=1 "
+#define PASS_FILE       "ucxapp.wlanpi.key"   /* *.key: sealed by the secure store */
 
 static struct {
     char host[128];
@@ -31,9 +38,12 @@ static struct {
 
 static struct {
     ucxapp_capture_t *cap;
+    char last[512];
     long pid;
     char what[96];
 } gCap;
+
+static void saveLast(void);
 
 static bool validName(const char *s, const char *extra)
 {
@@ -80,10 +90,12 @@ static bool needHost(void)
 }
 
 /* "ssh <options> user@host <script>"; false if ssh is missing or the script cannot be passed. */
+static bool usePassword(void);
+
 static bool sshCmd(const char *script, char *out, size_t size)
 {
     const char *env = getenv("UCXAPP_SSH");
-    char path[512], q[1200];
+    char path[512], q[1200], full[1100];
     size_t len;
 
     if (env != NULL && env[0] != '\0') {
@@ -92,17 +104,24 @@ static bool sshCmd(const char *script, char *out, size_t size)
         ucxapp_print("ERROR: ssh not found (Windows: Settings > Optional features > OpenSSH Client; Linux: openssh-client)\n");
         return false;
     }
+    if (!usePassword()) {
+        ucxapp_print("ERROR: no WLAN Pi password; first: wlanpi.setup <password>\n");
+        return false;
+    }
+    /* ssh without a terminal gets a PATH without the sbin folders, where iw and ip live */
+    (void)snprintf(full, sizeof(full), "PATH=$PATH:/usr/sbin:/sbin; %s", script);
+    script = full;
     if (!ucxapp_proc_quote(script, q, sizeof(q))) {
         ucxapp_print("ERROR: the remote command cannot be passed to ssh (no \", %% or ! on Windows)\n");
         return false;
     }
     len = strlen(out);
-    (void)snprintf(out + len, size - len, SSH_OPTS "%s@%s %s", gCfg.user, gCfg.host, q);
+    (void)snprintf(out + len, size - len, "%s%s@%s %s", SSH_OPTS, gCfg.user, gCfg.host, q);
     return true;
 }
 
 /* Runs a short remote command; its output goes to out. Returns the exit code, -1 on timeout or start failure. */
-static int sshRun(const char *script, char *out, size_t size, uint32_t ms)
+static int sshRunIn(const char *script, const char *in, char *out, size_t size, uint32_t ms)
 {
     char cmd[1800];
     ucxapp_proc_t *p;
@@ -114,9 +133,12 @@ static int sshRun(const char *script, char *out, size_t size, uint32_t ms)
     if (!sshCmd(script, cmd, sizeof(cmd))) {
         return -1;
     }
-    p = ucxapp_proc_start(cmd, NULL, 0);
+    p = ucxapp_proc_start(cmd, NULL, in != NULL ? UCXAPP_PROC_STDIN : 0);
     if (p == NULL) {
         return -1;
+    }
+    if (in != NULL) {
+        (void)ucxapp_proc_write(p, in, strlen(in));
     }
     for (;;) {
         int32_t n = ucxapp_proc_read(p, out + len, size - len - 1);
@@ -138,6 +160,11 @@ static int sshRun(const char *script, char *out, size_t size, uint32_t ms)
         }
         ucxapp_platform_sleep_ms(10);
     }
+}
+
+static int sshRun(const char *script, char *out, size_t size, uint32_t ms)
+{
+    return sshRunIn(script, NULL, out, size, ms);
 }
 
 static int cmdHost(ucxapp_t *app, int argc, char *argv[])
@@ -173,87 +200,120 @@ static int cmdHost(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot save %s\n", CFG_FILE);
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("WLAN Pi: %s@%s, capture interface %s (wlanpi.setup checks the login)\n", gCfg.user, gCfg.host,
+    ucxapp_print("WLAN Pi: %s@%s, capture interface %s (then wlanpi.setup <password>)\n", gCfg.user, gCfg.host,
                  gCfg.iface);
     return UCXAPP_OK;
 }
 
-static bool findKey(char *out, size_t size)
+#define SUDO_LIST "/usr/bin/tcpdump,/usr/sbin/tcpdump,/usr/sbin/iw,/sbin/iw,/usr/sbin/ip,/sbin/ip,/bin/kill,/usr/bin/kill"
+
+static void setEnv(const char *name, const char *value)
 {
-    static const char *const kKeys[] = { "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub" };
 #ifdef _WIN32
-    const char *home = getenv("USERPROFILE");
-    const char sep = '\\';
+    (void)_putenv_s(name, value != NULL ? value : "");
 #else
-    const char *home = getenv("HOME");
-    const char sep = '/';
-#endif
-    size_t i;
-
-    for (i = 0; home != NULL && i < sizeof(kKeys) / sizeof(kKeys[0]); i++) {
-        FILE *f;
-
-        (void)snprintf(out, size, "%s%c.ssh%c%s", home, sep, sep, kKeys[i]);
-        f = fopen(out, "rb");
-        if (f != NULL) {
-            fclose(f);
-            return true;
-        }
+    if (value != NULL) {
+        (void)setenv(name, value, 1);
+    } else {
+        (void)unsetenv(name);
     }
-    return false;
+#endif
+}
+
+static bool selfPath(char *out, size_t size)
+{
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, out, (DWORD)size);
+
+    return n > 0 && n < size;
+#else
+    ssize_t n = readlink("/proc/self/exe", out, size - 1);
+
+    if (n <= 0) {
+        return false;
+    }
+    out[n] = '\0';
+    return true;
+#endif
+}
+
+/* ssh reads the password from this program (ucxapp_main.c, UCXAPP_ASKPASS) for every login. False if none is
+ * saved; then wlanpi.setup <password> is needed. */
+static bool usePassword(void)
+{
+    static char self[512];
+    size_t len;
+    char *pass = (char *)ucxapp_store_load(PASS_FILE, &len);
+    bool ok = pass != NULL && len > 0 && (self[0] != '\0' || selfPath(self, sizeof(self)));
+
+    if (ok) {
+        pass[strcspn(pass, "\r\n")] = '\0';
+        setEnv("UCXAPP_ASKPASS", pass);
+        setEnv("SSH_ASKPASS", self);
+        setEnv("SSH_ASKPASS_REQUIRE", "force");
+        memset(pass, 0, len);
+    }
+    free(pass);
+    return ok;
 }
 
 static int cmdSetup(ucxapp_t *app, int argc, char *argv[])
 {
-    char key[512], out[2048];
-    bool hasKey, login = false, sudo = false;
-    int code;
+    char out[2048], in[200], cmd[700];
+    const char *pass = argc == 2 ? argv[1] : NULL;
+    bool login, sudo;
     (void)app;
-    (void)argv;
 
-    if (argc > 1) {
+    if (argc > 2) {
         return UCXAPP_ERR_USAGE;
     }
     if (!needHost()) {
         return UCXAPP_ERR_FAILED;
     }
-    hasKey = findKey(key, sizeof(key));
-    ucxapp_print("[%s] SSH key %s\n", hasKey ? "ok" : "--", hasKey ? key : "missing");
-    if (hasKey) {
-        code = sshRun("echo UCXLOGIN; sudo -n true && echo UCXSUDO", out, sizeof(out), 15000);
-        login = strstr(out, "UCXLOGIN") != NULL;
-        sudo = strstr(out, "UCXSUDO") != NULL;
-        ucxapp_print("[%s] key login to %s@%s\n", login ? "ok" : "--", gCfg.user, gCfg.host);
-        if (!login && out[0] != '\0') {
-            ucxapp_print("     %s%s", out, out[strlen(out) - 1] == '\n' ? "" : "\n");
+    if (pass != NULL) {
+        if (pass[0] == '\0' || strlen(pass) + 2 > sizeof(in)) {
+            return UCXAPP_ERR_USAGE;
         }
-        if (login) {
-            ucxapp_print("[%s] sudo without a password\n", sudo ? "ok" : "--");
+        if (!ucxapp_store_save(PASS_FILE, pass, strlen(pass))) {
+            ucxapp_print("ERROR: cannot save the password in the secure store\n");
+            return UCXAPP_ERR_FAILED;
         }
-        (void)code;
     }
-    if (hasKey && login && sudo) {
-        ucxapp_print("Ready: wlanpi.start [file.pcap] [channel=<n>|module] [live]\n");
-        return UCXAPP_OK;
+    if (!usePassword()) {
+        ucxapp_print("No password saved: wlanpi.setup <WLAN Pi password> (sealed in the secure store)\n");
+        return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("\nOne-time setup (type the WLAN Pi password when ssh asks for it):\n");
-    if (!hasKey) {
-        ucxapp_print("  1. Make a key:            ssh-keygen -t ed25519\n");
-    }
+    (void)sshRun("echo UCXLOGIN; sudo -n -l tcpdump >/dev/null && sudo -n -l iw >/dev/null && echo UCXSUDO", out, sizeof(out), 15000);
+    login = strstr(out, "UCXLOGIN") != NULL;
+    sudo = strstr(out, "UCXSUDO") != NULL;
+    ucxapp_print("[%s] login to %s@%s\n", login ? "ok" : "--", gCfg.user, gCfg.host);
     if (!login) {
-#ifdef _WIN32
-        ucxapp_print("  2. Copy it to the Pi:     Get-Content $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh %s@%s "
-                     "\"mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys\"\n", gCfg.user, gCfg.host);
-#else
-        ucxapp_print("  2. Copy it to the Pi:     ssh-copy-id %s@%s\n", gCfg.user, gCfg.host);
-#endif
+        ucxapp_print("     %s%s", out[0] ? out : "no answer (wrong password, or the Pi is not reachable)",
+                     out[0] && out[strlen(out) - 1] == '\n' ? "" : "\n");
+        ucxapp_print("Run wlanpi.setup <password> with the right password.\n");
+        return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("  3. Let tcpdump, iw, ip and kill run without a password:\n"
-                 "     ssh -t %s@%s \"echo '%s ALL=(root) NOPASSWD: /usr/bin/tcpdump, /usr/sbin/tcpdump, /usr/sbin/iw, "
-                 "/sbin/iw, /usr/sbin/ip, /sbin/ip, /bin/kill, /usr/bin/kill' | sudo tee /etc/sudoers.d/ucxapp && "
-                 "sudo chmod 440 /etc/sudoers.d/ucxapp\"\n", gCfg.user, gCfg.host, gCfg.user);
-    ucxapp_print("Then run wlanpi.setup again.\n");
-    return UCXAPP_ERR_FAILED;
+    if (!sudo && pass != NULL) {
+        /* tcpdump, iw, ip and kill without a password from now on; visudo checks the rule before it is used */
+        (void)snprintf(cmd, sizeof(cmd),
+                       "sudo -S -p '' sh -c 'echo %s ALL=NOPASSWD:" SUDO_LIST " > /etc/sudoers.d/ucxapp.new && "
+                       "chmod 440 /etc/sudoers.d/ucxapp.new && visudo -cf /etc/sudoers.d/ucxapp.new >/dev/null && "
+                       "mv /etc/sudoers.d/ucxapp.new /etc/sudoers.d/ucxapp' && echo UCXSUDO", gCfg.user);
+        (void)snprintf(in, sizeof(in), "%s\n", pass);
+        (void)sshRunIn(cmd, in, out, sizeof(out), 30000);
+        memset(in, 0, sizeof(in));
+        sudo = strstr(out, "UCXSUDO") != NULL;
+        if (!sudo) {
+            ucxapp_print("     %s%s", out, out[0] && out[strlen(out) - 1] == '\n' ? "" : "\n");
+        }
+    }
+    ucxapp_print("[%s] sudo for tcpdump, iw, ip and kill (/etc/sudoers.d/ucxapp)\n", sudo ? "ok" : "--");
+    if (!sudo) {
+        ucxapp_print("Run wlanpi.setup <password> to add the sudo rule.\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("Ready: wlanpi.start [file.pcap] [<n>|channel=<n>|module] [live]\n");
+    return UCXAPP_OK;
 }
 
 /* The module's current Wi-Fi channel, 0 if it has none. */
@@ -339,6 +399,10 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
             }
         } else if (strcmp(argv[i], "live") == 0) {
             live = true;
+        } else if (strspn(argv[i], "0123456789") == strlen(argv[i]) && ch == 0 && !chModule) {
+            if (!ucxapp_parse_int(argv[i], &ch) || ch < 1 || ch > 233) {
+                return UCXAPP_ERR_USAGE;
+            }
         } else if (strchr(argv[i], '=') == NULL && file[0] == '\0') {
             (void)snprintf(file, sizeof(file), "%s", argv[i]);
         } else {
@@ -398,8 +462,9 @@ static int cmdStart(ucxapp_t *app, int argc, char *argv[])
         }
         if (strstr(log, "password") != NULL || strstr(log, "Permission denied") != NULL ||
             strstr(log, "terminal is required") != NULL) {
-            ucxapp_print("Run wlanpi.setup for the key login and sudo rules.\n");
+            ucxapp_print("Run wlanpi.setup <password> for the login and the sudo rule.\n");
         }
+        saveLast();
         (void)ucxapp_capture_stop(gCap.cap, 0);
         gCap.cap = NULL;
         return UCXAPP_ERR_FAILED;
@@ -433,6 +498,7 @@ static int cmdStop(ucxapp_t *app, int argc, char *argv[])
     while (ucxapp_capture_running(gCap.cap, NULL) && ucxapp_platform_tick_ms() - start < STOP_WAIT_MS) {
         ucxapp_platform_sleep_ms(20);
     }
+    saveLast();
     (void)ucxapp_capture_stop(gCap.cap, 2000);
     gCap.cap = NULL;
     return UCXAPP_OK;
@@ -455,6 +521,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
             const char *log = ucxapp_capture_log(gCap.cap);
 
             ucxapp_print("The capture on %s ended (exit code %d)\n%s", gCap.what, code, log);
+            saveLast();
             (void)ucxapp_capture_stop(gCap.cap, 0);
             gCap.cap = NULL;
             return UCXAPP_ERR_FAILED;
@@ -475,13 +542,27 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     return code == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+static void saveLast(void)
+{
+    (void)snprintf(gCap.last, sizeof(gCap.last), "%s", ucxapp_capture_file(gCap.cap));
+}
+
+static int cmdShow(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    return ucxapp_capture_show(argc, argv, gCap.cap != NULL ? ucxapp_capture_file(gCap.cap) : gCap.last);
+}
+
 static const ucxapp_cmd_t kCmds[] = {
     { "wlanpi.host", "[<host> [user=wlanpi] [iface=wlan0]]", "Show or set the WLAN Pi to capture with (saved)", 0, cmdHost },
-    { "wlanpi.setup", "", "Check the ssh key login and sudo rights on the WLAN Pi; prints the one-time recipe", 0,
+    { "wlanpi.setup", "[<password>]", "Save the WLAN Pi password (secure store), check the login and add the sudo rule", 0,
       cmdSetup },
-    { "wlanpi.start", "[file.pcap] [channel=<n>|module] [width=20|40+|40-|80] [filter=<bpf>] [live]",
-      "Capture Wi-Fi in monitor mode on the WLAN Pi into a pcap file; channel=module takes the module's channel", 0,
+    { "wlanpi.start", "[file.pcap] [<n>|channel=<n>|module] [width=20|40+|40-|80] [filter=<bpf>] [live]",
+      "Capture Wi-Fi in monitor mode on the WLAN Pi into a pcap file; a bare number or channel=<n> sets the channel, channel=module takes the module's channel", 0,
       cmdStart },
+    { "wlanpi.show", "[file.pcap] [count=50] [skip=0] [filter=<text>] [summary]",
+      "Print a capture as text, one line per packet or per device with summary (default: the last capture)", 0,
+      cmdShow },
     { "wlanpi.stop", "", "Stop the capture and print the packet count", 0, cmdStop },
     { "wlanpi.status", "", "Running capture, else the WLAN Pi adapter (iw dev info)", 0, cmdStatus },
 };

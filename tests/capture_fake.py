@@ -7,6 +7,7 @@ Captures write a pcap with one packet every 20 ms until interrupted or until $UC
 import os
 import signal
 import struct
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -46,8 +47,21 @@ def nrfutil(args):
 
 
 def ssh(args):
-    script = args[-1]
-    if "kill -INT" in script:
+    script = args[-1].removeprefix("PATH=$PATH:/usr/sbin:/sbin; ")
+    # like OpenSSH with SSH_ASKPASS_REQUIRE=force: the password comes from the askpass program
+    asked = subprocess.run([os.environ.get("SSH_ASKPASS", "none"), "password: "], capture_output=True, text=True,
+                           check=False).stdout.strip() if os.environ.get("SSH_ASKPASS") else ""
+    if asked != os.environ.get("UCX_FAKE_PASSWORD", "secret pw"):
+        print("Permission denied (password).", file=sys.stderr)
+        sys.exit(255)
+    if "sudoers.d/ucxapp.new" in script:
+        (DIR / "sudo.txt").write_text(sys.stdin.readline().strip())   # sudo -S
+        print("UCXSUDO")
+    elif "UCXLOGIN" in script:
+        print("UCXLOGIN")
+        if os.environ.get("UCX_FAKE_FAIL") != "sudo":
+            print("UCXSUDO")
+    elif "kill -INT" in script:
         (DIR / "stop").touch()
     elif "tcpdump" in script:
         if os.environ.get("UCX_FAKE_FAIL") == "sudo":
@@ -56,10 +70,6 @@ def ssh(args):
         print("UCXPID=4242", file=sys.stderr, flush=True)
         print("tcpdump: listening on wlan0, link-type IEEE802_11_RADIO", file=sys.stderr, flush=True)
         _capture(sys.stdout.buffer)
-    elif "UCXLOGIN" in script:
-        print("UCXLOGIN")
-        if os.environ.get("UCX_FAKE_FAIL") != "sudo":
-            print("UCXSUDO")
     elif script.startswith("iw dev"):
         print("Interface wlan0\n\ttype monitor\n\tchannel 6 (2437 MHz)")
 

@@ -172,6 +172,8 @@ def table(profile=None):
                      ("AT+GSN", "serial")):
         if key in ident:
             commands[cmd] = [f'"{ident[key]}"', "OK"]
+    if "version" in ident:
+        commands["ATI9"] = [f'"{ident["version"]}","UCX-{ident["version"]}"', "OK"]
     commands.update(p.get("commands") or {})
     ft = None
     if p.get("peer"):
@@ -671,6 +673,9 @@ class Vucx:
         return [f"+USECD:0,{hashlib.sha256(der).hexdigest().upper()}", "OK"], None
 
     def _lookup(self, table, cmd):
+        if cmd[:2].upper() == "AT":   # the module takes "ati9" as well as "ATI9"; parameters keep their case
+            name = re.match(r"[^=?]*", cmd).group()
+            cmd = name.upper() + cmd[len(name):]
         for exact in (True, False):
             for key, lines in table.items():
                 pattern, _, cond = key.partition(" [")

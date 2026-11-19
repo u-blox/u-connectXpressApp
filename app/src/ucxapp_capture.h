@@ -43,6 +43,11 @@ bool ucxapp_capture_view(const char *path);
 /** <prefix>-YYYYMMDD-HHMMSS.pcap */
 void ucxapp_capture_default_name(const char *prefix, char *out, size_t size);
 
+/** The show command of sniff.* and wlanpi.*: "[file] [count=N] [skip=N] [filter=<text>] [summary]" prints a pcap
+ *  (Nordic BLE, 802.11 radiotap, Ethernet) one line per packet, or one per device with summary. file defaults to
+ *  dflt (the running or last capture). Returns a UCXAPP_ status. */
+int ucxapp_capture_show(int argc, char *argv[], const char *dflt);
+
 #ifdef __cplusplus
 }
 #endif

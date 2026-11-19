@@ -110,12 +110,12 @@ static const example_t kExamples[] = {
     { "sniff", "Watch this module's BLE traffic live in Wireshark",
       "sniff.detect\nsniff.start follow=module live\n# connect to the module from a phone, then:\nsniff.stop" },
     { "sniff", "Capture advertising only into a file",
-      "sniff.start adv.pcap adv rssi=-60\napp.wait 10000\nsniff.stop\nsniff.view adv.pcap" },
+      "sniff.start adv.pcap adv rssi=-60\napp.wait 10000\nsniff.stop\nsniff.show summary\nsniff.show filter=nora\nsniff.view adv.pcap" },
 
     { "wlanpi", "Set up a WLAN Pi once",
-      "wlanpi.host 192.168.1.202 user=wlanpi iface=wlan0\nwlanpi.setup" },
+      "wlanpi.host 192.168.1.202 user=wlanpi iface=wlan0\nwlanpi.setup <WLAN Pi password>" },
     { "wlanpi", "Capture the module's Wi-Fi channel live in Wireshark",
-      "wifi.status\nwlanpi.start channel=module live\n# run the traffic, then:\nwlanpi.stop" },
+      "wifi.status\nwlanpi.start channel=module live\n# run the traffic, then:\nwlanpi.stop\nwlanpi.show filter=eapol" },
 #endif
       #endif
 

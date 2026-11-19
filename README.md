@@ -118,7 +118,7 @@ See what the module sends over the air, live in Wireshark (Windows and Linux):
 ```powershell
 sniff.start follow=module live             # BLE: nRF Sniffer dongle through nrfutil ble-sniffer
 wlanpi.host 192.168.1.202                  # Wi-Fi: a WLAN Pi in monitor mode over ssh, once
-wlanpi.setup                               # checks the key login and sudo, prints the one-time recipe
+wlanpi.setup <password>                    # once: password sealed in the store, sudo rule
 wlanpi.start channel=module live           # tcpdump on the module's channel
 wlanpi.stop                                # sniff.stop for BLE; both print the packet count
 ```

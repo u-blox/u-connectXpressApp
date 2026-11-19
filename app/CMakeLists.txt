@@ -222,6 +222,7 @@ if(NOT WIN32)
     src/ucxapp_cmds_ppk.c
     src/ucxapp_proc.c
     src/ucxapp_capture.c
+    src/ucxapp_capture_text.c
     src/ucxapp_cmds_sniff.c
     src/ucxapp_cmds_wlanpi.c
     src/ucxapp_cmds_matter.c
@@ -416,6 +417,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_ppk.c
   src/ucxapp_proc.c
   src/ucxapp_capture.c
+  src/ucxapp_capture_text.c
   src/ucxapp_cmds_sniff.c
   src/ucxapp_cmds_wlanpi.c
   src/ucxapp_cmds_matter.c

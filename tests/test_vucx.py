@@ -62,6 +62,18 @@ def test_at_mode_drops_a_typed_at_word(app_exe, vucx):
     assert not any("web.stop" in line for line in vucx.log), vucx.log   # exit cleanup is not sent as AT
 
 
+def test_ati9_is_sent_as_typed_and_answered_in_any_case(app_exe):
+    from harness.vucx import Vucx, load
+
+    module = Vucx(load("nora-w36.yaml"))
+    try:
+        out = _run(app_exe, module.start(), "at ati9", "at ATI9")
+    finally:
+        module.stop()
+    assert "ati9" in module.log and "ATI9" in module.log and "ATati9" not in module.log, module.log
+    assert out.stdout.count(',"UCX-') == 2, out.stdout
+
+
 def test_dev_info_shows_profile_identity(app_exe, vucx):
     out = _run(app_exe, vucx.port, "dev.info")
     assert out.returncode == 0, out.stdout

@@ -19,9 +19,12 @@
 
 static struct {
     ucxapp_capture_t *cap;
+    char last[512];
     char port[64];
     char follow[64];
 } gSniff;
+
+static void saveLast(void);
 
 /* nrfutil as a command prefix; false if it is not installed. */
 static bool nrfutilCmd(char *out, size_t size)
@@ -234,6 +237,7 @@ static int cmdStop(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("No capture running\n");
         return UCXAPP_OK;
     }
+    saveLast();
     code = ucxapp_capture_stop(gSniff.cap, STOP_GRACE_MS);
     gSniff.cap = NULL;
     (void)code;
@@ -259,6 +263,7 @@ static int cmdStatus(ucxapp_t *app, int argc, char *argv[])
     if (!ucxapp_capture_running(gSniff.cap, &code)) {
         ucxapp_print("nrfutil ended (exit code %d):\n", code);
         printTail(ucxapp_capture_log(gSniff.cap));
+        saveLast();
         (void)ucxapp_capture_stop(gSniff.cap, 0);
         gSniff.cap = NULL;
         return UCXAPP_ERR_FAILED;
@@ -281,11 +286,25 @@ static int cmdView(ucxapp_t *app, int argc, char *argv[])
     return ucxapp_capture_view(argv[1]) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
+static void saveLast(void)
+{
+    (void)snprintf(gSniff.last, sizeof(gSniff.last), "%s", ucxapp_capture_file(gSniff.cap));
+}
+
+static int cmdShow(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    return ucxapp_capture_show(argc, argv, gSniff.cap != NULL ? ucxapp_capture_file(gSniff.cap) : gSniff.last);
+}
+
 static const ucxapp_cmd_t kCmds[] = {
     { "sniff.detect", "", "Find an nRF Sniffer for Bluetooth LE on USB, nrfutil and Wireshark", 0, cmdDetect },
     { "sniff.start", "[file.pcap] [follow=module|<addr>|name:<name>] [port=<port>] [adv] [coded] [rssi=<-dBm>] [live]",
       "Capture BLE with nrfutil ble-sniffer into a pcap file; follow=module follows this module, live shows it in Wireshark",
       0, cmdStart },
+    { "sniff.show", "[file.pcap] [count=50] [skip=0] [filter=<text>] [summary]",
+      "Print a capture as text, one line per packet or per device with summary (default: the last capture)", 0,
+      cmdShow },
     { "sniff.stop", "", "Stop the capture and print the packet count", 0, cmdStop },
     { "sniff.status", "", "Running capture: port, time, file, packets", 0, cmdStatus },
     { "sniff.view", "<file.pcap>", "Open a capture in Wireshark", 0, cmdView },

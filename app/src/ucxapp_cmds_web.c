@@ -209,8 +209,10 @@ static viewer_t *viewer(int i)
         v->logCur = ucxapp_ui_log_start();
         v->evCur = ucxapp_ui_event_start();
         /* a page that reconnects after its command ended in the gap still needs that "done" to enable Run
-           again; one that was not waiting ignores it */
-        v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 }) - (ucxapp_ui_busy() ? 0u : 1u);
+           again; one that was not waiting ignores it. Not for the browser build's own page: it never
+           reconnects, and that "done" would end the command it has just started (dev.connect at load, then
+           dev.summary refused as busy). */
+        v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 }) - (i != LOCAL_SLOT && !ucxapp_ui_busy() ? 1u : 0u);
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
         v->cardSeen[0] = UINT32_MAX;
         v->cardSeen[1] = UINT32_MAX;

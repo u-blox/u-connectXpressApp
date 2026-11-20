@@ -845,16 +845,17 @@ def wifi_summary():
 
 
 def pytest_python():
-    """This Python if it has pytest; on Linux (system Python is often externally managed) else a venv in ~."""
-    if subprocess.call([sys.executable, "-c", "import pytest, yaml"], stderr=subprocess.DEVNULL) == 0:
-        return sys.executable
-    venv = Path.home() / ".ucxapp-venv"
-    py = venv / "bin" / "python"
-    if IS_WINDOWS:
-        fail(f"pytest missing for {sys.executable}: {sys.executable} -m pip install -r tests/requirements.txt")
+    """The repo's own .venv (made and filled from tests/requirements.txt when needed), so the tests never depend on
+    what a system or MSYS2 Python happens to have; a venv that no longer runs (moved repo) is made again."""
+    venv = ROOT / ".venv"
+    py = venv / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
+    if py.exists() and subprocess.call([py, "-c", ""], stderr=subprocess.DEVNULL) != 0:
+        shutil.rmtree(venv, ignore_errors=True)
     if not py.exists():
-        check([sys.executable, "-m", "venv", venv], "venv (sudo apt install python3-venv)")
-    if subprocess.call([py, "-c", "import pytest, yaml, xdist"], stderr=subprocess.DEVNULL) != 0:
+        print(f"creating {venv} for the tests")
+        check([sys.executable, "-m", "venv", "--clear", venv], "venv (on Linux: sudo apt install python3-venv)")
+    if subprocess.call([py, "-c", "import pytest, yaml, xdist, cryptography"], stderr=subprocess.DEVNULL) != 0:
+        print("installing tests/requirements.txt into .venv")
         check([py, "-m", "pip", "install", "-q", "-r", ROOT / "tests" / "requirements.txt"], "pytest install")
     return str(py)
 

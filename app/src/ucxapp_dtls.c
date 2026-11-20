@@ -183,6 +183,25 @@ ucxapp_dtls_conn_t *ucxapp_dtls_client_new(ucxapp_dtls_xport_t *x, const char *c
     return c;
 }
 
+static bool setupServerPeer(ucxapp_dtls_conn_t *c, const unsigned char *peerId, size_t peerLen, char *err,
+                            size_t errLen)
+{
+    int rc = mbedtls_ssl_cookie_setup(&c->cookie);
+    if (rc != 0) {
+        setErr(err, errLen, "server setup failed", rc);
+        return false;
+    }
+    /* HelloVerifyRequest: the client must echo a cookie bound to its transport address first. */
+    mbedtls_ssl_conf_dtls_cookies(&c->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check, &c->cookie);
+    memcpy(c->peerId, peerId, peerLen);
+    c->peerLen = peerLen;
+    if (mbedtls_ssl_set_client_transport_id(&c->ssl, c->peerId, c->peerLen) != 0) {
+        setErr(err, errLen, "transport id failed", 0);
+        return false;
+    }
+    return true;
+}
+
 ucxapp_dtls_conn_t *ucxapp_dtls_server_new(ucxapp_dtls_xport_t *x, const char *certName,
                                            const unsigned char *peerId, size_t peerLen, char *err, size_t errLen)
 {
@@ -201,20 +220,68 @@ ucxapp_dtls_conn_t *ucxapp_dtls_server_new(ucxapp_dtls_xport_t *x, const char *c
         return NULL;
     }
     int rc = mbedtls_ssl_conf_own_cert(&c->conf, &c->own, &c->key);
-    if (rc == 0) {
-        rc = mbedtls_ssl_cookie_setup(&c->cookie);
-    }
     if (rc != 0) {
         setErr(err, errLen, "server setup failed", rc);
         connFree(c);
         return NULL;
     }
-    /* HelloVerifyRequest: the client must echo a cookie bound to its transport address first. */
-    mbedtls_ssl_conf_dtls_cookies(&c->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check, &c->cookie);
-    memcpy(c->peerId, peerId, peerLen);
-    c->peerLen = peerLen;
-    if (mbedtls_ssl_set_client_transport_id(&c->ssl, c->peerId, c->peerLen) != 0) {
-        setErr(err, errLen, "transport id failed", 0);
+    if (!setupServerPeer(c, peerId, peerLen, err, errLen)) {
+        connFree(c);
+        return NULL;
+    }
+    return c;
+}
+
+static bool setPsk(ucxapp_dtls_conn_t *c, const unsigned char *id, size_t idLen, const unsigned char *key,
+                   size_t keyLen, char *err, size_t errLen)
+{
+    int rc = mbedtls_ssl_conf_psk(&c->conf, key, keyLen, id, idLen);
+    if (rc != 0) {
+        setErr(err, errLen, "psk setup failed", rc);
+        return false;
+    }
+    return true;
+}
+
+static bool pskArgsOk(const unsigned char *id, size_t idLen, const unsigned char *key, size_t keyLen)
+{
+    return id && key && idLen > 0 && keyLen > 0 && cryptoReady();
+}
+
+ucxapp_dtls_conn_t *ucxapp_dtls_client_psk_new(ucxapp_dtls_xport_t *x, const unsigned char *id, size_t idLen,
+                                               const unsigned char *key, size_t keyLen, char *err, size_t errLen)
+{
+    if (!x || !pskArgsOk(id, idLen, key, keyLen)) {
+        setErr(err, errLen, "bad psk arguments", 0);
+        return NULL;
+    }
+    ucxapp_dtls_conn_t *c = connNew(x, false);
+    if (!c) {
+        setErr(err, errLen, "out of memory", 0);
+        return NULL;
+    }
+    if (setupCommon(c, MBEDTLS_SSL_IS_CLIENT, err, errLen) != 0 || !setPsk(c, id, idLen, key, keyLen, err, errLen)) {
+        connFree(c);
+        return NULL;
+    }
+    return c;
+}
+
+ucxapp_dtls_conn_t *ucxapp_dtls_server_psk_new(ucxapp_dtls_xport_t *x, const unsigned char *id, size_t idLen,
+                                               const unsigned char *key, size_t keyLen, const unsigned char *peerId,
+                                               size_t peerLen, char *err, size_t errLen)
+{
+    if (!x || !peerId || peerLen == 0 || peerLen > PEER_MAX || !pskArgsOk(id, idLen, key, keyLen)) {
+        setErr(err, errLen, "bad psk arguments", 0);
+        return NULL;
+    }
+    ucxapp_dtls_conn_t *c = connNew(x, true);
+    if (!c) {
+        setErr(err, errLen, "out of memory", 0);
+        return NULL;
+    }
+    if (setupCommon(c, MBEDTLS_SSL_IS_SERVER, err, errLen) != 0 || !setPsk(c, id, idLen, key, keyLen, err, errLen) ||
+        !setupServerPeer(c, peerId, peerLen, err, errLen)) {
         connFree(c);
         return NULL;
     }
@@ -328,34 +395,17 @@ static bool fail(char *out, size_t outLen, const char *msg)
     return false;
 }
 
-bool ucxapp_dtls_selftest(const char *serverCert, char *out, size_t outLen)
+/* Handshake and a ping/pong echo between a client and a server over the memory pipes; frees both. */
+static bool pairEcho(ucxapp_dtls_conn_t *client, ucxapp_dtls_conn_t *server, const char *what, char *out,
+                     size_t outLen)
 {
-    static memPipe_t c2s, s2c;
-    static const unsigned char peer[] = "selftest";
     static const char ping[] = "ping";
     static const char pong[] = "pong";
-    memEnd_t ce = { &c2s, &s2c };
-    memEnd_t se = { &s2c, &c2s };
-    ucxapp_dtls_xport_t cx = { memSend, memRecv, &ce };
-    ucxapp_dtls_xport_t sx = { memSend, memRecv, &se };
-    char err[160] = "";
     uint8_t buf[32];
     int32_t n = 0;
     bool ok = false;
-
-    memset(&c2s, 0, sizeof(c2s));
-    memset(&s2c, 0, sizeof(s2c));
-    ucxapp_dtls_conn_t *client = ucxapp_dtls_client_new(&cx, UCXAPP_TLS_CA_NAME, "localhost", err, sizeof(err));
-    if (!client) {
-        return fail(out, outLen, err);
-    }
-    ucxapp_dtls_conn_t *server = ucxapp_dtls_server_new(&sx, serverCert, peer, sizeof(peer) - 1, err, sizeof(err));
-    if (!server) {
-        ucxapp_dtls_free(client);
-        return fail(out, outLen, err);
-    }
-
     int cs = 0, ss = 0;
+
     for (int i = 0; i < 200 && (cs == 0 || ss == 0); i++) {
         if (cs == 0) {
             cs = ucxapp_dtls_handshake(client);
@@ -368,38 +418,84 @@ bool ucxapp_dtls_selftest(const char *serverCert, char *out, size_t outLen)
         }
     }
     if (cs != 1 || ss != 1) {
-        ucxapp_dtls_free(client);
-        ucxapp_dtls_free(server);
-        return fail(out, outLen, "handshake failed");
-    }
-
-    if (ucxapp_dtls_write(client, (const uint8_t *)ping, sizeof(ping) - 1) != (int32_t)(sizeof(ping) - 1)) {
+        fail(out, outLen, "handshake failed");
         goto done;
+    }
+    if (ucxapp_dtls_write(client, (const uint8_t *)ping, sizeof(ping) - 1) != (int32_t)(sizeof(ping) - 1)) {
+        goto echo;
     }
     for (int i = 0; i < 200 && n == 0; i++) {
         n = ucxapp_dtls_read(server, buf, sizeof(buf));
     }
     if (n != (int32_t)(sizeof(ping) - 1) || memcmp(buf, ping, sizeof(ping) - 1) != 0) {
-        goto done;
+        goto echo;
     }
     if (ucxapp_dtls_write(server, (const uint8_t *)pong, sizeof(pong) - 1) != (int32_t)(sizeof(pong) - 1)) {
-        goto done;
+        goto echo;
     }
     n = 0;
     for (int i = 0; i < 200 && n == 0; i++) {
         n = ucxapp_dtls_read(client, buf, sizeof(buf));
     }
     if (n != (int32_t)(sizeof(pong) - 1) || memcmp(buf, pong, sizeof(pong) - 1) != 0) {
-        goto done;
+        goto echo;
     }
-    snprintf(out, outLen, "DTLS 1.2 handshake ok (%s), echo ok", ucxapp_dtls_cipher(client));
+    snprintf(out, outLen, "DTLS 1.2 %shandshake ok (%s), echo ok", what, ucxapp_dtls_cipher(client));
     ok = true;
-
-done:
+echo:
     if (!ok) {
         fail(out, outLen, "echo failed");
     }
+done:
     ucxapp_dtls_free(client);
     ucxapp_dtls_free(server);
     return ok;
+}
+
+static memPipe_t gC2s, gS2c;
+static memEnd_t gCe = { &gC2s, &gS2c };
+static memEnd_t gSe = { &gS2c, &gC2s };
+static ucxapp_dtls_xport_t gCx = { memSend, memRecv, &gCe };
+static ucxapp_dtls_xport_t gSx = { memSend, memRecv, &gSe };
+static const unsigned char kPeer[] = "selftest";
+
+bool ucxapp_dtls_selftest(const char *serverCert, char *out, size_t outLen)
+{
+    char err[160] = "";
+
+    memset(&gC2s, 0, sizeof(gC2s));
+    memset(&gS2c, 0, sizeof(gS2c));
+    ucxapp_dtls_conn_t *client = ucxapp_dtls_client_new(&gCx, UCXAPP_TLS_CA_NAME, "localhost", err, sizeof(err));
+    if (!client) {
+        return fail(out, outLen, err);
+    }
+    ucxapp_dtls_conn_t *server = ucxapp_dtls_server_new(&gSx, serverCert, kPeer, sizeof(kPeer) - 1, err, sizeof(err));
+    if (!server) {
+        ucxapp_dtls_free(client);
+        return fail(out, outLen, err);
+    }
+    return pairEcho(client, server, "", out, outLen);
+}
+
+bool ucxapp_dtls_psk_selftest(char *out, size_t outLen)
+{
+    static const unsigned char id[] = "ucxapp-selftest";
+    static const unsigned char key[16] = { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+                                           0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10 };
+    char err[160] = "";
+
+    memset(&gC2s, 0, sizeof(gC2s));
+    memset(&gS2c, 0, sizeof(gS2c));
+    ucxapp_dtls_conn_t *client = ucxapp_dtls_client_psk_new(&gCx, id, sizeof(id) - 1, key, sizeof(key), err,
+                                                            sizeof(err));
+    if (!client) {
+        return fail(out, outLen, err);
+    }
+    ucxapp_dtls_conn_t *server = ucxapp_dtls_server_psk_new(&gSx, id, sizeof(id) - 1, key, sizeof(key), kPeer,
+                                                            sizeof(kPeer) - 1, err, sizeof(err));
+    if (!server) {
+        ucxapp_dtls_free(client);
+        return fail(out, outLen, err);
+    }
+    return pairEcho(client, server, "PSK ", out, outLen);
 }

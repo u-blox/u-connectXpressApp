@@ -30,6 +30,12 @@ def test_dtls_selftest_handshake_and_echo(app_exe, dtls_dir):
     assert "echo ok" in out.stdout
 
 
+def test_dtls_selftest_with_a_pre_shared_key_needs_no_certificate(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "dtls.selftest psk")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "PSK handshake ok" in out.stdout and "echo ok" in out.stdout, out.stdout
+
+
 def test_dtls_selftest_needs_the_server_certificate(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "dtls.selftest missing")
     assert out.returncode != 0

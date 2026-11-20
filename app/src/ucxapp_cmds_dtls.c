@@ -160,7 +160,8 @@ static int cmdSelftest(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     const char *cert = argc == 2 ? argv[1] : "server";
-    if (!ucxapp_dtls_selftest(cert, out, sizeof(out))) {
+    bool psk = strcmp(cert, "psk") == 0;
+    if (psk ? !ucxapp_dtls_psk_selftest(out, sizeof(out)) : !ucxapp_dtls_selftest(cert, out, sizeof(out))) {
         ucxapp_print("ERROR: dtls selftest: %s\n", out);
         return UCXAPP_ERR_FAILED;
     }
@@ -317,7 +318,7 @@ static int cmdServer(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gDtlsCmds[] = {
-    { "dtls.selftest", "[server-cert]",               "Run a DTLS client and server in-process (offline) and check an echo", 0, cmdSelftest },
+    { "dtls.selftest", "[server-cert|psk]",           "Run a DTLS client and server in-process (offline) and check an echo; psk: over a pre-shared key instead of certificates", 0, cmdSelftest },
     { "dtls.client",   "<host> <port> [text]",        "DTLS client over a module UDP socket: handshake, send text, print the reply", UCXAPP_CMD_NEEDS_DEVICE, cmdClient },
     { "dtls.server",   "<port> [cert]",               "DTLS server over a module UDP socket: one client, echo one message", UCXAPP_CMD_NEEDS_DEVICE, cmdServer },
 };

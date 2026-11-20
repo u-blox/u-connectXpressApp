@@ -380,7 +380,11 @@ static const example_t kExamples[] = {
       "coap.get coap.me 5683 test" },
     { "lwm2m", "LwM2M client on Eclipse Leshan",
       "wifi.connect MyNetwork MyPassword\nlwm2m.run leshan.eclipseprojects.io 5683 my-nora 120\n"
-      "# open https://leshan.eclipseprojects.io, find my-nora and read /3/0 (Device)" },
+      "# open https://leshan.eclipseprojects.io, find my-nora and read /3/0 (Device), observe /4/0/2 (RSSI)" },
+    { "lwm2m", "LwM2M over DTLS with a pre-shared key, in the background",
+      "lwm2m.psk my-nora 000102030405060708090a0b0c0d0e0f\n"
+      "# add my-nora with this identity and key under Security on the Leshan page\n"
+      "lwm2m.start leshan.eclipseprojects.io 5684 my-nora 0 psk\nlwm2m.status\nlwm2m.stop" },
     { "tftp", "TFTP server for the working folder",
       "wifi.connect MyNetwork MyPassword\ntftp.on rw\n# from a PC: curl -T fw.bin tftp://<module-ip>/\n"
       "# or: tftp -i <module-ip> GET notes.txt\ntftp.status\ntftp.off" },

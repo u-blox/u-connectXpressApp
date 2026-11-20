@@ -413,23 +413,25 @@ def test_coap_get_sends_the_request_three_times_before_giving_up(app_exe, tmp_pa
 
 # ---- lwm2m.run: a server's datagrams as answers to AT+USORFB; what the client sends is in module.payloads ----
 
-def _coap(kind, code, mid, token=b"", path="", accept=None, location=()):
+def _coap(kind, code, mid, token=b"", path="", accept=None, location=(), observe=None, query=(), payload=b""):
     """One CoAP message (options under 13 bytes and 13 apart) as a latin-1 string for _datagram."""
     out = bytes([0x40 | (kind << 4) | len(token), code, mid >> 8, mid & 0xFF]) + token
-    options = [(8, s.encode()) for s in location] + [(11, s.encode()) for s in path.strip("/").split("/") if s]
+    options = [(6, observe.to_bytes(1, "big") if observe else b"")] if observe is not None else []
+    options += [(8, s.encode()) for s in location] + [(11, s.encode()) for s in path.strip("/").split("/") if s]
+    options += [(15, s.encode()) for s in query]
     if accept is not None:
         options.append((17, accept.to_bytes(2 if accept > 0xFF else 1, "big")))
     prev = 0
     for number, value in options:
         out += bytes([((number - prev) << 4) | len(value)]) + value
         prev = number
-    return out.decode("latin-1")
+    return (out + (b"\xff" + payload if payload else b"")).decode("latin-1")
 
 
 LW_IDENTITY = {"AT+CGMI": ["u-blox", "OK"], "AT+CGMM": ["NORA-W36", "OK"], "AT+CGSN": ["VUCX1234", "OK"],
                "AT+CGMR": ["3.6.0-019", "OK"], "AT+USOWB=*": ["+USOWB:0,10", "OK"]}
 LW_RD = b"\xb2rd\x045a3f"   # Uri-Path rd/5a3f, the location the server gave
-LW_DEVICE_LINKS = b"</3/0>,</3/0/0>,</3/0/1>,</3/0/2>,</3/0/3>,</3/0/13>,</3/0/16>"
+LW_DEVICE_LINKS = b"</3/0>,</3/0/0>,</3/0/1>,</3/0/2>,</3/0/3>,</3/0/4>,</3/0/13>,</3/0/16>"
 
 
 def test_lwm2m_client_registers_serves_updates_and_deregisters(app_exe, tmp_path):
@@ -462,7 +464,7 @@ def test_lwm2m_client_registers_serves_updates_and_deregisters(app_exe, tmp_path
     assert all(command == "AT+USOWB=0" for command, _ in module.payloads), module.payloads
     instance = sent[2][9:]   # after the header, token and Content-Format TLV (0x2D16)
     assert sent[0] == (b"\x42\x02\x1d\x00\x4c\x00\xb2rd\x11\x28\x3cep=nora-test\x06lt=120\x09lwm2m=1.1\x03b=U"
-                       b"\xff</1/0>,</3/0>"), sent[0]
+                       b"\xff</1/0>,</3/0>,</4/0>,</6/0>"), sent[0]
     assert sent[1] == b"\x61\x45\x00\x01\xaa\xc0\xffNORA-W36", sent[1]
     assert sent[2][:9] == b"\x61\x45\x00\x02\xab\xc2\x2d\x16\xff", sent[2]
     assert instance.startswith(b"\xc6\x00u-blox\xc8\x01\x08NORA-W36\xc8\x02\x0eVUCX0123456789\xc7\x033.5.0-0"), instance
@@ -495,6 +497,78 @@ def test_lwm2m_run_says_what_failed(app_exe, tmp_path, case):
     out, module = _exec(app_exe, _profile(WIFI, {**LW_IDENTITY, **answers}), tmp_path, command)
     assert message in out.stdout and out.returncode != 0, (out.returncode, out.stdout)
     _asked(module, answers)
+
+
+def test_lwm2m_client_observes_writes_the_lifetime_and_reboots_on_request(app_exe, tmp_path):
+    """A lifetime written as text sends an update with the new lt= at once; Connectivity Monitoring reads the WLAN
+    bearer; Location is 4.04 without a position; an executable is not readable; a bad lifetime is 4.00 and
+    Write-Attributes are accepted; an observed time resource is notified (NON, Observe 1, the same token) once it
+    changes; Execute Reboot ends the run, deregisters and restarts the module."""
+    CON, NON, ACK = 0, 1, 2
+    server = [
+        _coap(ACK, 0x41, 0x1D00, b"\x4c\x00", location=("rd", "5a3f")),
+        _coap(CON, 0x03, 20, b"\xc0", "/1/0/1", payload=b"60"),
+        _coap(ACK, 0x44, 0x1D01, b"\x4c\x01"),
+        _coap(CON, 0x01, 21, b"\xc1", "/4/0"),
+        _coap(CON, 0x01, 22, b"\xc2", "/3/0/13", observe=0),
+        _coap(CON, 0x01, 23, b"\xc3", "/6/0"),
+        _coap(CON, 0x01, 24, b"\xc4", "/3/0/4"),
+        _coap(CON, 0x03, 25, b"\xc5", "/1/0/1", payload=b"5"),
+        _coap(CON, 0x03, 26, b"\xc6", "/3/0", query=("pmin=1",)),
+    ] + [""] * 400 + [_coap(CON, 0x02, 27, b"\xc7", "/3/0/4")] + [_coap(NON, 0x42, 1, b"\x4c\x02")] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, module = _exec(app_exe, profile, tmp_path, "lwm2m.run 192.168.1.10 5683 nora-test 30", timeout=60)
+    assert out.returncode == 0, out.stdout
+    for line in ("PUT /1/0/1 -> 2.04", "update -> 2.04", "GET /4/0 -> 2.05", "GET /3/0/13 (observe) -> 2.05",
+                 "GET /6/0 -> 4.04", "GET /3/0/4 -> 4.05", "PUT /1/0/1 -> 4.00", "PUT /3/0 -> 2.04",
+                 "POST /3/0/4 -> 2.04", "deregistered (2.02), 8 request(s) served",
+                 "the server asked for a reboot: restarting the module"):
+        assert f"lwm2m: {line}\n" in out.stdout, (line, out.stdout)
+    sent = [data for command, data in module.payloads]
+    assert sent[2] == b"\x42\x02\x1d\x01\x4c\x01" + LW_RD + b"\x45lt=60", sent[2]   # the update carries the lifetime
+    connectivity = next(data for data in sent if data[2:5] == b"\x00\x15\xc1")
+    assert b"\xc1\x00\x15" in connectivity and b"\x83\x01\x41\x00\x15" in connectivity, connectivity   # bearer WLAN
+    observed = next(data for data in sent if data[2:5] == b"\x00\x16\xc2")
+    assert observed.startswith(b"\x61\x45\x00\x16\xc2\x60\x60\xff"), observed   # Observe 0, then text
+    notes = [data for data in sent if data[0] == 0x51 and data[4:7] == b"\xc2\x61\x01"]
+    assert notes and notes[0][7:9] == b"\x60\xff" and notes[0][9:].isdigit(), sent   # Observe 1, text time
+    assert "AT+CPWROFF" in module.log[module.log.index("AT+USOCL=0"):], module.log
+
+
+def test_lwm2m_runs_in_the_background_until_stopped(app_exe, tmp_path):
+    """lwm2m.start registers and returns; lwm2m.status shows the server and counters; lwm2m.run is refused while it
+    runs; lwm2m.stop deregisters."""
+    server = [_coap(2, 0x41, 0x1D00, b"\x4c\x00", location=("rd", "5a3f"))] + [""] * 50
+    server += [_coap(2, 0x42, 0x1D01, b"\x4c\x01")] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, _ = _shell(app_exe, profile, tmp_path, ["lwm2m.start 192.168.1.10 5683 nora-test", "lwm2m.status",
+                                                 "lwm2m.run 192.168.1.10", "lwm2m.stop", "lwm2m.status"])
+    for text in ("lwm2m: registered at 192.168.1.10:5683 as nora-test (/rd/5a3f), lifetime 120 s",
+                 "lwm2m: runs in the background", "security: none, lifetime 120 s",
+                 "ERROR: the LwM2M client runs in the background; lwm2m.stop first",
+                 "lwm2m: deregistered (2.02)", "lwm2m: not running"):
+        assert text in out.stdout, (text, out.stdout)
+
+
+def test_lwm2m_psk_is_stored_sealed_and_needed_for_psk(app_exe, tmp_path):
+    """lwm2m.psk keeps the identity and key in the secure store (no key in plain text), shows the identity and
+    removes it; bad keys are refused; lwm2m.run ... psk without a key says so before any handshake."""
+    key = "000102030405060708090a0b0c0d0e0f"
+    out = _offline(app_exe, tmp_path, "lwm2m.psk", f"lwm2m.psk dev-1 {key}", "lwm2m.psk")
+    assert out.returncode == 0, out.stdout
+    assert "lwm2m: no pre-shared key" in out.stdout and "pre-shared key stored for identity dev-1" in out.stdout
+    stored = (tmp_path / "storage" / "lwm2m-psk.key").read_bytes()
+    assert key.encode() not in stored and b"dev-1" not in stored, stored
+    for bad in ("abc", "zz", "00" * 65):
+        out = _offline(app_exe, tmp_path, f"lwm2m.psk dev-1 {bad}")
+        assert "ERROR: the key is 1 to 64 bytes in hex" in out.stdout and out.returncode != 0, out.stdout
+    out = _offline(app_exe, tmp_path, "lwm2m.psk clear", "lwm2m.psk")
+    assert "pre-shared key removed" in out.stdout and out.stdout.rstrip().endswith("no pre-shared key"), out.stdout
+    out, module = _exec(app_exe, _profile(WIFI, {**LW_IDENTITY, "AT+USOCL=0": ["OK"]}), tmp_path,
+                        "lwm2m.run 192.168.1.10 psk")
+    assert "ERROR: no LwM2M pre-shared key" in out.stdout and out.returncode != 0, out.stdout
+    assert any(c.startswith("AT+USOC=") and c.endswith(",5684") for c in module.log), module.log
+    assert "AT+USOCL=0" in module.log, module.log
 
 
 # ---- mqtt.* ----

@@ -15,6 +15,12 @@ h1{margin:0;font-size:1.05rem;font-weight:700}.logo{height:1.9rem;width:auto}
 @media(min-width:801px){#state{flex:1 1 16rem;flex-wrap:wrap;align-content:center;row-gap:.25rem;overflow:visible;mask-image:none;-webkit-mask-image:none}}.chip u{text-decoration-thickness:2px;text-underline-offset:2px}
 #more{position:relative}#morb{font-weight:800;letter-spacing:.05em}#morm{position:absolute;right:0;top:calc(100% + .35rem);z-index:60;display:flex;flex-direction:column;gap:.3rem;min-width:9rem;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:.4rem;box-shadow:0 8px 30px #0008}#morm[hidden]{display:none}#morm button{text-align:left}
 #out .bh .tm,#ev .t{color:var(--mut);font:12px Consolas,monospace;font-weight:400}#ev{scroll-padding-top:.6rem}
+#qk{display:flex;gap:.35rem;margin:0 0 .35rem}
+#qk button{flex:1;padding:.25rem .4rem;font-size:.8rem;display:flex;gap:.35rem;align-items:center;justify-content:center}
+#qk button[hidden]{display:none}
+#qk i{width:.55rem;height:.55rem;border-radius:50%;background:var(--mut);opacity:.6}
+#qk button.up i{background:var(--ok);opacity:1}
+#qk button.auto{border-color:var(--ac);color:var(--ac);font-weight:600}
 #flt-on{display:flex;gap:.4rem;align-items:center;font-size:.8rem;color:var(--ac);margin:0 0 .3rem}#flt-on[hidden]{display:none}#flt-on button{padding:.1rem .5rem;font-size:.75rem}
 body.flt #out>.blk:not(.hit),body.flt #ev>.e:not(.hit){display:none}
 #cn .nd.ping .b{animation:cnping .9s ease-out}@keyframes cnping{0%{stroke-width:7;filter:drop-shadow(0 0 16px var(--k))}}
@@ -181,7 +187,7 @@ html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd
 <span id="ha"><button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></span></div>
 <div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pn">Links</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
-<div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><input id="flt" placeholder="filter commands" aria-label="filter commands">
+<div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><div id="qk" role="group" aria-label="quick connect"></div><input id="flt" placeholder="filter commands" aria-label="filter commands">
 <div id="side"><div id="res" hidden></div><div id="grp"></div></div></div>
 <div class="pane" id="pu"><h2>Use case</h2><div class="sc"><select id="ucs" aria-label="Use case"></select><div class="uh" id="uh">Connected tool</div>
 <div class="ud" id="ud"></div>
@@ -901,7 +907,20 @@ function meta(clk,src,loc){metaT={clk,at:Date.now()};if(metaC!==clk+src){metaC=c
  if(place==='unknown'){l.append(el('span','lb','Location: '),place);return}
  const a=el('a','',place);a.href='https://www.google.com/maps/search/?api=1&query='+enc(place);a.target='_blank';a.rel='noopener';
  a.title='Open in Google Maps';l.append(a);if(p[2])l.append(el('span','tag'+(/^gnss/.test(p[2])?' ok':''),p[2]))}
-function events(){const es=new EventSource('/events');
+/* ---- quick connect: one button per radio toggles autoconnect (kept across reloads); while on, a radio that is down
+   is reconnected, with a growing pause after each failed try */
+const QK=[{k:'wifi',n:'Wi-Fi',on:'wifi.profile.auto',off:'wifi.disconnect'},{k:'ble',n:'BLE',on:'bt.profile.auto',off:'bt.disconnect'},
+ {k:'thread',n:'Thread',on:'thread.start',a:['0'],off:'thread.stop'}];
+let QA={};try{QA=JSON.parse(localStorage.getItem('ucxq')||'{}')}catch(x){}
+QK.forEach(q=>{q.b=el('button','');q.b.type='button';q.b.append(el('i',''),document.createTextNode(q.n));q.b.hidden=true;q.wait=0;q.at=0;
+ q.b.onclick=()=>{QA[q.k]=!QA[q.k];localStorage.setItem('ucxq',JSON.stringify(QA));q.wait=0;q.at=0;qkDraw();
+  if(QA[q.k]&&!q.up)run(q.on,q.a||null,0,1);else if(!QA[q.k]&&q.up)run(q.off,null,0,1)};$('qk').appendChild(q.b)});
+function qkDraw(){QK.forEach(q=>{q.b.classList.toggle('auto',!!QA[q.k]);q.b.classList.toggle('up',!!q.up);
+ q.b.title=q.n+(q.up?' is up':' is down')+'; autoconnect '+(QA[q.k]?'on: kept up (click to turn off and disconnect)':'off (click to connect and keep it up)')})}
+function qkState(ps){const g=p=>ps.find(x=>x.startsWith(p+' '));const w=g('Wi-Fi'),b=g('BLE'),t=g('Thread');
+ const m=w!=='Wi-Fi -',S={wifi:[!!w&&m,w==='Wi-Fi up'],ble:[!!b&&m,!!b&&/\d/.test(b)],thread:[!!t&&m,!!t&&!/ (-|off|disabled|detached|unknown)$/.test(t)]};
+ const now=Date.now();QK.forEach(q=>{const s=S[q.k];q.b.hidden=!s[0];if(s[1]&&!q.up)q.wait=0;q.up=s[1];
+  if(s[0]&&QA[q.k]&&!q.up&&!busy&&now>=q.at){q.wait=Math.min(300000,q.wait?q.wait*2:15000);q.at=now+q.wait;run(q.on,q.a||null,0,1)}});qkDraw()}function events(){const es=new EventSource('/events');
  es.onopen=()=>{st.textContent='live';st.className='ok';lit('hub',1)};
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
@@ -919,7 +938,7 @@ function events(){const es=new EventSource('/events');
   if(m)HS[m[1]==='BLE'?'conn':'sock']=m[2].split(' ').filter(x=>x!=='-'&&x[0]!=='+')});
   const nomod=/^Wi-Fi -|no module/.test(raw);if(nomod)sessionStorage.removeItem('ucxs');
   if(!sessionStorage.getItem('ucxs')&&!nomod&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
-  fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0)});
+  fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0);qkState(ps)});
  es.addEventListener('done',e=>finish(+e.data))}
 api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access token (printed by web.start)',{input:1});
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();

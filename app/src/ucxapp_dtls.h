@@ -33,6 +33,15 @@ ucxapp_dtls_conn_t *ucxapp_dtls_client_new(ucxapp_dtls_xport_t *x, const char *c
 ucxapp_dtls_conn_t *ucxapp_dtls_server_new(ucxapp_dtls_xport_t *x, const char *certName,
                                            const unsigned char *peerId, size_t peerLen, char *err, size_t errLen);
 
+/** Client with a pre-shared key (TLS-PSK, the LwM2M mandatory suites); no certificate is checked. */
+ucxapp_dtls_conn_t *ucxapp_dtls_client_psk_new(ucxapp_dtls_xport_t *x, const unsigned char *id, size_t idLen,
+                                               const unsigned char *key, size_t keyLen, char *err, size_t errLen);
+
+/** Server with a pre-shared key; peerId as for ucxapp_dtls_server_new. */
+ucxapp_dtls_conn_t *ucxapp_dtls_server_psk_new(ucxapp_dtls_xport_t *x, const unsigned char *id, size_t idLen,
+                                               const unsigned char *key, size_t keyLen, const unsigned char *peerId,
+                                               size_t peerLen, char *err, size_t errLen);
+
 /** 1 = established, 0 = in progress, < 0 = failed. Never blocks. */
 int ucxapp_dtls_handshake(ucxapp_dtls_conn_t *c);
 
@@ -49,6 +58,9 @@ void ucxapp_dtls_free(ucxapp_dtls_conn_t *c);
 
 /** Runs a client and a server in-process over a memory datagram pair (server cert tls-<serverCert>). */
 bool ucxapp_dtls_selftest(const char *serverCert, char *out, size_t outLen);
+
+/** The same echo over a pre-shared key (TLS-PSK), no certificates. */
+bool ucxapp_dtls_psk_selftest(char *out, size_t outLen);
 
 #ifdef __cplusplus
 }

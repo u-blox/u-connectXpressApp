@@ -18,7 +18,7 @@
 #include <strings.h>
 #endif
 
-#define RING_SIZE 8192
+#define RING_SIZE 65536
 #define VPI       3.14159265358979323846
 
 typedef struct vdev vdev_t;
@@ -41,13 +41,12 @@ static void put(vdev_t *d, const void *data, size_t len)
 {
     const uint8_t *p = data;
 
+    if (len >= (d->tail + RING_SIZE - d->head - 1) % RING_SIZE + 1) {
+        return;   /* nobody reads: drop the whole frame, like an overrun, but never half of one */
+    }
     for (size_t i = 0; i < len; i++) {
-        size_t next = (d->head + 1) % RING_SIZE;
-        if (next == d->tail) {
-            return;   /* nobody reads: drop, like an overrun UART */
-        }
         d->ring[d->head] = p[i];
-        d->head = next;
+        d->head = (d->head + 1) % RING_SIZE;
     }
 }
 

@@ -1,6 +1,6 @@
 # u-connectXpressApp
 
-**Your u-connectXpress module, live in seconds. Plug in, type a command, see it work, then automate exactly that.**
+**A command shell for testing and configuring u-connectXpress modules (NORA-W36, NORA-B26). Plug in, type a command, see it work, then automate exactly that.**
 
 **[Try it in your browser now](https://u-blox.github.io/u-connectXpressApp/)**: no install, Chrome or Edge talks to the EVK over Web Serial (Firefox, Safari and phones: Virtual module only). No EVK? Click **Virtual module** and pick Wi-Fi + BLE + Thread, Wi-Fi + BLE, BLE + Thread or BLE only. Install it from the address bar to use it offline. The same simulated modules run in the native app too, on Windows and Linux: `.\ucxapp --virtual nora-b26` (or `nora-w36`, `nora-b26-thread`, `alma-w1`; needs `pip install pyyaml`).
 
@@ -11,7 +11,7 @@
 ```
 
 - **One command set, everywhere**: interactive shell, `--exec` scripts, CI, the browser, the module's own web UI and STM32 firmware (FreeRTOS and Zephyr).
-- **Batteries included**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, multicast, mDNS, TLS, HTTP, MQTT, certificates, firmware update.
+- **What it covers**: Wi-Fi, Bluetooth LE, GATT, SPS, HID, sockets, multicast, mDNS, TLS, HTTP, MQTT, certificates, firmware update.
 - **Matter**: `matter.start` turns the module into a Matter light, temperature and contact sensor that a phone's home app commissions over Bluetooth LE and controls over Wi-Fi (optional plug-in, see [Matter](#matter)).
 - **Built for testing**: `--json`, `--script` with `expect`, JUnit reports, AT traces with Wireshark export, `dev.diagnose` with PASS/FAIL verdicts.
 - **Ready to run**: signed Windows `.exe`, single Linux binary and STM32 images on the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases).
@@ -41,15 +41,21 @@
 
 ### Supported modules
 
-| Capability | NORA-W36 | NORA-B26 | NORA-W56, W57 |
-|---|:-:|:-:|:-:|
-| Device, firmware update | yes | yes | not yet |
-| Bluetooth LE, GATT, SPS, HID | yes | yes | not yet |
-| Wi-Fi, sockets, TLS, HTTP, MQTT | yes | - | not yet |
+| Capability | NORA-W36 | NORA-B26 | NORA-B27 | NORA-W56, W57 |
+|---|:-:|:-:|:-:|:-:|
+| Device, firmware update | yes | yes | yes | not yet |
+| Bluetooth LE, GATT, SPS, HID | yes | yes | peripheral only | not yet |
+| Wi-Fi, sockets, TLS, HTTP, MQTT | yes | - | - | not yet |
+
+NORA-B27 is a smaller NORA-B26 with less memory and only the Bluetooth LE peripheral role.
+
+NORA-W36 and NORA-B26 are the fully supported modules today, NORA-B27 is supported in its peripheral role, and NORA-W56 and NORA-W57 are planned and not supported yet. GNSS receivers, IMUs and cellular modems are not test targets: they only appear as helpers in bridges and demos around a NORA module.
 
 The app asks the module what it can do (`dev.caps`) and shows a short summary on connect.
 
-## Try it in 30 seconds
+## Try it
+
+Fastest, in this order: the [browser app](https://u-blox.github.io/u-connectXpressApp/) (nothing to install), the signed build from the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases) (unzip and run), or a build from source ([below](#quick-start-from-source); needs a compiler, and the first run takes a few minutes to build).
 
 ```powershell
 .\ucxapp
@@ -71,10 +77,10 @@ Pick a goal, run the recipe, read the verdict. No radio background needed.
 | Add my product to Apple Home, Google Home or Alexa with Matter | `.\ucxapp --exec "matter.start"` | A QR code to scan in the home app; the light then switches from the phone (`matter.card` shows the node) |
 | Something does not work | `.\ucxapp dev.diagnose` | Each check PASS, FAIL, NOT RUN or NOT SUPPORTED, with the next step to try |
 
-## Wow in one line
+## One-line examples
 
 ```powershell
-.\ucxapp --exec "wifi.connect MySsid ${UCX_WIFI_PASS}" --exec "http.get https://example.com"   # online in seconds
+.\ucxapp --exec "wifi.connect MySsid ${UCX_WIFI_PASS}" --exec "http.get https://example.com"   # join Wi-Fi and fetch a page
 .\ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"                   # newest firmware, SHA256 checked
 .\ucxapp COM13 --web                                                                           # the module serves its own web UI
 .\ucxapp --script examples/automation/production-test.ucx --junit production.xml               # production test with a CI report
@@ -127,7 +133,7 @@ wlanpi.stop                                # sniff.stop for BLE; both print the 
 
 ## Small enough for a microcontroller
 
-The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Updated by `.\ucxapp --everything --build` ([details](docs/STM32_MEMORY.md)).
+The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Those 512 KB and 128 KB boards (F401, F446, F103, G071) are full, so they are paused while the app grows: CI and releases cover H753, F767, F439 and F407, and `--board <name>` still builds the others from source. The aim is to bring every board back, with a minimal variant where the full app no longer fits. Updated by `.\ucxapp --everything --build` ([details](docs/STM32_MEMORY.md)).
 
 <!-- memory -->
 | Target | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
@@ -144,9 +150,11 @@ The full app fits a NUCLEO-F401RE; a lite build runs in 20 KB RAM on an F103. Up
 | `g071` | NUCLEO-G071RB | 127 KB | 128 KB | 100% | 25 KB | 36 KB | 72% |
 <!-- /memory -->
 
-## Secure by default
+## Security
 
-Private keys in `storage/` (`*.key`) and saved Wi-Fi passwords are sealed with AES-256-GCM under a per-install key (wrapped with DPAPI on Windows, in internal flash on the STM32 boards, under a non-extractable WebCrypto key in the browser; `utils.secure` shows the state), the web UI needs a random 128-bit token (served over HTTPS by default with a certificate from a local CA; `web.start http` for plain HTTP), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. Keys and tokens come from the OS random generator or, on the STM32 boards, the hardware TRNG with no weak fallback ([docs/SECURITY.md](docs/SECURITY.md)). The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
+Secrets are encrypted at rest on Windows, Linux, the browser and the two largest STM32 boards (NUCLEO-H753ZI, NUCLEO-F767ZI). The smaller STM32 boards have no mbedTLS and only obfuscate saved Wi-Fi passwords (XOR); see the second paragraph.
+
+Where the secure store is built in, private keys in `storage/` (`*.key`) and saved Wi-Fi passwords are sealed with AES-256-GCM under a per-install key (wrapped with DPAPI on Windows, in internal flash on the STM32 boards, under a non-extractable WebCrypto key in the browser; `utils.secure` shows the state), the web UI needs a random 128-bit token (served over HTTPS by default with a certificate from a local CA; `web.start http` for plain HTTP), passwords never appear in traces or the web page's command history, and `app.sbom` lists every component. Keys and tokens come from the OS random generator or, on the STM32 boards, the hardware TRNG with no weak fallback ([docs/SECURITY.md](docs/SECURITY.md)). The CRA / EN 18031 points the app can show are pinned to [tests/test_cra.py](tests/test_cra.py).
 
 mbedTLS is built into the host targets (Windows, Linux, browser) and the NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr), for `tls.*`, `utils.cert.*`, `utils.encrypt`, the HTTPS web UI and the secure store. The other STM32 boards leave it out: the module does TLS itself and `cert.*` only uploads files to it, and saved Wi-Fi passwords are only obfuscated (XOR). None of the STM32 parts has TrustZone, so turn on read-out protection (RDP level 1) on boards that keep real credentials. A copied `storage/` folder does not carry its keys: export them first (`utils.tls.pem <name> key`).
 

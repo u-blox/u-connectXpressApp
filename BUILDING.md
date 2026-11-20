@@ -69,6 +69,7 @@ cmake --build build/windows --config Release
 .\ucxapp --stm32-freertos --build --flash --log
 
 # Select another board: h753 (default), f767, f439, f407, f401, f446, f103, g071, or all (parallel build, logs in build/all_*.log)
+# f401, f446, f103 and g071 are paused (flash full): "all", CI and releases skip them, --board <name> still builds each
 .\ucxapp --stm32-freertos --board f767 --build --flash --log
 
 # Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help (--stm32 is the old name of --stm32-freertos)

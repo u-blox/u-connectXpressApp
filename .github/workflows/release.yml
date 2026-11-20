@@ -58,12 +58,6 @@ jobs:
           - board: f407_disc
             repo: STM32CubeF4
             ref: master
-          - board: nucleo_f401re
-            repo: STM32CubeF4
-            ref: master
-          - board: nucleo_f446re
-            repo: STM32CubeF4
-            ref: master
     steps:
       - uses: actions/checkout@v5
       - name: Init u-connectClient (not its nested submodules)
@@ -105,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [h753, f767, f439, f407, f401, f446]
+        board: [h753, f767, f439, f407]
     env:
       ZEPHYR_REF: v4.5.0
     steps:

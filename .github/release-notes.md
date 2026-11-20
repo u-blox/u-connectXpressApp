@@ -1,10 +1,10 @@
 ## What's in this release
 
-u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, in the browser, and as FreeRTOS or Zephyr firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY and NUCLEO-F103RB (lite) boards.
+u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, in the browser, and as FreeRTOS or Zephyr firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI and STM32F4DISCOVERY boards. The smaller boards (NUCLEO-F401RE, NUCLEO-F446RE, NUCLEO-F103RB, NUCLEO-G071RB) are paused: their flash is full, so they are not in this release, but `--board <name>` still builds them from source.
 
 - **Matter:** `matter.start` makes the module a Matter node (light, temperature and contact sensor). Scan the QR code in Apple Home, Google Home or Alexa; `matter.status` and the web page show how long the commissioning took, step by step. The plug-in ships with the app (`ucxmatter.dll`, `libucxmatter.so`) and is built into the browser app
 - **In the browser:** the whole app as WebAssembly with the module over Web Serial, installable and usable offline
-- **Secure by default:** private keys and passwords sealed with AES-256-GCM, the web UI over HTTPS with a random token
+- **Security:** on Windows, Linux, the browser and the H753/F767 boards, private keys and passwords sealed with AES-256-GCM, the web UI over HTTPS with a random token
 - **Phone as a test peer:** `xplorer.*` and `perf.phone` drive u-connectXplorer on a phone (echo server, BLE central, throughput)
 - One launcher, `ucxapp.py`, for Windows, Linux (also WSL), STM32 and the browser; `--detect` finds modules, GNSS receivers, IMUs, modems and the PPK2
 - Bridges for GNSS, IMU, CAN, cellular and UART over TCP, TLS, UDP and BLE
@@ -22,9 +22,6 @@ stm32/stm32_h753/             .bin/.hex/.elf; flash with STM32CubeProgrammer at 
 stm32/stm32_f767/
 stm32/stm32_f439/
 stm32/stm32_f407/             STM32F4DISCOVERY
-stm32/stm32_f401/
-stm32/stm32_f446/
-stm32/stm32_f103/             lite build
 zephyr/zephyr_<board>/        the same boards on Zephyr (ucxapp_zephyr.bin/.hex/.elf), flashed the same way
 wasm/                         the app in the browser (WebAssembly + Web Serial, Matter node built in), see below
 ```

@@ -168,6 +168,11 @@ def test_file_hash_sha256(app_exe, tmp_path):
     assert "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" in out.stdout.lower()
 
 
+def test_sniff_view_of_a_missing_file_starts_no_wireshark(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "sniff.view missing.pcap")
+    assert "no such file: missing.pcap" in out.stdout, out.stdout
+
+
 def test_file_hash_md5_and_missing_file(app_exe, tmp_path):
     f = tmp_path / "abc.txt"
     f.write_bytes(b"abc")

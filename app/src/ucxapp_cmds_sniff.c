@@ -283,6 +283,12 @@ static int cmdView(ucxapp_t *app, int argc, char *argv[])
     if (argc != 2) {
         return UCXAPP_ERR_USAGE;
     }
+    FILE *f = fopen(argv[1], "rb");
+    if (f == NULL) {
+        printf("no such file: %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    (void)fclose(f);
     return ucxapp_capture_view(argv[1]) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 

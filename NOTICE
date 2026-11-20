@@ -1,0 +1,9 @@
+u-connectXpressApp
+Copyright (c) u-blox
+
+Third-party components keep their own licenses:
+- Mbed TLS (third-party/mbedtls): Apache-2.0 OR GPL-2.0-or-later
+- u-connectClient (u-connectClient): Apache-2.0, see u-connectClient/LICENSE.txt
+- FTDI D2XX driver (app/third-party/ftdi): FTDI driver licence terms
+- QR Code generator (app/third-party/qrcodegen): MIT, Project Nayuki
+- Bluetooth SIG assigned numbers (app/third-party/bluetooth-sig): see the file headers

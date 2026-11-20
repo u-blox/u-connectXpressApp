@@ -543,7 +543,7 @@ bool ucxapp_ui_on_worker(void)
 
 bool ucxapp_ui_sole_on_worker(void)
 {
-    return gRefs == 1 && ucxapp_thread_is_self(gWorker);
+    return gRefs <= 1 && ucxapp_thread_is_self(gWorker);   /* 0: the page that ran it has already gone */
 }
 
 /* ---- catalog ---------------------------------------------------------------- */

@@ -1269,6 +1269,12 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     bool plain = false, autoCert = true;
     ucxapp_tls_server_t *tls = NULL;
 
+    if (gServer == NULL && ucxapp_ui_sole_on_worker()) {
+        /* left over from a page that is gone: a server started here would run on the worker being shut down */
+        ucxapp_print("ERROR: web.start cannot run from the page it serves; run it in the app\n");
+        return UCXAPP_ERR_FAILED;
+    }
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "http") == 0 || strcmp(argv[i], "https") == 0) {
             plain = argv[i][4] == '\0';

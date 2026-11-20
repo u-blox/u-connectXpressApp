@@ -45,10 +45,12 @@ def _serve(app_exe, tmp_path, requests, wait_s=20, then=()):
                 time.sleep(0.3)        # let the bodies finish
                 break
             time.sleep(0.05)
-        proc.stdin.write("".join(c + "\n" for c in then) + "web.status\nweb.stop\nweb.status\n")
-        proc.stdin.close()
-        out = proc.stdout.read()
-        proc.wait(timeout=20)
+        try:
+            out = proc.communicate("".join(c + "\n" for c in then) + "web.status\nweb.stop\nweb.status\n",
+                                   timeout=30)[0]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.fail(f"the app hung on exit:\n{proc.communicate()[0][-3000:]}\nlast AT: {module.log[-20:]}")
         replies = [bytes(r).decode("latin-1") for r in net.replies]
         assert len(replies) == len(requests), out[-2000:] + "\n" + "\n".join(map(str, module.log[-40:]))
         return out, replies
@@ -329,10 +331,11 @@ def _serve_https(app_exe, tmp_path, clients, start, before=(), wait_s=40):
         while time.monotonic() < end and not all(getattr(c, "closed", True) for c in clients):
             time.sleep(0.05)
         time.sleep(0.3)
-        proc.stdin.write("web.status\nweb.stop\n")
-        proc.stdin.close()
-        out = proc.stdout.read()
-        proc.wait(timeout=20)
+        try:
+            out = proc.communicate("web.status\nweb.stop\n", timeout=30)[0]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.fail(f"the app hung on exit:\n{proc.communicate()[0][-3000:]}\nlast AT: {module.log[-20:]}")
         open_ = [i for i, c in enumerate(clients) if not getattr(c, "closed", True)]
         assert not open_, f"clients {open_} got no answer:\n{out[-2000:]}\n" + "\n".join(map(str, module.log[-30:]))
         return out

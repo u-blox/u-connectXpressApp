@@ -243,37 +243,47 @@ CHIP_ERROR UcxWiFiDriver::StartJoin(const WiFiNetwork & network)
     memcpy(key, network.credentials, network.credentialsLen);
     key[network.credentialsLen] = '\0';
 
-    if (uCxWifiStationStatusBegin(ucx, U_WIFI_STATUS_ID_CONNECTION, &status))
+    // The settings of a connected (or still connecting) station cannot be changed: the app's wifi.connect or
+    // wifi.profile.auto may have left the module on another network, so always take it off and wait for that
+    for (int attempt = 0; attempt < 2; attempt++)
     {
-        connected = status.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT && status.rsp.StatusIdInt.int_val == 2;
-    }
-    (void) uCxEnd(ucx);
-    if (connected)
-    {
-        // The settings of a connected station cannot be changed
         (void) uCxWifiStationDisconnect(ucx);
-        Platform::SleepMs(500);
-    }
-    UcxClientManager::GetInstance().ClearNetworkReady();
-
-    result = uCxWifiStationSetConnectionParams(ucx, 0, ssid);
-    if (result == 0)
-    {
-        result = network.credentialsLen > 0 ? uCxWifiStationSetSecurityWpa(ucx, 0, key, U_WIFI_WPA_THRESHOLD_WPA2)
-                                            : uCxWifiStationSetSecurityOpen(ucx, 0);
-    }
-    memset(key, 0, sizeof(key));
-    if (result == 0)
-    {
-        result = uCxWifiStationConnect(ucx, 0);
-        if (result != 0)
+        for (int i = 0; i < 30; i++)
         {
-            // An earlier attempt can still be pending in the module: stop it and try once more
-            (void) uCxWifiStationDisconnect(ucx);
-            Platform::SleepMs(1000);
+            connected = false;
+            if (uCxWifiStationStatusBegin(ucx, U_WIFI_STATUS_ID_CONNECTION, &status))
+            {
+                connected =
+                    status.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT && status.rsp.StatusIdInt.int_val != 0;
+            }
+            (void) uCxEnd(ucx);
+            if (!connected)
+            {
+                break;
+            }
+            Platform::SleepMs(100);
+        }
+        Platform::SleepMs(attempt == 0 ? 200 : 1000);
+        UcxClientManager::GetInstance().ClearNetworkReady();
+
+        result = uCxWifiStationSetConnectionParams(ucx, 0, ssid);
+        if (result == 0)
+        {
+            result = network.credentialsLen > 0 ? uCxWifiStationSetSecurityWpa(ucx, 0, key, U_WIFI_WPA_THRESHOLD_WPA2)
+                                                : uCxWifiStationSetSecurityOpen(ucx, 0);
+        }
+        if (result == 0)
+        {
             result = uCxWifiStationConnect(ucx, 0);
         }
+        if (result == 0)
+        {
+            break;
+        }
+        ChipLogProgress(NetworkProvisioning, "The module refused the Wi-Fi network (error %d), retrying",
+                        static_cast<int>(result));
     }
+    memset(key, 0, sizeof(key));
     if (result != 0)
     {
         ChipLogError(NetworkProvisioning, "The module refused the Wi-Fi network: error %d", static_cast<int>(result));

@@ -12,6 +12,7 @@ ENTRY = re.compile(r'\{\s*"([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)",\s*"[^\n]*?(UCXAPP_
 
 # Destructive, interactive or needing extra hardware; covered by hand.
 UNTESTED = {
+    "lwm2m.stop": "needs a public LwM2M server (Leshan); offline in tests/test_cov_net_thread.py",
     "thread.status": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
     "thread.start": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",
     "thread.stop": "no Thread firmware yet (NORA-B26, ALMA-W1); offline in tests/test_vucx.py",

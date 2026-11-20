@@ -889,6 +889,10 @@ def test_page_forms_flags_keys_and_rest(server):
         bridge.locator("input[type=checkbox]").check()
         bridge.locator("button").click()
         page.wait_for_function("document.querySelector('#busy').textContent!==''")
+        for _ in range(50):   # #busy is set before the POST reaches the server
+            if any("cmd=gnss.bridge%20ntrip" in u for u in server.posted):
+                break
+            page.wait_for_timeout(100)
         assert any("cmd=gnss.bridge%20ntrip&a0=caster&a1=2101&a2=ble" in u for u in server.posted), server.posted
         # an optional default is a hint, not a value; a key field sends key=value
         page.evaluate("setBusy('')")

@@ -1359,20 +1359,30 @@ static int cmdWifiIp(ucxapp_t *app, int argc, char *argv[])
     int32_t result;
 
     if (argc == 1) {
-        uCxWifiStationGetIpConfig_t cfg;
-        memset(&cfg, 0xFF, sizeof(cfg));   /* a reply without +UWSIP leaves cfg untouched */
-        if (uCxWifiStationGetIpConfig(ucx, 0, &cfg) != 0) {
+        /* read +UWSIP:<wlan>,<mode>[,ip,mask,gw,dns1,dns2] here: the generated getter takes <wlan> for the
+         * response kind, fails on every real reply and leaves the command open until it times out */
+        int32_t wlan = -1, mode = -1, n = -1;
+        char *line;
+
+        uCxAtClientCmdBeginF(ucx->pAtClient, "AT+UWSIP=", "d", 0, U_CX_AT_UTIL_PARAM_LAST);
+        line = uCxAtClientCmdGetRspParamLine(ucx->pAtClient, "+UWSIP:", NULL, NULL);
+        if (line != NULL) {
+            n = strchr(line, ',') != NULL && strchr(strchr(line, ',') + 1, ',') != NULL
+                ? uCxAtUtilParseParamsF(line, "ddiiiii", &wlan, &mode, &ip, &mask, &gw, &dns1, &dns2,
+                                        U_CX_AT_UTIL_PARAM_LAST)
+                : uCxAtUtilParseParamsF(line, "dd", &wlan, &mode, U_CX_AT_UTIL_PARAM_LAST);
+        }
+        if (uCxAtClientCmdEnd(ucx->pAtClient) != 0 || (n != 2 && n != 7)) {
+            ucxapp_print("ERROR: cannot read the IP configuration\n");
             return UCXAPP_ERR_FAILED;
         }
-        if (cfg.type == U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE) {
-            ucxapp_print("mode=dhcp\n");
-        } else {
-            ucxapp_print("mode=%s\n", cfg.rsp.IpModeIpIpIpIpIp.ip_mode == U_WIFI_IP_MODE_STATIC ? "static" : "dhcp");
-            printIpField("ip", &cfg.rsp.IpModeIpIpIpIpIp.ip_addr);
-            printIpField("mask", &cfg.rsp.IpModeIpIpIpIpIp.subnet_mask);
-            printIpField("gateway", &cfg.rsp.IpModeIpIpIpIpIp.gateway);
-            printIpField("dns1", &cfg.rsp.IpModeIpIpIpIpIp.prim_dns);
-            printIpField("dns2", &cfg.rsp.IpModeIpIpIpIpIp.sec_dns);
+        ucxapp_print("mode=%s\n", mode == U_WIFI_IP_MODE_STATIC ? "static" : "dhcp");
+        if (n == 7) {
+            printIpField("ip", &ip);
+            printIpField("mask", &mask);
+            printIpField("gateway", &gw);
+            printIpField("dns1", &dns1);
+            printIpField("dns2", &dns2);
         }
         return UCXAPP_OK;
     }

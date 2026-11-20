@@ -37,6 +37,12 @@ SOURCES_FOUND = ("gnss", "imu", "cell", "ppk")
 # everywhere unless UCX_REGDOMAIN picks another (a domain saved in storage/ucxapp.regdomain wins over both).
 os.environ.setdefault("UCX_REGDOMAIN", "world")
 
+# No test may pop up the real Wireshark (the stress test feeds sniff.view junk that can name a file);
+# tests/capture_fake.py stands in unless UCXAPP_WIRESHARK picks one.
+os.environ.setdefault("UCXAPP_WIRESHARK", subprocess.list2cmdline(
+    [sys.executable, str(Path(__file__).with_name("capture_fake.py")), "wireshark"]) if os.name == "nt"
+    else f"'{sys.executable}' '{Path(__file__).with_name('capture_fake.py')}' wireshark")
+
 
 FAILURE_LOG = ROOT / "build" / "test_failures.log"
 

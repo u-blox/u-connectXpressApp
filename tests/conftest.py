@@ -189,7 +189,7 @@ def _skip_reason(item, exe, hw):
         return "stress test: select with -m stress"
     if item.get_closest_marker("soak") and "soak" not in (item.config.option.markexpr or ""):
         return "soak test: select with -m soak (UCX_SOAK_HOURS, default 1)"
-    needs_app = any(item.get_closest_marker(m) for m in ("app", *HARDWARE_MARKERS))
+    needs_app = any(item.get_closest_marker(m) for m in ("app", "hid_peer", "matter_hub", "xplorer", *HARDWARE_MARKERS))
     if not needs_app:
         return None
     hardware = any(item.get_closest_marker(m) for m in HARDWARE_MARKERS)

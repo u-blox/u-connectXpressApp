@@ -143,8 +143,10 @@ def test_selftest_checks_the_node(app_exe, module, plugin, tmp_path):
     assert out.returncode == 0 and out.stdout.count("matter selftest: ok") == 2, out.stdout
     # the checks that want a refusal (bad tag, changed signature) leave no error line from the SDK
     assert "[matter] [" not in out.stdout, out.stdout
-    for name in ("plug-in", "module", "store", "random", *CRYPTO, "setup codes", "Bluetooth LE"):
+    for name in ("plug-in", "module", "store", "random", *CRYPTO, "setup codes", "Bluetooth LE", "network"):
         assert len(re.findall(rf"^  {re.escape(name)} +ok ", out.stdout, re.M)) == 2, (name, out.stdout)
+    # the virtual module is on Wi-Fi already, so the node's network check reads it up
+    assert len(re.findall(r"^  network +ok +Wi-Fi up, 192\.168\.1\.50, channel 6$", out.stdout, re.M)) == 2, out.stdout
 
 
 def test_node_says_which_product_it_is(app_exe, module, plugin, tmp_path):

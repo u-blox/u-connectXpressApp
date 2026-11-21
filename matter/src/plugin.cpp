@@ -4,11 +4,13 @@
  * This file is the module side: the plug-in entry and the commands. What needs the Matter SDK sits in its own
  * files (node.cpp, onboarding.cpp), see the note in onboarding.h. */
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <thread>
 
 #include "endpoints.h"
 #include "node.h"
@@ -547,6 +549,16 @@ int Selftest()
         Check(failed, ble && window, "Bluetooth LE", text);
     }
 
+    // A commissioned node rejoins its stored Wi-Fi after start: give that join time before judging it
+    for (int i = 0; fabrics > 0 && i < 1500; i++)
+    {
+        NodeNetwork(text, sizeof(text));
+        if (strncmp(text, "Wi-Fi up", 8) == 0)
+        {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     NodeNetwork(text, sizeof(text));
     Check(failed, fabrics == 0 || strncmp(text, "Wi-Fi up", 8) == 0 || strncmp(text, "Thread", 6) == 0, "network",
           text);

@@ -332,10 +332,10 @@ def test_bt_fixed_passkey_bonds_only_with_that_key(app_exe, port_a, port_b, type
         _run(app_exe, port, "bt.unbond all")
     addr = _address(app_exe, port_a)
     fixed = typed != "shown"
-    # the passkey mode takes effect at boot: bt.fixedpasskey stores it (AT&W, which also stores the Wi-Fi state, so
-    # disconnect first) and gatt.server.* reboots; the unsaved security settings come after that reboot
+    # the passkey mode takes effect at boot: store it with at AT&W (which also stores the Wi-Fi state, so disconnect
+    # first) and gatt.server.* reboots; the unsaved security settings come after that reboot
     server, srv = _shell(app_exe, port_a, "wifi.disconnect", f"bt.fixedpasskey {'123456' if fixed else 'random'}",
-                         "gatt.server.bas", "bt.fixedpasskey", "bt.iocap display", "bt.security auth")
+                         "at AT&W", "gatt.server.bas", "bt.fixedpasskey", "bt.iocap display", "bt.security auth")
     client = cli = None
     try:
         assert srv.wait(r"passkey: fixed \(the module never shows it\)" if fixed else r"passkey: random for each",
@@ -360,6 +360,6 @@ def test_bt_fixed_passkey_bonds_only_with_that_key(app_exe, port_a, port_b, type
         _stop(server)
         if client:
             _stop(client)
-        _run(app_exe, port_a, "wifi.disconnect", "bt.fixedpasskey random", "bt.unbond all")
+        _run(app_exe, port_a, "wifi.disconnect", "bt.fixedpasskey random", "at AT&W", "bt.unbond all")
         _run(app_exe, port_b, "bt.unbond all")
         _reboot(app_exe, port_a, port_b)

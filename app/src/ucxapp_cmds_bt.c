@@ -1141,20 +1141,13 @@ static int cmdBtFixedPasskey(ucxapp_t *app, int argc, char *argv[])
                      ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
-    /* 3.6.0-035 reads the passkey mode only at boot, so it must be stored (AT&W) and the module rebooted */
-    r = uCxSystemStoreConfiguration(app->ucx);
-    if (r != 0) {
-        ucxapp_print("ERROR: AT&W failed (%d%s), the passkey setting is not stored\n", (int)r, ucxapp_errname(r));
-        return UCXAPP_ERR_FAILED;
-    }
     if (random) {
         ucxapp_print("passkey: random for each pairing\n");
     } else {
         ucxapp_print("passkey: fixed %06d; the peer types it (pair with bt.iocap display and bt.security auth)\n",
                      (int)key);
     }
-    ucxapp_print("stored with AT&W, takes effect after dev.reboot; AT&W also stored the current settings, including "
-                 "a Wi-Fi connection the module then rejoins at boot (wifi.disconnect first to avoid that)\n");
+    ucxapp_print("not stored: the module reads it at boot, so keep it with at AT&W and dev.reboot\n");
     return UCXAPP_OK;
 }
 

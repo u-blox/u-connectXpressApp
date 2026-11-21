@@ -162,7 +162,7 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.autoconfirm` | `<on\|off>` | Accept numeric-comparison pairing automatically (default on) |
 | `bt.confirm` | `<yes\|no>` | Answer a waiting pairing request (autoconfirm off) |
 | `bt.passkey` | `<digits\|deny>` | Answer a waiting passkey request |
-| `bt.fixedpasskey` | `[000000-999999\|random]` | Show, or set, a fixed passkey (`AT+UBTFPK`, firmware 3.6.0 or later): with `bt.iocap display` the peer must enter this key and the module never shows it; `random` goes back to a new key per pairing. It is stored with `AT&W` and takes effect after `dev.reboot`; `AT&W` also stores a connected Wi-Fi station, so run `wifi.disconnect` first |
+| `bt.fixedpasskey` | `[000000-999999\|random]` | Show, or set, a fixed passkey (`AT+UBTFPK`, firmware 3.6.0 or later): with `bt.iocap display` the peer must enter this key and the module never shows it; `random` goes back to a new key per pairing. It is not stored by itself: keep it with `at AT&W` and `dev.reboot` (the module reads it at boot; `AT&W` also stores a connected Wi-Fi station, so run `wifi.disconnect` first) |
 | `bt.bonds` |  | List bonded devices |
 | `bt.bond` | `<conn\|addr> [seconds=15]` | Bond (pair and store keys) with a connected device, by connection number from `bt.list` or by address, and wait up to the given seconds for the result. When the peer shows a code, enter it with `bt.passkey`. Ranging with `bt.cs.range` and encrypted GATT need a bond |
 | `bt.unbond` | `<addr\|all>` | Remove one or all bonds |

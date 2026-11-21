@@ -1427,9 +1427,9 @@ def test_bt_fixed_passkey_sets_reads_and_clears_it_with_raw_at(app_exe, nora):
     assert "passkey: fixed 004711; the peer types it" in out.stdout, out.stdout
     assert "passkey: fixed (the module never shows it)" in out.stdout, out.stdout
     assert "passkey: random for each pairing" in out.stdout, out.stdout
-    assert "takes effect after dev.reboot" in out.stdout, out.stdout
+    assert "not stored: the module reads it at boot" in out.stdout, out.stdout
     assert "AT+UBTFPK=1,4711" in nora.log and "AT+UBTFPK=0" in nora.log, nora.log
-    assert nora.log.count("AT&W") == 2, nora.log
+    assert "AT&W" not in nora.log, nora.log
 
 
 @pytest.mark.parametrize("args", ["bt.fixedpasskey 1000000", "bt.fixedpasskey -1", "bt.fixedpasskey pin",

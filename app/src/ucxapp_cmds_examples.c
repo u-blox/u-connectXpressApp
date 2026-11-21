@@ -276,8 +276,8 @@ static const example_t kExamples[] = {
       "bt.defaults secure\nbt.pairing on\nbt.autoconfirm off\nbt.connect 1\n# both sides show the same code\n"
       "bt.confirm yes\nbt.bonds\nbt.autoconfirm on" },
     { "bt", "Fixed passkey for a device without a display (firmware 3.6.0+)",
-      "wifi.disconnect\nbt.fixedpasskey 123456\ndev.reboot\nbt.iocap display\nbt.security auth\n"
-      "# the phone enters 123456 when it bonds\nbt.fixedpasskey random" },
+      "wifi.disconnect\nbt.fixedpasskey 123456\nat AT&W\ndev.reboot\nbt.iocap display\nbt.security auth\n"
+      "# the phone enters 123456 when it bonds\nbt.fixedpasskey random\nat AT&W" },
 
     { "gatt", "Explore a remote device",
       "bt.connect 1\ngatt.services\ngatt.read 0x0003\ngatt.subscribe 0x0010 notify\ngatt.listen 30" },

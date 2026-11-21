@@ -80,6 +80,32 @@ void SplitTxt(const char * record, char * key, size_t keySize, const char *& val
     value       = eq != nullptr ? eq + 1 : "";
 }
 
+// A node that stopped without removing its services leaves them on the module; their ids are lost with that
+// process and they use up the module's service slots (error -17, limit reached)
+void RemoveStaleServices(uCxHandle_t * ucx)
+{
+    constexpr size_t kMaxStale = 8;
+    int32_t stale[kMaxStale];
+    size_t count = 0;
+    uCxMdnsServiceList_t service;
+
+    uCxMdnsServiceListBegin(ucx);
+    while (count < kMaxStale && uCxMdnsServiceListGetNext(ucx, &service))
+    {
+        if (service.service_type != nullptr && strncmp(service.service_type, "_matter", 7) == 0)
+        {
+            stale[count++] = service.service_id;
+        }
+    }
+    (void) uCxEnd(ucx);
+
+    LongTimeout timeout;
+    for (size_t i = 0; i < count; i++)
+    {
+        (void) uCxMdnsServiceRemove(ucx, stale[i]);
+    }
+}
+
 } // namespace
 
 bool UcxClientManager::MdnsIsEnabled() const
@@ -102,6 +128,12 @@ CHIP_ERROR UcxClientManager::MdnsStart(const char * hostname)
 
     VerifyOrReturnError(ucx != nullptr, CHIP_ERROR_INCORRECT_STATE);
     NoteFound(ucx);
+    static bool sStaleChecked = false;
+    if (!sStaleChecked)
+    {
+        sStaleChecked = true;
+        RemoveStaleServices(ucx);
+    }
 
     // The SDK passes the canonical name (12 hex digits of the MAC), the target of its SRV records
     if (hostname != nullptr && hostname[0] != '\0')

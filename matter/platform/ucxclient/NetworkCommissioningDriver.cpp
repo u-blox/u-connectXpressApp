@@ -243,9 +243,10 @@ CHIP_ERROR UcxWiFiDriver::StartJoin(const WiFiNetwork & network)
     memcpy(key, network.credentials, network.credentialsLen);
     key[network.credentialsLen] = '\0';
 
-    // The settings of a connected (or still connecting) station cannot be changed: the app's wifi.connect or
-    // wifi.profile.auto may have left the module on another network, so always take it off and wait for that
-    for (int attempt = 0; attempt < 2; attempt++)
+    // The settings of a connected (or still connecting) station cannot be changed (-15 while it joins): the app's
+    // wifi.connect or wifi.profile.auto may have left the module on another network, so take it off and retry for up
+    // to about 10 s with the phone's credentials
+    for (int attempt = 0; attempt < 10; attempt++)
     {
         (void) uCxWifiStationDisconnect(ucx);
         for (int i = 0; i < 30; i++)
@@ -264,6 +265,7 @@ CHIP_ERROR UcxWiFiDriver::StartJoin(const WiFiNetwork & network)
             Platform::SleepMs(100);
         }
         Platform::SleepMs(attempt == 0 ? 200 : 1000);
+
         UcxClientManager::GetInstance().ClearNetworkReady();
 
         result = uCxWifiStationSetConnectionParams(ucx, 0, ssid);

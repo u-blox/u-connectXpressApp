@@ -481,7 +481,9 @@ static bool fwFetch(ucxapp_t *app, const char *path, const char *name, const cha
     }
     int rc = ucxapp_http_fetch(app, url, storeSink, w, true, true);
     if (!ucxapp_store_end(w, rc == UCXAPP_OK) || rc != UCXAPP_OK) {
-        ucxapp_print("ERROR: download of %s failed\n", name);
+        ucxapp_print("ERROR: download of %s failed\n"
+                     "download it on a computer from %s and put it in the app store as %s: fw.update and "
+                     "fw.flash take it from there\n", name, url, name);
         return false;
     }
     uint8_t *data = ucxapp_store_load(file, &size);

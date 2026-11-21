@@ -105,6 +105,30 @@ def test_station_joins_the_access_point_of_the_other_module(app_exe, port_a, por
             _run(app_exe, port, "dev.reboot")
 
 
+@pytest.mark.two_devices
+def test_station_joins_a_hidden_access_point_by_name(app_exe, port_a, port_b):
+    """A hides its SSID (AT+UWAPCP <hidden_ssid>, firmware 3.6.0): B's scan misses it, joining by name works."""
+    ssid, password = "ucxtest-hidden", "ap-pass-123"
+    try:
+        for port in (port_a, port_b):
+            assert _run(app_exe, port, "dev.reboot").returncode == 0
+        time.sleep(1)
+        out = _run(app_exe, port_a, f"wifi.ap.enable {ssid} {password} 6 hidden", "wifi.ap.status")
+        assert out.returncode == 0, out.stdout
+        assert f"ssid={ssid} channel=6 hidden" in out.stdout, out.stdout
+        assert "H:true" in out.stdout, out.stdout
+        time.sleep(3)
+        scan = _run(app_exe, port_b, "wifi.scan", timeout=60)
+        assert scan.returncode == 0 and ssid not in scan.stdout, scan.stdout
+        out = _run(app_exe, port_b, f"wifi.connect {ssid} {password}", "wifi.status", timeout=60)
+        assert out.returncode == 0, out.stdout
+        assert "wifi: connected" in out.stdout, out.stdout
+    finally:
+        for port in (port_a, port_b):
+            _run(app_exe, port, "dev.reboot")
+        _run(app_exe, port_b, f"wifi.profile.remove {ssid}")
+
+
 @pytest.mark.hardware
 def test_network_commands_over_wifi(app_exe, port_a):
     out = _run(app_exe, port_a, _wifi_connect_command(), "wifi.status", "net.dns example.com",

@@ -370,6 +370,7 @@ def test_detect_force_probes_unnamed_ports(monkeypatch):
                                                             ("COM116", "USB Serial Port", "EVK (FTDI)")])
     monkeypatch.setattr(ucxapp, "app_output", fake_output)
     monkeypatch.setattr(ucxapp, "wifi_summary", lambda: [])
+    monkeypatch.setattr(ucxapp, "find_matter_hub", lambda: None)
     env = ucxapp.detect("ucxapp.exe", force=True)
     assert env["UCX_PORT_A"] == "COM116"
     assert ("COM3", "--exec", "dev.info") not in asked
@@ -383,6 +384,21 @@ def test_detect_drops_a_module_that_does_not_answer(monkeypatch, capsys):
     monkeypatch.setattr(ucxapp, "app_output", lambda _exe, *args, timeout=30:
                         "Model: NORA-W36\n" if args[:1] == ("COM13",) else "")
     monkeypatch.setattr(ucxapp, "wifi_summary", lambda: [])
+    monkeypatch.setattr(ucxapp, "find_matter_hub", lambda: None)
     env = ucxapp.detect("ucxapp.exe")
     assert env["UCX_PORT_A"] == "COM13" and "UCX_PORT_B" not in env
     assert "COM155         (no answer to dev.info" in capsys.readouterr().out
+
+
+def test_detect_finds_the_matter_hub_by_its_console_prompt(monkeypatch, capsys):
+    """The i.MX 93 hub is known by its login prompt or root shell, and --detect hands its port to the tests."""
+    assert ucxapp.hub_name("\r\nu-blox-hub-e83d login: ") == "u-blox-hub-e83d"
+    assert ucxapp.hub_name("root@u-blox-hub-e83d:~# ") == "u-blox-hub-e83d"
+    assert ucxapp.hub_name("imx93evk login: ") is None and ucxapp.hub_name("") is None
+    monkeypatch.setattr(ucxapp, "list_ports", lambda _exe: [])
+    monkeypatch.setattr(ucxapp, "module_ports", lambda _text: [])
+    monkeypatch.setattr(ucxapp, "app_output", lambda _exe, *args, timeout=30: "")
+    monkeypatch.setattr(ucxapp, "wifi_summary", lambda: [])
+    monkeypatch.setattr(ucxapp, "find_matter_hub", lambda: ("COM60", "u-blox-hub-e83d"))
+    assert ucxapp.detect("ucxapp.exe")["UCX_MATTER_HUB"] == "COM60"
+    assert "  COM60 u-blox-hub-e83d" in capsys.readouterr().out

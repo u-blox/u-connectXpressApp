@@ -290,6 +290,20 @@ bool ucxapp_wifi_apply_regdomain(uCxHandle_t *ucx)
     return true;
 }
 
+/* Stops the station's link or a join still in progress. After a boot the module joins its stored network, and
+ * until that attempt settles even the disconnect fails (-15 in progress) and AP or new settings get -63/-15. */
+static void stationStop(uCxHandle_t *ucx)
+{
+    ucxapp_events_clear(URC_FLAG_WIFI_LINK_DOWN);
+    if (uCxWifiStationDisconnect(ucx) == 0) {
+        ucxapp_events_wait(URC_FLAG_WIFI_LINK_DOWN, 3);
+    } else {
+        U_CX_PORT_SLEEP_MS(500);
+    }
+}
+
+#define WIFI_SETTLE_MS 10000u   /* how long to keep stopping a busy station before giving up */
+
 static bool prepareConnect(uCxHandle_t *ucx, const char *ssid)
 {
     if (!ucxapp_wifi_apply_regdomain(ucx)) {
@@ -297,11 +311,16 @@ static bool prepareConnect(uCxHandle_t *ucx, const char *ssid)
     }
     if (isConnected(ucx)) {
         ucxapp_print("Already connected, disconnecting first...\n");
-        uCxWifiStationDisconnect(ucx);
-        U_CX_PORT_SLEEP_MS(1000);
+        stationStop(ucx);
     }
-    if (uCxWifiStationSetConnectionParams(ucx, 0, ssid) != 0) {
-        ucxapp_print("ERROR: failed to set connection parameters\n");
+    uint32_t start = ucxapp_platform_tick_ms();
+    int32_t r;
+    while ((r = uCxWifiStationSetConnectionParams(ucx, 0, ssid)) != 0 &&
+           ucxapp_platform_tick_ms() - start < WIFI_SETTLE_MS) {
+        stationStop(ucx);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: failed to set connection parameters (%d%s)\n", (int)r, ucxapp_errname(r));
         return false;
     }
     return true;
@@ -1251,8 +1270,10 @@ static int cmdWifiApEnable(ucxapp_t *app, int argc, char *argv[])
     const char *ssid = argc > 1 ? argv[1] : "u-connectXpressApp AP";
     const char *password = argc > 2 ? argv[2] : "12345678";
     int32_t channel = 6;
+    bool hidden = argc == 5 && strcmp(argv[4], "hidden") == 0;
 
-    if (argc > 4 || (argc > 3 && (!ucxapp_parse_int(argv[3], &channel) || channel < 1 || channel > 13))) {
+    if (argc > 5 || (argc == 5 && !hidden) ||
+        (argc > 3 && (!ucxapp_parse_int(argv[3], &channel) || channel < 1 || channel > 13))) {
         return UCXAPP_ERR_USAGE;
     }
     if (strlen(password) < 8) {
@@ -1267,12 +1288,28 @@ static int cmdWifiApEnable(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: failed to configure the access point\n");
         return UCXAPP_ERR_FAILED;
     }
-    if (uCxWifiApActivate(ucx) != 0) {
-        ucxapp_print("ERROR: failed to activate AP (disconnect the Wi-Fi station first)\n");
+    /* u-connectClient has no <hidden_ssid> parameter yet (AT+UWAPCP, firmware 3.6.0 and later) */
+    if (hidden && uCxAtClientExecSimpleCmdF(ucx->pAtClient, "AT+UWAPCP=", "sdd", ssid, channel, 1,
+                                            U_CX_AT_UTIL_PARAM_LAST) != 0) {
+        ucxapp_print("ERROR: the module cannot hide the SSID (needs firmware 3.6.0 or later)\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("Access point enabled: ssid='%s' channel=%d WPA2\n", ssid, (int)channel);
-    ucxapp_qr_print_wifi(ssid, password, "WPA", false);
+    int32_t r = uCxWifiApActivate(ucx);
+    if (r != 0) {
+        ucxapp_print("the Wi-Fi station is busy, disconnecting it to start the access point\n");
+        uint32_t start = ucxapp_platform_tick_ms();
+        while (r != 0 && ucxapp_platform_tick_ms() - start < WIFI_SETTLE_MS) {
+            stationStop(ucx);
+            r = uCxWifiApActivate(ucx);
+        }
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: failed to activate AP (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("Access point enabled: ssid='%s' channel=%d WPA2%s\n", ssid, (int)channel,
+                 hidden ? ", hidden (not in beacons: stations must know the SSID)" : "");
+    ucxapp_qr_print_wifi(ssid, password, "WPA", hidden);
     return UCXAPP_OK;
 }
 
@@ -1289,6 +1326,25 @@ static int cmdWifiApDisable(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* The <hidden_ssid> field of AT+UWAPCP? (firmware 3.6.0 and later): "ssid",channel,hidden */
+static bool apHidden(uCxHandle_t *ucx)
+{
+    uCxAtClient_t *client = ucx->pAtClient;
+    char *line;
+    bool hidden = false;
+
+    uCxAtClientCmdBeginF(client, "AT+UWAPCP?", "", U_CX_AT_UTIL_PARAM_LAST);
+    while ((line = uCxAtClientCmdGetRspParamLine(client, "+UWAPCP:", NULL, NULL)) != NULL) {
+        const char *p = strrchr(line, '"');
+        const char *last = strrchr(p != NULL ? p : line, ',');
+        const char *first = strchr(p != NULL ? p : line, ',');
+
+        hidden = last != NULL && last != first && atoi(last + 1) == 1;
+    }
+    uCxAtClientCmdEnd(client);
+    return hidden;
+}
+
 static int cmdWifiApStatus(ucxapp_t *app, int argc, char *argv[])
 {
     uCxHandle_t *ucx = app->ucx;
@@ -1301,9 +1357,12 @@ static int cmdWifiApStatus(ucxapp_t *app, int argc, char *argv[])
     (void)argv;
 
     if (uCxWifiApGetConnectionParamsBegin(ucx, &params)) {
-        ucxapp_print("ssid=%s channel=%d\n", params.ssid, (int)params.channel);
+        ucxapp_print("ssid=%s channel=%d", params.ssid, (int)params.channel);
+        uCxEnd(ucx);
+        ucxapp_print("%s\n", apHidden(ucx) ? " hidden" : "");
+    } else {
+        uCxEnd(ucx);
     }
-    uCxEnd(ucx);
     if (uCxWifiApGetSecurity(ucx, &sec) == 0) {
         if (sec.type == U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_VERSION) {
             ucxapp_print("security: wpa_version=%d mode=%d\n", (int)sec.rsp.SecurityModeWpaVersion.wpa_version,
@@ -1556,7 +1615,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.auto", "",                   "Connect to the last used profile, else to the strongest known network in a scan", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
     { "wifi.regdomain",  "[0-10|world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br|<place>]", "Show or set and save the Wi-Fi regulatory domain (where you are); 'world' with a warning until set (also UCX_REGDOMAIN)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
-    { "wifi.ap.enable",  "[ssid] [password=12345678] [channel=6]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
+    { "wifi.ap.enable",  "[ssid] [password=12345678] [channel=6] [hidden]", "Start a WPA2 access point and show its join QR code; hidden leaves the SSID out of beacons (firmware 3.6.0+)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },
     { "wifi.ap.disable", "",                    "Stop the access point",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApDisable },
     { "wifi.ap.status",  "",                    "AP parameters, addresses and stations", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApStatus },
 };

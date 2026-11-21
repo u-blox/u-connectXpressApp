@@ -108,7 +108,7 @@ def test_matter_selftest_and_reset_on_the_module(app_exe, port_a, plugin, tmp_pa
     assert out.returncode == 0 and "matter: module rebooted" in out.stdout, out.stdout
     before, after = out.stdout.split("matter: reset, ")
     assert "commission the node again\n" in after and "commissioning window: open" in after, out.stdout
-    assert setup_codes(before) == setup_codes(after.split("matter selftest")[1]), out.stdout
+    assert setup_codes(before) == setup_codes(after.split("matter selftest: ok")[-1]), out.stdout
 
 
 def test_matter_at_bursts_have_no_gaps_on_the_uart(app_exe, port_a, plugin, tmp_path, monkeypatch):
@@ -167,9 +167,67 @@ def test_matter_pairing_request_over_wifi_is_answered(app_exe, port_a, plugin, t
     finally:
         _stop(node)
     card = _finish(node, [], lines)
-    assert "NODE  NORA-W36 over Wi-Fi, 3 endpoint(s)\nSTATE not commissioned\n" in card, card
+    assert "NODE  NORA-W36 over Wi-Fi, 4 endpoint(s)\nSTATE not commissioned\n" in card, card
     network = rf"NET   Wi-Fi up, {re.escape(ip[1])}, channel \d+\nCODE  \d{{4}}-\d{{3}}-\d{{4}}\nQR    MT:"
     assert re.search(network, card), card
     assert "EP    1 light = off  [on | off | 0..100 (percent)]\n" in card and "LOG   info\n" in card, card
     out = _run(app_exe, port_a, "sock.list")
     assert "0 socket(s)" in out.stdout, out.stdout   # the node closed its socket on the module
+
+def _read_until(lines, seen, pattern, timeout):
+    """Adds the node's lines to seen until pattern shows up or the time is over; returns seen."""
+    deadline = time.time() + timeout
+    while not re.search(pattern, seen) and time.time() < deadline:
+        try:
+            seen += lines.get(timeout=1)
+        except queue.Empty:
+            pass
+    return seen
+
+
+@pytest.mark.matter_hub
+@pytest.mark.wifi
+@pytest.mark.parametrize("before", ["hub-network", "other-network", "profile-auto-while-commissioning"])
+def test_matter_hub_commissions_the_node_whatever_wifi_it_is_on(app_exe, port_a, plugin, tmp_path, matter_hub,
+                                                                before):
+    """The i.MX 93 hub's chip-tool commissions the node over Bluetooth LE onto the hub's access point while the
+    module is already on that network, on another one, or while wifi.profile.auto runs beside the commissioning:
+    the node takes the module off whatever it is on (the module refused the new network with -15 before). Then
+    the hub switches the light over the network and reads it back."""
+    ssid, passphrase = matter_hub.ap()
+    matter_hub.forget()
+    _reboot(app_exe, port_a)
+    setup = {"hub-network": [f"wifi.connect {ssid} {passphrase}"],
+             "other-network": [_wifi_connect_command(tmp_path), "wifi.status"],
+             "profile-auto-while-commissioning": ["wifi.disconnect"]}[before]
+    racing = _wifi_connect_command(tmp_path) if before == "profile-auto-while-commissioning" else None
+    node, seen, lines = _start_node(app_exe, port_a, plugin, tmp_path, *setup)
+    node_id = 4711
+    try:
+        if before == "other-network":
+            on = re.search(r"^ssid=(.*)$", seen, re.M)
+            assert on, seen
+            if on[1].strip() == ssid:
+                pytest.skip(f"the saved Wi-Fi is the hub's own network {ssid}: set UCX_WIFI_SSID to another one")
+        manual = re.search(r"manual code: ([\d-]{13})\n", seen)
+        assert manual, seen
+        matter_hub.pair_start(node_id, manual[1], ssid, passphrase)
+        if racing:
+            node.stdin.write(racing + "\n")   # the app joins its saved network while the hub commissions the node
+            node.stdin.flush()
+        paired, tail = matter_hub.pair_wait()
+        seen = _read_until(lines, seen, r"\[matter\] commissioned: ok|commissioning failed", 30)
+        assert paired, f"{tail}\n--- node ---\n{seen[-3000:]}"
+        assert "[matter] commissioning [######] 6/6 complete" in seen and "error -15" not in seen, seen[-3000:]
+        assert re.search(r"commissioned: ok, [\d.]+ s, .*Wi-Fi up, \d+\.\d+\.\d+\.\d+", seen), seen[-3000:]
+        for command, state in (("on", True), ("off", False), ("toggle", True)):
+            ok, out = matter_hub.onoff(node_id, command)
+            assert ok, (command, out, seen[-2000:])
+            assert matter_hub.read_onoff(node_id) is state, (command, matter_hub.log[-2000:])
+        node.stdin.write("wifi.status\nmatter.card\n")
+        node.stdin.flush()
+    finally:
+        _stop(node)
+    out = _finish(node, [seen], lines)
+    assert f"ssid={ssid}\n" in out.split("[matter] commissioned: ok")[-1], out[-3000:]
+    assert "EP    1 light = on" in out and "STATE commissioned, 1 fabric(s)" in out, out[-3000:]

@@ -823,6 +823,7 @@ static volatile bool gConfirmPending;
 static volatile bool gPasskeyPending;
 static uBtLeAddress_t gPendingAddr;
 static bool gDefaultsApplied;
+static bool gUserSecurity;      /* bt.iocap / bt.security chosen by hand: no automatic profile overrides them */
 static volatile int32_t gBondResult = -1;   /* last bond status from the module, -1 while waiting */
 
 void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status)
@@ -853,7 +854,7 @@ static void centralSecurity(ucxapp_t *app)
 {
     static bool done;
 
-    if (done) {
+    if (done || gUserSecurity) {
         return;
     }
     done = true;
@@ -972,6 +973,7 @@ static int cmdBtIoCap(ucxapp_t *app, int argc, char *argv[])
                 return UCXAPP_ERR_FAILED;
             }
             ucxapp_print("I/O capabilities: %s\n", kCaps[i].name);
+            gDefaultsApplied = gUserSecurity = true;    /* bt.bond, bt.connect and servers keep it */
             return UCXAPP_OK;
         }
     }
@@ -997,6 +999,7 @@ static int cmdBtSecurity(ucxapp_t *app, int argc, char *argv[])
                 return UCXAPP_ERR_FAILED;
             }
             ucxapp_print("security mode: %s\n", kModes[i].name);
+            gDefaultsApplied = gUserSecurity = true;
             return UCXAPP_OK;
         }
     }
@@ -1027,7 +1030,7 @@ static int cmdBtDefaults(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("secure connections with legacy fallback: numeric comparison, authenticated bonding, pairing enabled\n");
         return UCXAPP_OK;
     }
-    gDefaultsApplied = false;
+    gDefaultsApplied = gUserSecurity = false;
     ucxapp_bt_security_defaults(app);
     ucxapp_print("Just Works: no I/O, unauthenticated bonding, pairing enabled\n");
     return UCXAPP_OK;
@@ -1062,12 +1065,29 @@ static int cmdBtConfirm(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* A 6-digit pairing code: decimal even with leading zeros (ucxapp_parse_int would read 012345 as octal). */
+static bool parsePasskey(const char *s, int32_t *key)
+{
+    size_t n = strlen(s);
+
+    if (n == 0 || n > 6) {
+        return false;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (!isdigit((unsigned char)s[i])) {
+            return false;
+        }
+    }
+    *key = (int32_t)atol(s);
+    return true;
+}
+
 static int cmdBtPasskey(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t key = 0;
     bool deny = argc == 2 && strcmp(argv[1], "deny") == 0;
 
-    if (argc != 2 || (!deny && (!ucxapp_parse_int(argv[1], &key) || key < 0 || key > 999999))) {
+    if (argc != 2 || (!deny && !parsePasskey(argv[1], &key))) {
         return UCXAPP_ERR_USAGE;
     }
     if (!gPasskeyPending) {
@@ -1081,6 +1101,60 @@ static int cmdBtPasskey(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: passkey reply failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
+    return UCXAPP_OK;
+}
+
+/* AT+UBTFPK (firmware 3.6.0 and later, no u-connectClient API yet): a fixed passkey, e.g. printed on a label */
+static int cmdBtFixedPasskey(ucxapp_t *app, int argc, char *argv[])
+{
+    uCxAtClient_t *client = app->ucx->pAtClient;
+    int32_t key = 0;
+    int32_t r;
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "random") != 0 && !parsePasskey(argv[1], &key))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 1) {
+        char *line;
+        int mode = -1;
+
+        uCxAtClientCmdBeginF(client, "AT+UBTFPK?", "", U_CX_AT_UTIL_PARAM_LAST);
+        while ((line = uCxAtClientCmdGetRspParamLine(client, "+UBTFPK:", NULL, NULL)) != NULL) {
+            mode = atoi(line);
+        }
+        r = uCxAtClientCmdEnd(client);
+        if (r != 0 || mode < 0) {
+            ucxapp_print("ERROR: the module has no fixed passkey (needs firmware 3.6.0 or later)\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("passkey: %s\n", mode == 1 ? "fixed (the module never shows it)" : "random for each pairing");
+        return UCXAPP_OK;
+    }
+    bool random = argc == 2 && strcmp(argv[1], "random") == 0;
+    if (random) {
+        r = uCxAtClientExecSimpleCmdF(client, "AT+UBTFPK=", "d", 0, U_CX_AT_UTIL_PARAM_LAST);
+    } else {
+        r = uCxAtClientExecSimpleCmdF(client, "AT+UBTFPK=", "dd", 1, key, U_CX_AT_UTIL_PARAM_LAST);
+    }
+    if (r != 0) {
+        ucxapp_print("ERROR: the module has no fixed passkey (%d%s; needs firmware 3.6.0 or later)\n", (int)r,
+                     ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    /* 3.6.0-035 reads the passkey mode only at boot, so it must be stored (AT&W) and the module rebooted */
+    r = uCxSystemStoreConfiguration(app->ucx);
+    if (r != 0) {
+        ucxapp_print("ERROR: AT&W failed (%d%s), the passkey setting is not stored\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    if (random) {
+        ucxapp_print("passkey: random for each pairing\n");
+    } else {
+        ucxapp_print("passkey: fixed %06d; the peer types it (pair with bt.iocap display and bt.security auth)\n",
+                     (int)key);
+    }
+    ucxapp_print("stored with AT&W, takes effect after dev.reboot; AT&W also stored the current settings, including "
+                 "a Wi-Fi connection the module then rejoins at boot (wifi.disconnect first to avoid that)\n");
     return UCXAPP_OK;
 }
 
@@ -1839,6 +1913,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.autoconfirm", "<on|off>",           "Accept numeric-comparison pairing automatically (default on)", 0, cmdBtAutoConfirm },
     { "bt.confirm",    "<yes|no>",            "Answer a waiting pairing request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtConfirm },
     { "bt.passkey",    "<digits|deny>",       "Answer a waiting passkey request",               UCXAPP_CMD_NEEDS_DEVICE, cmdBtPasskey },
+    { "bt.fixedpasskey", "[000000-999999|random]", "Show or set a fixed pairing passkey (e.g. on a label) or go back to random ones (firmware 3.6.0+)", UCXAPP_CMD_NEEDS_DEVICE, cmdBtFixedPasskey },
     { "bt.bonds",      "",                    "List bonded devices",                            UCXAPP_CMD_NEEDS_DEVICE, cmdBtBonds },
     { "bt.bond",       "<conn|addr> [seconds=15]", "Bond (pair and store keys) with a connected device and wait for the result; answer a code with bt.passkey", UCXAPP_CMD_NEEDS_DEVICE, cmdBtBond },
     { "bt.unbond",     "<addr|all>",          "Remove one or all bonds",                        UCXAPP_CMD_NEEDS_DEVICE, cmdBtUnbond },

@@ -888,12 +888,16 @@ def test_page_forms_flags_keys_and_rest(server):
         bridge.locator("input").nth(0).fill("caster")
         bridge.locator("input[type=checkbox]").check()
         bridge.locator("button").click()
-        page.wait_for_function("document.querySelector('#busy').textContent!==''")
-        for _ in range(50):   # #busy is set before the POST reaches the server
-            if any("cmd=gnss.bridge%20ntrip" in u for u in server.posted):
-                break
-            page.wait_for_timeout(100)
-        assert any("cmd=gnss.bridge%20ntrip&a0=caster&a1=2101&a2=ble" in u for u in server.posted), server.posted
+        def posted(want):
+            """#busy is set before the POST reaches the server: waits up to 5 s for a request ending in want."""
+            page.wait_for_function("document.querySelector('#busy').textContent!==''")
+            for _ in range(50):
+                if any(u.endswith(want) for u in server.posted):
+                    return True
+                page.wait_for_timeout(100)
+            return False
+
+        assert posted("cmd=gnss.bridge%20ntrip&a0=caster&a1=2101&a2=ble"), server.posted
         # an optional default is a hint, not a value; a key field sends key=value
         page.evaluate("setBusy('')")
         conn = page.locator(".c").nth(1)
@@ -901,17 +905,14 @@ def test_page_forms_flags_keys_and_rest(server):
         assert "default 5" in conn.locator("input").nth(1).get_attribute("placeholder")
         conn.locator("input").nth(2).fill("me")
         conn.locator("button").click()
-        page.wait_for_function("document.querySelector('#busy').textContent!==''")
-        assert any(u.endswith("cmd=mqtt.connect&a0=id%3Dme") for u in server.posted), server.posted
+        assert posted("cmd=mqtt.connect&a0=id%3Dme"), server.posted
         # the rest of the line goes as typed, the other values quoted
         page.evaluate("setBusy('')")
         pub = page.locator(".c").nth(2)
         pub.locator("input").nth(0).fill("a b")
         pub.locator("input").nth(1).fill("hello  world")
         pub.locator("button").click()
-        page.wait_for_function("document.querySelector('#busy').textContent!==''")
-        want = "cmd=mqtt.publish%20%22a%20b%22%20hello%20%20world"
-        assert any(u.endswith(want) for u in server.posted), server.posted
+        assert posted("cmd=mqtt.publish%20%22a%20b%22%20hello%20%20world"), server.posted
         browser.close()
     assert not js_errors, js_errors
 

@@ -282,6 +282,32 @@ def test_http_download_get_post_and_portal(app_exe, tmp_path):
     assert any(line.startswith('AT+UHTCRP=0,"/sub?x=1&tok=a%26b&r=2&room=12&ok=on') for line in log), log[-30:]
 
 
+OLD_HTTP = {   # 3.4.1 and older read at most 1000 body bytes at a time; 2048 is out of range for them
+    "identity": {**NORA, "version": "3.4.1-001"},
+    "default": ["OK"],
+    "state": {'AT+UHTCRP=0,"/long"': {"page": "long"}, "AT+UHTCRP=*": {"page": "other"}},
+    "commands": {
+        "AT+UHTCGH=* [page=long]": _hdr("HTTP/1.1 302 Found", "Location: https://cdn/" + "s" * 300),
+        "AT+UHTCGH=*": _hdr("HTTP/1.1 200 OK", "Content-Length: 5"),
+        "AT+UHTCGBB=0,2048": ["ERROR"],
+        "AT+UHTCGBB=0,1000": _body("abcde"),
+    },
+    "urcs": {"AT+UHTCRG=*": ['+UEHTCRS:0,200,"OK"']},
+}
+
+
+def test_http_body_is_read_in_1000_byte_parts_on_firmware_before_3_5(app_exe, tmp_path):
+    """fw.update on a 3.4.1 module stopped at 'reading body failed (-36)': its reads take at most 1000 bytes.
+    A path longer than the module's 300 characters (GitHub's signed download links) is refused before sending."""
+    out, log = _shell(app_exe, OLD_HTTP, ["http.download http://h/x a.bin", "http.get http://h/x",
+                                          "http.download http://h/long long.bin"], tmp_path)
+    assert "5 bytes saved" in out and "reading body failed" not in out and "abcde" in out, out[-3000:]
+    assert "the module takes a URL path of at most 300 characters, this one has 301 (cdn)" in out, out[-3000:]
+    assert not any("s" * 300 in line for line in log), log[-30:]   # never sent to the module
+    assert (tmp_path / "storage" / "a.bin").read_bytes() == b"abcde"
+    assert log.count("AT+UHTCGBB=0,2048") == 2 and log.count("AT+UHTCGBB=0,1000") == 2, log[-30:]
+
+
 def test_portal_form_offline(app_exe, tmp_path):
     _store(tmp_path, "f1.html", '<FORM METHOD="POST"><input type=hidden name=a value=1>'
                                 '<input type=submit name=go value=Go></FORM>')

@@ -175,6 +175,43 @@ def _stop(proc):
         proc.kill()
 
 
+def _address(exe, port):
+    out = _run(exe, port, "bt.addr").stdout
+    match = re.search(r"^([0-9A-F]{2}(?::[0-9A-F]{2}){5})", out, re.M | re.I)
+    assert match, out
+    return match.group(1).upper()
+
+
+def _shell(exe, port, *commands):
+    """Starts the app in --shell mode on port after commands; returns the process and a _Reader of its output."""
+    proc = subprocess.Popen(_args(exe, port, *commands) + ["--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace")
+    return proc, _Reader(proc)
+
+
+class _Reader:
+    """Collects the output of a process in the background and waits for patterns in it."""
+
+    def __init__(self, proc):
+        self.text = ""
+        self.lines = queue.Queue()
+        threading.Thread(target=lambda: [self.lines.put(line) for line in proc.stdout], daemon=True).start()
+
+    def wait(self, pattern, seconds):
+        deadline = time.time() + seconds
+        while not re.search(pattern, self.text) and time.time() < deadline:
+            try:
+                self.text += self.lines.get(timeout=1)
+            except queue.Empty:
+                pass
+        return re.search(pattern, self.text)
+
+    def drain(self):
+        while not self.lines.empty():
+            self.text += self.lines.get()
+        return self.text
+
+
 def _check_stream(source, text):
     if source == "gnss":
         assert "$G" in text, text

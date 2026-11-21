@@ -125,7 +125,7 @@ ucxapp COM14 --exec "cfg.load golden.cfg" --exec "cfg.diff golden.cfg"
 | `dev.disconnect` | | Disconnect. Windows only |
 | `dev.use` | `<port>` | Switch the active module to another serial port; the current one is released (and kept if the new one fails). One module is active at a time |
 | `fw.download` | `[latest\|eval [file]]` or `<url> <file> [sha256]` | With no arguments (same as `latest`) looks up the newest stable u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip, downloaded through the module's Wi-Fi (never the host network); `eval` takes the newest release including evaluation builds. Flash it with `fw.flash`. With a URL: download via the module (follows redirects), print SHA-256, delete the file on mismatch |
-| `fw.update` | `[force] [eval] [baud=921600]` | Compares the module firmware with the newest GitHub release for its family (stable only unless `eval`); if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Versions compare including the build number (e.g. `3.6.0-012` < `3.6.0-019`). GitHub is reached through the module's Wi-Fi |
+| `fw.update` | `[force] [eval] [baud=921600]` | Compares the module firmware with the newest GitHub release for its family (stable only unless `eval`); if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Versions compare including the build number (e.g. `3.6.0-012` < `3.6.0-019`). GitHub is reached through the module's Wi-Fi. GitHub now redirects the zip to a signed link far longer than the 300-character path the module takes (`AT+UHTCRP`), so the download says so and names the URL: download the zip on a computer, put it in the app store under its own name, and `fw.update` uses it from there |
 | `fw.list` | | Lists the firmware zips and bin files already downloaded to the app store, with their sizes |
 | `fw.github.list` | `[NORA-W36]` | Lists every firmware release on GitHub for the family (newest first), marking evaluation builds. Uses the connected module's family unless one is given (e.g. `NORA-B26`). Needs a connected module on Wi-Fi: the query goes through the module's HTTP client
 | `fw.bootloader` | `<port> <file.bin\|file.zip> [baud=921600]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `dev.disconnect` first |
@@ -162,6 +162,7 @@ ucxapp COM13 --exec "at +GMR"
 | `bt.autoconfirm` | `<on\|off>` | Accept numeric-comparison pairing automatically (default on) |
 | `bt.confirm` | `<yes\|no>` | Answer a waiting pairing request (autoconfirm off) |
 | `bt.passkey` | `<digits\|deny>` | Answer a waiting passkey request |
+| `bt.fixedpasskey` | `[000000-999999\|random]` | Show, or set, a fixed passkey (`AT+UBTFPK`, firmware 3.6.0 or later): with `bt.iocap display` the peer must enter this key and the module never shows it; `random` goes back to a new key per pairing. It is stored with `AT&W` and takes effect after `dev.reboot`; `AT&W` also stores a connected Wi-Fi station, so run `wifi.disconnect` first |
 | `bt.bonds` |  | List bonded devices |
 | `bt.bond` | `<conn\|addr> [seconds=15]` | Bond (pair and store keys) with a connected device, by connection number from `bt.list` or by address, and wait up to the given seconds for the result. When the peer shows a code, enter it with `bt.passkey`. Ranging with `bt.cs.range` and encrypted GATT need a bond |
 | `bt.unbond` | `<addr\|all>` | Remove one or all bonds |
@@ -255,7 +256,7 @@ ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "hid.client 0" 
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
 | `wifi.profile.connect` | `<name>` | Connect with a saved profile; it becomes the "last used" profile |
 | `wifi.profile.auto` | | Try the last used profile (10 s); else scan with the saved regulatory domain and connect to the strongest known profile. Keeps an existing link to the same SSID |
-| `wifi.ap.enable` | `[ssid] [password] [channel]` | Start a WPA2 access point and show its join QR code |
+| `wifi.ap.enable` | `[ssid] [password] [channel] [hidden]` | Start a WPA2 access point and show its join QR code. `hidden` (firmware 3.6.0 or later) leaves the SSID out of the beacons: stations must know the name. A station still joining its stored network is disconnected first |
 | `wifi.ap.disable` |  | Stop the access point |
 | `wifi.ap.status` |  | Show AP parameters, addresses and stations |
 

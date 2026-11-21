@@ -225,7 +225,7 @@ command and only tries the Matter stack lock (`NodeSnapshot`), keeping the last 
 
 ```powershell
 py -3 -m pytest tests/test_matter.py tests/test_matter_plugin.py     # stand-in plug-in; real plug-in on the virtual module
-.\ucxapp --detect --test tests/hardware/test_hw_matter.py            # two modules: the second finds the node's advertisement and its GATT service
+.\ucxapp --detect --test tests/hardware/test_hw_matter.py            # two modules: the second finds the node's advertisement and its GATT service; a Matter hub commissions the node
 ```
 
 The virtual module plays a commissioner that opens the transport (BTP handshake on C1) when the Matter service is
@@ -233,8 +233,15 @@ activated, is on Wi-Fi from the start, and with `sockets.requests` on port 5540 
 (the tests send a pairing request over UDP and check the Matter server's answer). `at_burst` in
 `tests/harness/matter.py` measures the node's runs of AT commands from an `at.trace`:
 the tests (offline and on a real UART) fail if a command waits for the receive thread, which is what
-u-connectMatter needed its session lock for. A whole commissioning needs a commissioner (a phone, chip-tool):
-no test here does that.
+u-connectMatter needed its session lock for.
+
+A whole commissioning runs on hardware with the u-blox Matter hub (the i.MX 93 kit of u-connectMatter, console on
+the first port of its CH342, root login). `--detect` finds it by its `u-blox-hub-*` prompt and sets
+`UCX_MATTER_HUB` (set it yourself to pick the port, or empty to skip). `tests/hardware/matterhub.py` drives its
+chip-tool: `pairing code-wifi` over Bluetooth LE onto the hub's own access point (`/run/u-blox-matter/hostapd.conf`),
+then `onoff` on endpoint 1. `test_matter_hub_commissions_the_node_whatever_wifi_it_is_on` does this with the module
+already on the hub's network, on another network (the saved profile), and with `wifi.profile.auto` running while
+the hub commissions: the node takes the module off any network before it joins the one it was given.
 
 `tests/test_matter_plugin.py` and the hardware test skip when `ucxmatter` is not built. `UCX_MATTER_PLUGIN` points
 the app at another plug-in file (the tests use it); it is never set from a command.

@@ -7,49 +7,17 @@ connects by address, optionally bonds, subscribes, receives notifications from A
 - issue 3: switching notifications off after bonding must not fail (ERROR:114 seen with hid.client off)
 """
 
-import queue
 import re
 import subprocess
-import threading
 import time
 
 import pytest
-from hwutil import _args, _reboot, _run, _stop
+from hwutil import _address, _args, _Reader, _reboot, _run, _stop
 
 pytestmark = [pytest.mark.hardware, pytest.mark.two_devices]
 
 FILLER = ["hrs", "cts", "ess", "lns", "aio", "sps", "wps"]  # adding ras hits the module's attribute limit (ERROR:17)
 NOTIFICATIONS = 3
-
-
-def _address(exe, port):
-    out = _run(exe, port, "bt.addr").stdout
-    match = re.search(r"^([0-9A-F]{2}(?::[0-9A-F]{2}){5})", out, re.M | re.I)
-    assert match, out
-    return match.group(1).upper()
-
-
-class _Reader:
-    """Collects the output of a process in the background and waits for patterns in it."""
-
-    def __init__(self, proc):
-        self.text = ""
-        self.lines = queue.Queue()
-        threading.Thread(target=lambda: [self.lines.put(line) for line in proc.stdout], daemon=True).start()
-
-    def wait(self, pattern, seconds):
-        deadline = time.time() + seconds
-        while not re.search(pattern, self.text) and time.time() < deadline:
-            try:
-                self.text += self.lines.get(timeout=1)
-            except queue.Empty:
-                pass
-        return re.search(pattern, self.text)
-
-    def drain(self):
-        while not self.lines.empty():
-            self.text += self.lines.get()
-        return self.text
 
 
 @pytest.mark.parametrize("bonded", [False, True], ids=["plain", "bonded"])

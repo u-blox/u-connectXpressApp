@@ -736,6 +736,42 @@ def find_ppk(exe):
     return (m.group(1), "", m.group(2).strip()) if m else None
 
 
+HUB_CONSOLE = (0x1A86, 0x55D2)   # WCH CH342: the first of its two ports is the i.MX 93 kit's Linux console
+HUB_PROMPT = re.compile(r"\b(u-blox-hub-[\w-]+) login:|root@(u-blox-hub-[\w-]+):")
+
+
+def hub_name(console_text):
+    """The u-blox Matter hub's host name from what its console printed (login prompt or root shell), or None."""
+    m = HUB_PROMPT.search(console_text)
+    return (m.group(1) or m.group(2)) if m else None
+
+
+def find_matter_hub():
+    """(port, host name) of a u-blox Matter hub (i.MX 93 kit with chip-tool) on its serial console, or None.
+
+    Only the first port of a CH342 is asked, with one Enter: a login prompt or a root shell answers with the name."""
+    try:
+        import serial
+        from serial.tools import list_ports as lp
+    except ImportError:
+        return None
+    for p in sorted(lp.comports(), key=lambda p: p.device):
+        if (p.vid, p.pid) != HUB_CONSOLE or not (p.location or "").endswith(".0"):
+            continue
+        try:
+            with serial.Serial(p.device, 115200, timeout=0.2) as console:
+                console.reset_input_buffer()
+                console.write(b"\n")
+                text, deadline = "", time.time() + 2
+                while time.time() < deadline and hub_name(text) is None:
+                    text += console.read(512).decode(errors="replace")
+        except (OSError, serial.SerialException):
+            continue
+        if hub_name(text):
+            return p.device, hub_name(text)
+    return None
+
+
 def detect(exe, ports=None, force=False):
     """Prints what is attached and returns the matching UCX_* test variables; ports overrides the module search.
 
@@ -811,6 +847,14 @@ def detect(exe, ports=None, force=False):
     sniffers = [n for n, _, role in serial_ports if role == "nRF Sniffer"]
     print("  " + (", ".join(sniffers) if sniffers else "none"))
 
+    print("Matter hub (i.MX 93 with chip-tool, commissions the node in the Matter tests):")
+    hub = find_matter_hub()
+    if hub:
+        env["UCX_MATTER_HUB"] = hub[0]
+        print(f"  {hub[0]} {hub[1]}")
+    else:
+        print("  none")
+
     stm32 = [n for n, _, role in serial_ports if role == "STM32 console"]
     if stm32:
         env["UCX_STM32_PORT"] = stm32[0]   # file.recv / file.send over the board's console (test_stm32_files.py)
@@ -884,7 +928,7 @@ def coverage(pytest_args):
     if not (bd / "ucxapp").is_file():
         fail(f"instrumented exe not found: {bd / 'ucxapp'}")
     absent = {k: "" for k in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT",
-                              "UCX_PPK_PORT", "UCX_STM32_PORT")}
+                              "UCX_PPK_PORT", "UCX_STM32_PORT", "UCX_MATTER_HUB")}
     # Only tests that run the app add C coverage; the repo checks crawl /mnt (slow 9P in WSL).
     partial = bool(pytest_args)
     pytest_args = pytest_args or ["tests", "-m", "app", "-p", "no:cacheprovider", "-v"]
@@ -2485,7 +2529,7 @@ def main(argv):
                 return 0 if found else 1
             # Empty = detected as absent, so the tests do not probe the ports again.
             for key in ("UCX_PORT_A", "UCX_PORT_B", "UCX_GNSS_PORT", "UCX_IMU_PORT", "UCX_CELL_PORT", "UCX_PPK_PORT",
-                        "UCX_STM32_PORT"):
+                        "UCX_STM32_PORT", "UCX_MATTER_HUB"):
                 found.setdefault(key, "")
         if not (args.detect or args.ports) and "hardware" not in " ".join(extra):
             # Plain --test is offline; hardware tests run only with --detect or --ports.

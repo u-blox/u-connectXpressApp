@@ -8,7 +8,19 @@ import threading
 import time
 
 import pytest
-from hwutil import DEVICE_NAME, GATT_NAME, _args, _finish, _gatt_server, _reboot, _run, _start_server, _stop
+from hwutil import (
+    DEVICE_NAME,
+    GATT_NAME,
+    _address,
+    _args,
+    _finish,
+    _gatt_server,
+    _reboot,
+    _run,
+    _shell,
+    _start_server,
+    _stop,
+)
 
 
 @pytest.mark.hardware
@@ -307,3 +319,47 @@ def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
     assert re.search(r"\b(100|level)\b", out.stdout, re.I), out.stdout
     for w in (write, write_long):
         assert w.returncode == 1 and "failed" in w.stdout, w.stdout
+
+
+@pytest.mark.two_devices
+@pytest.mark.parametrize("typed,bonds", [("shown", True), ("123456", True), ("654321", False)],
+                         ids=["random-shown", "fixed-right", "fixed-wrong"])
+def test_bt_fixed_passkey_bonds_only_with_that_key(app_exe, port_a, port_b, typed, bonds):
+    """A uses a fixed passkey (AT+UBTFPK, firmware 3.6.0) and shows none; B types it, or a wrong one, to bond.
+    The random-shown case is the baseline: A shows a new passkey (+UEBTUPD) and B types that one."""
+    _reboot(app_exe, port_a, port_b)
+    for port in (port_a, port_b):
+        _run(app_exe, port, "bt.unbond all")
+    addr = _address(app_exe, port_a)
+    fixed = typed != "shown"
+    # the passkey mode takes effect at boot: bt.fixedpasskey stores it (AT&W, which also stores the Wi-Fi state, so
+    # disconnect first) and gatt.server.* reboots; the unsaved security settings come after that reboot
+    server, srv = _shell(app_exe, port_a, "wifi.disconnect", f"bt.fixedpasskey {'123456' if fixed else 'random'}",
+                         "gatt.server.bas", "bt.fixedpasskey", "bt.iocap display", "bt.security auth")
+    client = cli = None
+    try:
+        assert srv.wait(r"passkey: fixed \(the module never shows it\)" if fixed else r"passkey: random for each",
+                        60), srv.text
+        assert srv.wait(r"security mode: auth", 30), srv.text
+        client, cli = _shell(app_exe, port_b, "bt.iocap keyboard", f"bt.connect {addr}")
+        assert cli.wait(r"Command shell", 90), f"client:\n{cli.text}\nserver:\n{srv.drain()}"
+        client.stdin.write("bt.bond 0 2\n")     # no result in 2 s is an error, which would end an --exec run
+        client.stdin.flush()
+        assert cli.wait(r"\[BT\] passkey requested for", 90), f"client:\n{cli.text}\nserver:\n{srv.drain()}"
+        if not fixed:
+            shown = srv.wait(r"enter passkey (\d{6}) on the remote", 30)
+            assert shown, f"client:\n{cli.text}\nserver:\n{srv.drain()}"
+            typed = shown.group(1)
+        client.stdin.write(f"bt.passkey {typed}\n")
+        client.stdin.flush()
+        result = cli.wait(r"\[BT\] bonding (succeeded|FAILED)", 30)
+        context = f"client:\n{cli.drain()}\nserver:\n{srv.drain()}"
+        assert result and (result.group(1) == "succeeded") == bonds, context
+        assert ("enter passkey" in srv.text) != fixed, context     # fixed mode sends no +UEBTUPD
+    finally:
+        _stop(server)
+        if client:
+            _stop(client)
+        _run(app_exe, port_a, "wifi.disconnect", "bt.fixedpasskey random", "bt.unbond all")
+        _run(app_exe, port_b, "bt.unbond all")
+        _reboot(app_exe, port_a, port_b)

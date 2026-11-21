@@ -437,6 +437,45 @@ def test_wifi_ap_enable_status_disable_on_the_virtual_module(app_exe, wifi_modul
     assert any(c.startswith("AT+UWAPD") for c in wifi_module.log), wifi_module.log
 
 
+def test_wifi_ap_hidden_sets_the_hidden_ssid_flag_and_shows_it(app_exe, wifi_module):
+    wifi_module.commands["AT+UWAPCP?"] = ['+UWAPCP:"vucx,ap",6,1', "OK"]
+    out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap secret123 6 hidden", "wifi.ap.status")
+    assert out.returncode == 0, out.stdout + str(wifi_module.log)
+    assert 'AT+UWAPCP="vucxap",6,1' in wifi_module.log, wifi_module.log
+    assert "WPA2, hidden (not in beacons" in out.stdout and "H:true" in out.stdout, out.stdout
+    assert "channel=6 hidden" in out.stdout, out.stdout
+
+
+def test_wifi_ap_status_shows_no_hidden_flag_on_firmware_before_3_6(app_exe, wifi_module):
+    out = _run(app_exe, wifi_module.port, "wifi.ap.status")      # the profile answers +UWAPCP:"vucxap",6
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"^ssid=vucxap channel=6$", out.stdout, re.M), out.stdout
+
+
+def test_wifi_ap_hidden_on_firmware_before_3_6(app_exe, wifi_module):
+    wifi_module.commands['AT+UWAPCP="vucxap",6,1'] = ["ERROR"]
+    out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap secret123 6 hidden")
+    assert out.returncode == 1, out.stdout
+    assert "cannot hide the SSID (needs firmware 3.6.0 or later)" in out.stdout, out.stdout
+    assert "AT+UWAPA" not in wifi_module.log, wifi_module.log
+
+
+def test_wifi_ap_disconnects_a_busy_station_and_tries_again(app_exe, wifi_module):
+    wifi_module.commands["AT+UWAPA"] = ["ERROR"]
+    out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap secret123 6")
+    assert out.returncode == 1, out.stdout
+    assert "the Wi-Fi station is busy, disconnecting it" in out.stdout, out.stdout
+    assert "ERROR: failed to activate AP" in out.stdout, out.stdout
+    assert wifi_module.log.count("AT+UWAPA") >= 2 and "AT+UWSDC" in wifi_module.log, wifi_module.log
+
+
+@pytest.mark.parametrize("args", ["wifi.ap.enable vucxap secret123 6 shown", "wifi.ap.enable a b c d e"])
+def test_wifi_ap_enable_usage(app_exe, wifi_module, args):
+    out = _run(app_exe, wifi_module.port, args)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(c.startswith("AT+UWAP") for c in wifi_module.log), wifi_module.log
+
+
 def test_wifi_ap_refuses_a_short_password_before_touching_the_module(app_exe, wifi_module):
     out = _run(app_exe, wifi_module.port, "wifi.ap.enable vucxap short")
     assert out.returncode == 1, out.stdout
@@ -1377,6 +1416,52 @@ def test_bt_cs_sets_reflector_and_explains_a_module_without_it(app_exe, nora):
     assert out.returncode != 0 and "needs a NORA-B26 or NORA-B27" in out.stdout, out.stdout
     out = _shell(app_exe, nora.port, ["bt.cs maybe"], log=nora.log)
     assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+
+
+def test_bt_fixed_passkey_sets_reads_and_clears_it_with_raw_at(app_exe, nora):
+    nora.commands["AT+UBTFPK=*"] = ["OK"]
+    nora.commands["AT+UBTFPK?"] = ["+UBTFPK:1", "OK"]
+    out = _shell(app_exe, nora.port, ["bt.fixedpasskey 004711", "bt.fixedpasskey", "bt.fixedpasskey random"],
+                 log=nora.log)
+    assert out.returncode == 0, out.stdout
+    assert "passkey: fixed 004711; the peer types it" in out.stdout, out.stdout
+    assert "passkey: fixed (the module never shows it)" in out.stdout, out.stdout
+    assert "passkey: random for each pairing" in out.stdout, out.stdout
+    assert "takes effect after dev.reboot" in out.stdout, out.stdout
+    assert "AT+UBTFPK=1,4711" in nora.log and "AT+UBTFPK=0" in nora.log, nora.log
+    assert nora.log.count("AT&W") == 2, nora.log
+
+
+@pytest.mark.parametrize("args", ["bt.fixedpasskey 1000000", "bt.fixedpasskey -1", "bt.fixedpasskey pin",
+                                  "bt.fixedpasskey 1 2", "bt.fixedpasskey 0x10"])
+def test_bt_fixed_passkey_usage(app_exe, nora, args):
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+    assert not any(cmd.startswith("AT+UBTFPK") for cmd in nora.log), nora.log
+
+
+@pytest.mark.parametrize("args", ["bt.fixedpasskey", "bt.fixedpasskey 123456"])
+def test_bt_fixed_passkey_on_firmware_before_3_6(app_exe, nora, args):
+    nora.commands["AT+UBTFPK?"] = ["ERROR"]
+    nora.commands["AT+UBTFPK=*"] = ["ERROR"]
+    out = _shell(app_exe, nora.port, [args], log=nora.log)
+    assert out.returncode != 0, out.stdout
+    assert "needs firmware 3.6.0 or later" in out.stdout, out.stdout
+
+
+def test_bt_passkey_with_a_leading_zero_is_decimal(app_exe, nora):
+    nora.commands["AT+UBTIOC=3"] = ["+UEBTUPE:C0FFEE001122p", "OK"]
+    out = _shell(app_exe, nora.port, ["bt.iocap keyboard", "bt.passkey 012345"], log=nora.log)
+    assert "[BT] passkey requested for" in out.stdout, out.stdout
+    assert "AT+UBTUPE=C0FFEE001122p,1,12345" in nora.log, nora.log
+
+
+def test_bt_iocap_chosen_by_hand_survives_connect_and_bond(app_exe, nora):
+    """bt.connect (keyboard+display for a central) and bt.bond (Just Works) must not overwrite bt.iocap."""
+    out = _shell(app_exe, nora.port, ["bt.iocap keyboard", "bt.connect C0:FF:EE:00:11:22", "bt.bond 0 1"],
+                 log=nora.log)
+    iocaps = [cmd for cmd in nora.log if cmd.startswith("AT+UBTIOC=")]
+    assert iocaps == ["AT+UBTIOC=3"], out.stdout + str(nora.log)
 
 
 def test_mqtt_connect_with_login_and_tls(app_exe, nora):

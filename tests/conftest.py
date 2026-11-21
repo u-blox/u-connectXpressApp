@@ -15,6 +15,8 @@ Tests marked wifi skip when a module they use reports "Wi-Fi: no" in dev.caps (N
   UCX_CELL_ECHO "<host> <port>" of a public TCP echo server for the cellular bridges (default: tcpbin.com 4242)
   UCX_HID_PEER  serial console of a Linux BLE peer (the i.MX91 hub, root login) for the HID tests; not probed
   UCX_HID_PEER_BAUD, UCX_HID_PEER_USER   its baud rate (default 115200) and login (default root)
+  UCX_MATTER_HUB  serial console of a u-blox Matter hub (i.MX 93 kit with chip-tool, root login): commissions the
+                  node in the Matter tests over Bluetooth LE onto its own access point (default: what --detect finds)
   UCX_XPLORER, UCX_XPLORER_TOKEN   u-connectXplorer Remote Control (ws://<host>:8765) and its token; not probed
 """
 
@@ -108,6 +110,18 @@ def _source(name):
     return found[:2] if found else None
 
 
+@functools.lru_cache(maxsize=1)
+def _matter_hub():
+    """Console port of the u-blox Matter hub, or None; UCX_MATTER_HUB (even empty) wins over probing."""
+    if "UCX_MATTER_HUB" in os.environ:
+        return os.environ["UCX_MATTER_HUB"] or None
+    sys.path.insert(0, str(ROOT))
+    import ucxapp
+
+    found = ucxapp.find_matter_hub()
+    return found[0] if found else None
+
+
 def _found_text(name):
     """'ZED-F9P on COM20 at 115200 baud' (model when the receiver reported one)."""
     found = _found(name)
@@ -162,6 +176,7 @@ def pytest_configure(config):
         "cell: needs a cellular modem with a working SIM (UCX_CELL_PORT or cell.detect)",
         "ppk: needs a Nordic Power Profiler Kit II (UCX_PPK_PORT or ppk.detect)",
         "hid_peer: needs a Linux BLE peer on its serial console (UCX_HID_PEER, e.g. the i.MX91 hub)",
+        "matter_hub: needs a u-blox Matter hub with chip-tool on its serial console (UCX_MATTER_HUB, i.MX 93 kit)",
         "xplorer: needs u-connectXplorer with Remote Control on (UCX_XPLORER)",
         "stress: long repeated runs; only with -m stress",
         "soak: hours-long run checked every few minutes (UCX_SOAK_HOURS); only with -m soak",
@@ -191,6 +206,8 @@ def _skip_reason(item, exe, hw):
             return f"no {name.upper()} found (set UCX_{name.upper()}_PORT)"
     if item.get_closest_marker("hid_peer") and not os.environ.get("UCX_HID_PEER"):
         return "no Linux BLE peer (set UCX_HID_PEER to the i.MX91 console port)"
+    if item.get_closest_marker("matter_hub") and not _matter_hub():
+        return "no u-blox Matter hub (set UCX_MATTER_HUB to the i.MX 93 console port)"
     if item.get_closest_marker("xplorer") and not os.environ.get("UCX_XPLORER"):
         return "no u-connectXplorer (set UCX_XPLORER=ws://<host>:8765 and UCX_XPLORER_TOKEN)"
     if item.get_closest_marker("wifi"):
@@ -301,4 +318,18 @@ def hid_peer():
         yield peer
     finally:
         peer.close()
+
+
+@pytest.fixture(scope="session")
+def matter_hub():
+    """The u-blox Matter hub, logged in on its console; chip-tool's fabric is emptied before each use."""
+    sys.path.insert(0, str(ROOT / "tests" / "hardware"))
+    from matterhub import MatterHub
+
+    hub = MatterHub(_matter_hub())
+    try:
+        yield hub
+    finally:
+        hub.forget()
+        hub.close()
 

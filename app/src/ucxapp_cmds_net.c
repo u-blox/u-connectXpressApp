@@ -23,7 +23,9 @@
 
 #define HTTP_SESSION      0
 #define HTTP_CHUNK        2048          /* AT+UHTCGBB, binary body read (3.5.0) */
+#define HTTP_CHUNK_OLD    1000          /* AT+UHTCGBB before 3.5.0 (3.4.1 and older) */
 #define HTTP_HDR_CHUNK    1000          /* AT+UHTCGH is a string read, max 1000 */
+#define HTTP_MAX_PATH     300           /* AT+UHTCRP path, every firmware up to 3.6.0 */
 #define HTTP_MAX_BODY     (64 * 1024)   /* bytes read from the module before giving up */
 #define HTTP_DEFAULT_SHOW 512
 #ifndef HTTP_MAX_URL
@@ -45,6 +47,18 @@ static struct {
     char form[1024];
     char names[256];
 } gBuf;
+
+/* One AT+UHTCGBB read into buf (HTTP_CHUNK bytes). *chunk starts at HTTP_CHUNK; when the module refuses the first
+   read of a body, it is firmware before 3.5.0 (at most 1000 bytes a read) and the rest of the body is read so. */
+static int32_t httpReadBody(ucxapp_t *app, int32_t *chunk, bool first, uint8_t *buf, int32_t *moreToRead)
+{
+    int32_t n = uCxHttpGetBody(app->ucx, HTTP_SESSION, *chunk, buf, moreToRead);
+    if (n < 0 && first && *chunk > HTTP_CHUNK_OLD) {
+        *chunk = HTTP_CHUNK_OLD;
+        n = uCxHttpGetBody(app->ucx, HTTP_SESSION, *chunk, buf, moreToRead);
+    }
+    return n;
+}
 
 static int cmdNetPing(ucxapp_t *app, int argc, char *argv[])
 {
@@ -320,8 +334,9 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
     int32_t total = 0;
     int32_t shown = 0;
     int32_t moreToRead = 1;
+    int32_t chunk = HTTP_CHUNK;
     while (moreToRead && total < HTTP_MAX_BODY) {
-        int32_t n = uCxHttpGetBody(app->ucx, HTTP_SESSION, HTTP_CHUNK, buf, &moreToRead);
+        int32_t n = httpReadBody(app, &chunk, total == 0, buf, &moreToRead);
         if (n < 0) {
             ucxapp_print("\nERROR: reading body failed (%d%s)\n", (int)n, ucxapp_errname(n));
             goto done;
@@ -394,6 +409,12 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_http_sink_t sink, void *
     }
     snprintf(scheme, 8, "%s", https ? "https" : "http");
     snprintf(hostOut, hostOutSize, "%s", host);
+    if (strlen(path) > HTTP_MAX_PATH) {
+        /* signed download links (GitHub release assets) are much longer than the module takes */
+        ucxapp_print("ERROR: the module takes a URL path of at most %d characters, this one has %u (%s)\n",
+                     HTTP_MAX_PATH, (unsigned)strlen(path), host);
+        return -1;
+    }
 
     int32_t err = configureSession(app, https, host, path);
     if (err >= 0) {
@@ -461,8 +482,9 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_http_sink_t sink, void *
     uint8_t buf[HTTP_CHUNK];
     int32_t total = 0;
     int32_t moreToRead = 1;
+    int32_t chunk = HTTP_CHUNK;
     while (moreToRead) {
-        int32_t n = uCxHttpGetBody(app->ucx, HTTP_SESSION, HTTP_CHUNK, buf, &moreToRead);
+        int32_t n = httpReadBody(app, &chunk, total == 0, buf, &moreToRead);
         if (n < 0) {
             ucxapp_print("\nERROR: reading body failed (%d%s)\n", (int)n, ucxapp_errname(n));
             goto done;
@@ -643,8 +665,9 @@ static int httpRequest(ucxapp_t *app, const char *urlIn, const char *body, const
     uint8_t buf[HTTP_CHUNK];
     size_t blen = 0;
     int32_t moreToRead = 1;
+    int32_t chunk = HTTP_CHUNK;
     while (moreToRead) {
-        int32_t n = uCxHttpGetBody(app->ucx, HTTP_SESSION, HTTP_CHUNK, buf, &moreToRead);
+        int32_t n = httpReadBody(app, &chunk, blen == 0, buf, &moreToRead);
         if (n < 0) {
             break;   /* no body (204, 302) ends here as well */
         }

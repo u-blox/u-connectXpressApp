@@ -1,5 +1,6 @@
 """session.record / session.replay and prod.test: offline checks, no module needed."""
 
+import hashlib
 import subprocess
 
 import pytest
@@ -19,6 +20,14 @@ def test_session_selftest(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "session.selftest")
     assert out.returncode == 0, out.stdout + out.stderr
     assert "session selftest: secret masking (scripts and AT trace) and report names ok" in out.stdout
+
+
+@pytest.mark.parametrize("text", ["\u00e5\u00e4\u00f6", "\u20ac", "\U0001f600 caf\u00e9"])
+def test_non_ascii_arguments_reach_the_app_as_utf8(app_exe, tmp_path, text):
+    """Windows passes the command line as UTF-16; the app must hand each argument over as the exact UTF-8 bytes."""
+    out = _run_in(app_exe, tmp_path, f"utils.hash.text sha256 {text}")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert hashlib.sha256(text.encode("utf-8")).hexdigest() in out.stdout, out.stdout
 
 
 def test_record_then_replay(app_exe, tmp_path):

@@ -243,7 +243,7 @@ def test_open_shows_the_codes_again_and_keeps_the_window_open(app_exe, module, p
 def test_demo_commissions_a_node_on_the_virtual_module(app_exe, module, plugin, tmp_path):
     out = _run(app_exe, module, plugin, tmp_path, "usecase.demo matter", "matter.status")
     assert out.returncode == 0, out.stdout
-    assert "demo: 1 use case, 4 of 4 examples ran to the end" in out.stdout, out.stdout
+    assert "demo: 1 use case, 5 of 5 examples ran to the end" in out.stdout, out.stdout
     assert "QR payload: MT:" in out.stdout and "commissioning window: open" in out.stdout, out.stdout
     assert "matter: stopped" in out.stdout.split("examples ran to the end")[1], out.stdout   # the last step stops it
 

@@ -117,7 +117,8 @@ def test_cellular_card_and_status_chip():
     of the status bar runs cell.status."""
     page = PAGE_FILE.read_text(encoding="utf-8")
     assert 'id="gc"' not in page and 'id="cc"' not in page and '<div id="pet"' in page
-    assert "['gnss','cell','matter'].forEach(c=>es.addEventListener(c," in SCRIPT and "Cell:'cell.status'" in SCRIPT
+    assert "['gnss','cell','matter','trigger','board'].forEach(c=>es.addEventListener(c," in SCRIPT
+    assert "Cell:'cell.status'" in SCRIPT
     # the details card lives in What's happening, leaving the Connections pane to the graph
     pn = page[page.index('id="pn"'):page.index('id="pl"')]
     assert 'id="cnd"' not in pn and page.index('id="cnd"') > page.index('id="pe"')

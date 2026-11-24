@@ -93,6 +93,42 @@ bool ucxapp_qr_print_wifi(const char *ssid, const char *password, const char *se
     return ucxapp_qr_print(payload);
 }
 
+/* SVG path of the QR code of text in module units (no border): a 1-module-high rectangle per run of dark modules. */
+bool ucxapp_qr_path(const char *text, char *out, size_t size, int *modules)
+{
+    static uint8_t qr[qrcodegen_BUFFER_LEN_MAX];   /* the web server's own: utils.qr may run on another thread */
+    static uint8_t tmp[qrcodegen_BUFFER_LEN_MAX];
+    size_t n = 0;
+
+    if (size == 0 || !qrcodegen_encodeText(text, tmp, qr, qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN,
+                                           qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true)) {
+        return false;
+    }
+    int side = qrcodegen_getSize(qr);
+    out[0] = '\0';
+    for (int y = 0; y < side; y++) {
+        for (int x = 0; x < side;) {
+            int run = 0;
+
+            while (x + run < side && qrcodegen_getModule(qr, x + run, y)) {
+                run++;
+            }
+            if (run == 0) {
+                x++;
+                continue;
+            }
+            int len = snprintf(out + n, size - n, "M%d %dh%dv1h-%dz", x, y, run, run);
+            if (len <= 0 || (size_t)len >= size - n) {
+                return false;
+            }
+            n += (size_t)len;
+            x += run;
+        }
+    }
+    *modules = side;
+    return true;
+}
+
 static int cmdQrText(ucxapp_t *app, int argc, char *argv[])
 {
     (void)app;

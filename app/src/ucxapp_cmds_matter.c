@@ -102,6 +102,7 @@ static void hostEvent(const char *line)
         ucxapp_print("[event] %s\n", line);
     }
     ucxapp_ui_event(line);
+    ucxapp_trigger_event(line);
     if (gBridgeOn) {
         U_CX_MUTEX_LOCK(gBridgeLock);
         snprintf(gEvents[(gEventHead + gEventCount) % BRIDGE_EVENTS], BRIDGE_TEXT, "%s", line);

@@ -584,6 +584,7 @@ static const groupInfo_t kHostGroups[] = {
     { "matter",  "App",         "Matter node on the module: start, commission over Bluetooth LE, endpoints, QR code" },
     { "usecase", "App",         "Use cases: fit check against the module limits and ready-made steps" },
     { "conn",    "App",         "Every live link: Wi-Fi, BLE (with CS distance), Thread, sockets, GNSS and cellular" },
+    { "trigger", "App",         "Rules: run a command when a distance, signal, network, device, button or event says so" },
     { "session", "App",         "Record the commands typed to a .ucx script and replay it" },
     { "prod",    "App",         "Production test with per-unit reports" },
     { "file",    "App",         "Files in the app store on this PC or board" },

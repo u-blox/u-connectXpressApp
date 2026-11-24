@@ -463,7 +463,7 @@ def test_demo_skips_matter_without_the_plugin(app_exe, module, stub, tmp_path):
     assert "Running uc-matter" not in out.stdout and "no use case" not in out.stdout, out.stdout
     # with a plug-in the steps run: the stand-in has no matter.open, so the second window is where it stops
     out = _run(app_exe, module, stub, tmp_path, "usecase.demo matter")
-    assert "demo: 1 use case, 3 of 4 examples ran to the end\nstopped early: matter/3" in out.stdout, out.stdout
+    assert "demo: 1 use case, 4 of 5 examples ran to the end\nstopped early: matter/3" in out.stdout, out.stdout
     assert "manual code: 0000-000-0000" in out.stdout and "STATE not commissioned" in out.stdout, out.stdout
 
 

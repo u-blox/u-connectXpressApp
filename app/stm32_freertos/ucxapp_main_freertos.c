@@ -171,6 +171,9 @@ static void disconnectModule(void)
     if (!gConnected) {
         return;
     }
+#ifdef UCXAPP_TRIGGER
+    ucxapp_trigger_quiesce();
+#endif
     ucxapp_events_deinit();
     uCxAtClientClose(&gAtClient);
     uCxAtClientDeinit(&gAtClient);
@@ -385,6 +388,9 @@ static void appTask(void *arg)
 #endif
 #ifdef UCXAPP_HW_BOARD
     ucxapp_register_hw_cmds();
+#endif
+#ifdef UCXAPP_TRIGGER
+    ucxapp_register_trigger_cmds();
 #endif
 #ifdef UCXAPP_WEB
     ucxapp_register_web_cmds();

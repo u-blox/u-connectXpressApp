@@ -785,6 +785,7 @@ static void showLine(const char *line)
 {
     ucxapp_print("%s\n", line);
     ucxapp_ui_event(line);
+    ucxapp_trigger_event(line);
 }
 
 static void decodeKeyboard(cliReport_t *r, const cliLayout_t *l, const uint8_t *d, size_t n)

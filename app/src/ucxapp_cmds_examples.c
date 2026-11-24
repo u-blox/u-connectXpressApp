@@ -207,6 +207,31 @@ static const example_t kExamples[] = {
       "mqtt.connect\nmatter.bridge mqtt\nmatter.bridge status\nmatter.bridge off" },
 #endif
 
+#if UCXAPP_HOST
+    { "trigger", "A Matter lamp that goes off when you come closer than 2 m (Channel Sounding) and on when you leave",
+      "matter.start light\n# range the reflector on connection 0 in the background, then let the distance decide\n"
+      "bt.cs.range 0 on\ntrigger.add near cs below 2 do matter.set light off\n"
+      "# 0.5 m apart from the first limit, so the lamp does not flicker at the border\n"
+      "trigger.add far cs above 2.5 do matter.set light on\ntrigger.list" },
+    { "trigger", "The board LED follows the Matter lamp, and the button switches the lamp",
+      "# on a PC the board is virtual (NUCLEO-H753ZI layout): hw.button press presses its button\n"
+      "trigger.add lamp-on event \"matter: light = on\" do hw.led on\n"
+      "trigger.add lamp-off event \"matter: light = off\" do hw.led off\n"
+      "trigger.add press button do matter.set light on\ntrigger.add release button released do matter.set light off" },
+#endif
+#if UCXAPP_HOST || defined(UCXAPP_TRIGGER)
+    { "trigger", "Networks and devices: join when the network is in range, an LED while a tag is near",
+      "trigger.add home ssid MyNetwork do wifi.profile.auto\n"
+      "# a scan every 30 s instead of every 10; the name or the address of the device\n"
+      "trigger.add tag bt MyTag above -60 every 30 do hw.led on\ntrigger.add tag-gone bt MyTag lost every 30 do hw.led off" },
+    { "trigger", "Signal levels and events: warn on weak Wi-Fi, tell a server when a phone connects",
+      "trigger.add weak rssi below -75 do hw.led on\ntrigger.add fine rssi above -70 do hw.led off\n"
+      "# the text of any line of the event log (app.log.events.on prints them); quote a command with many words\n"
+      "trigger.add phone event \"bt: connected\" do \"sock.sendto 0 192.168.1.10 5000 phone\"" },
+    { "trigger", "Try a rule, pause it, remove it",
+      "trigger.list\ntrigger.fire weak\ntrigger.off weak\ntrigger.on weak\ntrigger.remove all" },
+#endif
+
     { "mqtt", "Publish and subscribe on a public broker",
       "mqtt.connect\nmqtt.subscribe ucx/demo/#\nmqtt.publish ucx/demo/hello \"hi from NORA\"\nmqtt.read 10" },
     { "mqtt", "Own broker",
@@ -752,6 +777,9 @@ static const example_t kExamples[] = {
       "bt.defaults secure\nbt.cs initiator\nbt.connect reflector\n# CS needs authentication: bond (LE Secure Connections) before ranging\nbt.bond 0\nbt.bonds\nbt.cs.range 0 10" },
     { "uc-finder", "Steadier readings while you walk",
       "bt.cs.filter 1 500\nbt.cs.range 0 10\nbt.cs.filter off" },
+    { "uc-finder", "Act on the distance: the LED lights up when the tag is closer than 2 m",
+      "trigger.add near cs below 2 do hw.led on\ntrigger.add far cs above 2.5 do hw.led off\n"
+      "trigger.fire near\ntrigger.list\ntrigger.remove all" },
 #endif
 #if UCXAPP_HOST
     { "uc-matter", "Start the node with its setup codes",
@@ -761,6 +789,9 @@ static const example_t kExamples[] = {
       "# the phone connects over Bluetooth LE and sends the network; the card follows each step\nmatter.card\nmatter.status" },
     { "uc-matter", "Commission it again from a second home app",
       "matter.open 180\nmatter.card" },
+    { "uc-matter", "Automate it: the lamp goes off when you come closer than 2 m (Channel Sounding)",
+      "trigger.add near cs below 2 do matter.set light off\ntrigger.add far cs above 2.5 do matter.set light on\n"
+      "trigger.fire near\nmatter.status\ntrigger.list\ntrigger.remove all" },
     { "uc-matter", "Done: stop the node",
       "matter.stop" },
     { "utils", "Handy tools",

@@ -50,6 +50,16 @@ void ucxapp_ui_thread_changed(void) { }
 #endif
 void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel) { (void)text; (void)prefill; (void)cancel; }
 #endif
+#ifndef UCXAPP_TRIGGER   /* boards with hw.* build trigger.* (ucxapp_cmds_trigger.c) */
+void ucxapp_trigger_event(const char *text) { (void)text; }
+void ucxapp_trigger_distance(int32_t conn, int32_t mm) { (void)conn; (void)mm; }
+bool ucxapp_trigger_card(char *out, size_t size) { (void)out; (void)size; return false; }
+bool ucxapp_hw_card(char *out, size_t size) { (void)out; (void)size; return false; }
+int ucxapp_hw_button(void) { return -1; }
+bool ucxapp_hw_led(bool on) { (void)on; return false; }
+int ucxapp_hw_led_state(void) { return -1; }
+int ucxapp_hw_adc_mv(int ch) { (void)ch; return -1; }
+#endif
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     (void)conn; (void)handle; (void)data; (void)len;

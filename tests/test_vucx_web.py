@@ -423,3 +423,46 @@ def test_https_with_a_named_certificate_and_one_that_does_not_exist(app_exe, tmp
     assert "created certificate tls-web" not in out, "a named certificate must not make tls-web"
     assert "200" in _status(client), client.response[:200]
     assert not (tmp_path / "storage" / "tls-web.crt").exists()
+
+
+def test_kiosk_gets_the_triggers_a_qr_code_and_its_address(app_exe, tmp_path):
+    """The kiosk view's parts: the "trigger" card on the event stream (and again when a rule changes), the QR code
+    of the pairing code as an SVG path from /api/qr, and web.kiosk link printing the page's #kiosk address."""
+    import json
+
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["requests"] = {8080: [_get("/api/qr?q=MT:Y.K9042C00KA0648G00"), _get("/api/qr"),
+                                             _get("/events")]}   # one after the other: the stream stays open
+    module = Vucx(profile)
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path)
+
+    def reply(i, text):
+        end = time.monotonic() + 20
+        seen = ""
+        while time.monotonic() < end and text not in seen:
+            time.sleep(0.05)
+            seen = bytes(module.net.replies[i]).decode("latin-1") if len(module.net.replies) > i else ""
+        assert text in seen, (i, text, [bytes(r)[-1500:] for r in module.net.replies])
+        return seen
+
+    try:
+        proc.stdin.write(f"trigger.add boot event boot do app.wait 1\nweb.start 8080 {TOKEN} http\n")
+        proc.stdin.flush()
+        qr = json.loads(reply(0, "}").split("\r\n\r\n", 1)[1])
+        assert qr["n"] >= 21 and re.fullmatch(r"(M\d+ \d+h\d+v1h-\d+z)+", qr["p"]), qr
+        assert "200" not in reply(1, "\r\n\r\n").split("\r\n", 1)[0]        # nothing to draw
+        reply(2, 'event: trigger\ndata: "RULE  boot | on | -1 | 0 | 0 | event \\"boot\\" |  | app.wait 1\\n"')
+        proc.stdin.write("trigger.off boot\n")
+        proc.stdin.flush()
+        reply(2, 'data: "RULE  boot | off |')
+        out = proc.communicate("web.kiosk link\nweb.stop\ntrigger.remove all\n", timeout=30)[0]
+        assert re.search(rf"kiosk: http://[\d.]+:8080/#t={TOKEN}&kiosk$", out, re.M), out[-2000:]
+        assert "kiosk opened" not in out, out[-2000:]
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()

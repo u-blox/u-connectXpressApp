@@ -47,6 +47,12 @@ int ucxapp_hw_button(void);
 /* Drives the user LED; false when there is none. */
 bool ucxapp_hw_led(bool on);
 
+/* The user LED: 1 on, 0 off, -1 when there is none. */
+int ucxapp_hw_led_state(void);
+
+/* An ADC channel in millivolts, -1 when the board has no such channel or no ADC driver. */
+int ucxapp_hw_adc_mv(int ch);
+
 #ifdef __cplusplus
 }
 #endif

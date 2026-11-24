@@ -9,6 +9,7 @@ and STM32.
   ucxapp --stm32-freertos --board f767 --build --flash --log
   ucxapp --stm32-zephyr --board h753 --build --flash --log
   ucxapp --wasm                             browser build (WebAssembly + Web Serial), served on 127.0.0.1:8098
+  ucxapp COM13 --kiosk                      the web page full screen: Matter node, triggers, events (--wasm too)
   ucxapp --matter --build                   only the Matter plug-in for matter.* (host and browser builds include it)
   ucxapp --publish-web "new look"          build and test the browser site, commit app/web + app/wasm, push (Pages)
   ucxapp --detect                           find NORA modules, GNSS receivers, IMUs, modems and PPK2
@@ -222,6 +223,9 @@ def parse(argv):
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
     g.add_argument("--virtual", nargs="?", const="nora-w36", choices=sorted(VIRTUAL), metavar="MODULE",
                    help="run on a simulated module, no hardware: " + ", ".join(sorted(VIRTUAL)) + " (default nora-w36)")
+    g.add_argument("--kiosk", action="store_true",
+                   help="the web page full screen in its kiosk view (Matter node, triggers, events): the app's "
+                        "--kiosk (web.kiosk), or with --wasm the browser build opened in a kiosk window")
     g = p.add_argument_group("tools")
     g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers, IMUs, modems and PPK2")
     g.add_argument("--detect-force", action="store_true",
@@ -618,6 +622,7 @@ def host(args, extra):
         return run_virtual(Path(os.environ["UCX_APP_EXE"]), args.virtual, extra)
     exe = pick_exe(args)
     extra = [*extra, "--exec", "hid.setup", "--shell"] if args.hid else extra
+    extra = [*extra, "--kiosk"] if args.kiosk else extra
     if args.virtual:
         return run_virtual(exe, args.virtual, extra)
     return run_app(exe, extra)
@@ -1706,9 +1711,47 @@ def wasm_server(site, port):
     return server
 
 
-def wasm_serve(site, port):
+def kiosk_browser():
+    """The browser command for a kiosk window: UCXAPP_BROWSER as given, else Edge, Chrome, Chromium or Firefox."""
+    env = os.environ.get("UCXAPP_BROWSER")
+    if env:
+        return shlex.split(env, posix=not IS_WINDOWS), True
+    if IS_WINDOWS:
+        for exe in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
+            for var in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"):
+                path = Path(os.environ.get(var, "")) / exe
+                if os.environ.get(var) and path.exists():
+                    return [str(path)], True
+        return None, False
+    for name in ("chromium", "chromium-browser", "google-chrome", "microsoft-edge", "firefox"):
+        path = shutil.which(name)
+        if path:
+            return [path], name != "firefox"
+    return None, False
+
+
+def kiosk_open(url):
+    """Opens url full screen in its own browser profile, so kiosk mode applies while the browser is already open."""
+    cmd, chromium = kiosk_browser()
+    if cmd is None:
+        print(f"no browser found (Edge, Chrome, Chromium or Firefox; or set UCXAPP_BROWSER): open {url} full screen")
+        return False
+    profile = Path(os.environ.get("TEMP" if IS_WINDOWS else "TMPDIR", "/tmp")) / "ucxapp-kiosk-wasm"
+    args = ["--kiosk", url]
+    if chromium:
+        args += ["--no-first-run", "--no-default-browser-check", f"--user-data-dir={profile}"]
+        if "msedge" in cmd[0].lower():
+            args.append("--edge-kiosk-type=fullscreen")
+    subprocess.Popen([*cmd, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"kiosk: {url} (Alt+F4 closes it)")
+    return True
+
+
+def wasm_serve(site, port, kiosk=False):
     server = wasm_server(site, port)
     print(f"u-connectXpressApp in the browser: http://127.0.0.1:{port}/  (Chrome or Edge; Ctrl+C stops)")
+    if kiosk:
+        kiosk_open(f"http://127.0.0.1:{port}/#kiosk=window")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1744,7 +1787,7 @@ def wasm(args, extra):
         wasm_build(bool(node))
     if (args.build or args.clean or args.rebuild) and not args.run:
         return 0
-    return wasm_serve(site, WASM_PORT)
+    return wasm_serve(site, WASM_PORT, args.kiosk)
 
 
 # ---- Matter plug-in (ucxmatter) ----

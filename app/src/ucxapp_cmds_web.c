@@ -10,6 +10,9 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_logcfg.h"
+#if UCXAPP_HOST
+#include "ucxapp_proc.h"
+#endif
 #include "ucxapp_store.h"
 #include "ucxapp_thread.h"
 #include "ucxapp_tls.h"
@@ -59,6 +62,7 @@ static uWebServer_t *gServer;
 static uint16_t gPort;
 static bool gHttps;
 static char gToken[TOKEN_LEN + 1];
+static char gUrl[96 + TOKEN_LEN];   /* the page's address while serving, with the token: web.kiosk opens it */
 static volatile bool gRunning;
 static volatile bool gStop;
 static U_CX_MUTEX_HANDLE gLock;
@@ -172,7 +176,7 @@ typedef struct {
     uint32_t logCur, evCur, doneSeen;
     uint32_t stateSeen;
     int32_t stateMs;
-    uint32_t cardSeen[4];   /* hash of the GNSS, cellular, connections and Matter cards the page has */
+    uint32_t cardSeen[6];   /* hash of the GNSS, cellular, connections, Matter, trigger and board cards the page has */
 } viewer_t;
 
 /* The server's event clients, then the browser build's own page: the pump thread serves the first ones,
@@ -214,10 +218,9 @@ static viewer_t *viewer(int i)
            dev.summary refused as busy). */
         v->doneSeen = ucxapp_ui_done_seq(&(int){ 0 }) - (i != LOCAL_SLOT && !ucxapp_ui_busy() ? 1u : 0u);
         v->stateSeen = UINT32_MAX;   /* a new page gets the state at once */
-        v->cardSeen[0] = UINT32_MAX;
-        v->cardSeen[1] = UINT32_MAX;
-        v->cardSeen[2] = UINT32_MAX;
-        v->cardSeen[3] = UINT32_MAX;
+        for (size_t k = 0; k < sizeof(v->cardSeen) / sizeof(v->cardSeen[0]); k++) {
+            v->cardSeen[k] = UINT32_MAX;
+        }
         v->stateMs = U_CX_PORT_GET_TIME_MS();
     }
     return v;
@@ -352,10 +355,14 @@ static void flushCards(int first, int last)
     static card_t gnss = { .event = "gnss", .get = ucxapp_gnss_card, .slot = 0 };
     static card_t cell = { .event = "cell", .get = ucxapp_ui_cell_card, .slot = 1 };
     static card_t conn = { .event = "conn", .get = ucxapp_ui_conn_card, .slot = 2 };
+    static card_t trig = { .event = "trigger", .get = ucxapp_trigger_card, .slot = 4 };
+    static card_t board = { .event = "board", .get = ucxapp_hw_card, .slot = 5 };
 
     flushCard(&gnss, first, last);
     flushCard(&cell, first, last);
     flushCard(&conn, first, last);
+    flushCard(&trig, first, last);
+    flushCard(&board, first, last);
 #if UCXAPP_HOST   /* the boards run no Matter plug-in */
     static card_t matter = { .event = "matter", .get = ucxapp_matter_card, .slot = 3 };
 
@@ -1184,6 +1191,33 @@ static void routeUpload(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
 
 /* ---- commands --------------------------------------------------------------- */
 
+#if UCXAPP_HOST
+/* /api/qr?q=<text>: {"n":modules,"p":"svg path"}, the commissioning QR code drawn by the page (kiosk). */
+static void routeQr(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    static char q[200];
+    static char path[24576];   /* about 12 bytes per dark run; a Matter payload is a version 3 code (29 x 29) */
+    int modules = 0;
+
+    (void)user;
+    if (!tokenOk(req)) {
+        uWebServerSendError(resp, 403, "token required");
+        return;
+    }
+    if (uWebServerGetQueryParam(req, "q", q, sizeof(q)) != 0) {
+        uWebServerSendError(resp, 400, "missing q");
+        return;
+    }
+    urlDecode(q);
+    if (!ucxapp_qr_path(q, path, sizeof(path), &modules)) {
+        uWebServerSendError(resp, 400, "text too long for a QR code");
+        return;
+    }
+    snprintf(gBuf, API_BUF, "{\"n\":%d,\"p\":\"%s\"}", modules, path);
+    uWebServerSendJSON(resp, gBuf);
+}
+#endif
+
 static const struct {
     uHttpMethod_t method;
     const char *path;
@@ -1204,6 +1238,9 @@ static const struct {
     { U_HTTP_METHOD_GET,  "/api/files",    routeFiles },
     { U_HTTP_METHOD_GET,  "/api/file",     routeFile },
     { U_HTTP_METHOD_POST, "/api/upload",   routeUpload },
+#if UCXAPP_HOST
+    { U_HTTP_METHOD_GET,  "/api/qr",       routeQr },
+#endif
 };
 
 static bool makeToken(char *out)
@@ -1412,6 +1449,8 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("web server on %s: %s://%s:%d/%s%s\n", ssid, gHttps ? "https" : "http", ip, (int)port,
                  gToken[0] != '\0' ? "#t=" : "", gToken);
+    snprintf(gUrl, sizeof(gUrl), "%s://%s:%d/%s%s", gHttps ? "https" : "http", ip, (int)port,
+             gToken[0] != '\0' ? "#t=" : "", gToken);
     if (gHttps) {
         if (gToken[0] == '\0') {
             ucxapp_print("no access token: anyone who can reach this address can use the page (leave out open for one)\n");
@@ -1463,6 +1502,141 @@ static int cmdWebStatus(ucxapp_t *app, int argc, char *argv[])
                      (int)uWebServerGetSSEClientCount(gServer));
     }
     return UCXAPP_OK;
+}
+
+#if UCXAPP_HOST && !defined(__EMSCRIPTEN__)
+/* The browser for the kiosk, quoted, and whether it takes Chromium's switches; UCXAPP_BROWSER is used as given
+   (tests put a fake one there). */
+static bool kioskBrowser(char *out, size_t size, bool *chromium, bool *edge)
+{
+    const char *env = getenv("UCXAPP_BROWSER");
+    char path[512];
+
+    *chromium = true;
+    *edge = false;
+    if (env != NULL && env[0] != '\0') {
+        snprintf(out, size, "%s", env);
+        return true;
+    }
+#ifdef _WIN32
+    static const char *const kDirs[] = { "ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA" };
+    static const char *const kExes[] = { "Microsoft\\Edge\\Application\\msedge.exe",
+                                         "Google\\Chrome\\Application\\chrome.exe" };
+
+    for (size_t e = 0; e < sizeof(kExes) / sizeof(kExes[0]); e++) {
+        for (size_t d = 0; d < sizeof(kDirs) / sizeof(kDirs[0]); d++) {
+            const char *dir = getenv(kDirs[d]);
+            FILE *f;
+
+            if (dir == NULL) {
+                continue;
+            }
+            snprintf(path, sizeof(path), "%s\\%s", dir, kExes[e]);
+            f = fopen(path, "rb");
+            if (f != NULL) {
+                fclose(f);
+                *edge = e == 0;
+                return ucxapp_proc_quote(path, out, size);
+            }
+        }
+    }
+#else
+    static const char *const kNames[] = { "chromium", "chromium-browser", "google-chrome", "microsoft-edge",
+                                          "firefox" };
+
+    for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); i++) {
+        if (ucxapp_proc_which(kNames[i], path, sizeof(path))) {
+            *chromium = strcmp(kNames[i], "firefox") != 0;
+            *edge = strcmp(kNames[i], "microsoft-edge") == 0;
+            return ucxapp_proc_quote(path, out, size);
+        }
+    }
+#endif
+    return false;
+}
+
+/* Opens url full screen in its own browser profile: kiosk mode applies even while the browser is already open. */
+static bool kioskOpen(const char *url)
+{
+    char browser[600], arg[300], profile[300], dir[260], cmd[1400];
+    bool chromium, edge;
+    ucxapp_proc_t *p;
+#ifdef _WIN32
+    const char *tmp = getenv("TEMP");
+#else
+    const char *tmp = getenv("TMPDIR");
+#endif
+
+    if (!kioskBrowser(browser, sizeof(browser), &chromium, &edge)) {
+        ucxapp_print("no browser found (Edge, Chrome, Chromium or Firefox; or set UCXAPP_BROWSER): open the address "
+                     "above full screen\n");
+        return false;
+    }
+    snprintf(dir, sizeof(dir), "%s/ucxapp-kiosk", tmp != NULL && tmp[0] != '\0' ? tmp : "/tmp");
+    if (!ucxapp_proc_quote(url, arg, sizeof(arg))) {
+        return false;
+    }
+    if (chromium) {
+        char full[300];
+
+        snprintf(full, sizeof(full), "--user-data-dir=%s", dir);
+        if (!ucxapp_proc_quote(full, profile, sizeof(profile))) {
+            return false;
+        }
+        snprintf(cmd, sizeof(cmd), "%s --kiosk %s%s --no-first-run --no-default-browser-check %s", browser, arg,
+                 edge ? " --edge-kiosk-type=fullscreen" : "", profile);
+    } else {
+        snprintf(cmd, sizeof(cmd), "%s --kiosk %s", browser, arg);
+    }
+    p = ucxapp_proc_start(cmd, NULL, UCXAPP_PROC_DETACHED);
+    if (p == NULL) {
+        ucxapp_print("ERROR: the browser did not start\n");
+        return false;
+    }
+    ucxapp_proc_release(p);
+    ucxapp_print("kiosk opened full screen; Alt+F4 closes it\n");
+    return true;
+}
+#endif
+
+/* web.kiosk [link]: serves the page (web.start when it is not running) and opens its kiosk view full screen: the
+   Matter node, the triggers and the events, large enough for a touch screen. link only prints the address. */
+static int cmdWebKiosk(ucxapp_t *app, int argc, char *argv[])
+{
+    bool link = argc == 2 && strcmp(argv[1], "link") == 0;
+
+    if (argc > 2 || (argc == 2 && !link)) {
+        return UCXAPP_ERR_USAGE;
+    }
+#ifdef __EMSCRIPTEN__
+    (void)app;
+    ucxapp_print("this page is the app: pick Kiosk in its menu, or add #kiosk to its address\n");
+    return UCXAPP_OK;
+#else
+    if (gServer == NULL) {
+        char name[] = "web.start";
+        char *startArgv[] = { name };
+
+        if (app->ucx == NULL) {
+            ucxapp_print("ERROR: no module connected (dev.connect): the page is served by the module over Wi-Fi\n");
+            return UCXAPP_ERR_FAILED;
+        }
+        int rc = cmdWebStart(app, 1, startArgv);
+        if (rc != UCXAPP_OK) {
+            return rc;
+        }
+    }
+    char url[sizeof(gUrl) + 16];
+    snprintf(url, sizeof(url), "%s%skiosk", gUrl, strchr(gUrl, '#') != NULL ? "&" : "#");
+    ucxapp_print("kiosk: %s\n", url);
+#if UCXAPP_HOST
+    if (!link) {
+        strcat(url, "=window");   /* the page's Exit kiosk closes this window */
+        (void)kioskOpen(url);
+    }
+#endif
+    return UCXAPP_OK;
+#endif
 }
 
 static bool writeJson(const char *dir, const char *name, const char *group, size_t len)
@@ -1526,6 +1700,7 @@ static const ucxapp_cmd_t gWebCmds[] = {
     { "web.start",  "[port] [token|open] [http|https [cert]]", "Serve the web UI from the module (needs Wi-Fi) over HTTPS on port 443, with a certificate for the module's address made by the local CA on first use (tls-web, tls-ca); https <cert> uses tls-<cert>; http serves plain HTTP on port 80. The page needs an access token, random unless one is given (the URL ends in #t=<token>); open serves HTTPS without one", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Web server state",                                             0, cmdWebStatus },
+    { "web.kiosk",  "[link]",         "Kiosk view: serve the page (web.start if needed) and open it full screen in Edge, Chrome, Chromium or Firefox (UCXAPP_BROWSER overrides), showing the Matter node with its QR code or endpoints, the triggers and the events, sized for a touch screen; link only prints the address (#kiosk)", 0, cmdWebKiosk },
 };
 
 void ucxapp_register_web_cmds(void)

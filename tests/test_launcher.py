@@ -260,7 +260,7 @@ def test_the_browser_build_takes_the_extra_command_pack(monkeypatch, tmp_path, c
     os.utime(site / "ucxapp.wasm", (later, later))
     (tmp_path / "wasm" / "CMakeCache.txt").write_text("UCXAPP_EXTRA_DIR:PATH=\n")
     monkeypatch.setattr(ucxapp, "wasm_build", lambda node=True: steps.append("build"))
-    monkeypatch.setattr(ucxapp, "wasm_serve", lambda site, port: steps.append("serve") or 0)
+    monkeypatch.setattr(ucxapp, "wasm_serve", lambda site, port, kiosk=False: steps.append("serve") or 0)
     assert ucxapp.main(["--wasm", "--no-matter"]) == 0
     assert steps == ["serve"]
     monkeypatch.setenv("UCXAPP_EXTRA_DIR", str(pack))

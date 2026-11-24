@@ -113,7 +113,7 @@ footer{min-height:3.1rem;padding:.1rem .7rem 0;display:flex;gap:.9rem;align-item
 #flt{flex:none;margin-bottom:.35rem;padding:.3rem .5rem}#mb{flex:none;min-width:0;width:5rem;padding:.3rem}
 #hint{padding:.2rem .7rem;min-height:1.2rem;font:12px Consolas,monospace;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button{padding:.4rem .8rem;background:#1b2433;color:var(--tx);border:1px solid #33415a;border-radius:8px;cursor:pointer;transition:background .15s,border-color .15s}
-button:hover{border-color:var(--ac)}button:disabled{opacity:.45;cursor:wait}#run{display:flex;align-items:center;gap:.45rem;flex:none;height:2.15rem;padding:0 1.15rem;border-radius:999px;background:var(--ac);border-color:var(--ac);color:#04121c;font-weight:700}#run kbd{font:inherit;font-size:.85rem;opacity:.6}button.dg{border-color:#7a2e48;color:#ff8fa8}
+button:hover{border-color:var(--ac)}button:disabled{opacity:.45;cursor:wait}#run{display:flex;align-items:center;gap:.45rem;flex:none;height:2.15rem;padding:0 1.15rem;border-radius:999px;background:var(--ac);border-color:var(--ac);color:#04121c;font-weight:700}#run kbd{font:inherit;font-size:1.2em;line-height:1;opacity:.75}button.dg{border-color:#7a2e48;color:#ff8fa8}
 #cmd:focus,#flt:focus,.c input:focus,.c select:focus{outline:none;border-color:var(--ac)}
 summary:focus-visible,button:focus-visible,#out:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
 label{color:var(--mut);font-size:.85rem;display:flex;align-items:center;gap:.2rem}
@@ -176,15 +176,29 @@ input[type=checkbox]{accent-color:var(--ac)}*{scrollbar-width:thin;scrollbar-col
 #mc pre{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:.6rem;overflow:auto;font:12px Consolas,monospace}#mc code{font-family:Consolas,monospace;color:var(--warm)}#mc code.ck{cursor:pointer}#mc code.ck:hover{text-decoration:underline}
 #mc table{border-collapse:collapse;margin:.4rem 0;font-size:.84rem}#mc th,#mc td{border:1px solid var(--bd);padding:.25rem .5rem;vertical-align:top;text-align:left}#mc th{background:var(--bg2)}#mc table{width:100%;table-layout:auto}#mc td{overflow-wrap:anywhere}#mc td:first-child code{white-space:nowrap}@media(max-width:820px){#mt{display:none}#mc{padding:.4rem .6rem}}#mc a{color:var(--ac)}#mc mark{background:#5a4a00;color:inherit}
 html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd8e3;--tx:#18202c;--mut:#5a6577;--bg2:#fff;--ac:#0277bd;--ok:#2a8c42;--warm:#9a6b00;--err:#d32f2f;--bad:#d32f2f;--bd2:#c3ccd8;--btn:#e3e9f1}.lt header{background:#fffc}.lt .bx{fill:#18202c}.lt button,.lt .thermo .tube{background:#e3e9f1;fill:#e3e9f1;border-color:#c3ccd8}.lt .scan:hover,.lt code:hover,.lt #mt a:hover{background:#dbe6f3}.lt #verdict{background:#e6f6ea}.lt #verdict.bad{background:#fde8e8}
+/* kiosk (web.kiosk, --kiosk, #kiosk): the Matter node, the triggers and the events, sized for a touch screen */
+#kio,#kx,#kst{display:none}body.kiosk>main,body.kiosk>footer,body.kiosk #tabs,body.kiosk #vw,body.kiosk #thm,body.kiosk #demo,body.kiosk #more,body.kiosk #state,body.kiosk #lv,body.kiosk #hint,body.kiosk #keys,body.kiosk #verdict{display:none!important}
+body.kiosk{height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:18px;user-select:none;-webkit-user-select:none}body.kiosk #kx,body.kiosk #kst{display:inline-block}#kst{color:var(--mut);font-size:.9rem}
+body.kiosk #kio{display:grid;grid-template:auto 1fr/minmax(0,1.25fr) minmax(0,1fr);gap:1rem;padding:1rem;flex:1;min-height:0}#kio.nomt{grid-template:1fr/1fr 1fr}#kio.nomt #kmt{display:none}#kmt{grid-row:span 2}
+.kc{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:1rem 1.2rem;min-height:0;overflow:auto}.kc h2{margin:0 0 .7rem;font-size:.95rem;color:var(--mut);text-transform:uppercase;letter-spacing:.1em}
+.kb{min-height:3rem;min-width:5rem;font-size:1.05rem;border-radius:12px}.kb.on{border-color:var(--ok);color:var(--ok)}.kbig{font-size:1.5rem;margin:.3rem 0 1rem}
+.kqr{display:flex;flex-direction:column;align-items:center;gap:.5rem;text-align:center;margin:.5rem 0 1rem}.kqr svg{width:min(42vh,100%);border-radius:12px;shape-rendering:crispEdges}.kqr b{font:700 1.6rem Consolas,monospace;letter-spacing:.08em}
+.ktiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.8rem}.kt{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;padding:.8rem;min-width:0}.kt .gv{display:block;margin:0}.kt .gv>span{display:none}.kt .gv>div{gap:.6rem;flex-wrap:wrap}.kt .gv .ev{flex:1 1 calc(100% - 6rem);font:600 1.15rem system-ui,sans-serif}.kt .gv .spark{flex:1 1 100%;height:2rem}.kt .gv input[type=number]{width:5.5rem}
+.kt .gv .pic{width:4.5rem;height:5.5rem}.kt .gv b{font-size:1rem}.kt button{min-height:2.8rem;min-width:3.4rem;font-size:1rem}.kt input{font-size:1rem;min-height:2.6rem}.kt input[type=range]{flex:1 1 100%;height:2.6rem}
+.kr{display:flex;align-items:center;gap:.8rem;padding:.7rem .4rem;border-bottom:1px solid var(--bd)}.kr>i{width:1rem;height:1rem;border-radius:50%;background:var(--mut);flex:none;opacity:.5}.kr.hit>i{background:var(--ok);opacity:1;box-shadow:0 0 10px var(--ok)}.kr.off{opacity:.55}
+.kr>div{flex:1;min-width:0;display:flex;flex-direction:column}.kr span{color:var(--mut);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kr em{font-style:normal;color:var(--mut);white-space:nowrap}.kr.fl,#kel .n{animation:kfl 1.3s}@keyframes kfl{0%{background:var(--warm)}}
+#kel .ke{display:flex;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--bd)}#kel .t{color:var(--mut);font:13px Consolas,monospace}
+#kbd{display:flex;align-items:center;gap:1rem;padding:0 .4rem .7rem;border-bottom:1px solid var(--bd)}#kbd:empty{display:none}#kbd i{width:1.6rem;height:1.6rem;border-radius:50%;background:#333;border:2px solid var(--bd);flex:none}#kbd i.on{background:#3ddc84;box-shadow:0 0 16px #3ddc84}#kbd span{color:var(--mut);flex:1}#kbd .kb.dn{background:var(--ok);color:#fff}
+@media(max-width:900px){body.kiosk{overflow:auto;height:auto}body.kiosk #kio{grid-template:auto/1fr}#kmt{grid-row:auto}}
 </style></head><body>
 <header><div id="hd"><svg class="logo" viewBox="0 0 1024 400" role="img" aria-label="u-blox">
 <circle cx="200" cy="200" r="190" fill="#e60000"/><circle cx="165" cy="130" r="32" fill="#fff"/>
 <g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="300">
 <text x="205" y="325" fill="#fff" textLength="190">u</text>
 <text class="bx" x="410" y="325" fill="#fff" textLength="600">blox</text></g></svg><img class="logo" src="icon.svg" alt="u-connectXpress">
-<h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated">Connections</button></span><select id="thm" title="Colour theme" aria-label="Theme" onchange="th(this.value)"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>
+<h1>u-connectXpressApp</h1><span id="st">connecting...</span><span id="kst"></span><span id="vw"><button data-v="0" class="on" title="Every command, one form each">Toolbox</button><button data-v="1" title="A product scenario, step by step">Use cases</button><button data-v="2" title="Every live link, animated">Connections</button></span><select id="thm" title="Colour theme" aria-label="Theme" onchange="th(this.value)"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>
 <span id="state"></span>
-<span id="ha"><button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></span></div>
+<span id="ha"><button id="kx" class="kb" title="Leave the kiosk view">Exit kiosk</button><button id="demo" title="A tour of the use cases on a virtual module">&#x25B6; Demo</button><span id="more"><button id="morb" title="More: manual, files, clear" aria-haspopup="true" aria-expanded="false">&#x22EF;</button><span id="morm" hidden><button id="kin" title="Full screen view of the Matter node, the triggers and the events (web.kiosk)">Kiosk</button><button id="man" title="The command manual (COMMANDS.md)">Manual</button><button id="files" title="Files on the device: upload, download, delete">Files</button><button id="clr" title="Clear the log and the events (Ctrl-L)">Clear</button></span></span></span></div>
 <div id="meta"><span id="clock" title="App clock (local or UTC) and sync source"></span><span id="lv"><span id="loc" title="Location: GNSS, wifi.locate or app.time geo"></span><span id="ver"></span></span></div></header>
 <nav id="tabs"><button data-p="pc">Commands</button><button data-p="pu">Use case</button><button data-p="pn">Links</button><button data-p="pl" class="on">Log</button><button data-p="pe">Events</button></nav>
 <div id="verdict" role="status" hidden></div><main><div class="pane" id="pc"><h2>Commands</h2><div id="qk" role="group" aria-label="quick connect"></div><input id="flt" placeholder="filter commands" aria-label="filter commands">
@@ -203,6 +217,7 @@ html.lt{color-scheme:light;background:#eef2f7;--bg:#eef2f7;--card:#fff;--bd:#cfd
 </div></div>
 <div class="pane on" id="pl"><h2>Log</h2><div id="flt-on" hidden></div><div id="out"><div id="trim" class="note" hidden>earlier output trimmed</div></div><span id="logb"><button id="lcopy" title="Copy the log to the clipboard">Copy</button><button id="lclr" title="Clear the log">Clear</button><button id="atlog" title="Show or hide the AT TX/RX trace in the log (app.log.at.on/off)">AT log</button></span></div>
 <div class="pane" id="pe"><h2>What's happening</h2><div id="pet" role="tablist"></div><div id="cnd" class="card" hidden></div><div id="ev"></div></div></main>
+<section id="kio"><div class="kc" id="kmt"><h2>Matter</h2><div id="kmb"></div></div><div class="kc"><h2>Triggers</h2><div id="kbd"></div><div id="ktl"></div></div><div class="kc"><h2>Events</h2><div id="kel"></div></div></section>
 <footer><div id="bar"><label id="atl" title="Send every line as an AT command"><input type="checkbox" id="at"><span>AT</span></label><span id="pr" aria-hidden="true">&rsaquo;</span>
 <datalist id="fwl"></datalist><input id="cmd" placeholder="command, e.g. wifi.scan (Tab completes, Up/Down history)" autofocus>
 <span id="busy"></span><button id="run" title="Run the command line (Enter)">Run<kbd>&crarr;</kbd></button></div>
@@ -217,6 +232,8 @@ const TM=matchMedia('(prefers-color-scheme:light)');function th(m){m=m||localSto
 const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),hint=$('hint'),
  T=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('t')||sessionStorage.getItem('t')||'',
  K={'X-Token':T},CM={},LOG_MAX=300000,UP_CHUNK=768,DL_CHUNK=16384;
+/* #kiosk=window: a full screen window the launcher opened, which Exit kiosk closes (it has no frame to close) */
+{const k=/(?:^|[#?&])kiosk(=window)?\b/.exec(location.hash+'&'+location.search);if(k)sessionStorage.setItem('ucxk',k[1]?'w':'1')}
 sessionStorage.setItem('t',T);history.replaceState(null,'',location.pathname);
 let H=[];try{H=JSON.parse(localStorage.getItem('ucxh')||'[]')}catch(x){}
 const RS={};   /* how each command line ended in this session: the dot on its recent chip */
@@ -248,10 +265,10 @@ function add(t,flush){t=hold+pend+t;pend='';hold='';const m=t.match(/\x1b(\[[0-9
  while((r=re.exec(t))){put(tgt,t.slice(i,r.index));if(r[2]==='m')sgr(r[1]);i=re.lastIndex}
  put(tgt,t.slice(i));if(/[\u2580\u2584\u2588]/.test(t))qrImage(cur||free);
  trim();if(s)out.scrollTop=out.scrollHeight}
-function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight}
+function note(t){const s=stick(out);out.appendChild(el('div','note',t));free=null;if(s)out.scrollTop=out.scrollHeight;$('kst').textContent=t}
 function addEv(t){const s=stick(ev),i=t.indexOf(':'),k=i>0&&i<9?t.slice(0,i):'',d=el('div','e n '+k);
  d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','g',k||'info'));d.appendChild(el('span','x',k?t.slice(i+1).trim():t));
- fltMark(d,k);ev.appendChild(d);setTimeout(()=>d.classList.remove('n'),1300);while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight}
+ fltMark(d,k);ev.appendChild(d);setTimeout(()=>d.classList.remove('n'),1300);while(ev.children.length>200)ev.firstChild.remove();if(s)ev.scrollTop=ev.scrollHeight;kioEv(t)}
 function clearLog(){Array.from(out.children).slice(1).forEach(c=>{if(c!==cur)c.remove()});$('trim').hidden=true;total=0;free=null;hold=''}
 function clearAll(){clearLog();ev.textContent=''}
 /* the clipboard API needs a secure context: a page served by the module over plain HTTP copies through a text area */
@@ -274,7 +291,7 @@ function regLinks(b){const lines=b.body.textContent.split('\n');let on=0;b.body.
  lines.forEach((l,i)=>{if(/^Where are you located\?/.test(l))on=1;const m=on&&l.match(/^\s*(\d+)\s{2}([a-z]+)\s+(.+?)(\s+<- current)?$/);
   if(m){const d=el('div','scan',l);d.title='Click to set the region to '+m[3];d.onclick=()=>run('wifi.regdomain',[m[2]]);b.body.appendChild(d)}
   else{if(on&&!/^\s*\d/.test(l)&&!/^Where/.test(l))on=0;b.body.appendChild(document.createTextNode(l+(i<lines.length-1?'\n':'')))}})}
-function setBusy(c){busy=!!c;$('busy').textContent=c?'running '+c:'';$('busy').title=c?'running '+c:'';document.querySelectorAll('.c button,#run').forEach(b=>b.disabled=busy)}
+function setBusy(c){busy=!!c;$('busy').textContent=c?'running '+c:'';$('busy').title=c?'running '+c:'';$('kst').textContent=c?'running '+c:'';document.querySelectorAll('.c button,#run').forEach(b=>b.disabled=busy)}
 
 /* ---- running commands ---- */
 async function run(c,a,raw,yes){c=c.trim();if(!c)return;
@@ -784,7 +801,7 @@ function cnPulse(g,out){if(!CN.raf)return;const kinds=CNK[g];if(!kinds)return;
 
 function cnSelect(k){CN.sel=CN.sel===k?'':k;cnDetails();fltSet()}
 /* the live GNSS, cell and Matter cards (SSE): a tab in What's happening in every view, drawn as a picture there */
-const CARD={gnss:'',cell:'',matter:''};
+const CARD={gnss:'',cell:'',matter:'',trigger:'',board:''};
 /* what a key shows: a graph node (Connections view only), the module, or a live card without a graph */
 function cnItem(k){const cn=document.body.classList.contains('cn');if(k==='hub')return cn?CN.mod:null;if(cn&&CN.n[k]&&!CN.n[k].gone)return CN.n[k].o;
  if(k==='g'&&CARD.gnss)return{k,c:'gnss',ic:'GNSS',lb:'receiver',info:[],act:[['Status','gnss.status'],['Satellites','gnss.sats']]};
@@ -862,6 +879,43 @@ function mtSpark(h){const vs=h.map(x=>x.v),n=vs.length,lo=Math.min(...vs),hi=Mat
  d=n<2?'':vs.map((v,i)=>(i?'L':'M')+(i/(n-1)*120).toFixed(1)+','+(26-(v-mid+hf)/(2*hf)*24).toFixed(1)).join(' '),
  s=svg('0 0 120 28','spark','<path vector-effect="non-scaling-stroke" d="'+d+'"/>');s.setAttribute('preserveAspectRatio','none');if(n<2)return s;
  const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=lo.toFixed(1)+' .. '+hi.toFixed(1)+' C, the last '+vs.length+' readings';s.appendChild(t);return s}
+/* ---- kiosk: the Matter node (its QR code until commissioned, then its endpoints), the triggers and the events ---- */
+const QR={},TF={};function kioOn(){return document.body.classList.contains('kiosk')}
+function kio(on){const w=sessionStorage.getItem('ucxk')==='w';if(!on&&w)window.close();
+ sessionStorage.setItem('ucxk',on?(w?'w':'1'):'');document.body.classList.toggle('kiosk',!!on);$('kmb').sig=$('ktl').sig=$('kbd').sig=null;kioDraw();
+ if(on&&document.fullscreenEnabled&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});
+ else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{})}
+function kioEv(t){const k=$('kel'),d=el('div','ke n');d.appendChild(el('span','t',new Date().toLocaleTimeString([],{hour12:false})));d.appendChild(el('span','',t));
+ k.prepend(d);setTimeout(()=>d.classList.remove('n'),1300);while(k.children.length>14)k.lastChild.remove()}
+function kioQr(w,q){const d=s=>{if(!s)return;const n=s.n+4;w.prepend(svg('-2 -2 '+n+' '+n,'','<rect x="-2" y="-2" width="'+n+'" height="'+n+'" fill="#fff"/><path d="'+s.p+'"/>'))};
+ if(QR[q])d(QR[q]);else api('/api/qr?q='+enc(q)).then(r=>r.ok?r.json():null).then(s=>{QR[q]=s;d(s)}).catch(()=>{})}
+function kioDraw(){if(!kioOn()||CN.busy)return;const m=CARD.matter,b=$('kmb'),tl=$('ktl'),tr=CARD.trigger,
+  g=k=>((new RegExp('^'+k+'\\s+(.*)$','m')).exec(m)||[])[1]||'',ls=re=>m.split('\n').filter(l=>re.test(l));
+ $('kio').classList.toggle('nomt',!m);
+ if(b.sig!==m){b.sig=m;b.textContent='';
+  if(/^NODE\s+stopped/.test(m)){b.appendChild(el('p','kbig','The Matter node is stopped'));const s=el('button','kb','Start');s.onclick=()=>run('matter.start');b.appendChild(s)}
+  else if(m){const st=g('STATE'),q=g('QR'),nc=/^not/.test(st),i=ls(nc?/^(STEP|ALERT)\s/:/^ALERT\s/).join('\n'),t=el('div','ktiles');
+   b.appendChild(el('p','kbig',st||g('NODE')));
+   if(nc&&q){const w=el('div','kqr');kioQr(w,q);w.appendChild(el('b','',g('CODE')));w.appendChild(el('span','','Scan with your home app to add the node'));b.appendChild(w)}
+   if(i)b.appendChild(cardView(i,'matter'));
+   ls(/^EP\s/).forEach(l=>t.appendChild(el('div','kt')).appendChild(cardView(l,'matter')));b.appendChild(t)}}
+ if(tl.sig!==tr){tl.sig=tr;tl.textContent='';const rs=tr.split('\n').filter(l=>/^RULE\s/.test(l));
+  if(!rs.length)tl.appendChild(el('p','note','No triggers yet: add one with trigger.add (trigger.example shows how)'));
+  rs.forEach(l=>{const p=l.slice(6).split(' | '),[nm,on,s,f,x,wh,nw]=p,y=on==='on',r=el('div','kr'+(s==='1'?' hit':'')+(y?'':' off')),d=el('div'),
+    o=el('button','kb'+(y?' on':''),y?'On':'Off'),fb=el('button','kb','Fire');
+   d.append(el('b','',nm),el('span','','when '+wh+(nw?' ('+nw+')':'')),el('span','','run '+p.slice(7).join(' | ')));
+   o.onclick=()=>run(y?'trigger.off':'trigger.on',[nm]);fb.onclick=()=>run('trigger.fire',[nm]);
+   r.append(el('i'),d,el('em','',f+'\u00d7'+(+x?', '+x+' failed':'')),o,fb);if(+f>TF[nm])r.classList.add('fl');TF[nm]=+f;tl.appendChild(r)})}
+ kioBoard()}
+/* the board's user LED and button (hw.* card); on a PC they are virtual: hold the button to press it */
+function kioBoard(){const k=$('kbd'),c=CARD.board,g=n=>((new RegExp('^'+n+'\\s+(\\S+)','m')).exec(c)||[])[1]||'none';if(k.sig===c)return;k.sig=c;
+ if(!c){k.textContent='';return}const led=g('LED'),bt=g('BUTTON'),v=g('VIRTUAL')==='yes';let i=k.querySelector('i'),b=k.querySelector('button');
+ if(!i){i=el('i');b=el('button','kb','Button');const up=()=>{if(!b.held)return;if(busy)return setTimeout(up,50);b.held=0;run('hw.button',['release'])};
+  b.onpointerdown=e=>{if(!b.v)return;e.preventDefault();b.held=1;run('hw.button',['press'])};b.onpointerup=b.onpointerleave=b.onpointercancel=up;
+  k.append(i,el('span'),b)}
+ i.className=led==='on'?'on':'';i.title='LED '+led;k.querySelector('span').textContent='LED '+led+(v?' (virtual board)':'');
+ b.v=v;b.hidden=bt==='none';b.disabled=!v;b.classList.toggle('dn',bt==='pressed');b.title=v?'Hold to press the virtual button (hw.button press)':'The board\'s button: '+bt}
+$('kin').onclick=()=>kio(1);$('kx').onclick=()=>kio(0);
 /* a fresh graph: every node, packet, drag offset and the zoom go; the next tick draws what the module has now */
 function cnClear(){Object.values(CN.n).forEach(n=>{clearTimeout(n.to);[n.pos,n.ln,n.fl,n.cs].forEach(e=>e.remove())});CN.n={};CN.sel='';
  CN.pk.forEach(p=>p.e.remove());CN.pk=[];cnReset();cnDetails();fltSet();if(CN.timer)cnTick()}
@@ -871,7 +925,7 @@ function fltMark(e,g){e.dataset.g=g||'';const k=fltKind();e.classList.toggle('hi
 function fltSet(){const k=fltKind(),n=k&&{o:cnItem(CN.sel)},bar=$('flt-on');document.body.classList.toggle('flt',!!k);bar.hidden=!k;bar.textContent='';
  document.querySelectorAll('#out>.blk,#ev>.e').forEach(e=>{if(e.dataset.g!==undefined)fltMark(e,e.dataset.g)});
  if(!k)return;bar.appendChild(el('span','','Showing only '+n.o.ic+' '+n.o.lb));const x=el('button','','Show all');x.onclick=()=>{CN.sel='';cnDetails();fltSet()};bar.appendChild(x)}
-function cnDetails(){const d=$('cnd'),o=CN.sel?cnItem(CN.sel):null;if(!o)CN.sel='';Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));
+function cnDetails(){kioDraw();const d=$('cnd'),o=CN.sel?cnItem(CN.sel):null;if(!o)CN.sel='';Object.keys(CN.n).forEach(k=>CN.n[k].nd.classList.toggle('sel',k===CN.sel));
  /* not under a slider being dragged or a number being typed: the field's own blur or change draws again */
  if(CN.busy&&o&&d.contains(document.activeElement))return;CN.busy=0;
  cnHub.classList.toggle('sel',CN.sel==='hub');petDraw();d.hidden=!o;document.body.classList.toggle('det',!!o);if(!o){d.sig='';return}
@@ -925,7 +979,7 @@ function qkState(ps){const g=p=>ps.find(x=>x.startsWith(p+' '));const w=g('Wi-Fi
  es.onerror=()=>{st.textContent='disconnected';st.className='bad';lit('hub',0)};
  es.addEventListener('out',e=>add(JSON.parse(e.data)));
  es.addEventListener('evt',e=>{const t=JSON.parse(e.data);addEv(t);cnPulse(t.slice(0,Math.max(0,t.indexOf(':'))),0)});
- ['gnss','cell','matter'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';if(c==='matter')mtHist(CARD[c]);cnDetails();if(s!==CN.sel)fltSet()}));
+ ['gnss','cell','matter','trigger','board'].forEach(c=>es.addEventListener(c,e=>{const s=CN.sel;CARD[c]=JSON.parse(e.data)||'';if(c==='matter')mtHist(CARD[c]);cnDetails();if(s!==CN.sel)fltSet()}));
  es.addEventListener('conn',e=>{if(CN.timer)cnUpdate(JSON.parse(e.data))});
  const CK={'Wi-Fi':'wifi.status',BLE:'bt.list',Advertising:'bt.adv',Listening:'sock.list',Thread:'thread.status',Sockets:'sock.list',GNSS:'gnss.status',IMU:'imu.status',Cell:'cell.status'};
  es.addEventListener('state',e=>{const s=$('state'),raw=JSON.parse(e.data),ps=raw.split(' | ');s.textContent='';const ti=ps.findIndex(p=>p.startsWith('Time '));
@@ -940,6 +994,7 @@ function qkState(ps){const g=p=>ps.find(x=>x.startsWith(p+' '));const w=g('Wi-Fi
   if(!sessionStorage.getItem('ucxs')&&!nomod&&!busy){sessionStorage.setItem('ucxs','1');run('dev.summary',null,0,1)}
   fillHandles();lit('wifi',ps[0]==='Wi-Fi up');lit('ble',HS.conn.length>0);lit('sock',HS.sock.length>0);qkState(ps)});
  es.addEventListener('done',e=>finish(+e.data))}
+if(/^[1w]$/.test(sessionStorage.getItem('ucxk')||''))kio(1);
 api('/api/groups').then(async r=>{if(r.status===403){const t=await ask('Access token (printed by web.start)',{input:1});
  if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{events();
  api('/api/version').then(r=>r.json()).then(j=>{$('ver').textContent=j.v.replace(/^u-connectXpressApp (\S+).*/,'v$1');$('ver').title=j.v;$('atlog').classList.toggle('on',!!j.at);if(j.real)$('demo').hidden=true}).catch(()=>{});

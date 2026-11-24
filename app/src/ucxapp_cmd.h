@@ -233,6 +233,18 @@ void ucxapp_register_conn_cmds(void);    /* conn.status (ucxapp_cmds_conn.c, hos
 #define UCXAPP_CONN_SNAPSHOT 1536
 /* The module's links as '|' separated lines for the web Connections view; talks to the module. */
 size_t ucxapp_conn_snapshot(ucxapp_t *app, char *out, size_t size);
+/* trigger.* (ucxapp_cmds_trigger.c; hosts and the boards with hw.*): run a command when something happens. */
+void ucxapp_register_trigger_cmds(void);
+/* What the triggers watch, from any thread (no AT commands): a line of the event log, a Channel Sounding distance. */
+void ucxapp_trigger_event(const char *text);
+void ucxapp_trigger_distance(int32_t conn, int32_t mm);
+/* The web page's trigger card, one RULE line per rule; false when there are none. */
+bool ucxapp_trigger_card(char *out, size_t size);
+/* The web page's board card (ucxapp_cmds_hw.c): the user LED and button, and whether they are the PC's virtual ones. */
+bool ucxapp_hw_card(char *out, size_t size);
+/* Before the module's AT client closes (app->ucx already NULL): waits for a check or command that uses it. */
+void ucxapp_trigger_quiesce(void);
+void ucxapp_trigger_stop(void);          /* at exit: ends the trigger thread */
 void ucxapp_register_snake_cmds(void);   /* app.snake, app.hunt (ucxapp_cmds_snake.c, host only) */
 /* Plays snake full screen on a terminal already in raw mode; returns the score. */
 int ucxapp_snake_play(void);
@@ -375,6 +387,8 @@ bool ucxapp_imu_dash(char *out, size_t size);
 /* QR rendering (ucxapp_cmds_qr.c): any text, or a Wi-Fi join payload (security WPA, WEP or nopass). */
 bool ucxapp_qr_print(const char *text);
 bool ucxapp_qr_print_wifi(const char *ssid, const char *password, const char *security, bool hidden);
+/* SVG path ("M x y h.. v1 h-.. z" per dark run, module units, no border) and its side in modules; false: too long. */
+bool ucxapp_qr_path(const char *text, char *out, size_t size, int *modules);
 
 /* Bluetooth security (ucxapp_cmds_bt.c): URC sinks that reply themselves, and the Just Works defaults. */
 void ucxapp_bt_bond_status(const uBtLeAddress_t *addr, int32_t status);

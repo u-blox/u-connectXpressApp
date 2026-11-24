@@ -71,6 +71,7 @@ if(CONFIG_CAN)
     target_compile_definitions(app PRIVATE UCXAPP_CAN_HW)
 endif()
 # Boards with room get hw.* on their own pins, as in the FreeRTOS build: hw_config.h from the board profile.
+set(_ucx_threads 0)   # ucxapp_thread pool: one for trigger.*, two for the web server
 set(_hwprofile_nucleo_h753zi h753)
 set(_hwprofile_nucleo_f767zi f767)
 set(_hwprofile_nucleo_f439zi f439)
@@ -90,6 +91,10 @@ if(DEFINED _hwprofile_${BOARD} AND CONFIG_GPIO)
     target_sources(app PRIVATE ucxapp_hw_zephyr.c ${APP_SRC}/ucxapp_cmds_hw.c)
     target_include_directories(app PRIVATE ${_hwgen})
     target_compile_definitions(app PRIVATE UCXAPP_HW_BOARD)
+    # ... and trigger.* next to them: rules on the button, the LED and what the module reports, on a thread of their own.
+    target_sources(app PRIVATE ${APP_SRC}/ucxapp_cmds_trigger.c)
+    target_compile_definitions(app PRIVATE UCXAPP_TRIGGER)
+    math(EXPR _ucx_threads "${_ucx_threads} + 1")
 endif()
 # 96-128 KB RAM boards: Zephyr's own RAM leaves no room for the full-size buffers next to a heap.
 # The phone remote control (xplorer.*) does not fit next to the rest in 512 KB of flash.
@@ -118,12 +123,16 @@ if(BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi)$")
         ${APP_SRC}/ucxapp_secure.c
         ${APP_SRC}/ucxapp_cmds_manual.c
         ${APP_SRC}/ucxapp_cmds_conn.c
-        ucxapp_thread_zephyr.c
         ucxapp_rng_zephyr.c
         ${UCXAPP_MBEDTLS_SOURCES})
+    math(EXPR _ucx_threads "${_ucx_threads} + 2")
     target_include_directories(app PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})
     target_compile_definitions(app PRIVATE UCXAPP_WEB UCXAPP_WEB_HTTPS_ONLY UCXAPP_SECURE ${UCXAPP_MBEDTLS_DEFINES}
         "kManual=((const char *)kManualBytes)" API_BUF=32768 DL_CHUNK=4096)
+endif()
+if(_ucx_threads GREATER 0)
+    target_sources(app PRIVATE ucxapp_thread_zephyr.c)
+    target_compile_definitions(app PRIVATE UCXAPP_THREAD_POOL=${_ucx_threads})
 endif()
 
 target_include_directories(app PRIVATE ${APP_SRC} ${CMAKE_CURRENT_SOURCE_DIR})

@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_hw.h"
 #include "ucxapp_stats.h"
 #include "ucxapp_stream.h"
 #include "ucxapp_ui.h"
@@ -457,13 +458,27 @@ static void parseLoc(const uint8_t *d, size_t n)
                  fixedText(lo, sizeof(lo), lon, 7), flags);
 }
 
-static void parseAioDigital(const uint8_t *d, size_t n)
+/* Number of Digitals (0x2909) per Digital characteristic, read by gatt.client.aio; without it every 2-bit field of
+ * the value is shown. */
+#define AIO_DIGITALS_MAX 8
+static int32_t gAioDigHandle[AIO_DIGITALS_MAX];
+static uint8_t gAioDigCount[AIO_DIGITALS_MAX];
+static int gAioDigs;
+
+/* AIOS: an array of 2-bit values, the first Digital in the low bits of the first octet. */
+static void parseAioDigital(const chr_t *c, const uint8_t *d, size_t n)
 {
-    ucxapp_print("[AIO] Digital: 0x");
-    printHex(d, n);
-    ucxapp_print("  ");
-    for (size_t bit = 0; bit < n * 8; bit++) {
-        ucxapp_print("D%u=%d ", (unsigned)bit, (d[bit / 8] >> (bit % 8)) & 1);
+    static const char *const kState[4] = { "inactive", "active", "tri-state", "unknown" };
+    size_t count = n * 4;
+
+    for (int i = 0; c != NULL && i < gAioDigs; i++) {
+        if (gAioDigHandle[i] == c->handle && gAioDigCount[i] <= count) {
+            count = gAioDigCount[i];
+        }
+    }
+    ucxapp_print("[AIO] Digital%s:", c == NULL ? "" : (c->props & (PROP_WRITE | PROP_WRITE_NR)) ? " output" : " input");
+    for (size_t i = 0; i < count; i++) {
+        ucxapp_print(" D%u=%s", (unsigned)i, kState[(d[i / 4] >> (2 * (i % 4))) & 3]);
     }
     ucxapp_print("\n");
 }
@@ -474,7 +489,7 @@ static void parseAioAnalog(const uint8_t *d, size_t n)
         ucxapp_print("[AIO] invalid analog length %u\n", (unsigned)n);
         return;
     }
-    ucxapp_print("[AIO] Analog: %d\n", (int)(int16_t)(d[0] | (d[1] << 8)));
+    ucxapp_print("[AIO] Analog: %u\n", (unsigned)(d[0] | (d[1] << 8)));
 }
 
 static void parseBattery(const uint8_t *d, size_t n)
@@ -586,7 +601,7 @@ static void printValue(const chr_t *c, const uint8_t *d, size_t n)
         case 0x2A6E: parseTemp(d, n); return;
         case 0x2A6F: parseHum(d, n); return;
         case 0x2A67: parseLoc(d, n); return;
-        case 0x2A56: parseAioDigital(d, n); return;
+        case 0x2A56: parseAioDigital(c, d, n); return;
         case 0x2A58: parseAioAnalog(d, n); return;
         case 0x2A19: parseBattery(d, n); return;
         case 0x2C14: parseRasFeatures(d, n); return;
@@ -652,6 +667,7 @@ void ucxapp_gatt_notification(int32_t conn, int32_t handle, const uint8_t *data,
             }
         }
         ucxapp_ui_event(ev);
+        ucxapp_trigger_event(ev);
     }
 }
 
@@ -697,26 +713,49 @@ static int32_t charEnd(int32_t valueHandle)
     return end;
 }
 
-/* The CCCD (0x2902) handle. Usually value + 1, but a server may put e.g. an Extended Properties descriptor
- * first (iOS does for characteristics with property 0x80), so it is looked up. */
-static int32_t findCccd(ucxapp_t *app, int32_t conn, int32_t valueHandle)
+/* The handle of the 16-bit descriptor uuid of the characteristic whose value is at valueHandle, -1 if none. */
+static int32_t findDescriptor(ucxapp_t *app, int32_t conn, int32_t valueHandle, uint16_t uuid)
 {
     int32_t end = charEnd(valueHandle);
     int32_t found = -1;
     uCxGattClientDiscoverCharDescriptors_t d;
+    uint8_t hi = (uint8_t)(uuid >> 8);
+    uint8_t lo = (uint8_t)(uuid & 0xFF);
 
     if (end <= valueHandle) {
-        return valueHandle + 1;
+        return -1;
     }
     uCxGattClientDiscoverCharDescriptorsBegin(app->ucx, conn, valueHandle, end);
     while (uCxGattClientDiscoverCharDescriptorsGetNext(app->ucx, &d)) {
         if (found < 0 && d.uuid.length == 2 &&
-            ((d.uuid.pData[0] == 0x29 && d.uuid.pData[1] == 0x02) || (d.uuid.pData[0] == 0x02 && d.uuid.pData[1] == 0x29))) {
+            ((d.uuid.pData[0] == hi && d.uuid.pData[1] == lo) || (d.uuid.pData[0] == lo && d.uuid.pData[1] == hi))) {
             found = d.desc_handle;
         }
     }
     (void)uCxEnd(app->ucx);
+    return found;
+}
+
+/* The CCCD (0x2902) handle. Usually value + 1, but a server may put e.g. an Extended Properties descriptor
+ * first (iOS does for characteristics with property 0x80), so it is looked up. */
+static int32_t findCccd(ucxapp_t *app, int32_t conn, int32_t valueHandle)
+{
+    int32_t found = findDescriptor(app, conn, valueHandle, 0x2902);
+
     return found >= 0 ? found : valueHandle + 1;
+}
+
+/* Reads the Number of Digitals of an AIO Digital for parseAioDigital. */
+static void readNumDigitals(ucxapp_t *app, int32_t conn, int32_t valueHandle)
+{
+    uint8_t buf[MAX_VALUE];
+    size_t len = 0;
+    int32_t h = findDescriptor(app, conn, valueHandle, 0x2909);
+
+    if (h >= 0 && gAioDigs < AIO_DIGITALS_MAX && readHandle(app, conn, h, buf, &len) && len == 1) {
+        gAioDigHandle[gAioDigs] = valueHandle;
+        gAioDigCount[gAioDigs++] = buf[0];
+    }
 }
 
 /* mode: 0 = off, 1 = notifications, 2 = indications. */
@@ -972,6 +1011,7 @@ static int cmdGattExample(ucxapp_t *app, int argc, char *argv[])
     int subscribed = 0;
     gListenCount = 0;
     gListenConn = conn;
+    gAioDigs = 0;
     for (int i = 0; i < gChrCount; i++) {
         const chr_t *c = &gChr[i];
         uint8_t buf[MAX_VALUE];
@@ -986,6 +1026,13 @@ static int cmdGattExample(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("%s%s%s%s  handle 0x%04X\n", u, name ? " (" : "", name ? name : "", name ? ")" : "",
                      (unsigned)c->handle);
 
+        if (isUuid16(c->uuid, c->uuidLen, 0x2A56)) {
+            readNumDigitals(app, conn, c->handle);
+            if (c->props & (PROP_WRITE | PROP_WRITE_NR)) {
+                ucxapp_print("  set it with gatt.write %d %d 01 (D0 active) or 00 (inactive)\n", (int)conn,
+                             (int)c->handle);
+            }
+        }
         if (c->props & PROP_READ) {
             if (readHandle(app, conn, c->handle, buf, &len)) {
                 printValue(c, buf, len);
@@ -1135,10 +1182,13 @@ static const srvChar_t kEssChars[] = {
     { "ess.humidity",    0x2A6F, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x94, 0x11 }, 2, 0, false, NULL },
 };
 /* AIOS 1.0: https://www.bluetooth.com/specifications/specs/automation-io-service-1-0/
- * Digital carries the mandatory Number of Digitals descriptor, added in cmdServerSetup. */
+ * The board's user LED (a digital output) and user button (a digital input), as on the NUCLEO-H753ZI and the
+ * virtual board, and ADC channel 0 in mV. Each Digital gets the mandatory Number of Digitals and, as there are
+ * two of them, a Presentation Format numbering them; both are added in cmdServerSetup. 0x03 = unknown. */
 static const srvChar_t kAioChars[] = {
-    { "aio.digital", 0x2A56, NULL, PROP_READ | PROP_WRITE | PROP_NOTIFY, 1, { 0x00 }, 1, 0, false, NULL },
-    { "aio.analog",  0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0xF4, 0x01 }, 2, 0, false, NULL },
+    { "aio.led",    0x2A56, NULL, PROP_READ | PROP_WRITE, 1, { 0x03 }, 1, 0, false, NULL },
+    { "aio.button", 0x2A56, NULL, PROP_READ | PROP_NOTIFY, 1, { 0x03 }, 1, 0, false, NULL },
+    { "aio.analog", 0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x00, 0x00 }, 2, 0, false, NULL },
 };
 /* LNS 1.0 (PDF only): https://www.bluetooth.com/specifications/specs/location-and-navigation-service-1-0/
  * LN Feature is mandatory; Location and Speed is notify-only. */
@@ -1316,6 +1366,73 @@ static const srvProfile_t *findProfile(const char *key, size_t *index)
     return NULL;
 }
 
+/* Last AIO Digital values put in the server, 0x00 inactive, 0x01 active, 0x03 unknown; -1 before the first. */
+static volatile int gAioLed = -1;
+static int gAioButton = -1;
+
+static uint8_t aioDigital(int level)
+{
+    return level < 0 ? 0x03 : (uint8_t)(level != 0);
+}
+
+/* Copies the user LED and button into aio.led and aio.button and notifies a button change; with analog, also ADC 0
+ * (a ramp where the board has no ADC driver). conn < 0 only sets the values. False if a notification failed. */
+static bool aioPoll(ucxapp_t *app, int32_t conn, int32_t t, bool analog)
+{
+    const srvRec_t *led = findSrv("aio.led");
+    const srvRec_t *button = findSrv("aio.button");
+    const srvRec_t *an = findSrv("aio.analog");
+    uint8_t d[2];
+    bool ok = true;
+
+    if (led == NULL || button == NULL || an == NULL) {
+        return false;
+    }
+    d[0] = aioDigital(ucxapp_hw_led_state());
+    if (d[0] != gAioLed) {
+        gAioLed = d[0];
+        (void)uCxGattServerSetAttrValue(app->ucx, led->value, d, 1);
+    }
+    d[0] = aioDigital(ucxapp_hw_button());
+    if (d[0] != gAioButton) {
+        if (gAioButton >= 0) {
+            ucxapp_print("[AIO] button %s\n", d[0] == 1 ? "pressed" : d[0] == 0 ? "released" : "unknown");
+        }
+        gAioButton = d[0];
+        (void)uCxGattServerSetAttrValue(app->ucx, button->value, d, 1);
+        ok = conn < 0 || uCxGattServerSendNotification(app->ucx, conn, button->value, d, 1) == 0;
+    }
+    if (analog) {
+        int mv = ucxapp_hw_adc_mv(0);
+        put16(d, mv >= 0 ? (unsigned)mv : (unsigned)(500 + (t % 10) * 25));
+        (void)uCxGattServerSetAttrValue(app->ucx, an->value, d, 2);
+        ok = (conn < 0 || uCxGattServerSendNotification(app->ucx, conn, an->value, d, 2) == 0) && ok;
+    }
+    return ok;
+}
+
+/* A client wrote aio.led (URC task): 0b00 off, 0b01 on; tri-state and unknown leave the LED as it is. */
+static bool aioWrite(int32_t handle, const uint8_t *data, size_t len)
+{
+    const srvRec_t *led = findSrv("aio.led");
+
+    if (led == NULL || led->value != handle) {
+        return false;
+    }
+    int v = len >= 1 ? data[0] & 0x03 : 3;
+    if (v > 1) {
+        gAioLed = -1;   /* the next poll puts the LED's real state back */
+        ucxapp_print("[AIO] LED write 0x%X ignored (only 0 off, 1 on)\n", (unsigned)v);
+    } else if (ucxapp_hw_led(v == 1)) {
+        gAioLed = v;
+        ucxapp_print("[AIO] LED %s\n", v ? "on" : "off");
+    } else {
+        gAioLed = -1;
+        ucxapp_print("[AIO] LED write ignored: this board has no user LED\n");
+    }
+    return true;
+}
+
 static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
 {
     size_t idx = 0;
@@ -1352,6 +1469,7 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("%s service defined (handle %d)\n", p->title, (int)svcHandle);
 
     size_t first = gSrvCount;
+    uint8_t digitals = 0;
     for (size_t i = 0; i < p->nChars; i++) {
         const srvChar_t *c = &p->chars[i];
         uint8_t init[MAX_INIT];
@@ -1385,11 +1503,16 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
         }
         if (c->u16 == 0x2A56) {
             static const uint8_t kNumDigitalsUuid[2] = { 0x29, 0x09 };
-            static const uint8_t kNumDigitals = 4;   /* 2 bits per digital, one octet */
+            static const uint8_t kFormatUuid[2] = { 0x29, 0x04 };
+            static const uint8_t kNumDigitals = 1;
+            /* struct, exponent and unit 0, namespace Bluetooth SIG, description = the Digital's number */
+            uint8_t format[7] = { 0x1B, 0x00, 0x00, 0x00, 0x01, ++digitals, 0x00 };
             int32_t dh;
             if (uCxGattServerDescriptorDefine4(app->ucx, kNumDigitalsUuid, 2, U_GATT_SERVER_READ_SECURITY_NONE,
-                                               U_GATT_SERVER_WRITE_SECURITY_NONE, &kNumDigitals, 1, &dh) != 0) {
-                ucxapp_print("WARNING: cannot add Number of Digitals descriptor\n");
+                                               U_GATT_SERVER_WRITE_SECURITY_NONE, &kNumDigitals, 1, &dh) != 0 ||
+                uCxGattServerDescriptorDefine4(app->ucx, kFormatUuid, 2, U_GATT_SERVER_READ_SECURITY_NONE,
+                                               U_GATT_SERVER_WRITE_SECURITY_NONE, format, 7, &dh) != 0) {
+                ucxapp_print("WARNING: cannot add the Digital descriptors of %s\n", c->name);
             }
         }
         gSrv[gSrvCount].name = c->name;
@@ -1406,6 +1529,11 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     gSrvDone |= 1u << idx;
+    if (strcmp(p->key, "aio") == 0) {
+        gAioLed = -1;
+        gAioButton = -1;
+        (void)aioPoll(app, -1, 0, true);
+    }
     ensureAdvertising(app);
     ucxapp_print("%s service active; connect a client, or use gatt.server.demo\n", p->title);
     return UCXAPP_OK;
@@ -1527,10 +1655,7 @@ static bool demoTick(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t
         put16(d, (unsigned)(4500 + (t % 10) * 20));
         ok = notifyNamed(app, conn, "ess.humidity", d, 2) && ok;
     } else if (strcmp(p->key, "aio") == 0) {
-        d[0] = (uint8_t)(t & 1);
-        ok = notifyNamed(app, conn, "aio.digital", d, 1);
-        put16(d, (unsigned)(500 + (t % 10) * 25));
-        ok = notifyNamed(app, conn, "aio.analog", d, 2) && ok;
+        ok = aioPoll(app, conn, t, true);
     } else if (strcmp(p->key, "lns") == 0) {
         buildLocation(d);
         ok = notifyNamed(app, conn, "lns.location", d, 10);
@@ -1543,6 +1668,19 @@ static bool demoTick(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t
         ok = s != NULL && uCxGattServerSendIndication(app->ucx, conn, s->value, d, 2) == 0;
     }
     return ok;
+}
+
+/* Waits a second; meanwhile Automation IO follows the user button every 50 ms. */
+static void demoWait(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t t)
+{
+    if (strcmp(p->key, "aio") != 0) {
+        U_CX_PORT_SLEEP_MS(1000);
+        return;
+    }
+    for (int i = 0; i < 20; i++) {
+        U_CX_PORT_SLEEP_MS(50);
+        (void)aioPoll(app, conn, t, false);
+    }
 }
 
 /* Sends simulated values once per second for a defined profile (nus and sps have no simulated data). */
@@ -1571,7 +1709,7 @@ static int cmdServerDemo(ucxapp_t *app, int argc, char *argv[])
             ucxapp_print("ERROR: notifications are failing; has the client subscribed?\n");
             return UCXAPP_ERR_FAILED;
         }
-        U_CX_PORT_SLEEP_MS(1000);
+        demoWait(app, conn, p, t);
     }
     ucxapp_print("demo finished\n");
     return UCXAPP_OK;
@@ -1607,7 +1745,8 @@ void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data,
 {
     ucxapp_stats_add(UCXAPP_STATS_GATT, 0, len);
     if (ucxapp_can_gatt_write(conn, handle, data, len) || ucxapp_ft_server_write(conn, handle, data, len) ||
-        ucxapp_hid_server_write(conn, handle, data, len) || ucxapp_notify_server_write(conn, handle, data, len)) {
+        ucxapp_hid_server_write(conn, handle, data, len) || ucxapp_notify_server_write(conn, handle, data, len) ||
+        aioWrite(handle, data, len)) {
         return;
     }
     const srvRec_t *ctrl = findSrv("wps.ctrl");
@@ -2281,7 +2420,7 @@ static int serverExample(ucxapp_t *app, int argc, char *argv[], const char *key)
         if (conn >= 0) {
             demoTick(app, conn, p, t);
         }
-        U_CX_PORT_SLEEP_MS(1000);
+        demoWait(app, conn, p, t);
     }
     ucxapp_print("example finished\n");
     return UCXAPP_OK;
@@ -2595,7 +2734,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.cts", "[seconds]", "Current Time server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_cts },
     { "gatt.server.ess", "[seconds]", "Environmental Sensing server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ess },
     { "gatt.server.lns", "[seconds]", "Location and Navigation server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_lns },
-    { "gatt.server.aio", "[seconds]", "Automation IO server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
+    { "gatt.server.aio", "[seconds]", "Automation IO server: user LED (write), user button (notify) and ADC 0 in mV; with seconds, keep them live", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
     { "gatt.server.bas", "[seconds]", "Battery server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_bas },
     { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },

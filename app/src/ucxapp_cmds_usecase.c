@@ -404,6 +404,8 @@ static const ucRow_t kMatter[] = {
     { 0, "[ok]", "Commission", "Apple Home, Google Home, Home Assistant or SmartThings over Bluetooth LE", "matter.card" },
     { 0, "[ok]", "Network", "NORA-W36 joins the Wi-Fi the home app sends; NORA-B26 and ALMA-W1 join Thread", NULL },
     { 0, "[ok]", "Another app", "open the commissioning window again for a second home app: matter.open", "matter.open" },
+    { 0, "[ok]", "Automate", "lamp off when you come closer: trigger.add near cs below 2 do matter.set light off",
+      "trigger.add" },
     { 0, "[check]", "Plug-in", "the Matter plug-in next to the app: ucxapp --matter --build", NULL },
     { 0, "[limit]", "Product", "test vendor ID and attestation: a product needs its own and CSA certification", NULL },
 };
@@ -438,6 +440,8 @@ static const ucRow_t kFinder[] = {
     { 0, "[ok]", "Authentication", "CS runs only on an authenticated, encrypted link: bt.defaults secure, then bt.bond <conn>", "bt.bond" },
     { 0, "[ok]", "Phone", "a phone with Channel Sounding (Bluetooth 6.0) ranges the tag the same way", NULL },
     { 0, "[ok]", "Smoothing", "the module filters the distance; bt.cs.filter trades lag for steadiness", "bt.cs.filter" },
+    { 0, "[ok]", "Act on it", "an LED, a lamp or a message at a distance: trigger.add near cs below 2 do hw.led on",
+      "trigger.add" },
     { 0, "[check]", "Accuracy", "about 0.5 m indoors, CS on both ends; RSSI alone is not a distance", NULL },
 };
 

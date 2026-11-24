@@ -1,5 +1,5 @@
-/* ucxapp_thread on Zephyr: the web server's two threads (pump with the TLS handshake, UI worker) from a static
- * pool, so no dynamic thread stacks are needed. */
+/* ucxapp_thread on Zephyr: the web server's two threads (pump with the TLS handshake, UI worker) and the trigger
+ * worker from a static pool (UCXAPP_THREAD_POOL, set by CMakeLists.txt), so no dynamic thread stacks are needed. */
 
 #include <stdbool.h>
 
@@ -7,7 +7,10 @@
 
 #include "ucxapp_thread.h"
 
-#define POOL       2
+#ifndef UCXAPP_THREAD_POOL
+#define UCXAPP_THREAD_POOL 2
+#endif
+#define POOL       UCXAPP_THREAD_POOL
 #define STACK_SIZE 12288
 
 struct ucxapp_thread {

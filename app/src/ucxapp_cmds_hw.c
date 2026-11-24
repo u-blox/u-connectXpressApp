@@ -22,10 +22,13 @@
 #include <strings.h>
 #endif
 
-/* Defaults for the emulation; hw.profile.load replaces them with a board profile. */
-#define DEF_GPIO  16
-#define DEF_ADC   8
-#define DEF_PWM   4
+/* Defaults for the emulation; hw.profile.load replaces them with a board profile. The user LED and button sit where
+   the NUCLEO-H753ZI has them (pin 0 = PB0, pin 3 = PC13, pressed high), so a PC runs the same scripts as the board. */
+#define DEF_GPIO   16
+#define DEF_ADC    8
+#define DEF_PWM    4
+#define DEF_LED    0
+#define DEF_BUTTON 3
 #define MAX_BYTES 32
 #define VREF_MV   3300
 
@@ -389,9 +392,17 @@ static int opButton(int argc, char *argv[], hwOut_t *o)
 {
     int pressed;
 
-    (void)argv;
-    if (argc != 1) {
+    if (argc > 2 || (argc == 2 && strcasecmp(argv[1], "press") != 0 && strcasecmp(argv[1], "release") != 0)) {
         return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 2 && gButton >= 0) {
+        /* a press on a real board is a finger's job: only the emulated button takes it */
+        if (gBe != &kEmu) {
+            outf(o, "press the button on the board");
+            return UCXAPP_ERR_FAILED;
+        }
+        gEmuMode[gButton] = UCXAPP_GPIO_IN;
+        gEmuLevel[gButton] = strcasecmp(argv[1], "press") == 0 ? gButtonPressed : !gButtonPressed;
     }
     pressed = buttonLevel();
     if (pressed < 0) {
@@ -568,7 +579,8 @@ static int opBoard(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_USAGE;
     }
     if (gCfg == NULL) {
-        outf(o, "no board profile loaded (hw.profile.load <file.json>)");
+        outf(o, "virtual board, NUCLEO-H753ZI layout: user LED pin %d, user button pin %d "
+                "(hw.profile.load <file.json> for another board)", DEF_LED, DEF_BUTTON);
         return UCXAPP_OK;
     }
     outf(o, "%s\ni2c scl %s sda %s\nspi sck %s miso %s mosi %s cs %s\ncan rx %s tx %s\n", gCfg->board, gCfg->i2cScl,
@@ -595,7 +607,7 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
 #ifdef UCXAPP_HW_BOARD
     outf(o, "backend %s, board %s\n", gBe->name, ucxapp_hw_board.board);
 #else
-    outf(o, "backend %s, board %s\n", gBe->name, gCfg != NULL ? gCfg->board : "(none loaded)");
+    outf(o, "backend %s, board %s\n", gBe->name, gCfg != NULL ? gCfg->board : "virtual (NUCLEO-H753ZI layout)");
 #endif
     if (gButton >= 0) {
         outf(o, "user button on pin %d\n", gButton);
@@ -621,7 +633,7 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     X(opGpioToggle, "gpio.toggle", "<pin>", "Invert a GPIO output") \
     X(opGpioList, "gpio.list", "", "Levels of all GPIO pins") \
     X(opLed, "led", "[pin] <on|off|toggle>", "Drive a user LED (configures the pin as an output); without a pin the board's LED") \
-    X(opButton, "button", "", "Read the board's user button") \
+    X(opButton, "button", "[press|release]", "Read the board's user button; on a PC press or release the virtual one") \
     X(opI2cScan, "i2c.scan", "", "Scan the I2C bus for devices") \
     X(opI2cWrite, "i2c.write", "<addr> <hex...>", "Write bytes to an I2C device") \
     X(opI2cRead, "i2c.read", "<addr> <len>", "Read bytes from an I2C device") \
@@ -910,8 +922,29 @@ void ucxapp_register_hw_cmds(void)
     if (gButton >= 0) {
         (void)gBe->gpioMode(gButton, UCXAPP_GPIO_IN);
     }
+#else
+    gLed = DEF_LED;
+    gButton = DEF_BUTTON;
+    gButtonPressed = 1;
+    gEmuMode[gButton] = UCXAPP_GPIO_IN;
 #endif
     (void)ucxapp_cmd_register(kCmds, sizeof(kCmds) / sizeof(kCmds[0]));
+}
+
+bool ucxapp_hw_card(char *out, size_t size)
+{
+    int led, pressed;
+
+    lockHw();
+    led = gLed >= 0 ? gBe->gpioRead(gLed) : -1;
+    pressed = buttonLevel();
+    unlockHw();
+    if (size == 0 || (led < 0 && pressed < 0)) {
+        return false;
+    }
+    snprintf(out, size, "LED     %s\nBUTTON  %s\nVIRTUAL %s\n", led < 0 ? "none" : led ? "on" : "off",
+             pressed < 0 ? "none" : pressed ? "pressed" : "released", gBe == &kEmu ? "yes" : "no");
+    return true;
 }
 
 int ucxapp_hw_button(void)
@@ -932,4 +965,26 @@ bool ucxapp_hw_led(bool on)
     ok = gLed >= 0 && gBe->gpioMode(gLed, UCXAPP_GPIO_OUT) && gBe->gpioWrite(gLed, on ? 1 : 0);
     unlockHw();
     return ok;
+}
+
+int ucxapp_hw_led_state(void)
+{
+    int level;
+
+    lockHw();
+    level = gLed >= 0 ? gBe->gpioRead(gLed) : -1;
+    unlockHw();
+    return level < 0 ? -1 : level != 0;
+}
+
+int ucxapp_hw_adc_mv(int ch)
+{
+    int raw = -1;
+
+    lockHw();
+    if (ch >= 0 && ch < gNAdc) {
+        raw = gBe->adcRead(ch);
+    }
+    unlockHw();
+    return raw < 0 ? -1 : raw * VREF_MV / 4095;
 }

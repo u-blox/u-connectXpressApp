@@ -142,6 +142,7 @@ def test_gatt_client_decoders_and_raw_commands(app_exe, cwd, tmp_path):
     finally:
         module.stop()
     assert "[HRS] BPM: 72" in out and "[DIS] System ID" in out and "[WPS] Info: v1" in out, out[-3000:]
+    assert "[AIO] Digital input: D0=active D1=active D2=tri-state D3=tri-state" in out, out[-3000:]
     assert any(c.startswith("AT+UBTGWL") or c.startswith("AT+UBTGW") for c in module.log), module.log[-20:]
 
 
@@ -206,6 +207,26 @@ def test_gatt_server_demo_every_profile(app_exe, cwd, tmp_path):
         module.stop()
     assert any(c.startswith("AT+UBTGNS=") for c in module.log), module.log[-20:]
     assert out
+
+
+def test_gatt_server_aio_is_the_boards_led_and_button(app_exe, cwd, tmp_path):
+    """aio.led drives the user LED, aio.button follows the user button (the virtual board's here)."""
+    urcs = {f"AT+VUCX{k}": [f"+UEBTGCW:0,{{h:2A56}},{v},0"] for k, v in (("A", "01"), ("B", "03"), ("C", "00"))}
+    module = _start(_profile(tmp_path / "aio.yaml", urcs=urcs))
+    try:
+        out = _shell(app_exe, module.port, [
+            "gatt.server.aio", "gatt.server.list", "at +VUCXA", "gatt.listen 1", "hw.gpio.read 0", "at +VUCXB",
+            "gatt.listen 1", "hw.button press", "gatt.server.demo 0 aio 1", "hw.button release",
+            "gatt.server.demo 0 aio 1", "at +VUCXC", "gatt.listen 1", "hw.gpio.read 0"], cwd)
+    finally:
+        module.stop()
+    assert "[AIO] LED on" in out and "[AIO] LED write 0x3 ignored" in out and "[AIO] LED off" in out, out[-3000:]
+    assert "[AIO] button pressed" in out and "[AIO] button released" in out, out[-3000:]
+    button = next(int(line.split()[3].rstrip(",")) for line in out.splitlines() if line.startswith("aio.button"))
+    log = "\n".join(module.log)
+    assert f"AT+UBTGNS=0,{button},01" in log and f"AT+UBTGNS=0,{button},00" in log, module.log[-30:]
+    # Number of Digitals 1 and a Presentation Format numbering each Digital, as AIOS asks for two of them
+    assert "2909" in log and "1B00000001010" in log and "1B00000001020" in log, module.log[-40:]
 
 
 def test_gatt_server_wps_text_and_protobuf(app_exe, cwd, tmp_path):

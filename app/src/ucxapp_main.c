@@ -122,6 +122,7 @@ static void disconnectModule(void)
         return;
     }
     ucxapp_matter_stop();
+    ucxapp_trigger_quiesce();
     ucxapp_events_deinit();
     uCxAtClientClose(&gAtClient);
     uCxAtClientDeinit(&gAtClient);
@@ -210,13 +211,14 @@ static const ucxapp_cmd_t gConnectCmds[] = {
 
 static void printUsage(const char *prog)
 {
-    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--web] [--list-ports] [--list-modules] [--version]\n", prog);
+    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--web] [--kiosk] [--list-ports] [--list-modules] [--version]\n", prog);
     ucxapp_print("  a command can also be given directly: %s [port] dev.info (no spaces inside the command)\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
     ucxapp_print("  --web only serves the web UI from the module (Wi-Fi: the best known network unless connected; web.start\n");
     ucxapp_print("        unless an --exec started it); q, Esc or Ctrl+C stops\n");
+    ucxapp_print("  --kiosk as --web, and opens the page full screen in a browser (web.kiosk): Matter node, triggers, events\n");
     ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
     ucxapp_print("  --raw-console makes stdin/stdout a raw serial line, so file.recv / file.send (YMODEM) work through a pipe\n");
     ucxapp_print("  --json prints one JSON object per command: command, success, code, error, output lines, data\n");
@@ -367,13 +369,14 @@ static void onInterrupt(int sig)
     gInterrupted = 1;
 }
 
-/* --web: Wi-Fi up, the web server running, then wait until q/Esc/Ctrl+C or web.stop from the page. */
-static int runWeb(ucxapp_t *app)
+/* --web: Wi-Fi up, the web server running, then wait until q/Esc/Ctrl+C or web.stop from the page.
+   --kiosk: the same, with the page opened full screen in its kiosk view (web.kiosk). */
+static int runWeb(ucxapp_t *app, bool kiosk)
 {
     char ssid[64], ip[48];
 
     if (app->ucx == NULL) {
-        ucxapp_print("ERROR: --web needs a module\n");
+        ucxapp_print("ERROR: %s needs a module\n", kiosk ? "--kiosk" : "--web");
         return 1;
     }
     if (!ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip)) || ip[0] == '\0') {
@@ -382,7 +385,12 @@ static int runWeb(ucxapp_t *app)
             return 1;
         }
     }
-    if (!ucxapp_web_running()) {
+    if (kiosk) {
+        char line[] = "web.kiosk";
+        if (ucxapp_cmd_exec(app, line) != UCXAPP_OK) {
+            return 1;
+        }
+    } else if (!ucxapp_web_running()) {
         char line[] = "web.start";
         if (ucxapp_cmd_exec(app, line) != UCXAPP_OK) {
             return 1;
@@ -463,6 +471,7 @@ int main(int argc, char *argv[])
     bool shellMode = false;
     bool tuiMode = false;
     bool webMode = false;
+    bool kioskMode = false;
     bool offline = false;
     bool json = false;
     const char *pos[MAX_POS];
@@ -496,6 +505,9 @@ int main(int argc, char *argv[])
             tuiMode = true;
         } else if (strcmp(argv[i], "--web") == 0) {
             webMode = true;
+        } else if (strcmp(argv[i], "--kiosk") == 0) {
+            webMode = true;
+            kioskMode = true;
         } else if (strcmp(argv[i], "--offline") == 0) {
             offline = true;
         } else if (strcmp(argv[i], "--raw-console") == 0) {
@@ -580,6 +592,7 @@ int main(int argc, char *argv[])
     ucxapp_register_extra_cmds();
 #endif
     ucxapp_register_conn_cmds();
+    ucxapp_register_trigger_cmds();
     ucxapp_register_snake_cmds();
     ucxapp_register_usecase_cmds();
     ucxapp_register_session_cmds();
@@ -656,7 +669,7 @@ int main(int argc, char *argv[])
         }
     }
     if (rc == 0 && webMode) {
-        rc = runWeb(&app);
+        rc = runWeb(&app, kioskMode);
     } else if (rc == 0 && (tuiMode || (execCount == 0 && !shellMode))) {
         rc = ucxapp_tui_run(&app);
         if (rc != 0 && !tuiMode) {
@@ -667,6 +680,7 @@ int main(int argc, char *argv[])
         rc = ucxapp_shell_run(&app);
     }
     ucxapp_session_end();
+    ucxapp_trigger_stop();   /* its thread runs commands on the module */
     ucxapp_at_mode(false);   /* an "at" left on must not send the cleanup below to the module */
     {
         char stopLine[] = "web.stop";

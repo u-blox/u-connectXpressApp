@@ -1048,11 +1048,12 @@ def test_demo_tour_ranges_a_tag_and_ends_with_a_ble_link(app_exe, tmp_path):
         module.stop()
     m = re.search(r"demo: \d+ use cases, (\d+) of (\d+) examples ran to the end", out.stdout)
     assert m and m.group(1) == m.group(2), out.stdout[-3000:]
-    assert "=== finder (3) ===" in out.stdout, out.stdout[-3000:]
+    assert "=== finder (4) ===" in out.stdout, out.stdout[-3000:]
     # the Matter node is commissioned over Bluetooth LE on the Thread module too, when the plug-in is built
     plugin = Path(app_exe).parent / ("ucxmatter.dll" if os.name == "nt" else "libucxmatter.so")
-    assert ("=== matter (4) ===" if plugin.exists() else "=== matter: skipped") in out.stdout, out.stdout[-3000:]
+    assert ("=== matter (5) ===" if plugin.exists() else "=== matter: skipped") in out.stdout, out.stdout[-3000:]
     assert re.search(r"readings, [\d.]+\.\.[\d.]+ m", out.stdout), out.stdout[-3000:]
+    assert "[trigger] near: fired by hand -> hw.led on" in out.stdout, out.stdout[-3000:]
     assert "> bt.bond 0" in out.stdout and "CS needs authentication" not in out.stdout   # comments are not echoed
     assert any(c.startswith("AT+UBTCSM=2") for c in module.log), module.log[-15:]
     assert re.search(r"^\d+ connection\(s\)", out.stdout.split("examples ran to the end")[-1], re.M), out.stdout[-800:]

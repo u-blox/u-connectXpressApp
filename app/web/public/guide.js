@@ -117,7 +117,10 @@
   if (!localStorage.getItem('ucxguide') && !/[?&]guide=0/.test(location.search)) {
     let n = 0;
     const t = setInterval(() => {
-      if (document.getElementById('wsc') || ++n > 40) { clearInterval(t); if (!box) show(0); }
+      if (document.getElementById('wsc') || ++n > 40) {
+        clearInterval(t);
+        if (!box && !document.body.classList.contains('kiosk')) show(0);   // not over the kiosk view
+      }
     }, 100);
   }
 })();

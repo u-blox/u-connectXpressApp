@@ -41,6 +41,7 @@ static void evt(const char *fmt, ...)
         ucxapp_print("[event] %s\n", text);
     }
     ucxapp_ui_event(text);
+    ucxapp_trigger_event(text);
 }
 
 static uint32_t gBootMs;
@@ -176,6 +177,7 @@ static void btCsDistanceUrc(struct uCxHandle *h, int32_t c, int32_t mm)
     (void)h;
     evt("bt: distance %d.%03d m, conn %d", (int)(mm / 1000), (int)((mm < 0 ? -mm : mm) % 1000), (int)c);
     ucxapp_bt_cs_distance(c, mm);
+    ucxapp_trigger_distance(c, mm);
 }
 static void btCsPctUrc(struct uCxHandle *h, int32_t c, int32_t ant, int32_t n, const uint8_t *d, size_t len)
 {

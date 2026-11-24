@@ -120,6 +120,9 @@ if(DEFINED _hwprofile_${STM32_BOARD})
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_hwprofile})
     list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_hw.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_hw_stm32.c)
     set(UCXAPP_HW_BOARD ON)
+    # ... and trigger.* next to them: rules on the button, the LED and what the module reports, on a task of their own.
+    list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_trigger.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_thread_freertos.c)
+    set(UCXAPP_TRIGGER ON)
 endif()
 # Boards with a hardware TRNG and RAM to spare serve the web UI over HTTPS only (mbedTLS, keys from the RNG
 # peripheral; see docs/SECURITY.md). The F439/F407 (128-192 KB RAM) cannot hold the page buffers and a TLS
@@ -149,6 +152,7 @@ endif()
 
 string(TOLOWER "${STM32_BOARD}" _board)
 set(UCXAPP_STM32_NAME "ucxapp_${_board}")
+list(REMOVE_DUPLICATES UCXAPP_STM32_SOURCES)   # the thread port is wanted by the web UI and by trigger.*
 add_stm32_example(NAME ${UCXAPP_STM32_NAME} SOURCES ${UCXAPP_STM32_SOURCES})
 # Full boards build for size (UCXAPP_OPT, default -Os: the F401/F446 flash is nearly full at -O2 and the app is
 # UART bound); lite boards add LTO. The shared default is -Og.
@@ -174,6 +178,9 @@ endif()
 if(UCXAPP_HW_BOARD)
     target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_hwgen})
     target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_HW_BOARD)
+endif()
+if(UCXAPP_TRIGGER)
+    target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE UCXAPP_TRIGGER)
 endif()
 if(UCXAPP_WEB)
     target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${_webgen} ${UCXAPP_MBEDTLS_INCLUDES})

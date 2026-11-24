@@ -20,6 +20,7 @@ ucxapp dev.info
 
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
 - Add `--web` to use only the web UI: Wi-Fi from the saved profiles unless already connected, then `web.start` (unless an `--exec` started it, e.g. `--exec "web.start 443" --web`), until q, Esc or Ctrl+C.
+- Add `--kiosk` for the same with the page opened full screen in its kiosk view (`web.kiosk`, see [Kiosk](#kiosk)).
 
 - Without a port argument, `--exec` and `--shell` use the saved port from the ini file.
 - `--offline` skips the module auto-detection, for commands that need no device (`tls.*`, `help`).
@@ -199,11 +200,12 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 | `gatt.wps` | `[conn] <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
 | `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `ras`, `nus` or `sps` |
 | `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Nordic Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS requests are executed: the Nordic protobuf protocol that u-connectXplorer and the nRF apps send, or ucxapp's text commands; `.wps` ends early once a phone has sent the Wi-Fi settings and, for protobuf, been told the result). "wps" is not Wi-Fi Protected Setup |
+| `gatt.server.aio` | `[seconds]` | Automation IO (AIOS 1.0) on the board's own pins, the same on a NUCLEO-H753ZI and on the virtual board of Windows, Linux and the browser (see `hw.*`): `aio.led` is a Digital output (read, write; `00` off, `01` on) that drives the user LED, `aio.button` a Digital input (read, notify) that follows the user button, `aio.analog` ADC channel 0 in mV (read, notify; a ramp on boards whose ADC driver is not wired yet). Each Digital has Number of Digitals 1 and a Presentation Format (description 1 and 2). With seconds, or under `gatt.server.demo 0 aio`, the button is followed every 50 ms and the analog value sent every second. `gatt.client.aio` decodes the 2-bit Digital states (inactive, active, tri-state, unknown) and prints the `gatt.write` that sets an output |
 | `gatt.server.list` |  | List the local characteristics defined by the server examples |
 | `gatt.server.set` | `<name\|handle> <hex\|text:abc>` | Set a local characteristic value |
 | `gatt.server.notify` | `[conn] <name\|handle> <data>` | Send a notification |
 | `gatt.server.indicate` | `[conn] <name\|handle> <data>` | Send an indication |
-| `gatt.server.demo` | `[conn] <hrs\|bas\|ess\|aio\|lns\|cts\|ras> [seconds]` | Send simulated values once per second |
+| `gatt.server.demo` | `[conn] <hrs\|bas\|ess\|aio\|lns\|cts\|ras> [seconds]` | Send simulated values once per second (`aio`: the board's real LED, button and ADC) |
 | `gatt.server.servicechanged` | `[conn] <start> <end>` | Send a Service Changed indication |
 | `gatt.server.error` | `[conn] <read\|write> <att-code>` | Answer a pending read or write with an ATT error |
 | `gatt.server.hostchar` | `<svc-uuid> <char-uuid> <props-hex> [rsec] [wsec]` | Define a host-managed characteristic |
@@ -704,6 +706,60 @@ Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `ca
 | `bridge.list` | | Every open source and where its bridges go, one line per bridge |
 | `bridge.off` | | Stop every running bridge |
 
+### Triggers
+
+A bridge moves a byte stream between two ends. A trigger is a rule: it watches a value or an event and runs any
+command of this shell when its condition becomes true, so a distance can switch a Matter lamp, a network in range
+can start a connect, and a button can do anything a command can. Up to 8 rules, on Windows, Linux, in the browser
+and on the STM32 boards that have `hw.*` (H753, F767, F439, F407; FreeRTOS and Zephyr). They last until the app
+exits or the board resets.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `trigger.add` | `<name> <source> do <command...>` | Add a rule (the same name replaces it). The sources are below; everything after `do` is the command, in quotes when it has many words (a line holds 12 words): `do "sock.sendto 0 192.168.1.10 5000 near"`. Any command except `trigger.*` |
+| `trigger.list` | | Every rule: on or off, condition, command, the last reading and how often it ran (and failed) |
+| `trigger.remove` | `<name\|all>` | Remove a rule, or all of them |
+| `trigger.off` | `<name\|all>` | Keep a rule but stop checking it |
+| `trigger.on` | `<name\|all>` | Switch it on again; the condition is checked from scratch |
+| `trigger.fire` | `<name>` | Run the command of a rule now: a test, or a virtual button on a page or in a script |
+
+| Source | Condition | What is watched |
+|---|---|---|
+| `cs [conn]` | `below\|above <metres>` | Channel Sounding distance (`+UEBTCSM`) of a connection, or of any when `conn` is left out. Ranging must run: `bt.cs.range <conn> on` |
+| `rssi` | `below\|above <dBm>` | Signal of the Wi-Fi station link, read every 2 s |
+| `bt.rssi [conn]` | `below\|above <dBm>` | Signal of a Bluetooth LE connection (the newest when `conn` is left out), read every 2 s |
+| `ssid <ssid>` | `found` (default), `lost`, `below\|above <dBm>` | A Wi-Fi network in range: a scan for that SSID every 15 s (`AT+UWSSC=0,<ssid>`). Needs `wifi.regdomain` |
+| `bt <name\|address>` | `found` (default), `lost`, `below\|above <dBm>` | A Bluetooth LE device advertising: a 3 s discovery every 10 s. The name without regard to case, or the address (`C0:FF:EE:00:11:22`) |
+| `button` | `pressed` (default), `released` | The board's user button (`hw.button`); on a PC the virtual one, pressed with `hw.button press` |
+| `event <text>` | | A line of the event log that contains the text: `wifi: link up`, `bt: connected`, `mqtt: connected`, `matter: light = on`, a decoded GATT notification ... (`app.log.events.on` prints them) |
+
+`every <s>` (or `every=<s>`) before `do` changes how often a polled source (`rssi`, `bt.rssi`, `ssid`, `bt`) is checked, 1 to 3600 s.
+`<` and `>` can be written for `below` and `above`.
+
+A rule runs its command once when the condition turns true, also when it is true at the first check, and is armed
+again when the condition turns false; `event` runs it for every matching line, and `button` only for a change after
+the rule was added. Two rules with a gap between their limits give hysteresis. Each run prints
+`[trigger] <name>: <reading> -> <command>` followed by the output of the command, and shows as `trigger: <name> fired`
+in the Events pane.
+
+The rules share the module with the commands you type. Distances and events cost nothing; `rssi` and `bt.rssi` are
+one AT command per check. A scan (`ssid`, `bt`) keeps the AT interface busy for as long as it takes, so other
+commands wait for it: use `every` to scan less often.
+
+```text
+# A Matter lamp that goes off when you come closer than 2 m and on again beyond 2.5 m
+matter.start light
+bt.cs.range 0 on
+trigger.add near cs below 2 do matter.set light off
+trigger.add far cs above 2.5 do matter.set light on
+
+# The LED while a tag is near, and a datagram when a phone connects
+trigger.add tag bt MyTag above -60 every 30 do hw.led on
+trigger.add tag-gone bt MyTag lost every 30 do hw.led off
+trigger.add phone event "bt: connected" do "sock.sendto 0 192.168.1.10 5000 phone"
+trigger.list
+```
+
 ### Cellular modules
 
 Basic access to a cellular module on a PC serial port, using the generic 3GPP AT commands (TS 27.007) that
@@ -759,8 +815,10 @@ hardware and is mapped for Quectel modules only; the `+QIOPEN` timing and `+++` 
 
 GPIO, I2C, SPI, ADC, PWM and CAN behind one backend. On Windows and Linux an emulated backend runs inside the app
 (16 pins, I2C devices at 0x48/0x68/0x76, SPI MISO wired to MOSI, ADC triangle waves, CAN loopback), so scripts and the
-bridge can be developed without a board. Writing to a pin in `in` mode sets its simulated level. Real STM32 drivers are
-not wired in yet.
+bridge can be developed without a board. Its user LED and button sit where the NUCLEO-H753ZI has them (LED on pin 0 =
+PB0, button on pin 3 = PC13, pressed high), so `hw.led on`, `hw.button press` and `button` triggers work on a PC as on
+the board; `hw.profile.load` gives another board's layout. Writing to a pin in `in` mode sets its simulated level. Real
+STM32 drivers are not wired in yet.
 
 | Command | Arguments | Description |
 |---|---|---|
@@ -773,7 +831,7 @@ not wired in yet.
 | `hw.gpio.toggle` | `<pin>` | Invert a GPIO output |
 | `hw.gpio.list` |  | Levels of all GPIO pins |
 | `hw.led` | `[pin] <on\|off\|toggle>` | Drive a user LED; configures the pin as an output (pins can be given by name); without a pin the board's LED (`led` in the board profile) |
-| `hw.button` |  | Read the board's user button (`button` in the board profile: pin and the level it reads when pressed) |
+| `hw.button` | `[press\|release]` | Read the board's user button (`button` in the board profile: pin and the level it reads when pressed); on a PC `press` and `release` work the virtual one |
 | `hw.i2c.scan` |  | Scan the I2C bus |
 | `hw.i2c.write` | `<addr> <hex...>` | Write bytes to a device |
 | `hw.i2c.read` | `<addr> <len>` | Read bytes from a device |
@@ -892,6 +950,7 @@ The `app.log.at`, `app.log.warn`, `app.log.events` and `app.log.level` switches 
 | `web.start` | `[port] [token\|open] [http\|https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi) over HTTPS on port 443; prints `https://<ip>:<port>/#t=<token>`. The page needs an access token: a random 32-digit hex one unless one is given (the page asks for it when it is missing or wrong); `open` serves HTTPS without one (trusted networks only; refused with `http`). The first start (or a new module address) makes certificate `tls-web` for the module's IP, signed by the local CA `tls-ca` (created when missing; trust it once with `utils.tls.pem ca`). `https <cert>` uses `tls-<cert>` instead; `http` serves plain HTTP on port 80. On the NUCLEO-H753ZI and NUCLEO-F767ZI (FreeRTOS and Zephyr) the page is served over HTTPS only (`http` is refused) with keys from the board's hardware TRNG (see [docs/SECURITY.md](docs/SECURITY.md)); other boards have no web UI. Files: private keys (`*.key`) are never downloadable; uploading keys or `tls-*` certificates needs `https` |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
+| `web.kiosk` | `[link]` | The page's kiosk view, full screen for a touch screen: the Matter node (its QR code and pairing code until it is commissioned, then a tile per endpoint), the triggers (on/off and Fire per rule, flashing when one runs) and the latest events. Starts `web.start` when the server is not running, then opens `<url>#kiosk` in Edge, Chrome, Chromium or Firefox in kiosk mode with its own profile (`UCXAPP_BROWSER` overrides the browser); `link` only prints the address. In the browser build it says how to switch the page itself |
 | `web.export` | `<dir>` | Write the page's JSON (`groups.json`, `commands-<group>.json`, `examples-<group>.json`) for a preview or a static demo; `.\ucxapp --web-preview` uses it to serve the page on the PC |
 | `usecase.list` | | Use cases with a fit check and ready-made steps, in sections. Industry: `tool` (connected tool, steps in `usecase.example`), `iiot` (factory machine: Enterprise Wi-Fi, TLS to the MES, CAN data, one configuration per line, firmware lifecycle), `medical` (IEC 62304: module as a SOUP item, secure bonded BLE, traces and JUnit reports as evidence), `site` (construction tools: technician's phone over BLE, fleet found by name, site and depot Wi-Fi), `implement` (farm implement: ISOBUS CAN to the cab tablet over the module's AP or BLE, work record over MQTT), `condition` (motor condition monitoring: IMU vibration baseline, stream to the analysis PC, alarm over MQTT), `agv` (AGV or mobile robot: roaming between access points, route survey, latency to the fleet manager, BLE service link; the E-stop stays wired), `eol` (end-of-line test: identity, golden settings, radio check, report per serial number), `blegw` (BLE sensor gateway: sensors found by name and read over GATT, readings to the plant broker over Wi-Fi). Edge AI: `edge` (IMU training data, I2C sensors, results to the cloud; ALMA-W161/W166 run the same u-connectXpress steps, ALMA-W111/W116 run the model on their NPU). Industry and Edge AI are not in lite builds. Location: `boat` (GPS to a chart app over the module's AP or BLE), `rtk` (NTRIP corrections over Wi-Fi, position over BLE), `mower` (robotic lawn mower: phone setup and status over BLE, HP GNSS with PointPerfect over the garden Wi-Fi or cellular, theft alert over cellular), `farm` (tractor auto-steer: PointPerfect over cellular, corrected NMEA to the cab tablet over BLE, log upload over the farmyard Wi-Fi), `tracker` (position to a server over Wi-Fi or cellular). Cellular: `fieldkit` (Wi-Fi to cellular relay: laptops on the module's soft AP reach your server over LTE through `cell.bridge tcps`; one socket is relayed, not IP, so it is not a hotspot), `blecell` (a phone or BLE device on Nordic UART relayed to your server over LTE, no Wi-Fi on site), `vehicle` (CAN frames to your server over LTE with `can.bridge cell`, reconnecting after dead zones), `xplr` (XPLR-IOT-1 kit: SARA-R5 and MAX-M10S, position over LTE, `cell.power` and EasyFlash for the modem firmware); cellular cases are not in lite builds. Everyday: `home` (MQTT to Home Assistant), `provision` (Wi-Fi set up from a phone over BLE), `matter` (a Matter node commissioned from a home app over BLE: setup codes, card, second commissioning window; Windows, Linux and the browser), `hotel` (guest Wi-Fi login page), `notify` (iPhone/Android notifications), `remote` (BLE keyboard clicker and media remote), `finder` (item finder: distance to a BLE tag with Channel Sounding, `bt.cs` and `bt.cs.range`; not in lite builds); their steps are in `examples uc-<name>` |
 | `usecase.demo` | `[name]` | Runs every step of every use case (or of one) on a virtual module, the Virtual module on the web page or vucx, and prints how many examples ran to the end and which stopped early. Steps that watch or serve for a while get 3 s each. Without the Matter plug-in the `matter` case is skipped (`skipped: matter`). Refuses a real module: the steps change its settings |
@@ -925,6 +984,22 @@ listener) allow two tabs at once. The `web.*` commands are not allowed
 from the page. Open the printed URL; it ends in `#t=<token>` unless `web.start` was given `open`. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
 API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `?t=`, as EventSource cannot set headers.
+
+#### Kiosk
+
+The kiosk view turns the page into a wall or counter display: no command panels, just the Matter node, the triggers
+and the events in large touch targets. Start it with `web.kiosk` (or `ucxapp COM13 --kiosk`), by adding `#kiosk` to
+the page's address (`.\ucxapp --wasm --kiosk` opens the browser build that way), or with **Kiosk** in the page's
+`⋯` menu; **Exit kiosk** goes back to the full page, and closes the full screen window that `web.kiosk` or
+`--wasm --kiosk` opened (its address ends in `#kiosk=window`). Until the node is commissioned it shows its QR code (drawn from `/api/qr`) and
+the manual pairing code, then one tile per endpoint (bulb, thermometer, door) that switches it; a stopped node gets a
+Start button. Each trigger shows its condition, its last reading, how often it ran, an On/Off switch and Fire. Above
+the triggers sit the board's user LED and button; on a PC (Windows, Linux, the browser) they are the virtual board's,
+and holding **Button** presses it (`hw.button press`), so a `button` trigger can be tried without a board.
+
+```powershell
+ucxapp COM13 --exec "matter.start light" --exec "trigger.add near cs below 2 do matter.set light off" --kiosk
+```
 
 #### In the browser (WebAssembly + Web Serial)
 

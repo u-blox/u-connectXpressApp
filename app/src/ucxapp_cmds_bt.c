@@ -1378,9 +1378,10 @@ static int cmdBtPhy(ucxapp_t *app, int argc, char *argv[])
                              "PHY in use)\n", (int)conn, phyName(phy, a, sizeof(a)), (int)conn);
                 return UCXAPP_OK;
             }
-            if (gPhyStatus != 0) {
-                ucxapp_print("ERROR: PHY update on connection %d failed (HCI status 0x%02X%s)\n", (int)conn, (unsigned)gPhyStatus,
-                             gPhyStatus == 0x1A ? ": the peer does not support it" : "");
+            const unsigned phyStatus = (unsigned)gPhyStatus;
+            if (phyStatus != 0) {
+                ucxapp_print("ERROR: PHY update on connection %d failed (HCI status 0x%02X%s)\n", (int)conn, phyStatus,
+                             phyStatus == 0x1A ? ": the peer does not support it" : "");
                 return UCXAPP_ERR_FAILED;
             }
             ucxapp_print("connection %d: tx %s, rx %s\n", (int)conn, phyName(gPhyTx, a, sizeof(a)), phyName(gPhyRx, b, sizeof(b)));

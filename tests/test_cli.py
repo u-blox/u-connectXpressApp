@@ -472,10 +472,25 @@ def test_hw_board_button_and_led(app_exe, tmp_path):
     assert "led on pin 0 = 1" in out.stdout and "led on pin 0 = 0" in out.stdout
 
 
+def test_hw_virtual_board_has_the_h753_button_and_led(app_exe, tmp_path):
+    """Without a profile the PC's virtual board has the NUCLEO-H753ZI user LED (pin 0) and button (pin 3)."""
+    out = _run(app_exe, tmp_path, "COM255", "hw.board", "hw.button", "hw.button press", "hw.button",
+               "hw.button release", "hw.led on", "hw.gpio.read 0", "hw.status")
+    assert out.returncode == 0, out.stdout
+    assert "virtual board, NUCLEO-H753ZI layout: user LED pin 0, user button pin 3" in out.stdout, out.stdout
+    assert out.stdout.count("button on pin 3 pressed") == 2, out.stdout
+    assert out.stdout.count("button on pin 3 released") == 2, out.stdout
+    assert "led on pin 0 = 1" in out.stdout and "pin 0 = 1" in out.stdout, out.stdout
+    assert "board virtual (NUCLEO-H753ZI layout)" in out.stdout and "user LED on pin 0" in out.stdout, out.stdout
+    assert _run(app_exe, tmp_path, "COM255", "hw.button push").returncode == 1
+
+
 def test_hw_board_without_button_or_led(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "hw.button")
+    path = tmp_path / "bare.json"
+    path.write_text('{"board":"bare","gpio":["PA0"]}', encoding="utf-8")
+    out = _run(app_exe, tmp_path, "COM255", f"hw.profile.load {path}", "hw.button")
     assert out.returncode == 1 and "no user button" in out.stdout
-    out = _run(app_exe, tmp_path, "COM255", "hw.led on")
+    out = _run(app_exe, tmp_path, "COM255", f"hw.profile.load {path}", "hw.led on")
     assert out.returncode == 1 and "no user LED" in out.stdout
 
 @pytest.mark.parametrize("text, message", [

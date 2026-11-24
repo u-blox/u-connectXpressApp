@@ -92,9 +92,12 @@ if(DEFINED _hwprofile_${BOARD} AND CONFIG_GPIO)
     target_include_directories(app PRIVATE ${_hwgen})
     target_compile_definitions(app PRIVATE UCXAPP_HW_BOARD)
     # ... and trigger.* next to them: rules on the button, the LED and what the module reports, on a thread of their own.
-    target_sources(app PRIVATE ${APP_SRC}/ucxapp_cmds_trigger.c)
-    target_compile_definitions(app PRIVATE UCXAPP_TRIGGER)
-    math(EXPR _ucx_threads "${_ucx_threads} + 1")
+    # Its 12 KB stack (any command can run there) does not fit next to the heap in the F407's 128 KB.
+    if(NOT BOARD STREQUAL "stm32f4_disco")
+        target_sources(app PRIVATE ${APP_SRC}/ucxapp_cmds_trigger.c)
+        target_compile_definitions(app PRIVATE UCXAPP_TRIGGER)
+        math(EXPR _ucx_threads "${_ucx_threads} + 1")
+    endif()
 endif()
 # 96-128 KB RAM boards: Zephyr's own RAM leaves no room for the full-size buffers next to a heap.
 # The phone remote control (xplorer.*) does not fit next to the rest in 512 KB of flash.

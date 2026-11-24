@@ -711,8 +711,8 @@ Each source has its own bridges (`gnss.bridge`, `imu.bridge`, `cell.bridge`, `ca
 A bridge moves a byte stream between two ends. A trigger is a rule: it watches a value or an event and runs any
 command of this shell when its condition becomes true, so a distance can switch a Matter lamp, a network in range
 can start a connect, and a button can do anything a command can. Up to 8 rules, on Windows, Linux, in the browser
-and on the STM32 boards that have `hw.*` (H753, F767, F439, F407; FreeRTOS and Zephyr). They last until the app
-exits or the board resets.
+and on the STM32 boards H753, F767 and F439 (FreeRTOS and Zephyr; the F407 has `hw.*` but not the RAM for the
+rules' 12 KB thread). They last until the app exits or the board resets.
 
 | Command | Arguments | Description |
 |---|---|---|

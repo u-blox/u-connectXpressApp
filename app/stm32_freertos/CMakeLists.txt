@@ -121,8 +121,12 @@ if(DEFINED _hwprofile_${STM32_BOARD})
     list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_hw.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_hw_stm32.c)
     set(UCXAPP_HW_BOARD ON)
     # ... and trigger.* next to them: rules on the button, the LED and what the module reports, on a task of their own.
-    list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_trigger.c ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_thread_freertos.c)
-    set(UCXAPP_TRIGGER ON)
+    # Its 12 KB stack (any command can run there) does not fit next to the heap in the F407's 128 KB.
+    if(NOT STM32_BOARD STREQUAL "f407_disc")
+        list(APPEND UCXAPP_STM32_SOURCES ${APP_SRC}/ucxapp_cmds_trigger.c
+             ${CMAKE_CURRENT_SOURCE_DIR}/ucxapp_thread_freertos.c)
+        set(UCXAPP_TRIGGER ON)
+    endif()
 endif()
 # Boards with a hardware TRNG and RAM to spare serve the web UI over HTTPS only (mbedTLS, keys from the RNG
 # peripheral; see docs/SECURITY.md). The F439/F407 (128-192 KB RAM) cannot hold the page buffers and a TLS

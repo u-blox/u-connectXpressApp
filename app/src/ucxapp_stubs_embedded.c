@@ -50,10 +50,12 @@ void ucxapp_ui_thread_changed(void) { }
 #endif
 void ucxapp_ui_prompt(const char *text, const char *prefill, const char *cancel) { (void)text; (void)prefill; (void)cancel; }
 #endif
-#ifndef UCXAPP_TRIGGER   /* boards with hw.* build trigger.* (ucxapp_cmds_trigger.c) */
+#ifndef UCXAPP_TRIGGER   /* the H753, F767 and F439 build trigger.* (ucxapp_cmds_trigger.c) */
 void ucxapp_trigger_event(const char *text) { (void)text; }
 void ucxapp_trigger_distance(int32_t conn, int32_t mm) { (void)conn; (void)mm; }
 bool ucxapp_trigger_card(char *out, size_t size) { (void)out; (void)size; return false; }
+#endif
+#ifndef UCXAPP_HW_BOARD   /* boards with hw.* have these in ucxapp_cmds_hw.c */
 bool ucxapp_hw_card(char *out, size_t size) { (void)out; (void)size; return false; }
 int ucxapp_hw_button(void) { return -1; }
 bool ucxapp_hw_led(bool on) { (void)on; return false; }

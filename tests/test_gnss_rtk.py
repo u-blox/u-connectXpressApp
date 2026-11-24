@@ -293,3 +293,98 @@ def test_setup_usage(app_exe, tmp_path, command):
 def test_setup_needs_a_receiver(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "gnss.setup standard")
     assert "ERROR: no receiver open (use gnss.open)" in out.stdout, out.stdout
+
+
+
+class _TcpReceiver:
+    """A legacy receiver (PROTVER 18) on a TCP port, opened as tcp:HOST:PORT like a serial port: answers MON-VER,
+    ACKs CFG-NAV5, NAKs CFG-MSG, records every UBX frame it gets and sends a GGA every 100 ms."""
+
+    def __init__(self):
+        import socket
+        import threading
+
+        self.server = socket.create_server(("127.0.0.1", 0))
+        self.port = f"tcp:127.0.0.1:{self.server.getsockname()[1]}"
+        self.frames = []
+        self.stop = threading.Event()
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        import threading
+
+        while not self.stop.is_set():
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    @staticmethod
+    def _answer(cls, mid):
+        def field(text, size=30):
+            return text.encode().ljust(size, b"\0")
+        if (cls, mid) == (0x0A, 0x04):
+            return _ubx(0x0A, 0x04, field("ROM CORE 3.01") + field("00080000", 10) + field("PROTVER=18.00")
+                        + field("MOD=NEO-M8N"))
+        if cls == 0x06 and mid in (0x24, 0x01):
+            return _ubx(0x05, 0x01 if mid == 0x24 else 0x00, bytes([cls, mid]))
+        return b""
+
+    def _serve(self, conn):
+        from test_gnss_replay import _nmea
+
+        gga = _nmea("GPGGA,123519.00,5546.1234,N,01301.5678,E,1,08,0.9,45.0,M,40.0,M,,").encode()
+        buf = b""
+        conn.settimeout(0.1)
+        conn.sendall(self._answer(0x0A, 0x04))   # MON-VER as on power-up
+        with conn:
+            while not self.stop.is_set():
+                try:
+                    data = conn.recv(4096)
+                    if not data:
+                        return
+                    buf += data
+                except TimeoutError:
+                    pass
+                except OSError:
+                    return
+                while (start := buf.find(b"\xb5\x62")) >= 0 and len(buf) >= start + 8:
+                    size = int.from_bytes(buf[start + 4:start + 6], "little")
+                    if len(buf) < start + 8 + size:
+                        break
+                    cls, mid = buf[start + 2], buf[start + 3]
+                    self.frames.append((cls, mid, buf[start + 6:start + 6 + size]))
+                    buf = buf[start + 8 + size:]
+                    conn.sendall(self._answer(cls, mid))
+                try:
+                    conn.sendall(gga)
+                except OSError:
+                    return
+
+    def close(self):
+        self.stop.set()
+        self.server.close()
+
+
+def test_legacy_receiver_on_a_port_takes_ubx_cfg_and_a_new_baud_rate(app_exe, tmp_path):
+    """Before PROTVER 23 the settings go as UBX-CFG-NAV5, CFG-MSG and CFG-PRT; GNSS systems need VALSET."""
+    rx = _TcpReceiver()
+    try:
+        ok = _run(app_exe, tmp_path, f"gnss.open {rx.port} 9600", "gnss.watch 2", "gnss.cfg model automotive",
+                  "gnss.cfg baud 115200", "gnss.status", "gnss.close")
+        nak = _run(app_exe, tmp_path, f"gnss.open {rx.port} 9600", "gnss.watch 2", "gnss.cfg msg gsv 5")
+        sys_ = _run(app_exe, tmp_path, f"gnss.open {rx.port} 9600", "gnss.watch 2", "gnss.cfg gnss gps")
+    finally:
+        rx.close()
+    text = ok.stdout
+    assert ok.returncode == 0 and f"GNSS receiver open on {rx.port} at 9600 baud" in text, text
+    assert "dynamic model set to automotive" in text, text
+    assert f"receiver and {rx.port} now at 115200 baud" in text, text
+    assert f"Port:      {rx.port} at 115200 baud" in text, text
+    assert "ERROR: the receiver refused it (UBX-ACK-NAK)" in nak.stdout, nak.stdout
+    assert "choosing GNSS systems needs a receiver with PROTVER 23 or later" in sys_.stdout, sys_.stdout
+    sent = {(cls, mid) for cls, mid, _ in rx.frames}
+    assert {(0x0A, 0x04), (0x06, 0x24), (0x06, 0x01), (0x06, 0x00)} <= sent, sent
+    prt = next(pl for cls, mid, pl in rx.frames if (cls, mid) == (0x06, 0x00))
+    assert struct.unpack_from("<I", prt, 8)[0] == 115200, prt.hex()

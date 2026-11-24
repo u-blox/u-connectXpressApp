@@ -466,3 +466,189 @@ def test_kiosk_gets_the_triggers_a_qr_code_and_its_address(app_exe, tmp_path):
         if proc.poll() is None:
             proc.kill()
         module.stop()
+
+
+def test_web_routes_refuse_without_the_token_and_name_what_is_missing(app_exe, tmp_path):
+    import json
+
+    arg = "x" * 90
+    reqs = [_get("/api/conn"), _get("/api/conn", token=False), _get("/api/files", token=False),
+            _get("/api/file?n=a.txt", token=False), _post("/api/upload?n=a.txt&o=0", "x", token=False),
+            _get("/api/qr?q=x", token=False), _get("/api/examples"), _get("/api/examples?g=wifi", token=False),
+            _get("/api/complete", token=False), _get("/api/complete"), _get("/api/commands"),
+            _post("/api/upload?n=web.key&o=0", "x"), _post("/api/upload?n=tls-x.crt&o=0", "x"),
+            _get("/api/version", token=False, extra=f"Cookie: theme=dark; ucxt={TOKEN}\r\n"),
+            _get("/api/version", token=False, extra="Cookie: theme=dark; other=1\r\n"),
+            _post("/api/exec?cmd=%20web.stop", ""), _post("/api/exec?cmd=", ""),
+            _post(f"/api/exec?cmd=help&a0={arg}&a1={arg}&a2={arg}", ""),
+            _post("/api/exec?cmd=app.wait%202000", ""), _post("/api/exec?cmd=help", ""),
+            _get("/api/complete?q=wifi%2Esc")]
+    out, replies = _serve(app_exe, tmp_path, reqs)
+    status = [r.split("\r\n", 1)[0] for r in replies]
+    body = [r.split("\r\n\r\n", 1)[1] if "\r\n\r\n" in r else "" for r in replies]
+    assert "200" in status[0] and "t" in json.loads(body[0]), replies[0][:300]
+    for i in (1, 2, 3, 4, 5, 7, 8):
+        assert "403" in status[i] and "token required" in body[i], (i, replies[i][:300])
+    assert "400" in status[6] and "missing g" in body[6], replies[6][:300]
+    assert "400" in status[9] and "missing q" in body[9], replies[9][:300]
+    assert "400" in status[10] and "missing g" in body[10], replies[10][:300]
+    for i in (11, 12):
+        assert "403" in status[i] and "keys and certificates need https" in body[i], (i, replies[i][:300])
+    assert "200" in status[13] and '"v":"u-connectXpressApp ' in body[13], replies[13][:300]
+    assert "403" in status[14], replies[14][:300]
+    assert "400" in status[15] and "command not allowed" in body[15], replies[15][:300]
+    assert "400" in status[16] and "command not allowed" in body[16], replies[16][:300]
+    assert "414" in status[17] and "command too long" in body[17], replies[17][:300]
+    assert "200" in status[18] and "409" in status[19] and "busy" in body[19], status
+    assert json.loads(body[20])["l"].startswith("wifi.scan"), body[20]
+    assert not (tmp_path / "storage" / "web.key").exists()
+
+
+def test_web_kiosk_starts_https_and_opens_a_browser(app_exe, tmp_path):
+    """web.kiosk with no server starts one (HTTPS on 443 with the local CA's certificate) and opens the browser
+    named by UCXAPP_BROWSER (tests/capture_fake.py here) full screen in its own profile."""
+    import os
+    import sys
+    from pathlib import Path
+
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    fake = [sys.executable, str(Path(__file__).with_name("capture_fake.py")), "browser"]
+    browser = subprocess.list2cmdline(fake) if os.name == "nt" else " ".join(f"'{a}'" for a in fake)
+    env = dict(os.environ, UCXAPP_BROWSER=browser, UCX_FAKE_DIR=str(tmp_path))
+    (tmp_path / "exported").mkdir()
+    module = Vucx("nora-w36.yaml")
+    try:
+        out = subprocess.run([str(app_exe), module.start(), "--shell"], input="web.export exported\nweb.kiosk\n"
+                             "web.start\nweb.kiosk\nweb.export exported\nweb.kiosk link extra\nweb.stop\n",
+                             capture_output=True, text=True, errors="replace", cwd=tmp_path, env=env,
+                             timeout=120).stdout
+    finally:
+        module.stop()
+    assert "exported " in out and (tmp_path / "exported" / "groups.json").exists(), out[-2000:]
+    assert "created certificate tls-web for 192.168.1.50" in out, out[-2000:]
+    assert re.search(r"kiosk: https://192\.168\.1\.50:443/#t=[0-9a-f]{32}&kiosk\n", out), out[-2000:]
+    assert out.count("kiosk opened full screen; Alt+F4 closes it") == 2, out[-2000:]
+    assert "already running; web.stop first" in out, out[-2000:]
+    assert "ERROR: stop the web server first (web.stop)" in out, out[-2000:]
+    end = time.monotonic() + 20
+    calls = tmp_path / "calls.txt"
+    while time.monotonic() < end and (not calls.exists() or calls.read_text().count("\n") < 1):
+        time.sleep(0.1)
+    lines = calls.read_text(encoding="utf-8").splitlines()
+    assert re.match(r"browser --kiosk https://192\.168\.1\.50:443/#t=[0-9a-f]{32}&kiosk=window --no-first-run "
+                    r"--no-default-browser-check --user-data-dir=.*ucxapp-kiosk$", lines[0]), lines
+
+
+class _Idle:
+    """A client that connects and says nothing; the next client connects beside it."""
+    idle = True
+    closed = False
+
+    def __call__(self, data):
+        return b""
+
+
+def test_web_server_evicts_an_idle_client_when_every_slot_is_taken(app_exe, tmp_path):
+    """Four silent connections fill the client slots: the fifth client takes the slot of the first, and a request
+    that outgrows the request buffer is dropped without an answer."""
+    big = "GET / HTTP/1.1\r\nX-Pad: " + "a" * 3000 + "\r\n\r\n"
+    out, replies = _serve(app_exe, tmp_path, [_Idle(), _Idle(), _Idle(), _Idle(), _get("/api/version"), big],
+                          wait_s=8)
+    assert replies[4].startswith("HTTP/1.1 200") and '"v":"u-connectXpressApp ' in replies[4], replies
+    assert replies[5] == "", replies[5][:200]
+    assert all(r == "" for r in replies[:4]), replies[:4]
+
+
+class _Events(_Idle):
+    """A browser tab on the event stream that stays open; the next client connects beside it."""
+
+    def __call__(self, data):
+        return f"GET /events?t={TOKEN} HTTP/1.1\r\nHost: x\r\n\r\n".encode() if data is None else b""
+
+
+def test_web_server_evicts_an_event_stream_when_only_streams_hold_the_slots(app_exe, tmp_path):
+    """Four open event streams take every client slot: the next request takes the first stream's slot and gets its
+    answer, and a request that fills the request buffer and keeps sending is dropped."""
+    full = "GET / HTTP/1.1\r\nX-Pad: " + "a" * (2047 - 24)
+    out, replies = _serve(app_exe, tmp_path, [_Events(), _Events(), _Events(), _Events(), _get("/api/version"),
+                                             [full, "more\r\n\r\n"]], wait_s=8)
+    assert replies[4].startswith("HTTP/1.1 200") and '"v":"u-connectXpressApp ' in replies[4], replies
+    assert replies[5] == "", replies[5][:200]
+
+
+def test_web_start_closes_sockets_an_earlier_run_left_and_says_when_listen_still_fails(app_exe, tmp_path):
+    """Listening fails: the TCP sockets on the module that this run does not own (left by a killed earlier run) are
+    closed and the listen is tried once more; when that fails too web.start says so and serves nothing."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"] = None
+    profile["commands"].update({"AT+USOCR=6": ["+USOCR:2", "OK"], "AT+USOB=*": ["OK"], "AT+USOL=*": ["ERROR"],
+                                "AT+USOST?": ["+USOST:3,6,3", "+USOST:4,17,1", "+USOST:5,6,2", "OK"],
+                                "AT+USOCL=*": ["OK"]})
+    module = Vucx(profile)
+    try:
+        out = subprocess.run([str(app_exe), module.start(), "--exec", f"web.start 8080 {TOKEN} http"],
+                             capture_output=True, text=True, errors="replace", timeout=60, cwd=tmp_path)
+        log = list(module.log)
+    finally:
+        module.stop()
+    text = out.stdout
+    assert "closing socket 3 left by an earlier run" in text and "closing socket 5 left by an earlier run" in text
+    assert "socket 4" not in text and "ERROR: listen on port 8080 failed" in text and out.returncode != 0, text
+    assert "AT+USOCL=3" in log and "AT+USOCL=5" in log and "AT+USOCL=4" not in log, log
+    assert sum(c.startswith("AT+USOL=") for c in log) == 2, log
+
+
+def test_web_only_mode_serves_until_it_is_told_to_stop(app_exe, tmp_path):
+    """ucxapp <port> --web: on a module with Wi-Fi up it starts web.start and runs without the shell until a
+    Ctrl+Break (Windows) or SIGTERM stops it, then stops the server and closes its socket."""
+    pytest.importorskip("yaml")
+    import os
+    import signal
+    import threading
+
+    from harness.vucx import Vucx, load
+
+    module = Vucx(load("nora-w36.yaml"))
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    lines = []
+    proc = subprocess.Popen([str(app_exe), module.start(), "--web"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path, creationflags=flags)
+    try:
+        threading.Thread(target=lambda: lines.extend(proc.stdout), daemon=True).start()
+        end = time.monotonic() + 60
+        while not any("web UI only" in line for line in lines) and proc.poll() is None and time.monotonic() < end:
+            time.sleep(0.05)
+        assert any("web UI only; q, Esc or Ctrl+C stops" in line for line in lines), "".join(lines)
+        proc.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+        proc.wait(timeout=30)
+        time.sleep(0.2)
+        log = list(module.log)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    text = "".join(lines)
+    assert "stopping the web server" in text, text
+    listen = next(c for c in log if c.startswith("AT+USOL="))
+    assert listen.split("=")[1].split(",")[0] in [c.split("=")[1] for c in log if c.startswith("AT+USOCL=")], log
+
+
+def test_plain_http_is_never_served_without_a_token(app_exe, tmp_path):
+    """"open" serves without a token over HTTPS only: over plain HTTP anyone on the network could read the page."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    module = Vucx(load("nora-w36.yaml"))
+    try:
+        out = subprocess.run([str(app_exe), module.start(), "--exec", "web.start 8080 open http", "--exec",
+                              "web.status"], capture_output=True, text=True, errors="replace", timeout=60, cwd=tmp_path)
+        log = list(module.log)
+    finally:
+        module.stop()
+    assert "ERROR: plain HTTP always needs a token" in out.stdout and out.returncode != 0, out.stdout
+    assert not any(c.startswith(("AT+USOCR", "AT+USOL")) for c in log), log

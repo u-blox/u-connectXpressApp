@@ -173,3 +173,82 @@ def test_tui_needs_a_terminal(app_exe, tmp_path):
                          errors="replace", stdin=subprocess.DEVNULL, cwd=tmp_path)
     assert out.returncode != 0
     assert "needs an interactive terminal" in out.stdout
+
+
+F8 = "\x1b[19~"
+
+
+def _walk_to(t, hint, key=DOWN, steps=80):
+    """Presses key until the hint line names hint; True when found."""
+    for _ in range(steps):
+        mark = len(t.out)
+        t.keys(key, gap=0.08)
+        if hint.encode() in t.out[mark:]:
+            return True
+    return False
+
+
+def test_tui_sub_menus_prompts_select_mode_and_snake(app_exe, tmp_path):
+    """Sub-menus open and close, a pairing request takes the input line (Enter accepts, Esc denies), F8 freezes the
+    screen for selecting text, clear and app.snake run in the UI itself and exit quits."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    peer = "C0FFEE001122p"
+    profile = load("nora-w36.yaml")
+    profile["urcs"]["AT+UBTB=*"] = [[f"+UEBTUC:{peer},654321", f"+UEBTB:{peer},0"],
+                                    [f"+UEBTUPE:{peer}", f"+UEBTB:{peer},2"]]
+    module = Vucx(profile)
+    try:
+        t = Tui(app_exe, module.start(), tmp_path)
+        t.keys(HOME)
+        assert _walk_to(t, "] gatt  -"), t.out[-2000:]
+        t.keys(RIGHT)                                    # opens the group: its sub-menus come first
+        assert _walk_to(t, ".*  (Enter opens, Left closes)"), t.out[-2000:]
+        t.keys(ENTER, DOWN, LEFT)                        # opens the sub-menu, then Left goes back to it
+        t.keys(LEFT, LEFT, LEFT)                         # closes it, back to the group, closes the group
+        t.keys(F8)
+        t.pump(0.3)
+        t.keys("x", ESC)                                 # keys do nothing while selecting; Esc goes back
+        t.keys(ESC)
+        t.type("bt.autoconfirm off")
+        t.keys(ENTER)
+        t.pump(3.0, until="autoconfirm")
+        t.keys(ESC)
+        t.type("bt.bond 0 2")
+        t.keys(ENTER)
+        t.pump(5.0, until="PAIRING REQUEST, code 654321")
+        t.pump(1.0)
+        t.keys(ENTER)                                    # bt.confirm yes
+        t.pump(3.0, until="AT+UBTUC")
+        t.keys(ESC)
+        t.type("bt.bond 0 2")
+        t.keys(ENTER)
+        t.pump(5.0, until="PASSKEY REQUEST")
+        t.pump(1.0)
+        t.keys(ESC)                                      # bt.passkey deny
+        t.pump(2.0)
+        t.keys(ESC)
+        t.type("clear")
+        t.keys(ENTER)
+        t.type("app.snake")
+        t.keys(ENTER)
+        t.pump(1.0)
+        t.keys("q")
+        t.pump(2.0, until="snake: score")
+        t.keys(ESC)
+        t.type("exit")
+        t.keys(ENTER)
+        deadline = time.monotonic() + 20
+        while t.proc.poll() is None and time.monotonic() < deadline:
+            t.pump(0.1)
+        rc, out = t.quit()
+    finally:
+        module.stop()
+    assert rc == 0, out[-3000:]
+    assert "SELECT: drag to select" in out, out[-3000:]
+    assert "PAIRING REQUEST, code 654321: Enter accepts, Esc rejects" in out, out[-3000:]
+    assert "PASSKEY REQUEST: type the 6 digits" in out, out[-3000:]
+    assert "AT+UBTUC=C0FFEE001122p,1" in module.log, module.log     # Enter accepted
+    assert "AT+UBTUPE=C0FFEE001122p,0" in module.log, module.log    # Esc denied
+    assert "snake: score 0" in out, out[-3000:]

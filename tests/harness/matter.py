@@ -50,6 +50,51 @@ def manual_decode(code):
     return (int(digits[0]) << 2) | (low >> 14), (int(digits[6:10]) << 14) | (low & 0x3FFF)
 
 
+_VERHOEFF_D = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+               [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+               [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+               [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]]
+_VERHOEFF_P = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4]]
+for _ in range(6):
+    _VERHOEFF_P.append([_VERHOEFF_P[1][d] for d in _VERHOEFF_P[-1]])
+_VERHOEFF_INV = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9]
+
+
+def verhoeff_check(digits):
+    """The Verhoeff check digit of a string of digits, which ends a manual pairing code."""
+    c = 0
+    for i, digit in enumerate(reversed(digits)):
+        c = _VERHOEFF_D[c][_VERHOEFF_P[(i + 1) % 8][int(digit)]]
+    return str(_VERHOEFF_INV[c])
+
+
+BASE38 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-."
+
+
+def qr_decode(payload):
+    """The fields of a QR code payload (MT:...) without optional TLV data: base38 in chunks of 5, 4 or 2 characters
+    for 3, 2 or 1 bytes, each chunk least significant character first, then the bits from the least significant
+    one up: version 3, vendor 16, product 16, commissioning flow 2, rendezvous 8, discriminator 12, passcode 27,
+    padding 4."""
+    assert payload.startswith("MT:"), payload
+    text, data = payload[3:], bytearray()
+    while text:
+        chunk, text = text[:5], text[5:]
+        assert len(chunk) in (5, 4, 2), payload
+        size = {5: 3, 4: 2, 2: 1}[len(chunk)]
+        value = sum(BASE38.index(ch) * 38 ** i for i, ch in enumerate(chunk))
+        assert value < 256 ** size, payload
+        data += value.to_bytes(size, "little")
+    bits = int.from_bytes(data, "little")
+    fields = {}
+    for name, width in (("version", 3), ("vendor", 16), ("product", 16), ("flow", 2), ("rendezvous", 8),
+                        ("discriminator", 12), ("passcode", 27), ("padding", 4)):
+        fields[name] = bits & ((1 << width) - 1)
+        bits >>= width
+    assert len(data) == 11 and bits == 0, payload   # nothing after the padding: no TLV data
+    return fields
+
+
 PAIRING_NODE = bytes.fromhex("8877665544332211")
 PAIRING_EXCHANGE = 0x1234
 PBKDF_PARAM_RESPONSE = 0x21

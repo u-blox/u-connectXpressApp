@@ -288,3 +288,48 @@ def test_virtual_receiver_reports_jamming_and_spoofing(app_exe, tmp_path):
 def test_virtual_receiver_errors(app_exe, tmp_path, command, message):
     out = _run(app_exe, tmp_path, command)
     assert message.lower() in out.stdout.lower(), out.stdout
+
+
+def _monver():
+    def field(text, size=30):
+        return text.encode().ljust(size, b"\0")
+    return _ubx(0x0A, 0x04, field("ROM SPG 5.10 (7b202e)") + field("00190000", 10) + field("FWVER=HPG 1.32")
+                + field("PROTVER=27.31") + field("MOD=ZED-F9P") + field("GPS;GLO;GAL;BDS"))
+
+
+def _navsat(systems):
+    """UBX-NAV-SAT with one satellite per UBX gnssId; the first two are used in the fix."""
+    p = bytearray(8)
+    p[5] = len(systems)
+    for i, gnss in enumerate(systems):
+        p += struct.pack("<BBBbhhI", gnss, 10 + i, 30 + i, 45, 180, 0, 0x08 if i < 2 else 0)
+    return _ubx(0x01, 0x35, bytes(p))
+
+
+def test_replay_of_ubx_monitor_messages_names_receiver_satellites_and_spoofing(app_exe, tmp_path):
+    status = bytearray(16)
+    status[5], status[7] = 0x02, 0x10 | 0x80     # differential, spoofing indicated, RTK fixed
+    frames = [_monver()]
+    for i in range(3):
+        frames += [_navsat([0, 1, 2, 3, 5, 6, 7, 4]), _ubx(0x01, 0x03, bytes(status)), _navpvt(i, 55.7687, 13.0261)]
+    (tmp_path / "mon&sat.ubx").write_bytes(b"".join(frames))
+    out = _run(app_exe, tmp_path, "gnss.replay mon&sat.ubx 10", "gnss.watch 2", "gnss.sats", "gnss.status",
+               "gnss.close", "gnss.export mon&sat.ubx t.gpx")
+    rcv = "Receiver:  u-blox F9 ZED-F9P, FW ROM SPG 5.10 (7b202e), HW 00190000, PROTVER 27.31"
+    assert rcv in out.stdout, out.stdout
+    assert "           FWVER=HPG 1.32, GPS;GLO;GAL;BDS" in out.stdout, out.stdout
+    assert "7 satellite(s)" in out.stdout, out.stdout      # the unknown gnssId 4 is not listed
+    sats = [line.split() for line in out.stdout.splitlines() if line[:1].isalpha() and line.rstrip().endswith("used")]
+    assert len(sats) == 2 and {s[1] for s in sats} == {"10", "11"}, out.stdout
+    assert "spoofing indicated" in out.stdout and "SPOOF: spoofing indicated" in out.stdout, out.stdout
+    assert "<name>mon&amp;sat.ubx</name>" in (tmp_path / "t.gpx").read_text(), out.stdout
+
+
+def test_usecase_check_names_the_open_receiver_and_its_fix(app_exe, tmp_path):
+    """usecase.check fills the GNSS row from the open receiver: its fix and satellites used; with no receiver open
+    the row does not claim one."""
+    out = _run(app_exe, tmp_path, "gnss.virtual malmo", "gnss.watch 2", "usecase.check rtk")
+    row = next((line for line in out.stdout.splitlines() if "RTK receiver" in line), "")
+    assert row.startswith(" [ok]") and row.endswith("open: GNSS 3D 10sv"), out.stdout
+    out = _run(app_exe, tmp_path, "usecase.check rtk")
+    assert "RTK receiver" in out.stdout and "open: GNSS" not in out.stdout, out.stdout

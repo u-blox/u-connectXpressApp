@@ -215,9 +215,12 @@ def parse(argv):
     g.add_argument("--log", nargs="?", const="", metavar="PORT", help="console on the ST-Link VCP")
     g.add_argument("--put", metavar="FILE", help="copy a file to the board over the console (YMODEM, file.recv)")
     g.add_argument("--get", metavar="FILE", help="copy a file from the board over the console (YMODEM, file.send)")
+    g.add_argument("--send", action="append", metavar="CMD",
+                   help="run a command on the board's console and print its reply (until 2 s of quiet); "
+                        "repeat for more; a long command (gatt.server.aio 600) goes on running on the board")
     g.add_argument("--port", "--ports", dest="ports", metavar="PORT[,PORT...]",
                    help="module ports in order A,B,C... for --detect/--test (no probing); the first one for the "
-                        "app and --script; with --put/--get the console port (default: the ST-Link VCP)")
+                        "app and --script; with --put/--get/--send the console port (default: the ST-Link VCP)")
     g = p.add_argument_group("run")
     g.add_argument("--signed", action="store_true", help="run app/release/ucxapp-signed.exe")
     g.add_argument("--hid", action="store_true", help="start in HID keyboard mode")
@@ -899,6 +902,9 @@ def pytest_python():
     """The repo's own .venv (made and filled from tests/requirements.txt when needed), so the tests never depend on
     what a system or MSYS2 Python happens to have; a venv that no longer runs (moved repo) is made again."""
     venv = ROOT / ".venv"
+    if not IS_WINDOWS and str(ROOT).startswith("/mnt/"):
+        # WSL on a Windows checkout: .venv is the Windows one, never clear it from here.
+        venv = Path.home() / ".ucxapp-venv"
     py = venv / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
     if py.exists() and subprocess.call([py, "-c", ""], stderr=subprocess.DEVNULL) != 0:
         shutil.rmtree(venv, ignore_errors=True)
@@ -969,7 +975,7 @@ def coverage(pytest_args):
     if shutil.which("gcovr"):
         gc = subprocess.call(["gcovr", "-r", str(ROOT), "--filter", "app/src/", "--object-directory", str(bd),
                               "--gcov-ignore-parse-errors", "negative_hits.warn_once_per_file",
-                              "--txt", "--fail-under-line", "80"], cwd=ROOT)
+                              "--txt", "--fail-under-line", "85"], cwd=ROOT)
         rc = rc or gc
     else:
         print("gcovr not found: the CI coverage gate (c-coverage job) was not checked here; pip install gcovr")
@@ -1368,6 +1374,30 @@ def stm32_transfer(args):
     return 0 if "ERROR" not in reply else 1
 
 
+def stm32_send(args, quiet=2.0, limit=60.0):
+    """Each --send command on the board's console; its reply until `quiet` seconds without output."""
+    import serial
+
+    name = BOARDS[args.board][1] if args.board in BOARDS else None
+    port = stm32_console_port(args.ports[0] if args.ports else None, name)
+    failed = False
+    with serial.Serial(port, 115200, timeout=0.1) as ser:
+        ser.write(b"\r")
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        for command in args.send:
+            ser.write(command.encode() + b"\r")
+            text, last, start = b"", time.monotonic(), time.monotonic()
+            while time.monotonic() - last < quiet and time.monotonic() - start < limit:
+                chunk = ser.read(256)
+                if chunk:
+                    text, last = text + chunk, time.monotonic()
+            reply = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text.decode(errors="replace")).replace("\r", "")
+            print(f"{port}> {command}\n{reply.strip()}")
+            failed |= "ERROR" in reply
+    return 1 if failed else 0
+
+
 ALL_PROBLEM = re.compile(r"warning( C\d+)?:|error( C\d+| MSB\d+)?:|undefined reference|overflowed|FAILED:"
                          r"|CMake Error|^ERROR:")
 
@@ -1389,7 +1419,7 @@ def all_progress(path):
 
 
 def stm32_all(args):
-    if args.erase or args.recover or args.log is not None:
+    if args.erase or args.recover or args.log is not None or args.send:
         fail("--board all supports only --clean, --build, --rebuild and --flash")
     flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild),
                              ("--flash", args.flash)) if on]
@@ -1519,13 +1549,15 @@ def stm32(args, extra):
     if extra:
         fail(f"unknown STM32 argument(s): {' '.join(extra)}")
     if not (args.clean or args.build or args.rebuild or args.erase or args.recover or args.flash
-            or args.log is not None or args.put or args.get):
-        fail("--stm32-freertos needs --build, --rebuild, --clean, --erase, --recover, --flash, --log, --put or --get")
+            or args.log is not None or args.put or args.get or args.send):
+        fail("--stm32-freertos needs --build, --rebuild, --clean, --erase, --recover, --flash, --log, --put, --get "
+             "or --send")
     if args.put and args.get:
         fail("use --put or --get, not both")
-    if (args.put or args.get) and not (args.clean or args.build or args.rebuild or args.erase or args.recover
-                                       or args.flash or args.log is not None):
-        return stm32_transfer(args)
+    if (args.put or args.get or args.send) and not (args.clean or args.build or args.rebuild or args.erase
+                                                    or args.recover or args.flash or args.log is not None):
+        rc = stm32_transfer(args) if args.put or args.get else 0
+        return rc or (stm32_send(args) if args.send else 0)
     stm32_tools()
     if args.board == "all":
         return stm32_all(args)
@@ -1553,6 +1585,12 @@ def stm32(args, extra):
         if args.flash:
             time.sleep(3)   # let the board boot and mount its files
         rc = stm32_transfer(args)
+        if rc or (args.log is None and not args.send):
+            return rc
+    if args.send:
+        if args.flash and not (args.put or args.get):
+            time.sleep(3)   # let the board boot
+        rc = stm32_send(args)
         if rc or args.log is None:
             return rc
     if args.log is not None:
@@ -2500,7 +2538,7 @@ def main(argv):
     args, extra, parsed_argv = parse(argv)
     if args.linux_host:
         os.environ["UCX_LINUX_HOST"] = args.linux_host
-    if args.ports and not (args.detect or args.test or args.put or args.get):
+    if args.ports and not (args.detect or args.test or args.put or args.get or args.send):
         extra = [args.ports[0], *extra]
     if args.release:
         return subprocess.call([sys.executable, str(ROOT / "scripts" / "release.py"), *extra], cwd=ROOT)

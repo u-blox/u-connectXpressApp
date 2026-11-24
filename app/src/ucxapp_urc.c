@@ -62,6 +62,39 @@ bool ucxapp_mqtt_up(void)
     return gMqttUp;
 }
 
+#if U_CX_USE_URC_QUEUE == 1
+/* What the port's receive thread calls; u-connectClient does not declare it */
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
+#endif
+
+void ucxapp_urcs_settle(uCxHandle_t *ucx)
+{
+#if U_CX_USE_URC_QUEUE == 1
+    uCxAtClient_t *client = ucx != NULL ? ucx->pAtClient : NULL;
+    uCxAtUrcQueue_t *queue = client != NULL ? &client->urcQueue : NULL;
+
+    /* The thread that dequeues a URC holds dequeueMutex until its handler has run: held by us, nobody hands one
+       out, and an empty queue then means every URC so far is handled. One that is waiting is handed out here. */
+    for (int i = 0; queue != NULL && i < 100; i++) {
+        bool waiting;
+
+        if (U_CX_MUTEX_TRY_LOCK(queue->dequeueMutex, 10) != 0) {
+            continue;
+        }
+        U_CX_MUTEX_LOCK(queue->queueMutex);
+        waiting = queue->usedBytes > 0 && queue->pEnqueueEntry == NULL;
+        U_CX_MUTEX_UNLOCK(queue->queueMutex);
+        U_CX_MUTEX_UNLOCK(queue->dequeueMutex);
+        if (!waiting) {
+            return;
+        }
+        (void)uCxAtClientHandleRxAvailable(client);
+    }
+#else
+    (void)ucx;   /* the command's own thread ran every URC handler before the command returned */
+#endif
+}
+
 uint32_t ucxapp_module_boot_ms(bool *exact)
 {
     *exact = gBootSeen;

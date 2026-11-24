@@ -591,6 +591,26 @@ def test_cell_watch_shows_the_live_card(app_exe, tmp_path):
     assert "relayed by cell.bridge" in text and re.search(r"RELAY cell\.bridge 1 UART, \d+ B to it", text), text
 
 
+def test_cell_apn_ping_and_ntrip_over_the_cellular_link(app_exe, tmp_path):
+    """On the simulated modem: the APN is shown and set; a ping answers four times with the average; an NTRIP
+    client over the cellular data link sends its request to the caster, which
+    streams checked RTCM 1005 frames to the receiver."""
+    out = _run(app_exe, tmp_path, "--offline", "cell.open virt:cell", "cell.attach on", "cell.apn",
+               "cell.apn iot.test ip", "cell.apn", "cell.ping example.com")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert '+CGDCONT: 1,"IP","internet","10.0.0.5"' in text and "APN set to iot.test (IP)" in text, text
+    assert '+CGDCONT: 1,"IP","iot.test","10.0.0.5"' in text, text
+    assert text.count('+UUPING: ') == 4 and "4 sent, 4 received, average 25 ms" in text, text
+    out = _run(app_exe, tmp_path, "--offline", "cell.open virt:cell", "cell.attach on", "gnss.virtual malmo",
+               "gnss.bridge ntrip caster.local 2101 MP user pw cell", "gnss.watch 3", "gnss.bridge status",
+               "gnss.bridge off", "cell.disconnect")
+    text = out.stdout
+    assert out.returncode == 0, text
+    assert "gnss bridge: NTRIP client over virt:cell to /MP" in text, text
+    assert "NTRIP: streaming corrections from /MP" in text, text
+    assert re.search(r"NTRIP over virt:cell/MP, streaming, \d+ bytes of corrections \(RTCM [1-9]\d*\)\n", text), text
+
 @pytest.mark.parametrize("command", ["cell.connect", "cell.connect host", "cell.connect host 0", "cell.connect h 1 x"])
 def test_cell_connect_rejects_bad_arguments(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)

@@ -15,9 +15,12 @@ from harness.matter import (
     at_burst,
     codes_allowed,
     manual_code,
+    manual_decode,
     pairing_request,
+    qr_decode,
     setup_codes,
     unsecured_message,
+    verhoeff_check,
 )
 
 pytestmark = pytest.mark.app
@@ -53,6 +56,13 @@ def _run(exe, module, plugin, cwd, *commands):
         args += ["--exec", command]
     return subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace",
                           stdin=subprocess.DEVNULL, cwd=cwd, env=dict(os.environ, UCX_MATTER_PLUGIN=str(plugin)))
+
+
+def _session(exe, module, plugin, cwd, *commands):
+    """As _run, in a piped shell: it goes on after a command that fails."""
+    return subprocess.run([str(exe), module.port, "--shell"], input="\n".join(commands) + "\n", capture_output=True,
+                          text=True, timeout=120, errors="replace", cwd=cwd,
+                          env=dict(os.environ, UCX_MATTER_PLUGIN=str(plugin)))
 
 
 def test_start_runs_the_matter_service_on_the_module_and_shows_the_setup_codes(app_exe, module, plugin, tmp_path):
@@ -554,3 +564,150 @@ def test_board_button_is_the_switch_and_the_led_shows_the_light(app_exe, module,
     assert out.stdout.index("pin 0 = 0") < out.stdout.index("pin 0 = 1"), out.stdout
     assert "EP    4 switch = pressed" in out.stdout, out.stdout
     assert out.stdout.rstrip().rfind("EP    4 switch = released") > out.stdout.find("EP    4 switch = pressed")
+
+
+def test_the_setup_codes_decode_to_the_nodes_own_discriminator_and_passcode(app_exe, module, plugin, tmp_path):
+    """What a phone reads from the QR code and the manual code: the SDK's encoders checked by our own decoders."""
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.status", "matter.card")
+    assert out.returncode == 0, out.stdout
+    discriminator, passcode = setup_codes(out.stdout)
+    manual = re.search(r"manual code: (\d{4}-\d{3}-\d{4})\n", out.stdout)
+    qr = re.search(r"QR payload: (MT:\S+)\n", out.stdout)
+    assert manual and qr, out.stdout
+    digits = manual[1].replace("-", "")
+    assert verhoeff_check(digits[:10]) == digits[10], manual[1]
+    # the manual code carries the upper four bits of the discriminator only
+    assert manual_decode(manual[1][:12]) == (discriminator >> 8, passcode), (manual[1], discriminator, passcode)
+    # a standard commissioning flow over Bluetooth LE (2), with the node's codes and the test vendor and product
+    assert qr_decode(qr[1]) == {"version": 0, "vendor": 0xFFF1, "product": 0x8001, "flow": 0, "rendezvous": 2,
+                                "discriminator": discriminator, "passcode": passcode, "padding": 0}, qr[1]
+    # the card has the same codes
+    assert f"CODE  {manual[1]}\nQR    {qr[1]}\n" in out.stdout, out.stdout
+
+
+@pytest.mark.parametrize("value, takes", [
+    ("light 101", "light takes on | off | 0..100 (percent)"),
+    ("light -1", "light takes on | off | 0..100 (percent)"),
+    ("light 0x10", "light takes on | off | 0..100 (percent)"),
+    ("light dim", "light takes on | off | 0..100 (percent)"),
+    ("light on 40", "light takes on | off | 0..100 (percent)"),
+    ("temp 125.1", "temp takes -40..125 (degrees Celsius)"),
+    ("temp -40.5", "temp takes -40..125 (degrees Celsius)"),
+    ("temp nan", "temp takes -40..125 (degrees Celsius)"),
+    ("temp 20C", "temp takes -40..125 (degrees Celsius)"),
+    ("contact ajar", "contact takes open | closed"),
+    ("contact Open", "contact takes open | closed"),
+    ("switch hold", "switch takes press | release | click"),
+    ("oven on", "no endpoint oven; matter.endpoints lists them"),
+])
+def test_set_refuses_a_value_the_endpoint_does_not_take(app_exe, module, plugin, tmp_path, value, takes):
+    out = _session(app_exe, module, plugin, tmp_path, "app.log.events.on", "matter.start", f"matter.set {value}",
+                   "matter.endpoints")
+    assert f"ERROR: {takes}\n" in out.stdout, out.stdout
+    # nothing changed, and no event told of a change
+    assert re.search(r"1 +light +off +Dimmable Light,.*\n2 +temp +21\.5 C +Temperature Sensor,.*\n"
+                     r"3 +contact +closed +Contact Sensor,.*\n4 +switch +released +Generic Switch,", out.stdout), \
+        out.stdout
+    assert "[event] matter: " + value.split()[0] + " =" not in out.stdout, out.stdout
+
+
+def test_set_takes_every_value_up_to_the_ends_of_its_range(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "app.log.events.on", "matter.start", "matter.set light 100",
+               "matter.set light 1", "matter.set light 0", "matter.set light on", "matter.set temp -40",
+               "matter.set temp 125", "matter.set temp 22.5", "matter.set contact open", "matter.set switch click",
+               "matter.endpoints")
+    assert out.returncode == 0, out.stdout
+    events = re.findall(r"\[event\] matter: (\w+ = .+)", out.stdout)
+    # level 0 is off; on comes back at the last level
+    assert events == ["light = on 100%", "light = on 1%", "light = off", "light = on 1%", "temp = -40.0 C",
+                      "temp = 125.0 C", "temp = 22.5 C", "contact = open", "switch = released"], out.stdout
+    assert re.search(r"1 +light +on 1% .*\n2 +temp +22\.5 C .*\n3 +contact +open ", out.stdout), out.stdout
+
+
+def test_open_takes_180_to_900_seconds_and_opens_again_and_again(app_exe, module, plugin, tmp_path):
+    out = _session(app_exe, module, plugin, tmp_path, "matter.start", "matter.open 179", "matter.open 901",
+                   "matter.open soon", "matter.open 180 1", *["matter.open 180", "matter.open 900"] * 10,
+                   "matter.status")
+    refused = "ERROR: the node did not open a commissioning window (180 to 900 seconds)\n"
+    assert out.stdout.count(refused) == 3 and "usage: matter.open [seconds]" in out.stdout, out.stdout
+    # the start's window, then 20 more: each one shows the codes, and the node keeps advertising
+    assert out.stdout.count("QR payload: MT:") == 1 + 20, out.stdout
+    after = out.stdout[out.stdout.rindex("matter: running"):]
+    assert "commissioning window: open" in after and "ERROR" not in after, out.stdout
+    assert module.log.count("AT+UBTGS=FFF6") == 1, module.log   # the window is not a new service
+
+
+def test_unknown_endpoint_leaves_no_service_to_reboot_away(app_exe, module, plugin, tmp_path):
+    out = _session(app_exe, module, plugin, tmp_path, "matter.start fridge", "matter.start light", "matter.endpoints")
+    assert "unknown endpoint fridge" in out.stdout and "matter: node started (Matter SDK v" in out.stdout, out.stdout
+    assert "rebooting the module" not in out.stdout and "AT+CPWROFF" not in module.log, out.stdout
+    assert out.stdout.count("Dimmable Light") == 1 and "Temperature Sensor" not in out.stdout, out.stdout
+
+
+def test_what_the_node_stores_is_sealed_and_has_no_secret_in_plain_text(app_exe, module, plugin, tmp_path):
+    out = _run(app_exe, module, plugin, tmp_path, "matter.start", "matter.set light 40", "matter.status",
+               "matter.stop", "matter.start", "matter.status")
+    assert out.returncode == 0, out.stdout
+    discriminator, passcode = setup_codes(out.stdout)
+    assert setup_codes(out.stdout.split("matter: node stopped")[1]) == (discriminator, passcode), out.stdout
+    stored = {path.name: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    blobs = [name for name in stored if name.startswith("matter.")]
+    assert "matter.factory.key" in blobs, sorted(stored)
+    for name in blobs:
+        assert name.endswith(".key") and stored[name].startswith(b"UCXS"), (name, stored[name][:16])
+    # no file of the app holds the passcode, as a number or as text
+    for data in stored.values():
+        assert passcode.to_bytes(4, "little") not in data and f"{passcode:08d}".encode() not in data, sorted(stored)
+
+
+def _handles(proc):
+    if os.name == "nt":
+        import ctypes
+        count = ctypes.c_ulong()
+        assert ctypes.windll.kernel32.GetProcessHandleCount(int(proc._handle), ctypes.byref(count))
+        return count.value
+    return len(os.listdir(f"/proc/{proc.pid}/fd"))
+
+
+def test_start_stop_cycles_of_the_matter_stack_leak_nothing(app_exe, plugin, tmp_path):
+    """The node starts again in the same process each time (the plug-in stays loaded): its threads, sockets and
+    the module's GATT service must come and go with it."""
+    pytest.importorskip("yaml")
+    import threading
+
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    proc = subprocess.Popen([str(app_exe), module.start(), "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path,
+                            env=dict(os.environ, UCX_MATTER_PLUGIN=str(plugin)))
+    lines = []
+    reader = threading.Thread(target=lambda: lines.extend(proc.stdout), daemon=True)
+    reader.start()
+
+    def run(cycles, done):
+        proc.stdin.write("matter.start\nmatter.open 180\nmatter.set light on\nmatter.card\nmatter.stop\n" * cycles)
+        proc.stdin.flush()
+        end = time.monotonic() + 120
+        while time.monotonic() < end and "".join(lines).count("matter: node stopped") < done:
+            time.sleep(0.05)
+        assert "".join(lines).count("matter: node stopped") == done, "".join(lines)
+        time.sleep(0.5)   # the module's URCs of the last reboot
+        return _handles(proc)
+
+    try:
+        warm = run(2, 2)
+        after = run(8, 10)
+        proc.stdin.write("sock.list\n")
+        proc.stdin.close()
+        proc.wait(timeout=30)
+        reader.join(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    out = "".join(lines)
+    assert out.count("matter: node started (Matter SDK v") == 10 and "ERROR" not in out, out
+    assert module.log.count("AT+UBTGS=FFF6") == 10 and module.log.count("AT+CPWROFF") == 9, module.log
+    assert "0 socket(s)" in out[out.rindex("matter: node stopped"):], out
+    assert after - warm < 5, (warm, after)   # the same, but for a thread on its way out; a leak would be 8 or more

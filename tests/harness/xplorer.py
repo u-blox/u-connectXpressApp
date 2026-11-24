@@ -97,7 +97,12 @@ class FakePhone:
 
     def _send(self, conn, obj):
         data = json.dumps(obj).encode()
-        head = bytes([0x81, len(data)]) if len(data) < 126 else bytes([0x81, 126]) + struct.pack(">H", len(data))
+        if len(data) < 126:
+            head = bytes([0x81, len(data)])
+        elif len(data) < 65536:
+            head = bytes([0x81, 126]) + struct.pack(">H", len(data))
+        else:
+            head = bytes([0x81, 127]) + struct.pack(">Q", len(data))
         with self._wlock:   # notify() runs in another thread: one lock keeps each frame whole
             conn.sendall(head + data)
 

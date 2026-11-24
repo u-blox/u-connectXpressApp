@@ -49,8 +49,57 @@ static int kindOf(const char *name)
     return -1;
 }
 
+static void storeFault(int *failed, const char *what, const char *name)
+{
+    say("store: %s '%s'\n", what, name != NULL ? name : "(null)");
+    (*failed)++;
+}
+
+/* UCX_STUB_STORE=<n>: the sealed store as a plug-in sees it, then n more blobs (blob0, blob1, ...) to be removed */
+static void checkStore(const ucxapp_matter_host_t *host, int blobs)
+{
+    static const char *const kBad[] = { NULL, "", "Upper", "a.b", "../x", "a/b", "a b", "abcdefghijklmnopq" };
+    static const char kSecret[] = "stub-plaintext-secret";
+    char buffer[8], name[16];
+    int failed = 0;
+
+    for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); i++) {
+        if (host->storeSave(kBad[i], "x", 1) || host->storeLoad(kBad[i], buffer, sizeof(buffer)) != -1 ||
+            host->storeRemove(kBad[i])) {
+            storeFault(&failed, "took the name", kBad[i]);
+        }
+    }
+    if (!host->storeSave("abcdefghijklmnop", "x", 1) || host->storeLoad("abcdefghijklmnop", buffer, 1) != 1) {
+        storeFault(&failed, "refused the longest name", "abcdefghijklmnop");
+    }
+    if (host->storeLoad("missing", buffer, sizeof(buffer)) != -1) {
+        storeFault(&failed, "loaded a blob never saved", "missing");
+    }
+    memset(buffer, 0x55, sizeof(buffer));
+    if (!host->storeSave("secret", kSecret, sizeof(kSecret)) ||
+        host->storeLoad("secret", NULL, 0) != (int32_t)sizeof(kSecret) ||
+        host->storeLoad("secret", buffer, 4) != (int32_t)sizeof(kSecret) || memcmp(buffer, kSecret, 4) != 0 ||
+        buffer[4] != 0x55) {
+        storeFault(&failed, "gave back another length or more than asked of", "secret");
+    }
+    if (!host->storeSave("gone", "x", 1) || !host->storeRemove("gone") || host->storeLoad("gone", NULL, 0) != -1) {
+        storeFault(&failed, "did not remove", "gone");
+    }
+    for (int i = 0; i < blobs; i++) {
+        snprintf(name, sizeof(name), "blob%d", i);
+        if (!host->storeSave(name, name, strlen(name))) {
+            storeFault(&failed, "did not save", name);
+        }
+    }
+    if (blobs > 0 && !host->storeSave("factory", "codes", 5)) {   /* the setup codes: matter.reset keeps them */
+        storeFault(&failed, "did not save", "factory");
+    }
+    say("store check: %s%s\n", failed == 0 ? "ok" : "FAILED", "");
+}
+
 static int start(const ucxapp_matter_host_t *host, int argc, const char *const argv[])
 {
+    const char *storeCheck = getenv("UCX_STUB_STORE");
     char *model = NULL;
     char line[96];
 
@@ -89,6 +138,9 @@ static int start(const ucxapp_matter_host_t *host, int argc, const char *const a
     gStarts++;
     if (!host->storeSave("stub", &gStarts, sizeof(gStarts))) {
         return UCXAPP_MATTER_ERR_FAILED;
+    }
+    if (storeCheck != NULL) {
+        checkStore(host, atoi(storeCheck));
     }
     snprintf(line, sizeof(line), "stub node on %s, %d endpoint(s)", gModel, gEndpointCount);
     host->log(UCXAPP_MATTER_LOG_INFO, line);

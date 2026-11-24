@@ -563,6 +563,8 @@ static int startNodeOnce(ucxapp_t *app, int count, const char *const words[])
         gRunning = false;
         U_CX_MUTEX_UNLOCK(gLock);
         U_CX_MUTEX_UNLOCK(gCmdLock);
+        /* wrong arguments: the plug-in sent nothing, so no Matter service is on the module */
+        gServiceDefined = gServiceDefined && rc != UCXAPP_MATTER_ERR_USAGE;
         if (rc != UCXAPP_MATTER_ERR_GATT_FULL) {
             ucxapp_print("ERROR: the Matter node did not start (%s)\n", ucxapp_err_code(rc));
         }
@@ -706,8 +708,11 @@ static bool resetModule(ucxapp_t *app, bool factory)
     ucxapp_events_clear(URC_FLAG_STARTUP);
     if (ucxapp_module_has_wifi(app) && ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
         ucxapp_events_clear(URC_FLAG_WIFI_LINK_DOWN);
+        /* a +STARTUP that came instead of an answer may still be on its way to its handler */
+        ucxapp_urcs_settle(app->ucx);
         restarted = ucxapp_events_take(URC_FLAG_STARTUP);
         if (!restarted && uCxWifiStationDisconnect(app->ucx) != 0) {
+            ucxapp_urcs_settle(app->ucx);
             restarted = ucxapp_events_take(URC_FLAG_STARTUP);
             if (!restarted) {
                 ucxapp_print("ERROR: the module did not leave Wi-Fi network %s\n", ssid);
@@ -723,6 +728,7 @@ static bool resetModule(ucxapp_t *app, bool factory)
         }
         ucxapp_print("matter: left Wi-Fi network %s%s\n", ssid, restarted ? " (the module restarted)" : "");
     }
+    ucxapp_urcs_settle(app->ucx);
     restarted = restarted || ucxapp_events_take(URC_FLAG_STARTUP);
     if (restarted) {
         U_CX_PORT_SLEEP_MS(200);
@@ -750,13 +756,17 @@ static int cmdReset(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     stopNode();
-    memset(files, 0, sizeof(files));
-    ucxapp_store_list(collectFile, files);
-    for (int i = 0; i < STORE_FILES && files[i][0] != '\0'; i++) {
-        if (!all && strcmp(files[i], STORE_FACTORY) == 0) {
-            continue;
+    /* STORE_FILES at a time, until a pass finds none: a node may keep more blobs than that, and every one goes */
+    for (int pass = 1; pass > 0; removed += pass) {
+        memset(files, 0, sizeof(files));
+        ucxapp_store_list(collectFile, files);
+        pass = 0;
+        for (int i = 0; i < STORE_FILES && files[i][0] != '\0'; i++) {
+            if (!all && strcmp(files[i], STORE_FACTORY) == 0) {
+                continue;
+            }
+            pass += ucxapp_store_remove(files[i]) ? 1 : 0;
         }
-        removed += ucxapp_store_remove(files[i]) ? 1 : 0;
     }
     ucxapp_print("matter: reset, %d stored file(s) removed\n", removed);
     if (!resetModule(app, all)) {

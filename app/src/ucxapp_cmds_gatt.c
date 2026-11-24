@@ -476,7 +476,10 @@ static void parseAioDigital(const chr_t *c, const uint8_t *d, size_t n)
             count = gAioDigCount[i];
         }
     }
-    ucxapp_print("[AIO] Digital%s:", c == NULL ? "" : (c->props & (PROP_WRITE | PROP_WRITE_NR)) ? " output" : " input");
+    /* Writable and notifying holds outputs and inputs, as gatt.server.aio does: no label then. */
+    bool out = c != NULL && (c->props & (PROP_WRITE | PROP_WRITE_NR)) != 0;
+    bool in = c != NULL && (c->props & (PROP_NOTIFY | PROP_INDICATE)) != 0;
+    ucxapp_print("[AIO] Digital%s:", c == NULL || (out && in) ? "" : out ? " output" : " input");
     for (size_t i = 0; i < count; i++) {
         ucxapp_print(" D%u=%s", (unsigned)i, kState[(d[i / 4] >> (2 * (i % 4))) & 3]);
     }
@@ -1182,13 +1185,14 @@ static const srvChar_t kEssChars[] = {
     { "ess.humidity",    0x2A6F, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x94, 0x11 }, 2, 0, false, NULL },
 };
 /* AIOS 1.0: https://www.bluetooth.com/specifications/specs/automation-io-service-1-0/
- * The board's user LED (a digital output) and user button (a digital input), as on the NUCLEO-H753ZI and the
- * virtual board, and ADC channel 0 in mV. Each Digital gets the mandatory Number of Digitals and, as there are
- * two of them, a Presentation Format numbering them; both are added in cmdServerSetup. 0x03 = unknown. */
+ * The board's user LED and user button, as on the NUCLEO-H753ZI and the virtual board, in one Digital with Number of
+ * Digitals 2 (added in cmdServerSetup): Digital 0 (bits 0-1) is the LED, an output a client writes; Digital 1
+ * (bits 2-3) the button, an input. One characteristic, not one per IO, because clients that find characteristics by
+ * UUID (Flutter's universal_ble, so u-connectXplorer) only reach the first of several with the same UUID.
+ * ADC channel 0 in mV is the Analog. 0x0F = both unknown. */
 static const srvChar_t kAioChars[] = {
-    { "aio.led",    0x2A56, NULL, PROP_READ | PROP_WRITE, 1, { 0x03 }, 1, 0, false, NULL },
-    { "aio.button", 0x2A56, NULL, PROP_READ | PROP_NOTIFY, 1, { 0x03 }, 1, 0, false, NULL },
-    { "aio.analog", 0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x00, 0x00 }, 2, 0, false, NULL },
+    { "aio.digital", 0x2A56, NULL, PROP_READ | PROP_WRITE | PROP_NOTIFY, 1, { 0x0F }, 1, 0, false, NULL },
+    { "aio.analog",  0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x00, 0x00 }, 2, 0, false, NULL },
 };
 /* LNS 1.0 (PDF only): https://www.bluetooth.com/specifications/specs/location-and-navigation-service-1-0/
  * LN Feature is mandatory; Location and Speed is notify-only. */
@@ -1366,7 +1370,8 @@ static const srvProfile_t *findProfile(const char *key, size_t *index)
     return NULL;
 }
 
-/* Last AIO Digital values put in the server, 0x00 inactive, 0x01 active, 0x03 unknown; -1 before the first. */
+/* Last AIO Digital states put in the server, 0x00 inactive, 0x01 active, 0x03 unknown; -1 forces the next poll to
+ * write and notify the value again. */
 static volatile int gAioLed = -1;
 static int gAioButton = -1;
 
@@ -1375,32 +1380,29 @@ static uint8_t aioDigital(int level)
     return level < 0 ? 0x03 : (uint8_t)(level != 0);
 }
 
-/* Copies the user LED and button into aio.led and aio.button and notifies a button change; with analog, also ADC 0
- * (a ramp where the board has no ADC driver). conn < 0 only sets the values. False if a notification failed. */
+/* Copies the user LED and button into aio.digital and notifies a change; with analog, also ADC 0 (a ramp where the
+ * board has no ADC driver). conn < 0 only sets the values. False if a notification failed. */
 static bool aioPoll(ucxapp_t *app, int32_t conn, int32_t t, bool analog)
 {
-    const srvRec_t *led = findSrv("aio.led");
-    const srvRec_t *button = findSrv("aio.button");
+    const srvRec_t *dig = findSrv("aio.digital");
     const srvRec_t *an = findSrv("aio.analog");
     uint8_t d[2];
     bool ok = true;
 
-    if (led == NULL || button == NULL || an == NULL) {
+    if (dig == NULL || an == NULL) {
         return false;
     }
-    d[0] = aioDigital(ucxapp_hw_led_state());
-    if (d[0] != gAioLed) {
-        gAioLed = d[0];
-        (void)uCxGattServerSetAttrValue(app->ucx, led->value, d, 1);
+    int led = aioDigital(ucxapp_hw_led_state());
+    int button = aioDigital(ucxapp_hw_button());
+    if (button != gAioButton && gAioButton >= 0) {
+        ucxapp_print("[AIO] button %s\n", button == 1 ? "pressed" : button == 0 ? "released" : "unknown");
     }
-    d[0] = aioDigital(ucxapp_hw_button());
-    if (d[0] != gAioButton) {
-        if (gAioButton >= 0) {
-            ucxapp_print("[AIO] button %s\n", d[0] == 1 ? "pressed" : d[0] == 0 ? "released" : "unknown");
-        }
-        gAioButton = d[0];
-        (void)uCxGattServerSetAttrValue(app->ucx, button->value, d, 1);
-        ok = conn < 0 || uCxGattServerSendNotification(app->ucx, conn, button->value, d, 1) == 0;
+    if (led != gAioLed || button != gAioButton) {
+        gAioLed = led;
+        gAioButton = button;
+        d[0] = (uint8_t)(led | (button << 2));
+        (void)uCxGattServerSetAttrValue(app->ucx, dig->value, d, 1);
+        ok = conn < 0 || uCxGattServerSendNotification(app->ucx, conn, dig->value, d, 1) == 0;
     }
     if (analog) {
         int mv = ucxapp_hw_adc_mv(0);
@@ -1411,25 +1413,25 @@ static bool aioPoll(ucxapp_t *app, int32_t conn, int32_t t, bool analog)
     return ok;
 }
 
-/* A client wrote aio.led (URC task): 0b00 off, 0b01 on; tri-state and unknown leave the LED as it is. */
+/* A client wrote aio.digital (URC task). Digital 0 drives the LED: 0b00 off, 0b01 on; tri-state and unknown leave
+ * it as it is. Digital 1 is the button, an input, so its bits are ignored. The module now holds what the client
+ * wrote, so the next poll writes the real states back and notifies them. */
 static bool aioWrite(int32_t handle, const uint8_t *data, size_t len)
 {
-    const srvRec_t *led = findSrv("aio.led");
+    const srvRec_t *dig = findSrv("aio.digital");
 
-    if (led == NULL || led->value != handle) {
+    if (dig == NULL || dig->value != handle) {
         return false;
     }
     int v = len >= 1 ? data[0] & 0x03 : 3;
     if (v > 1) {
-        gAioLed = -1;   /* the next poll puts the LED's real state back */
         ucxapp_print("[AIO] LED write 0x%X ignored (only 0 off, 1 on)\n", (unsigned)v);
     } else if (ucxapp_hw_led(v == 1)) {
-        gAioLed = v;
         ucxapp_print("[AIO] LED %s\n", v ? "on" : "off");
     } else {
-        gAioLed = -1;
         ucxapp_print("[AIO] LED write ignored: this board has no user LED\n");
     }
+    gAioLed = -1;
     return true;
 }
 
@@ -1469,7 +1471,6 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("%s service defined (handle %d)\n", p->title, (int)svcHandle);
 
     size_t first = gSrvCount;
-    uint8_t digitals = 0;
     for (size_t i = 0; i < p->nChars; i++) {
         const srvChar_t *c = &p->chars[i];
         uint8_t init[MAX_INIT];
@@ -1503,16 +1504,11 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
         }
         if (c->u16 == 0x2A56) {
             static const uint8_t kNumDigitalsUuid[2] = { 0x29, 0x09 };
-            static const uint8_t kFormatUuid[2] = { 0x29, 0x04 };
-            static const uint8_t kNumDigitals = 1;
-            /* struct, exponent and unit 0, namespace Bluetooth SIG, description = the Digital's number */
-            uint8_t format[7] = { 0x1B, 0x00, 0x00, 0x00, 0x01, ++digitals, 0x00 };
+            static const uint8_t kNumDigitals = 2;
             int32_t dh;
             if (uCxGattServerDescriptorDefine4(app->ucx, kNumDigitalsUuid, 2, U_GATT_SERVER_READ_SECURITY_NONE,
-                                               U_GATT_SERVER_WRITE_SECURITY_NONE, &kNumDigitals, 1, &dh) != 0 ||
-                uCxGattServerDescriptorDefine4(app->ucx, kFormatUuid, 2, U_GATT_SERVER_READ_SECURITY_NONE,
-                                               U_GATT_SERVER_WRITE_SECURITY_NONE, format, 7, &dh) != 0) {
-                ucxapp_print("WARNING: cannot add the Digital descriptors of %s\n", c->name);
+                                               U_GATT_SERVER_WRITE_SECURITY_NONE, &kNumDigitals, 1, &dh) != 0) {
+                ucxapp_print("WARNING: cannot add the Number of Digitals of %s\n", c->name);
             }
         }
         gSrv[gSrvCount].name = c->name;
@@ -1670,7 +1666,7 @@ static bool demoTick(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t
     return ok;
 }
 
-/* Waits a second; meanwhile Automation IO follows the user button every 50 ms. */
+/* Waits a second; meanwhile Automation IO follows the user LED and button every 50 ms. */
 static void demoWait(ucxapp_t *app, int32_t conn, const srvProfile_t *p, int32_t t)
 {
     if (strcmp(p->key, "aio") != 0) {
@@ -2734,7 +2730,7 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.cts", "[seconds]", "Current Time server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_cts },
     { "gatt.server.ess", "[seconds]", "Environmental Sensing server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ess },
     { "gatt.server.lns", "[seconds]", "Location and Navigation server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_lns },
-    { "gatt.server.aio", "[seconds]", "Automation IO server: user LED (write), user button (notify) and ADC 0 in mV; with seconds, keep them live", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
+    { "gatt.server.aio", "[seconds]", "Automation IO server: one Digital with the user LED (write) and user button (notify), and ADC 0 in mV; with seconds, keep them live", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
     { "gatt.server.bas", "[seconds]", "Battery server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_bas },
     { "gatt.server.ras", "[seconds]", "Ranging Service (Channel Sounding) server; with seconds, simulate Data Ready", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ras },
     { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },

@@ -141,3 +141,16 @@ def test_script_missing_file_is_a_clean_error(tmp_path):
 def test_wifi_survey_needs_a_module(app_exe):
     _, res = _json(app_exe, "wifi.survey")
     assert res[0]["code"] == "NOT_CONNECTED"
+
+
+def test_json_data_keys_and_positional_commands(app_exe):
+    """Key: value lines become data keys; help --json in --json mode prints its own JSON; words after the options
+    form one command, quoted where they hold a space."""
+    out, res = _json(app_exe, "web.status", "help --json web.st")
+    assert res[0]["data"] == {"web_server": "stopped"}, out.stdout
+    names = [c["name"] for c in json.loads(out.stdout[out.stdout.index("\n[") + 1:])]
+    assert names == ["web.start", "web.stop", "web.status"], out.stdout
+    out = subprocess.run([str(app_exe), "--offline", "--json", "web.status", "a b"], capture_output=True, text=True,
+                         timeout=60, errors="replace", stdin=subprocess.DEVNULL, cwd=ROOT)
+    res = json.loads(out.stdout.splitlines()[-1])
+    assert res["command"] == 'web.status "a b"' and res["code"] == "OK" and "data" in res, out.stdout

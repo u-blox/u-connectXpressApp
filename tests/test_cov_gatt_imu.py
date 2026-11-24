@@ -1,6 +1,7 @@
 """Offline coverage of the GATT client/server commands and the IMU stream, against vucx and a TCP feeder."""
 
 import os
+import re
 import struct
 import subprocess
 import time
@@ -210,7 +211,7 @@ def test_gatt_server_demo_every_profile(app_exe, cwd, tmp_path):
 
 
 def test_gatt_server_aio_is_the_boards_led_and_button(app_exe, cwd, tmp_path):
-    """aio.led drives the user LED, aio.button follows the user button (the virtual board's here)."""
+    """aio.digital: Digital 0 drives the user LED, Digital 1 follows the user button (the virtual board's here)."""
     urcs = {f"AT+VUCX{k}": [f"+UEBTGCW:0,{{h:2A56}},{v},0"] for k, v in (("A", "01"), ("B", "03"), ("C", "00"))}
     module = _start(_profile(tmp_path / "aio.yaml", urcs=urcs))
     try:
@@ -222,11 +223,14 @@ def test_gatt_server_aio_is_the_boards_led_and_button(app_exe, cwd, tmp_path):
         module.stop()
     assert "[AIO] LED on" in out and "[AIO] LED write 0x3 ignored" in out and "[AIO] LED off" in out, out[-3000:]
     assert "[AIO] button pressed" in out and "[AIO] button released" in out, out[-3000:]
-    button = next(int(line.split()[3].rstrip(",")) for line in out.splitlines() if line.startswith("aio.button"))
+    found = re.search(r"aio\.digital\s+value handle (\d+)", out)
+    assert found, out[-3000:]
+    digital = int(found.group(1))
     log = "\n".join(module.log)
-    assert f"AT+UBTGNS=0,{button},01" in log and f"AT+UBTGNS=0,{button},00" in log, module.log[-30:]
-    # Number of Digitals 1 and a Presentation Format numbering each Digital, as AIOS asks for two of them
-    assert "2909" in log and "1B00000001010" in log and "1B00000001020" in log, module.log[-40:]
+    # LED on (bits 0-1 = 01) with the button pressed (bits 2-3 = 01), then released
+    assert f"AT+UBTGNS=0,{digital},05" in log and f"AT+UBTGNS=0,{digital},01" in log, module.log[-30:]
+    # One Digital characteristic holding both IOs: Number of Digitals 2, no Presentation Format needed
+    assert "2909" in log and "2904" not in log, module.log[-40:]
 
 
 def test_gatt_server_wps_text_and_protobuf(app_exe, cwd, tmp_path):

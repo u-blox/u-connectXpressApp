@@ -97,6 +97,10 @@ void ucxapp_udp_reset_limit(void);   /* forget the UDP read limit learned from t
 uint32_t ucxapp_module_boot_ms(bool *exact);
 /* True (once) when a +STARTUP came since the session settings were last set: the module has echo on again. */
 bool ucxapp_session_lost_take(void);
+/* Waits (at most 1 s) until every URC received so far has been handled: u-connectClient queues the URCs that come
+   during a command, and the receive thread may still be handing them out when the command returns. Before reading
+   a flag such a URC sets (+STARTUP during a command that got no answer). Command thread only. */
+void ucxapp_urcs_settle(uCxHandle_t *ucx);
 /* Last +UEMDCD (NORA-W36 3.5.0+): the module renamed its mDNS hostname (type 0) or a service instance (type 1)
    after a name conflict; false when none was seen since start. */
 bool ucxapp_mdns_conflict(int32_t *type, const char **previous, const char **renamed);

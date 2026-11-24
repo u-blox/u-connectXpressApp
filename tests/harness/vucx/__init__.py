@@ -414,6 +414,12 @@ class Network:
         if kind == "ntrip" and s["state"] == 0:
             s["state"] = 1
             s["rx"].append((ip, port, b"ICY 200 OK\r\n\r\n" + self.RTCM))
+        elif isinstance(kind, bytes):  # tests only: these bytes answer the first write, then nothing
+            if s["state"] == 0:
+                s["state"] = 1
+                s["rx"].append((ip, port, kind))
+        elif callable(kind):           # tests only: kind(data) gives the (ip, port, bytes) datagrams that answer it
+            s["rx"].extend(kind(data))
         elif kind == "coap" and len(data) >= 4:
             tkl, kind_ = data[0] & 0x0F, (data[0] >> 4) & 3
             head = bytes([0x40 | ((2 if kind_ == 0 else 1) << 4) | tkl, 0x45])

@@ -15,7 +15,7 @@ description: Build, flash and use u-connectXpressApp as FreeRTOS or Zephyr firmw
 .\ucxapp --stm32-zephyr --board h753 --build --flash --log       # Zephyr build, same boards (or all)
 ```
 Only official ST NUCLEO and Discovery boards are supported. `--stm32` still works as the old name of `--stm32-freertos`.
-On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
+On Linux: `./ucxapp.py --stm32-freertos ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Run commands on the board from a script with `--send` (repeatable; prints each reply until 2 s of quiet, fails on `ERROR`): `.\ucxapp --stm32-freertos --board h753 --send "hw.board" --send "gatt.server.aio 600"`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
 
 ## Zephyr (`--stm32-zephyr`)
 - Needs `west` and an upstream Zephyr workspace with the Zephyr SDK (hal_stm32 comes with it):

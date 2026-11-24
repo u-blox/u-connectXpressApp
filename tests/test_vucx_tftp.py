@@ -63,13 +63,13 @@ def _rrq(name):
     return b"\0\1" + name.encode() + b"\0octet\0"
 
 
-def _serve(app_exe, tmp_path, datagrams, *commands, wait_s=10):
+def _serve(app_exe, tmp_path, datagrams, *commands, wait_s=10, on="tftp.on rw"):
     module = _module({69: datagrams})
     proc = None
     try:
         proc = subprocess.Popen([str(app_exe), module.port, "--shell"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, errors="replace", cwd=tmp_path)
-        proc.stdin.write("tftp.on rw\n")
+        proc.stdin.write(on + "\n")
         proc.stdin.flush()
         end = time.monotonic() + wait_s
         while time.monotonic() < end and not module.net.replies:
@@ -110,3 +110,67 @@ def test_tftp_server_takes_an_upload_with_options(app_exe, tmp_path):
                                               b"\0\3\0\1hello\n"])
     assert replies and replies[0][:2] in (b"\0\4", b"\0\6"), (replies, out)
     assert (tmp_path / "up.txt").read_bytes() == b"hello\n", (replies, out)
+
+
+@pytest.mark.parametrize("request_, on, error, last", [
+    (b"\0\1hello.txt\0mail\0", "tftp.on rw", b"Only octet mode", None),
+    (b"\0\2up.txt\0octet\0", "tftp.on", b"Read only (tftp.on rw allows uploads)", "refused, read only"),
+    (b"\0\2up.txt\0octet\0tsize\0" + b"999999999\0", "tftp.on rw", b"File too large", "too large"),
+], ids=["mode", "read-only", "too-large"])
+def test_tftp_server_refuses_what_it_cannot_take(app_exe, tmp_path, request_, on, error, last):
+    out, replies = _serve(app_exe, tmp_path, [request_], on=on)
+    assert replies and replies[0][:2] == b"\0\5" and error in replies[0], (replies, out)
+    if last:
+        assert f"last: put up.txt from 192.168.1.10: {last}" in out, out
+    assert not (tmp_path / "up.txt").exists()
+
+
+def test_tftp_server_upload_ends_on_a_peer_error(app_exe, tmp_path):
+    out, replies = _serve(app_exe, tmp_path, [b"\0\2up.txt\0octet\0", b"\0\5\0\1disk on fire\0"])
+    assert replies and replies[0] == b"\0\4\0\0", (replies, out)
+    assert "last: put up.txt from 192.168.1.10: peer error 1: disk on fire" in out, out
+    assert not (tmp_path / "up.txt").exists() and not (tmp_path / "up.txt.part").exists()
+
+
+def test_tftp_on_checks_its_arguments_and_stops_after_the_time_limit(app_exe, tmp_path):
+    module = _module()
+    try:
+        out = subprocess.run([str(app_exe), module.port, "--shell"], input="tftp.on rw 6969 1 2\ntftp.on x\n"
+                             "tftp.on 6969 1\ntftp.on rw\ntftp.on\ntftp.off x\ntftp.status x\ntftp.off\ntftp.off\n",
+                             capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path).stdout
+    finally:
+        module.stop()
+    assert out.count("usage: tftp.on") == 2 and "usage: tftp.off" in out and "usage: tftp.status" in out, out
+    assert "TFTP server stopped after 1 s: 0 file(s), 0 bytes" in out, out
+    assert "already running; tftp.off first" in out, out
+    assert "TFTP server stopped\n" in out and out.rstrip().endswith("not running\nucxapp>"), out
+
+
+def test_tftp_get_takes_the_option_ack_and_skips_strangers(app_exe, tmp_path):
+    """A server that answers the RRQ with an OACK (tsize, blksize) gets ACK 0 and then sends the data; a datagram
+    from another host gets an "Unknown transfer ID" error and a datagram too short for TFTP is passed over."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    def server(data):
+        if data[:2] == b"\0\1":
+            return [("192.168.1.99", 69, b"\0\3\0\1stranger"), (HOST, 69, b"\0"),
+                    (HOST, 69, b"\0\6blksize\0" + b"512\0tsize\0" + b"5\0")]
+        if data == b"\0\4\0\0":
+            return [(HOST, 69, b"\0\3\0\1hello")]
+        return []
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["servers"] = {**(profile["sockets"].get("servers") or {}), 69: server}
+    module = Vucx(profile)
+    module.start()
+    try:
+        out = _run(app_exe, module.port, tmp_path, f"tftp.get {HOST} small.bin")
+        sent = [(c, d) for c, d in module.payloads if c.startswith("AT+USOSTB=")]
+    finally:
+        module.stop()
+    assert out.returncode == 0 and "size 5 bytes" in out.stdout, out.stdout
+    assert (tmp_path / "small.bin").read_bytes() == b"hello", out.stdout
+    assert any(c.startswith("AT+USOSTB=0,192.168.1.99,69") and d.startswith(b"\0\5\0\5Unknown transfer ID")
+               for c, d in sent), sent
+    assert any(d == b"\0\4\0\0" for c, d in sent) and any(d == b"\0\4\0\1" for c, d in sent), sent

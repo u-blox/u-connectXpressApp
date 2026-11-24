@@ -2,6 +2,7 @@
 (tests/capture_fake.py): command lines, pcap files, live view and error hints; no sniffer or Pi needed."""
 
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -193,3 +194,116 @@ def test_wlanpi_show_decodes_beacons_and_needs_a_file(app_exe, tmp_path):
         if msg:
             assert msg in out.stdout
 
+
+
+def _ble(aa, pdu, flags=0x01, channel=37, rssi=50):
+    """Nordic BLE pseudo header (protocol 3) around one link layer packet: access address, PDU, 3 byte CRC."""
+    ll = struct.pack("<I", aa) + pdu + b"\0\0\0"
+    hdr = bytes([0x0A, flags, channel, rssi, 0, 0, 0, 0, 0, 0])
+    return bytes([0x50]) + struct.pack("<H", len(hdr) + len(ll)) + bytes([3, 0, 0, 2]) + hdr + ll
+
+
+def _data(llid, payload, flags=0x01):
+    return _ble(0x50654321, bytes([llid, len(payload)]) + payload, flags=flags, channel=12)
+
+
+ATT = {0x01: "ATT error", 0x02: "ATT MTU request", 0x03: "ATT MTU response", 0x04: "ATT find information",
+       0x05: "ATT information", 0x08: "ATT read by type", 0x09: "ATT read by type response", 0x0A: "ATT read",
+       0x0B: "ATT read response", 0x10: "ATT read by group type", 0x11: "ATT read by group type response",
+       0x12: "ATT write request", 0x13: "ATT write response", 0x1B: "ATT notification", 0x1D: "ATT indication",
+       0x1E: "ATT confirmation", 0x52: "ATT write command", 0x40: "ATT"}
+
+
+def test_sniff_show_decodes_scan_extended_and_data_packets(app_exe, tmp_path):
+    scanner, adv = bytes.fromhex("112233445566"), bytes.fromhex("C0FFEE000003")
+    frames = [
+        _ble(0x8E89BED6, bytes([0x43, 12]) + bytes(reversed(scanner)) + bytes(reversed(adv))),       # SCAN_REQ
+        _ble(0x8E89BED6, bytes([0x47, 12, 7, 0x01]) + bytes(reversed(adv)) + bytes([3, 0xFF, 0x59, 0x00])),
+        _ble(0x8E89BED6, bytes([0x40, 6]) + bytes(reversed(adv)), flags=0x00),                       # CRC error
+        _data(0x01, b"", flags=0x03),
+        _data(0x02, b"\x05\x00\x04\x00\x0a\x03\x00", flags=0x05),                                   # encrypted
+        _data(0x03, bytes([0x0C, 0x0B, 0x59, 0x00, 0x01, 0x00])),
+        _data(0x03, bytes([0x40, 0, 0, 0, 0, 0])),
+        _data(0x01, b"\x01\x02\x03"),
+        *[_data(0x02, struct.pack("<HHB", 3, cid, 0x02) + b"\0\0") for cid in (6, 5, 0x40)],
+        *[_data(0x02, struct.pack("<HHB", 3, 4, op) + b"\0\0") for op in ATT],
+    ]
+    _pcap(tmp_path / "d.pcap", 272, frames)
+    out, _ = _run(app_exe, tmp_path, "sniff.show d.pcap count=0")
+    assert out.returncode == 0, out.stdout + out.stderr
+    text = out.stdout
+    assert re.search(r"SCAN_REQ\s+C0:FF:EE:00:00:03 <- 11:22:33:44:55:66 r", text), text
+    assert re.search(r"ADV_EXT_IND\s+C0:FF:EE:00:00:03 r mfr 0x0059", text), text
+    assert re.search(r"-50 dBm  CRC error  ADV_IND\s+C0:FF:EE:00:00:03", text), text
+    assert re.search(r"data C->P\s+AA 50654321 empty", text), text
+    assert re.search(r"data P->C\s+AA 50654321 encrypted 7 B", text), text
+    assert "AA 50654321 VERSION_IND" in text and "AA 50654321 LL control" in text, text
+    assert "AA 50654321 3 B" in text, text
+    for name in ("SMP", "L2CAP signaling", "L2CAP"):
+        assert f"AA 50654321 {name}\n" in text, text
+    for name in ATT.values():
+        assert f"AA 50654321 {name}\n" in text, text
+    assert f"{len(frames)} of {len(frames)} packets shown" in text, text
+
+
+def _radiotap(mhz, dbm=-40, fcs=False):
+    """Radiotap with a second present word (bit 31), flags, channel and signal; FCS flagged when asked."""
+    head = struct.pack("<BBH", 0, 0, 19) + struct.pack("<II", (1 << 31) | (1 << 1) | (1 << 3) | (1 << 5), 0)
+    return head + bytes([0x10 if fcs else 0, 0]) + struct.pack("<HH", mhz, 0) + struct.pack("<b", dbm)
+
+
+def _wifi(fc, body=b"", flags=0, mhz=2437, addr2="02:00:00:00:00:02", fcs=False):
+    a1 = bytes.fromhex("020000000001")
+    a2 = bytes.fromhex(addr2.replace(":", ""))
+    frame = struct.pack("<BB", fc, flags) + bytes(2) + a1 + a2 + a2 + bytes(2) + body
+    return _radiotap(mhz, fcs=fcs) + frame + (b"\xde\xad\xbe\xef" if fcs else b"")
+
+
+def _eapol(info, nonce):
+    key = bytes([2]) + struct.pack(">H", info) + bytes(2) + bytes(8) + nonce + bytes(16)
+    return b"\xAA\xAA\x03\x00\x00\x00\x88\x8E" + bytes([2, 3]) + struct.pack(">H", len(key)) + key
+
+
+def test_wlanpi_show_decodes_management_control_and_data_frames(app_exe, tmp_path):
+    ssid = bytes([1, 1, 0x82, 0, 4]) + b"lab1"
+    rts = struct.pack("<BB", 0xB4, 0) + bytes(2) + bytes.fromhex("020000000001") + bytes.fromhex("02000000000a")
+    ack = struct.pack("<BB", 0xD4, 0) + bytes(2) + bytes.fromhex("020000000001")
+    frames = [
+        _wifi(0x00, bytes(4) + ssid, mhz=2484),                     # assoc request, channel 14
+        _wifi(0x20, bytes(10) + ssid, mhz=5180),                    # reassoc request
+        _wifi(0x40, bytes([0, 3, 0, 0, 0]), mhz=5975),              # probe request, hidden SSID, 6 GHz
+        _wifi(0xA0, struct.pack("<H", 8), flags=0x08, mhz=900),     # disassoc, retry, unknown band
+        _wifi(0xC0, struct.pack("<H", 3)),                          # deauth
+        _wifi(0xB0, struct.pack("<HHH", 0, 2, 0)),                  # auth
+        _wifi(0x10, struct.pack("<HHH", 0, 17, 1)),                 # assoc response
+        _radiotap(2412) + rts, _radiotap(2412) + ack,
+        _wifi(0x08, b"x" * 20, flags=0x40),                         # protected data
+        _wifi(0x48, flags=0x08),                                    # null, retry
+        _wifi(0xC8, bytes(4)),                                      # QoS null
+        _wifi(0x88, bytes(6) + bytes(2) + bytes(4) + b"abc", flags=0x83, fcs=True),   # 4 addresses, QoS, HT
+        _wifi(0x08, _eapol(0x008A, b"\x11" * 32)),
+        _wifi(0x08, _eapol(0x010A, b"\x22" * 32)),
+        _wifi(0x08, _eapol(0x01CA, b"\x33" * 32)),
+        _wifi(0x08, _eapol(0x030A, bytes(32))),
+        _radiotap(2412) + b"\x08\x00" + bytes(10),                  # too short for a data header
+        _radiotap(2412)[:4] + b"\x01",                              # radiotap longer than the packet
+        struct.pack("<BBHI", 0, 0, 10, 1 << 3) + bytes(6),          # channel cut off, frame too short
+    ]
+    _pcap(tmp_path / "w.pcap", 127, frames)
+    _pcap(tmp_path / "e.pcap", 1, [bytes.fromhex("ffffffffffff020000000002") + b"\x08\x06" + bytes(28), b"\x01\x02"])
+    _pcap(tmp_path / "u.pcap", 105, [b"abcd"])
+    out, _ = _run(app_exe, tmp_path, "wlanpi.show w.pcap count=0", "wlanpi.show e.pcap", "wlanpi.show u.pcap")
+    assert out.returncode == 0, out.stdout + out.stderr
+    text = out.stdout
+    expect = [r"ch14\s+-40 dBm  Assoc request\s+02:00:00:00:00:02 -> 02:00:00:00:00:01 'lab1'",
+              r"ch36\s+-40 dBm  Reassoc request\s+.* 'lab1'", r"ch5\s+-40 dBm  Probe request\s+.* '<hidden>'",
+              r"ch0\s+-40 dBm  Disassoc\s+.* reason 8 retry", r"Deauth\s+.* reason 3",
+              r"Auth\s+.* seq 2 status 0", r"Assoc response\s+.* status 17",
+              r"RTS\s+02:00:00:00:00:0a -> 02:00:00:00:00:01", r"ACK\s+ -> 02:00:00:00:00:01",
+              r"Data\s+.* protected 20 B", r"Null\s+.* retry", r"QoS Null\s+.* 2 B\n",
+              r"QoS Data\s+.* 3 B\n", r"EAPOL key 1/4", r"EAPOL key 2/4", r"EAPOL key 3/4", r"EAPOL key 4/4",
+              r"31 B \(link type 127\)", r"14 B \(link type 127\)", r"5 B \(link type 127\)",
+              r"02:00:00:00:00:02 -> ff:ff:ff:ff:ff:ff  type 0x0806  42 B", r"2 B \(link type 1\)",
+              r"4 B \(link type 105\)"]
+    for pattern in expect:
+        assert re.search(pattern, text), f"{pattern}\n{text}"

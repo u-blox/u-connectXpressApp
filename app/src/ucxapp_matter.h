@@ -28,7 +28,8 @@ extern "C" {
 #define UCXAPP_MATTER_LOG_INFO    1
 #define UCXAPP_MATTER_LOG_DETAIL  2
 
-/* Results of start() and command(): the UCXAPP_ERR_* values of ucxapp_cmd.h. */
+/* Results of start() and command(): the UCXAPP_ERR_* values of ucxapp_cmd.h. USAGE from start(): wrong arguments,
+   found before anything went to the module (the app then needs no reboot for the GATT service). */
 #define UCXAPP_MATTER_OK                0
 #define UCXAPP_MATTER_ERR_USAGE       (-101)
 #define UCXAPP_MATTER_ERR_FAILED      (-103)

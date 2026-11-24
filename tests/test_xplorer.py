@@ -221,3 +221,126 @@ def test_connect_needs_the_module(app_exe, tmp_path, phone, module):
     _connect(app_exe, tmp_path, phone)
     assert any(c.startswith('AT+USOC=0,"127.0.0.1"') or c.startswith("AT+USOC=0,127.0.0.1") for c in module.log), \
         module.log
+
+
+ALL_FEATURES = {**V1, "blePeripheral": True}
+
+
+def test_selftest_phone_passes_on_an_up_to_date_phone(app_exe, tmp_path):
+    fake = FakePhone(features=ALL_FEATURES, protocol=1)
+    fake.bluetooth = "poweredOn"
+    fake.handlers["app.getNetworkInfo"] = lambda params: {"ip": "127.0.0.1", "wifi": True}
+    try:
+        _connect(app_exe, tmp_path, fake)
+        out = _run(app_exe, tmp_path, "xplorer.selftest phone")
+        assert out.returncode == 0, out.stdout
+        for step in ("connect to the phone: 127.0.0.1", "phone answers app.version", "phone Bluetooth is on",
+                     "protocol version: protocol 1, ucxapp speaks 1", "phone features",
+                     "phone answers app.getNetworkInfo"):
+            assert f"[PASS] {step}" in out.stdout, out.stdout
+        assert "selftest: 6 passed, 0 failed, 0 skipped" in out.stdout, out.stdout
+    finally:
+        fake.close()
+
+
+def test_selftest_phone_names_what_an_old_phone_lacks(app_exe, tmp_path, phone):
+    _connect(app_exe, tmp_path, phone)
+    phone.handlers["app.getPlatform"] = lambda params: {"platform": "ios"}
+    out = _run(app_exe, tmp_path, "xplorer.selftest phone")
+    assert out.returncode != 0, out.stdout
+    assert "[FAIL] phone Bluetooth is on: app.getPlatform gave no bluetoothState" in out.stdout, out.stdout
+    assert "[FAIL] protocol version: no protocolVersion; update u-connectXplorer" in out.stdout, out.stdout
+    assert ("[FAIL] phone features: missing authChallenge, stopOnDisconnect, waitForDevice, blePeripheral"
+            in out.stdout), out.stdout
+    assert "[FAIL] phone answers app.getNetworkInfo" in out.stdout, out.stdout
+    phone.handlers.pop("app.getPlatform")
+    out = _run(app_exe, tmp_path, "xplorer.selftest phone")
+    assert "[FAIL] phone Bluetooth is on: poweredOff" in out.stdout, out.stdout
+
+
+def test_selftest_ble_and_wifi_report_each_step(app_exe, tmp_path):
+    fake = FakePhone(features=ALL_FEATURES, protocol=1)
+    fake.handlers["peripheral.startAdvertising"] = lambda p: {"error": {"code": -32010, "message": "busy"}}
+    try:
+        _connect(app_exe, tmp_path, fake)
+        out = _run(app_exe, tmp_path, "xplorer.selftest ble")
+        assert out.returncode != 0, out.stdout
+        assert "[FAIL] module as central to the phone (nus both ways): peripheral.startAdvertising failed" \
+            in out.stdout, out.stdout
+        assert "> perf.phone tx 3" in out.stdout and "[FAIL] perf.phone tx (phone as central over SPS)" \
+            in out.stdout, out.stdout
+        assert fake.called("peripheral.startAdvertising") == [{"mode": "nus", "name": fake.called(
+            "peripheral.startAdvertising")[0]["name"]}]
+        assert fake.called("peripheral.startAdvertising")[0]["name"].startswith("ucx-st-")
+        # The virtual module is on Wi-Fi: UDP reaches the phone's echo, TCP finds nobody listening on the fake.
+        out = _run(app_exe, tmp_path, "xplorer.selftest wifi")
+        assert "> perf.latency udp xplorer 7401 10" in out.stdout, out.stdout
+        assert "10 sent, 10 received, 0 lost" in out.stdout and "[PASS] perf.latency udp to the phone" in out.stdout
+        assert "ERROR: cannot connect to 127.0.0.1:7402" in out.stdout, out.stdout
+        assert "[FAIL] perf.latency tcp to the phone" in out.stdout, out.stdout
+        assert fake.called("socket.startServer")[0]["port"] == 7401, fake.calls
+    finally:
+        fake.close()
+
+
+def test_selftest_ble_skips_central_on_a_phone_without_a_peripheral(app_exe, tmp_path, phone):
+    _connect(app_exe, tmp_path, phone)
+    out = _run(app_exe, tmp_path, "xplorer.selftest ble")
+    assert ("[SKIP] module as central to the phone (nus both ways): the phone app has no blePeripheral"
+            in out.stdout), out.stdout
+    assert not phone.called("peripheral.startAdvertising")
+
+
+@pytest.mark.parametrize("command", ["xplorer.selftest bogus", "xplorer.selftest phone extra"])
+def test_selftest_usage(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, command)
+    assert out.returncode != 0 and "usage" in out.stdout.lower(), out.stdout
+
+
+def test_strings_are_unescaped_and_a_long_answer_takes_the_64_bit_length(app_exe, tmp_path, phone):
+    phone.handlers["app.version"] = lambda params: {"version": "2.1\t\u00e9A\nB", "app": "u-connectXplorer"}
+    phone.handlers["big.data"] = lambda params: {"blob": "x" * 70000}
+    out = _connect(app_exe, tmp_path, phone)
+    assert "u-connectXplorer 2.1\t?A\nB on ios" in out.stdout, out.stdout
+    out = _run(app_exe, tmp_path, "xplorer.call big.data", 'xplorer.call echo.params s=a"b\\c')
+    assert out.returncode == 0 and '{"blob": "' + "x" * 500 in out.stdout, out.stdout[-500:]   # printing is capped
+    assert phone.calls[-1] == ("echo.params", {"s": 'a"b\\c'}), phone.calls[-1]
+
+
+def test_selftest_ble_central_sends_both_ways_over_nus(app_exe, tmp_path, module):
+    """The module finds the phone's advertising name, connects as central, sends over NUS and the phone gets it (as
+    a byte array), then the phone's text arrives at the module; the link is closed and the advertising stopped."""
+    fake = FakePhone(features=ALL_FEATURES, protocol=1)
+
+    def advertise(params):
+        module.commands["AT+UBTD*"] = [f'+UBTD:C0FFEE001122p,-50,"{params["name"]}",0,020106', "OK"]
+        return {"result": {"ok": True}}
+
+    def send(params):
+        module._send_quiet([f"+UEBTGCN:0,{nus_tx},{params['text'].encode().hex().upper()}"])
+        return {"result": {"ok": True}}
+
+    handle = module.handle
+
+    def written(cmd, data=b""):
+        handle(cmd, data)
+        if "hello-from-module".encode().hex().upper() in cmd:
+            fake.notify("peripheral.onData", {"value": list(b"hello-from-module")})
+
+    nus_tx = 0x92   # the peer's NUS TX value handle in the virtual module (gatt.client.nus lists it)
+    module.handle = written
+    fake.handlers["peripheral.startAdvertising"] = advertise
+    fake.handlers["peripheral.send"] = send
+    fake.handlers["peripheral.stopAdvertising"] = lambda p: {"result": {"ok": True}}
+    try:
+        _connect(app_exe, tmp_path, fake)
+        out = _run(app_exe, tmp_path, "xplorer.selftest ble")
+    finally:
+        fake.close()
+    assert "[PASS] module as central to the phone (nus both ways)" in out.stdout, out.stdout
+    assert "NUS TX)  handle 0x0092" in out.stdout and "[NUS RX] hello-from-phone" in out.stdout, out.stdout
+    name = fake.called("peripheral.startAdvertising")[0]["name"]
+    assert f"connecting to {name} (C0:FF:EE:00:11:22)" in out.stdout and "connection 0 closed" in out.stdout
+    assert fake.called("peripheral.send") == [{"text": "hello-from-phone"}], fake.calls
+    assert fake.called("peripheral.stopAdvertising"), fake.calls
+    assert any(c.startswith("AT+UBTDC=") for c in module.log), module.log[-20:]

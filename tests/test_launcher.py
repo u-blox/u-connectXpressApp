@@ -402,3 +402,45 @@ def test_detect_finds_the_matter_hub_by_its_console_prompt(monkeypatch, capsys):
     monkeypatch.setattr(ucxapp, "find_matter_hub", lambda: ("COM60", "u-blox-hub-e83d"))
     assert ucxapp.detect("ucxapp.exe")["UCX_MATTER_HUB"] == "COM60"
     assert "  COM60 u-blox-hub-e83d" in capsys.readouterr().out
+
+class _FakeConsole:
+    """A board console: echoes each line, answers with coloured text and a prompt."""
+
+    def __init__(self, port, baud, timeout):
+        self.port, self.out, self.lines = port, b"", []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def write(self, data):
+        line = data.decode().rstrip("\r")
+        self.lines.append(line)
+        reply = {"dev.info": "\x1b[1mModel: NORA-W36\x1b[0m", "nosuch": "ERROR: unknown command"}.get(line, "")
+        self.out += f"{line}\r\n{reply}\r\nucxapp> ".encode() if line else b"\r\nucxapp> "
+
+    def reset_input_buffer(self):
+        self.out = b""
+
+    def read(self, n):
+        chunk, self.out = self.out[:n], self.out[n:]
+        return chunk
+
+
+def test_send_runs_commands_on_the_board_console(monkeypatch, capsys):
+    import argparse
+
+    import serial
+
+    consoles = []
+    monkeypatch.setattr(serial, "Serial", lambda *a, **kw: consoles.append(_FakeConsole(*a, **kw)) or consoles[-1])
+    args = argparse.Namespace(board="h753", ports=["COM9"], send=["dev.info"])
+    assert ucxapp.stm32_send(args, quiet=0.2) == 0
+    out = capsys.readouterr().out
+    assert "COM9> dev.info\ndev.info\nModel: NORA-W36\nucxapp>" in out, out   # colour codes and CRs gone
+    assert consoles[0].lines == ["", "dev.info"]
+    args.send = ["dev.info", "nosuch"]
+    assert ucxapp.stm32_send(args, quiet=0.2) == 1   # an ERROR reply fails the run
+    assert "ERROR: unknown command" in capsys.readouterr().out

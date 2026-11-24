@@ -477,6 +477,26 @@ def test_lwm2m_client_registers_serves_updates_and_deregisters(app_exe, tmp_path
     assert "AT+USOCL=0" in module.log, module.log
 
 
+def test_lwm2m_registration_takes_a_separate_response_and_a_reset_deregistration(app_exe, tmp_path):
+    """An empty ACK to the registration means the response comes on its own: a request that arrives meanwhile is
+    served, the confirmable response is acknowledged and taken; a reset to the deregistration ends the run."""
+    CON, ACK, RST = 0, 2, 3
+    server = [
+        _coap(ACK, 0x00, 0x1D00),
+        _coap(CON, 0x01, 9, b"\xaa", "/3/0/1"),
+        _coap(CON, 0x41, 0x7000, b"\x4c\x00", location=("rd", "5a3f")),
+    ] + [""] * 100 + [_coap(RST, 0x00, 0x1D01)] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, module = _exec(app_exe, profile, tmp_path, "lwm2m.run 192.168.1.10 5683 nora-test 1")
+    assert "lwm2m: registered at 192.168.1.10:5683 as nora-test (/rd/5a3f)" in out.stdout, out.stdout
+    assert "lwm2m: GET /3/0/1 -> 2.05\n" in out.stdout, out.stdout
+    sent = [data for _, data in module.payloads]
+    assert sent[1] == b"\x61\x45\x00\x09\xaa\xc0\xffNORA-W36", sent[:3]
+    assert sent[2] == b"\x60\x00\x70\x00", sent[:3]   # the empty ACK to the separate response
+    assert sent[3] == b"\x42\x04\x1d\x01\x4c\x01" + LW_RD and len(sent) == 4, sent
+    assert "lwm2m: deregistered (0.00), 1 request(s) served" in out.stdout, out.stdout
+
+
 LW_ERRORS = {
     "usage": ("lwm2m.run", {}, "  lwm2m.run <host> [port] [endpoint] [seconds]"),
     "seconds": ("lwm2m.run 192.168.1.10 5683 ep -1", {}, "usage: lwm2m.run"),
@@ -486,6 +506,13 @@ LW_ERRORS = {
                 "ERROR: connect to 192.168.1.10:5683 failed"),
     "refused": ("lwm2m.run 192.168.1.10", {"AT+USORFB=*": _datagram(_coap(2, 0x83, 0x1D00, b"\x4c\x00")),
                                            "AT+USOCL=0": ["OK"]}, "ERROR: registration refused: 4.03"),
+    "two-modes": ("lwm2m.run 192.168.1.10 dtls psk", {}, "usage: lwm2m.run"),
+    "port": ("lwm2m.run 192.168.1.10 0", {}, "usage: lwm2m.run"),
+    "extra": ("lwm2m.run 192.168.1.10 5683 ep 1 more", {}, "usage: lwm2m.run"),
+    "host": ("lwm2m.run " + "h" * 300, {}, "usage: lwm2m.run"),
+    "no-ca": ("lwm2m.run 192.168.1.10 dtls", {"AT+USOCL=0": ["OK"]}, "ERROR: DTLS: "),
+    "silent": ("lwm2m.run 192.168.1.10", {"AT+USORFB=*": ERROR, "AT+USOCL=0": ["OK"]},
+               "ERROR: no LwM2M reply to the registration"),
 }
 
 
@@ -550,6 +577,21 @@ def test_lwm2m_runs_in_the_background_until_stopped(app_exe, tmp_path):
         assert text in out.stdout, (text, out.stdout)
 
 
+def test_lwm2m_start_stop_and_status_check_their_arguments(app_exe, tmp_path):
+    """A second lwm2m.start is refused while one runs; stop and status take no arguments; an identity longer than
+    64 characters is refused."""
+    server = [_coap(2, 0x41, 0x1D00, b"\x4c\x00", location=("rd", "5a3f"))] + [""] * 50
+    server += [_coap(2, 0x42, 0x1D01, b"\x4c\x01")] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, _ = _shell(app_exe, profile, tmp_path, ["lwm2m.start 192.168.1.10 5683 nora-test",
+                                                 "lwm2m.start 192.168.1.10", "lwm2m.stop x", "lwm2m.status x",
+                                                 "lwm2m.stop", "lwm2m.psk " + "i" * 65 + " 00"])
+    assert "ERROR: already running; lwm2m.stop first" in out.stdout, out.stdout
+    assert "usage: lwm2m.stop" in out.stdout and "usage: lwm2m.status" in out.stdout, out.stdout
+    assert "lwm2m: deregistered (2.02)" in out.stdout, out.stdout
+    assert "ERROR: the identity takes 1 to 64 characters" in out.stdout, out.stdout
+
+
 def test_lwm2m_psk_is_stored_sealed_and_needed_for_psk(app_exe, tmp_path):
     """lwm2m.psk keeps the identity and key in the secure store (no key in plain text), shows the identity and
     removes it; bad keys are refused; lwm2m.run ... psk without a key says so before any handshake."""
@@ -569,6 +611,58 @@ def test_lwm2m_psk_is_stored_sealed_and_needed_for_psk(app_exe, tmp_path):
     assert "ERROR: no LwM2M pre-shared key" in out.stdout and out.returncode != 0, out.stdout
     assert any(c.startswith("AT+USOC=") and c.endswith(",5684") for c in module.log), module.log
     assert "AT+USOCL=0" in module.log, module.log
+
+
+def test_lwm2m_psk_handshake_ends_at_a_fatal_alert(app_exe, tmp_path):
+    """With a stored key lwm2m.run ... psk sends the DTLS ClientHello over the module socket and reads the server's
+    answer from it; a fatal handshake_failure alert ends the handshake with an error and the socket is closed."""
+    out = _offline(app_exe, tmp_path, "lwm2m.psk dev-1 000102030405060708090a0b0c0d0e0f")
+    assert out.returncode == 0, out.stdout
+    alert = (b"\x15\xfe\xfd" + bytes(8) + b"\x00\x02\x02\x28").decode("latin-1")
+    out, module = _exec(app_exe, _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(alert)] * 50,
+                                                 "AT+USOCL=0": ["OK"]}), tmp_path, "lwm2m.run 192.168.1.10 psk")
+    assert "ERROR: DTLS handshake with 192.168.1.10:5684 failed" in out.stdout and out.returncode != 0, out.stdout
+    hello = module.payloads[0][1]
+    assert hello[0] == 0x16 and hello[1:3] == b"\xfe\xfd" and hello[13] == 0x01, hello   # handshake: ClientHello
+    assert "AT+USOCL=0" in module.log, module.log
+
+
+def _lw_request(mid, token, segments, extra=b""):
+    """A confirmable GET with Uri-Path segments of any length (13 + n bytes when longer than 12) and raw options."""
+    out = bytes([0x40 | len(token), 0x01, 0, mid]) + token
+    delta = 11
+    for seg in segments:
+        length = len(seg)
+        out += bytes([(delta << 4) | (13 if length > 12 else length)]) + (bytes([length - 13]) if length > 12 else b"")
+        out += seg.encode()
+        delta = 0
+    return (out + extra).decode("latin-1")
+
+
+def test_lwm2m_client_takes_tlv_writes_extended_options_and_skips_bad_messages(app_exe, tmp_path):
+    """A lifetime written as one TLV resource is taken like text (update with lt=60); a TLV of the wrong length is
+    4.00; options with 1- and 2-byte extended numbers are passed over; a 16-byte path segment is read as such; a
+    message with the reserved option nibble 15 is not answered."""
+    CON, ACK = 0, 2
+    server = [
+        _coap(ACK, 0x41, 0x1D00, b"\x4c\x00", location=("rd", "5a3f")),
+        _coap(CON, 0x03, 30, b"\xd0", "/1/0/1", payload=b"\xc1\x01\x3c"),
+        _coap(ACK, 0x44, 0x1D01, b"\x4c\x01"),
+        _coap(CON, 0x03, 31, b"\xd1", "/1/0/1", payload=b"\xc0\x01\x3c"),
+        _lw_request(32, b"\xd2", ["3", "0", "1"], b"\xd0\x24\xe0\x06\xb7"),   # options 60 (Size1) and 2048
+        _lw_request(33, b"\xd3", ["3", "0", "0123456789abcdef"]),
+        _lw_request(34, b"\xd4", ["3", "0", "1"], b"\xf0"),
+    ] + [""] * 100 + [_coap(ACK, 0x42, 0x1D02, b"\x4c\x02")] * 3000
+    profile = _profile(WIFI, {**LW_IDENTITY, "AT+USORFB=*": [_datagram(d) for d in server]})
+    out, module = _exec(app_exe, profile, tmp_path, "lwm2m.run 192.168.1.10 5683 nora-test 1")
+    assert out.returncode == 0, out.stdout
+    for line in ("PUT /1/0/1 -> 2.04", "update -> 2.04", "PUT /1/0/1 -> 4.00", "GET /3/0/1 -> 2.05",
+                 "deregistered (2.02), 4 request(s) served"):
+        assert f"lwm2m: {line}\n" in out.stdout, (line, out.stdout)
+    assert "GET /3/0/0123456789abcdef -> " in out.stdout, out.stdout
+    sent = [data for command, data in module.payloads]
+    assert sent[2] == b"\x42\x02\x1d\x01\x4c\x01" + LW_RD + b"\x45lt=60", sent[2]
+    assert not any(data[2:5] == b"\x00\x22\xd4" for data in sent), sent   # the bad message got no answer
 
 
 # ---- mqtt.* ----

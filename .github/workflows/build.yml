@@ -54,7 +54,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           python -m pytest tests -m app -p no:cacheprovider -n auto
-          gcovr -r . --filter 'app/src/' --object-directory build-cov --gcov-ignore-parse-errors negative_hits.warn_once_per_file --txt --xml coverage-c.xml --fail-under-line 80
+          gcovr -r . --filter 'app/src/' --object-directory build-cov --gcov-ignore-parse-errors negative_hits.warn_once_per_file --txt --xml coverage-c.xml --fail-under-line 85
       - uses: actions/upload-artifact@v5
         with:
           name: c-coverage

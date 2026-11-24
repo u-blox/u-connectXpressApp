@@ -40,6 +40,14 @@ def _run(exe, module, plugin, cwd, *commands, env=None):
                           stdin=subprocess.DEVNULL, cwd=cwd, env=environ)
 
 
+def _session(exe, module, plugin, cwd, *commands, env=None):
+    """As _run, but in a piped shell: it goes on after a command that fails, as a user at the prompt would."""
+    environ = {k: v for k, v in os.environ.items() if k != "UCX_STUB_ABI"}
+    environ.update(env or {}, UCX_MATTER_PLUGIN=str(plugin))
+    return subprocess.run([str(exe), module.port, "--shell"], input="\n".join(commands) + "\n", capture_output=True,
+                          text=True, timeout=60, errors="replace", cwd=cwd, env=environ)
+
+
 def _other_library():
     """A library of the system: it loads, but it is no Matter plug-in."""
     if os.name == "nt":
@@ -639,3 +647,194 @@ def test_a_bridge_listening_beside_the_web_page_keeps_its_own_clients(app_exe, s
         if proc.poll() is None:
             proc.kill()
         module.stop()
+
+
+def test_setup_code_helpers_match_the_matter_sdks_vectors():
+    """The decoders the real plug-in's tests check its codes with, against the SDK's own test vectors
+    (src/setup_payload/tests) and the codes of the SDK's example apps."""
+    from harness.matter import manual_code, manual_decode, qr_decode, verhoeff_check
+
+    assert verhoeff_check("236") == "3"   # the textbook example
+    assert manual_code(2560, 12345679) == "2412-950-753"   # TestManualCode: GetDefaultPayload, short code
+    assert verhoeff_check("3497011233") == "2"   # 34970112332: discriminator 3840, passcode 20202021
+    assert manual_decode("3497-011-233") == (3840 >> 8, 20202021)
+    # TestQRCode: kDefaultPayloadQRCode, SoftAP (1)
+    assert qr_decode("MT:M5L90MP500K64J00000") == {"version": 0, "vendor": 12, "product": 1, "flow": 0,
+                                                     "rendezvous": 1, "discriminator": 128, "passcode": 2048,
+                                                     "padding": 0}
+    # the example apps: vendor 0xFFF1, product 0x8001, on the network (4)
+    assert qr_decode("MT:-24J0AFN00KA0648G00") == {"version": 0, "vendor": 0xFFF1, "product": 0x8001, "flow": 0,
+                                                     "rendezvous": 4, "discriminator": 3840, "passcode": 20202021,
+                                                     "padding": 0}
+    # a single digit or character off is caught
+    assert verhoeff_check("3497011234") != "2" and verhoeff_check("4397011233") != "2"
+    with pytest.raises(AssertionError):
+        qr_decode("MT:M5L90MP500K64J0000")   # one character short
+
+
+@pytest.mark.parametrize("command, says", [
+    ("matter.stop now", "usage: matter.stop"),
+    ("matter.status now", "usage: matter.status"),
+    ("matter.card now", "usage: matter.card"),
+    ("matter.log info detail", "usage: matter.log <info|detail|error=info>"),
+    ("matter.selftest now", "usage: matter.selftest"),
+    ("matter.reset now", "usage: matter.reset [all]"),
+    ("matter.reset all now", "usage: matter.reset [all]"),
+    ("matter.set light", "usage: matter.set <endpoint> <value...>"),
+    ("matter.bridge", "usage: matter.bridge\n  matter.bridge tcps [port]"),
+    ("matter.bridge tcps 7540 9", "usage: matter.bridge"),
+    ("matter.start light", "ERROR: a Matter node is already running; matter.stop ends it"),
+    ("matter.open 60", "ERROR: matter.open is not in this plug-in (stub)"),
+])
+def test_a_wrong_command_leaves_the_running_node_alone(app_exe, module, stub, tmp_path, command, says):
+    out = _session(app_exe, module, stub, tmp_path, "matter.start", command, "matter.status", "matter.endpoints")
+    assert says in out.stdout, out.stdout
+    after = out.stdout.split(says)[1]
+    assert "matter: running" in after and "started 1 time(s)" in after, out.stdout
+    assert "1  light  off\n2  temp  21.5\n3  contact  closed\n" in after, out.stdout
+    assert out.stdout.count("[matter] stub node stopped") == 1 and "matter: node stopped" not in out.stdout, out.stdout
+    assert out.stdout.count("matter: node started") == 1 and "AT+CPWROFF" not in module.log, module.log
+
+
+def test_status_in_each_state_and_stop_without_a_node(app_exe, module, stub, tmp_path):
+    out = _run(app_exe, module, stub, tmp_path, "matter.status", "matter.start", "matter.status", "matter.stop",
+               "matter.status")
+    assert out.returncode == 0, out.stdout
+    states = re.findall(r"^matter: (stopped|running)$", out.stdout, re.M)
+    assert states == ["stopped", "running", "stopped"], out.stdout
+    assert f"plug-in: {stub}\n" in out.stdout and "(not installed)" not in out.stdout, out.stdout
+    assert f"plug-in: stub ({stub})\nradios: BLE, Wi-Fi\nURCs passed on: " in out.stdout, out.stdout
+    out = _run(app_exe, module, stub, tmp_path, "matter.stop")
+    assert out.returncode != 0, out.stdout
+    assert "ERROR: no Matter node is running; start one with matter.start" in out.stdout, out.stdout
+    assert "stub node stopped" not in out.stdout, out.stdout
+
+
+def test_a_start_with_more_endpoints_than_the_plugin_takes_is_refused(app_exe, module, stub, tmp_path):
+    out = _session(app_exe, module, stub, tmp_path, "matter.start " + " ".join(["light"] * 9), "matter.status",
+                   "matter.start " + " ".join(["light"] * 8), "matter.endpoints")
+    assert "ERROR: the Matter node did not start (USAGE)" in out.stdout, out.stdout
+    first, second = out.stdout.split("matter: stopped")
+    assert "node started" not in first, out.stdout
+    assert "matter: node started (stub)" in second and re.search(r"^8  light  off$", second, re.M), out.stdout
+    # the plug-in refused the words before it sent the module anything: no GATT service to reboot away
+    assert "rebooting the module" not in out.stdout and "AT+CPWROFF" not in module.log, out.stdout
+
+
+def test_the_plugin_gets_a_copy_of_every_urc_the_app_passes_on(app_exe, module, stub, tmp_path):
+    out = _run(app_exe, module, stub, tmp_path, "matter.start", "wifi.connect vucx-net secret123", "wifi.disconnect",
+               "wifi.connect vucx-net secret123", "app.wait 300", "matter.status")
+    assert out.returncode == 0, out.stdout
+    passed = re.search(r"URCs passed on: (\d+), kept by the node: (\d+)", out.stdout)
+    copies = re.search(r"stub URCs: (\d+), last (\S+)", out.stdout)
+    assert passed and copies, out.stdout
+    # two joins and a leave: each brings its link and network URCs
+    assert int(passed[1]) == int(copies[1]) >= 5 and passed[2] == "0", out.stdout
+    assert copies[2].startswith("+UEW"), out.stdout
+
+
+def test_the_store_seals_names_the_plugin_may_use_and_refuses_others(app_exe, module, stub, tmp_path):
+    out = _run(app_exe, module, stub, tmp_path, "matter.start", env={"UCX_STUB_STORE": "0"})
+    assert out.returncode == 0, out.stdout
+    assert "store check: ok" in out.stdout and "store: " not in out.stdout, out.stdout
+    files = {path.name: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    stored = sorted(name for name in files if name.startswith("matter."))
+    assert stored == ["matter.abcdefghijklmnop.key", "matter.secret.key", "matter.stub.key"], sorted(files)
+    for name in stored:
+        assert files[name].startswith(b"UCXS"), (name, files[name][:16])
+    # nothing the plug-in saved is on disk in plain text, in its own file or any other
+    assert not any(b"stub-plaintext-secret" in data for data in files.values()), sorted(files)
+    # and it comes back as it went in, in the next session
+    out = _run(app_exe, module, stub, tmp_path, "matter.start", "matter.status", env={"UCX_STUB_STORE": "0"})
+    assert "store check: ok" in out.stdout and "started 2 time(s)" in out.stdout, out.stdout
+
+
+def test_reset_removes_every_blob_however_many_and_keeps_the_setup_codes(app_exe, stub, tmp_path):
+    """matter.reset lists the store 16 files at a time: a node with more must still be forgotten whole."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    module.start()
+
+    def blobs():
+        return sorted(path.name for path in tmp_path.rglob("matter.*.key"))
+
+    try:
+        _run(app_exe, module, stub, tmp_path, "matter.start", env={"UCX_STUB_STORE": "20"})
+        assert len(blobs()) == 24 and "matter.factory.key" in blobs(), blobs()
+        out = _run(app_exe, module, stub, tmp_path, "matter.reset")
+        assert out.returncode == 0 and "matter: reset, 23 stored file(s) removed\n" in out.stdout, out.stdout
+        assert blobs() == ["matter.factory.key"], blobs()
+        _run(app_exe, module, stub, tmp_path, "matter.start", env={"UCX_STUB_STORE": "20"})
+        out = _run(app_exe, module, stub, tmp_path, "matter.reset all")
+        assert out.returncode == 0 and "matter: reset, 24 stored file(s) removed\n" in out.stdout, out.stdout
+        assert blobs() == [], blobs()
+    finally:
+        module.stop()
+
+
+def test_triggers_drive_the_node(app_exe, module, stub, tmp_path):
+    """The button sets the light; the light's event opens the contact: trigger.add ... do matter.set."""
+    out = _run(app_exe, module, stub, tmp_path, "matter.start", "trigger.add press button do matter.set light on",
+               'trigger.add door event "matter: light = on" do matter.set contact open', "app.wait 200",
+               "hw.button press", "app.wait 500", "hw.button release", "matter.endpoints", "trigger.list")
+    assert out.returncode == 0, out.stdout
+    assert "[trigger] press: pressed -> matter.set light on" in out.stdout, out.stdout
+    assert "[trigger] door:" in out.stdout and "-> matter.set contact open" in out.stdout, out.stdout
+    assert "1  light  on\n2  temp  21.5\n3  contact  open\n" in out.stdout, out.stdout
+    assert re.search(r"press .*fired 1\b", out.stdout) and re.search(r"door .*fired 1\b", out.stdout), out.stdout
+    # without a node the trigger's command fails, and that is counted, not hidden
+    out = _session(app_exe, module, stub, tmp_path, "trigger.add press button do matter.set light on",
+                   "app.wait 200", "hw.button press", "app.wait 500", "trigger.list")
+    assert "[trigger] press: matter.set light on failed (" in out.stdout, out.stdout
+    assert re.search(r"press .*fired 1, 1 failed\)", out.stdout), out.stdout
+
+
+def _handles(proc):
+    """Open handles (Windows) or file descriptors (POSIX) of a running process."""
+    if os.name == "nt":
+        import ctypes
+        count = ctypes.c_ulong()
+        assert ctypes.windll.kernel32.GetProcessHandleCount(int(proc._handle), ctypes.byref(count))
+        return count.value
+    return len(os.listdir(f"/proc/{proc.pid}/fd"))
+
+
+def test_many_start_stop_cycles_leak_nothing(app_exe, stub, tmp_path):
+    """Each start after the first reboots the module (its GATT server keeps the service): after a warm-up, 20 more
+    cycles of start, set, card, stop must leave the app with the handles it had."""
+    pytest.importorskip("yaml")
+    import threading
+
+    from harness.vucx import Vucx
+
+    module = Vucx("nora-w36.yaml")
+    proc = _shell(app_exe, module, stub, tmp_path)
+    lines = []
+    reader = threading.Thread(target=lambda: lines.extend(proc.stdout), daemon=True)
+    reader.start()
+    cycle = "matter.start\nmatter.set light on\nmatter.card\nmatter.stop\n"
+
+    def run(cycles, done):
+        proc.stdin.write(cycle * cycles)
+        proc.stdin.flush()
+        assert _until(lambda: "".join(lines).count("matter: node stopped") == done, timeout=120), "".join(lines)
+        time.sleep(0.5)   # the module's URCs of the last reboot
+        return _handles(proc)
+
+    try:
+        warm = run(3, 3)
+        after = run(20, 23)
+        proc.stdin.write("matter.start\nmatter.status\n")
+        proc.stdin.close()
+        proc.wait(timeout=30)
+        reader.join(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        module.stop()
+    out = "".join(lines)
+    assert out.count("matter: node started (stub)") == 24 and "ERROR" not in out, out
+    assert "started 24 time(s)" in out and module.log.count("AT+CPWROFF") == 23, out
+    assert after - warm < 5, (warm, after)   # the same, but for a thread on its way out; a leak would be 20 or more

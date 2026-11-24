@@ -579,8 +579,16 @@ static int opBoard(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_USAGE;
     }
     if (gCfg == NULL) {
+#ifdef UCXAPP_HW_BOARD
+        const ucxapp_hw_board_t *b = &ucxapp_hw_board;
+
+        outf(o, "%s: user LED %s, user button %s (pressed %s), %d gpio pins", b->board,
+             b->led >= 0 ? b->gpio[b->led] : "none", b->button >= 0 ? b->gpio[b->button] : "none",
+             b->buttonPressed ? "high" : "low", b->nGpio);
+#else
         outf(o, "virtual board, NUCLEO-H753ZI layout: user LED pin %d, user button pin %d "
                 "(hw.profile.load <file.json> for another board)", DEF_LED, DEF_BUTTON);
+#endif
         return UCXAPP_OK;
     }
     outf(o, "%s\ni2c scl %s sda %s\nspi sck %s miso %s mosi %s cs %s\ncan rx %s tx %s\n", gCfg->board, gCfg->i2cScl,

@@ -1,6 +1,7 @@
-"""Stand-ins for the capture tools ucxapp starts (tests/test_capture.py): nrfutil, ssh and Wireshark.
+"""Stand-ins for the capture tools ucxapp starts (tests/test_capture.py): nrfutil, ssh and Wireshark; also the
+browser of web.kiosk (tests/test_vucx_web.py), which only records its call.
 
-Usage: capture_fake.py nrfutil|ssh|wireshark <args...>. Every call writes its argv to $UCX_FAKE_DIR/calls.txt.
+Usage: capture_fake.py nrfutil|ssh|wireshark|browser <args...>. Every call writes its argv to $UCX_FAKE_DIR/calls.txt.
 Captures write a pcap with one packet every 20 ms until interrupted or until $UCX_FAKE_DIR/stop exists.
 """
 
@@ -87,7 +88,7 @@ def main():
     tool, args = sys.argv[1], sys.argv[2:]
     with open(DIR / "calls.txt", "a", encoding="utf-8") as f:
         f.write(tool + " " + " ".join(args) + "\n")
-    {"nrfutil": nrfutil, "ssh": ssh, "wireshark": wireshark}[tool](args)
+    {"nrfutil": nrfutil, "ssh": ssh, "wireshark": wireshark, "browser": lambda _: None}[tool](args)
 
 
 if __name__ == "__main__":

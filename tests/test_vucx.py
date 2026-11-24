@@ -944,95 +944,24 @@ def test_hw_bridges_share_the_stream_until_the_last_one_stops(app_exe, nora):
     assert "ERROR: a BLE bridge is already running on the hw" in text, text[-3000:]
 
 
-def test_imu_commands_on_a_virtual_sensor(app_exe, nora, tmp_path):
-    from harness.vucx import Feeder
-
-    data = (_wit(0x51, 100, -200, 2048, 2500) + _wit(0x52, 10, 20, 30, 2500) + _wit(0x53, 1000, -1000, 9000, 0)
-            + _wit(0x54, 300, 200, 100, 0)) * 5
-    imu = Feeder(data, 0.05)
-    port = imu.start()
-    try:
-        out = _shell(app_exe, nora.port, [
-            f"imu.open {port} 9600 wit", "imu.status", f"imu.log {tmp_path / 'i.bin'}", "imu.status",
-            "imu.log off", "imu.rate 10", "imu.send ff aa 69 88 b5", "imu.bridge status", "imu.bridge tcps 9000",
-            "imu.bridge status", "imu.bridge off", "imu.bridge udpc 192.168.1.10 9001", "imu.bridge off",
-            "imu.close", "imu.status"])
-    finally:
-        imu.stop()
-    assert out.returncode in (0, 1), out.stdout[-3000:]
-
-
-USE_CASES = ["iiot", "medical", "site", "implement", "condition", "agv", "eol", "blegw", "edge",
-             "boat", "rtk", "mower", "farm", "tracker", "home", "provision", "hotel", "notify", "remote",
-             "handover", "livestock", "fieldkit", "blecell", "vehicle", "xplr", "finder"]
-
-
-@pytest.mark.parametrize("case", USE_CASES)
-def test_use_case_steps_run_on_the_virtual_module(app_exe, nora, case, tmp_path):
-    """Every step of every use case (examples uc-<name> N) runs on the virtual NORA-W36 without stopping."""
-    from harness.vucx import Feeder, Vucx
-
-    listing = subprocess.run([str(app_exe), "COM255", "--exec", f"examples uc-{case}"], capture_output=True,
-                             text=True, timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
-    count = len(re.findall(r"^ \d+\. ", listing, re.MULTILINE))
-    assert count > 0, listing
-    gnss = Feeder(NMEA, 0.2)
-    modem = Vucx("cell.yaml")
-    args = [str(app_exe), nora.port, "--exec", f"gnss.open {gnss.start()} 9600", "--exec",
-            f"cell.open {modem.start()}"]
-    for n in range(1, count + 1):
-        args += ["--exec", f"examples uc-{case} {n}"]
-    try:
-        out = subprocess.run(args, capture_output=True, text=True, timeout=150, errors="replace",
-                             stdin=subprocess.DEVNULL, cwd=tmp_path)
-    finally:
-        gnss.stop()
-        modem.stop()
-    ran = out.stdout.count(f"Running uc-{case} example")
-    bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
-    assert ran == count and not bad, (f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
-                                      f"\nlast AT: {nora.log[-15:]}")
-    if case == "provision":   # the profile's virtual phone sends SET_CONFIG to gatt.server.wps, as text and protobuf
-        assert "the phone sent the Wi-Fi settings" in out.stdout, out.stdout[-3000:]
-        assert "secret123" not in out.stdout, out.stdout[-3000:]
-        for line in ("[WPS] response: op 1 status 0", "[WPS] response: op 2 status 0",
-                     "[WPS] scan result: vucx-net -45 dBm", "[WPS] SET_CONFIG vucx-net: already connected",
-                     "[WPS] response: op 4 status 0", "[WPS] result: connected"):
-            assert line in out.stdout, out.stdout[-3000:]
-        assert any(c.startswith("AT+UBTGIS=0,45,08021000") for c in nora.log), nora.log[-30:]
-        # the same network twice (text, then protobuf) joins at most once (none if the module is already on it)
-        assert sum(c.startswith("AT+UWSC=") for c in nora.log) <= 1, nora.log[-40:]
-    if case in ("mower", "farm"):   # PointPerfect over the modem's data link: request up, corrections down
-        assert any(c.startswith("GET /NEAR-SPARTN ") for c in modem.log), modem.log[-20:]
-        assert "NTRIP: streaming corrections from /NEAR-SPARTN" in out.stdout, out.stdout[-3000:]
-
-
-THREAD_CASES = {"mesh": "nora-b26-thread.yaml", "border": "nora-b26-thread.yaml",
-                "building": "nora-b26-thread.yaml", "gateway": "alma-w1-thread.yaml",
-                "swarm": "alma-w1-thread.yaml", "recovery": "alma-w1-thread.yaml"}
-
-
-@pytest.mark.parametrize("case", THREAD_CASES)
-def test_thread_use_case_fits_and_runs_on_a_virtual_module(app_exe, case, tmp_path):
-    """The Thread use cases fit a virtual Thread module (gateway: ALMA-W1 with Wi-Fi) and every step runs."""
+def test_hw_bridge_answers_command_lines_from_a_udp_peer(app_exe):
+    """Lines from a UDP peer run as hw commands, each answered with OK/ERR to the sender; a write that changes a
+    pin is also reported as an EVT line; a line that fills the 200-byte buffer is dropped without an answer."""
     pytest.importorskip("yaml")
-    from harness.vucx import Vucx
+    from harness.vucx import Vucx, load
 
-    listing = subprocess.run([str(app_exe), "COM255", "--exec", f"examples uc-{case}"], capture_output=True,
-                             text=True, timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
-    count = len(re.findall(r"^ \d+\. ", listing, re.MULTILINE))
-    assert count > 0, listing
-    module = Vucx(THREAD_CASES[case])
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["bursts"] = {7000: ["gpio.write 3 1\r\ngpio.read 3\nnope\ngpio.read\n" + "x" * 200 + "\n\n"]}
+    module = Vucx(profile)
+    module.start()
     try:
-        out = _run(app_exe, module.start(), f"usecase.check {case}",
-                   *[f"examples uc-{case} {n}" for n in range(1, count + 1)], timeout=150, cwd=tmp_path)
+        _shell(app_exe, module.port, ["hw.bridge udps 7000", "app.wait 1500", "hw.bridge off"], log=module.log)
+        text = b"".join(data for command, data in module.payloads if command.startswith("AT+USOSTB=")).decode()
     finally:
         module.stop()
-    assert "[gap]" not in out.stdout, out.stdout
-    ran = out.stdout.count(f"Running uc-{case} example")
-    bad = [line for line in out.stdout.splitlines() if line.startswith(("stopped", "ERROR"))]
-    assert ran == count and not bad, f"{ran}/{count} ran\n" + "\n".join(bad) + f"\n{out.stdout[-3000:]}"
-    assert any(c.startswith("AT+UTH") for c in module.log), module.log[-15:]
+    assert "OK " in text and "EVT gpio 3 1\n" in text, text
+    assert "ERR unknown command 'nope'\n" in text and "ERR usage: gpio.read <pin>\n" in text, text
+    assert "x" * 20 not in text and text.count("\n") == 5, text
 
 
 def test_demo_tour_ranges_a_tag_and_ends_with_a_ble_link(app_exe, tmp_path):
@@ -1587,3 +1516,310 @@ def test_gatt_server_reboots_the_module_once_before_its_first_service(app_exe, n
     first = next(i for i, cmd in enumerate(nora.log) if cmd.startswith("AT+UBTGS="))
     assert nora.log.count("AT+CPWROFF") == 1 and reboot < first, nora.log
     assert out.stdout.count("GATT server starts clean") == 1, out.stdout
+
+
+def test_gnss_bridge_refuses_bad_arguments_and_serves_tls(app_exe, tmp_path):
+    """Every malformed bridge form prints the usage; a TLS bridge needs its certificate, reports a second start as
+    the running bridge, shows TLS in the status, and bridge.off stops every bridge of every source."""
+    from harness.vucx import Feeder, Vucx
+
+    gnss = Feeder(NMEA, 0.2)
+    port = gnss.start()
+    module = Vucx("nora-w36.yaml")
+    bad = ["off x", "tls 0", "tls 2947 server extra", "tcpc host 0", "udpc host 1 0", "udps 0",
+           "ble custom 6E400001B5A3F393E0A9E50E24DCCA9E 6E400002B5A3F393E0A9E50E24DCCA9E zz", "ble foo",
+           f"uart {port} 0"]
+    try:
+        out = subprocess.run([str(app_exe), module.start(), "--shell"], input="\n".join([
+            "bridge.list", f"gnss.open {port} 9600", "gnss.bridge off 1", *(f"gnss.bridge {b}" for b in bad),
+            "gnss.bridge tls 2947 nocert", f"gnss.bridge uart {port}", f"gnss.bridge tcpc {'h' * 200} 80",
+            "utils.tls.ca.create", "utils.tls.server.create server 192.168.1.50",
+            "gnss.bridge tls 2947 server clientauth", "gnss.bridge tls 2947 server clientauth", "gnss.bridge udps 9000",
+            "gnss.bridge status", "bridge.off", "gnss.bridge status", "gnss.close"]) + "\n",
+            capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path).stdout
+    finally:
+        module.stop()
+        gnss.stop()
+    assert "no sources open (gnss.open" in out, out[-3000:]
+    assert "ERROR: no bridge 1 on the gnss (see gnss.bridge status)" in out, out[-3000:]
+    assert out.count("usage: gnss.bridge") == len(bad), out[-3000:]
+    assert "ERROR: TLS certificate 'nocert'" in out, out[-3000:]
+    assert "ERROR: that is the port of the gnss itself" in out, out[-3000:]
+    assert "ERROR: host name too long" in out, out[-3000:]
+    assert "TLS with certificate 'server', client certificate required" in out, out[-3000:]
+    assert "gnss.bridge tls 2947 server clientauth is already running as bridge 1" in out, out[-3000:]
+    assert "bridge 1: TCP server (TLS) port 2947, 0 client(s)" in out, out[-3000:]
+    assert "2 bridge(s) stopped" in out and "ucxapp> bridge: off\nucxapp> closed" in out, out[-3000:]
+
+
+def test_dev_use_switches_between_two_modules_and_falls_back(app_exe, tmp_path):
+    """dev.use names the module already active, keeps the old one when the new port does not answer, and switches
+    to a second module with its summary; dev.connect on a connected app says so."""
+    from harness.vucx import Vucx
+
+    first, second = Vucx("nora-w36.yaml"), Vucx("nora-b26.yaml")
+    try:
+        a, b = first.start(), second.start()
+        out = subprocess.run([str(app_exe), a, "--shell"], input="\n".join([
+            f"dev.connect {a}", f"dev.use {a}", "dev.use tcp:127.0.0.1:1", f"dev.use {b}", "dev.use"]) + "\n",
+            capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path).stdout
+    finally:
+        first.stop()
+        second.stop()
+    assert "already connected" in out, out[-3000:]
+    assert f"{a} is already the active module" in out, out[-3000:]
+    assert f"still using {a}" in out, out[-3000:]
+    assert f"active module: {b}" in out and "NORA-B26" in out.split(f"active module: {b}", 1)[1], out[-3000:]
+    assert "usage: dev.use <port>" in out, out[-3000:]
+
+
+@pytest.mark.parametrize("answer, error", [
+    (b"HTTP/1.1 401 Unauthorized\r\n\r\n", "refused /MP: HTTP/1.1 401 Unauthorized (wrong user name or password)"),
+    (b"SOURCETABLE 200 OK\r\nSTR;OTHER\r\n", "refused /MP: SOURCETABLE 200 OK (unknown mountpoint)"),
+    (b"x" * 300, "NTRIP caster sent no valid response"),
+], ids=["401", "sourcetable", "garbage"])
+def test_ntrip_bridge_reports_why_the_caster_refused(app_exe, answer, error):
+    """A caster that refuses the login or the mountpoint, or answers with no status line, is named once and the
+    bridge does not dial it again."""
+    from harness.vucx import Feeder, Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["servers"][2101] = answer
+    module = Vucx(profile)
+    module.start()
+    gnss = Feeder(NMEA, 0.2)
+    try:
+        out = _shell(app_exe, module.port, [f"gnss.open {gnss.start()} 9600", "gnss.bridge ntrip caster.local 2101 MP",
+                                            "gnss.watch 2", "gnss.bridge status", "gnss.bridge off"], log=module.log)
+    finally:
+        gnss.stop()
+        module.stop()
+    text = out.stdout
+    assert f"ERROR: NTRIP caster {error}" in text or f"ERROR: {error}" in text, text[-3000:]
+    assert text.count("ERROR: NTRIP caster") == 1, text[-3000:]
+    assert "streaming corrections" not in text, text[-3000:]
+    assert sum(1 for c in module.log if c.startswith("AT+USOC=")) == 1, module.log[-20:]
+
+
+def test_ntrip_bridge_takes_an_http_caster_and_refuses_a_second_one(app_exe):
+    """An NTRIP v2 caster answers HTTP/1.1 200 with headers; corrections start after the blank line. One NTRIP
+    bridge per receiver, and over-long caster settings are refused before anything is dialled."""
+    from harness import corrections
+    from harness.vucx import Feeder, Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"]["servers"][2101] = (b"HTTP/1.1 200 OK\r\nNtrip-Version: Ntrip/2.0\r\n\r\n"
+                                           + corrections.rtcm(bytes.fromhex("3ED00003") + bytes(15)))
+    module = Vucx(profile)
+    module.start()
+    gnss = Feeder(NMEA, 0.2)
+    try:
+        out = _shell(app_exe, module.port, [
+            f"gnss.open {gnss.start()} 9600", "gnss.bridge ntrip " + "h" * 200 + " 2101 MP",
+            "gnss.bridge ntrip caster.local 2101 MP", "gnss.watch 2", "gnss.bridge ntrip caster.local 2101 MP",
+            "gnss.bridge status", "gnss.bridge off"], log=module.log)
+    finally:
+        gnss.stop()
+        module.stop()
+    text = out.stdout
+    assert "ERROR: host, mountpoint or credentials too long" in text, text[-3000:]
+    assert "NTRIP: streaming corrections from /MP" in text, text[-3000:]
+    assert "ERROR: an NTRIP bridge is already running on the gnss (bridge 1; gnss.bridge off 1 first)" in text, \
+        text[-3000:]
+    assert re.search(r"RTCM 1\b", text), text[-3000:]
+
+def test_gnss_bridges_name_what_the_module_refused(app_exe):
+    """A module without sockets, DNS or SPS: each bridge says what failed, leaves nothing running, and a second
+    BLE user next to the Nordic UART bridge is refused."""
+    from harness.vucx import Feeder, Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["sockets"] = None
+    profile["commands"].update({"AT+USOCR=*": ["ERROR"], "AT+USOH=*": ["ERROR"], "AT+USPS=*": ["ERROR"]})
+    module = Vucx(profile)
+    module.start()
+    gnss = Feeder(NMEA, 0.2)
+    try:
+        out = _shell(app_exe, module.port, [
+            f"gnss.open {gnss.start()} 9600", "gnss.bridge udpc nohost.invalid 10110",
+            "gnss.bridge udpc 192.168.1.10 10110", "gnss.bridge tcpc 192.168.1.10 2947", "gnss.bridge tcps 2947",
+            "gnss.bridge ble sps", "gnss.bridge ble nus", "gnss.bridge ntrip caster.local 2101 MP ble",
+            "gnss.bridge status", "gnss.bridge off"], log=module.log)
+    finally:
+        gnss.stop()
+        module.stop()
+    text = out.stdout
+    for error in ("cannot resolve nohost.invalid", "cannot create UDP socket (is Wi-Fi connected?)",
+                  "cannot connect to 192.168.1.10:2947 (is Wi-Fi connected?)",
+                  "cannot listen on port 2947 (is Wi-Fi connected?)", "cannot enable the SPS service",
+                  "a BLE bridge is already running on the gnss (gnss.bridge status, then gnss.bridge off <n>)"):
+        assert f"ERROR: {error}" in text, (error, text[-3000:])
+    assert "bridge 1: BLE Nordic UART" in text and "bridge 2:" not in text, text[-3000:]
+
+def _bt_refusing(reads):
+    """A NORA-W36 whose Bluetooth setters (and, with reads, getters) all answer ERROR."""
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    pattern = re.compile(r"AT\+UBT.*" + ("" if reads else "="))
+    profile["commands"] = {k: v for k, v in profile["commands"].items() if not pattern.match(k)}
+    profile["commands"]["AT+UBT*=*"] = ["ERROR"]
+    if reads:
+        profile["commands"]["AT+UBT*?"] = ["ERROR"]
+    module = Vucx(profile)
+    module.start()
+    return module
+
+
+def _bt_shell(app_exe, tmp_path, reads, commands):
+    module = _bt_refusing(reads)
+    try:
+        return subprocess.run([str(app_exe), module.port, "--shell"], input="\n".join(commands) + "\n",
+                              capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path).stdout
+    finally:
+        module.stop()
+
+
+def test_bt_commands_report_what_the_module_refused(app_exe, tmp_path):
+    """Every Bluetooth setting the module refuses is named with its error, and bad arguments print the usage."""
+    out = _bt_shell(app_exe, tmp_path, False, [
+        "bt.pairing on", "bt.iocap display", "bt.security sc", "bt.defaults secure", "bt.name nora", "bt.phy 0 2m",
+        "bt.adv interval 100 200", "bt.adv 020106", "bt.cs.rate 20", "bt.cs.phase ref 500", "bt.pairing maybe",
+        "bt.iocap x", "bt.security x", "bt.defaults x", "bt.adv 01", "bt.adv 020106 sideways", "bt.adv interval x",
+        "bt.phy 0 4m", "bt.unbond", "bt.confirm maybe", "bt.passkey"])
+    failed = "failed (-1: U_ERROR_COMMON_BSD_ERROR)"
+    for error in ("set pairing mode", "set I/O capabilities", "set security mode", "set the Bluetooth name",
+                  "PHY update on connection 0", "setting the interval", "setting the advertising data",
+                  "Channel Sounding rate", "PCT reference"):
+        assert f"ERROR: {error} {failed}" in out, (error, out)
+    assert "ERROR: could not apply the secure profile: I/O capabilities (-1: U_ERROR_COMMON_BSD_ERROR)" in out, out
+    assert "connectable advertising takes 28 bytes (the module adds the flags), others 31" in out, out
+    for usage in ("bt.pairing <on|off>", "bt.iocap", "bt.security", "bt.defaults [secure]", "bt.phy",
+                  "bt.unbond <addr|all>", "bt.confirm <yes|no>", "bt.passkey <digits|deny>"):
+        assert f"usage: {usage}" in out, (usage, out)
+    assert out.count("usage: bt.adv") == 3, out
+
+
+def test_bt_reads_report_what_the_module_refused(app_exe, tmp_path):
+    """Reading Bluetooth settings the module refuses names what could not be read."""
+    out = _bt_shell(app_exe, tmp_path, True, ["bt.name", "bt.phy", "bt.phy 0", "bt.adv", "bt.filter", "bt.cs.filter"])
+    failed = "failed (-1: U_ERROR_COMMON_BSD_ERROR)"
+    for error in ("read the Bluetooth name", "read the preferred PHY", "read the PHY of connection 0",
+                  "reading the advertising state", "read the data filters", "Kalman filter"):
+        assert f"ERROR: {error} {failed}" in out, (error, out)
+    assert "Open:" not in out, out   # the BLE link count is read with AT+UBT* too
+
+def test_bt_profiles_are_added_removed_and_picked_by_signal(app_exe, nora, tmp_path):
+    """bt.profile.auto connects the strongest known device and says so when none is known or none is in range."""
+    out = subprocess.run([str(app_exe), nora.port, "--shell"], input="\n".join([
+        "bt.profile.auto", "bt.profile.add ghost 11:22:33:44:55:66", "bt.profile.auto",
+        "bt.profile.add vucx C0:FF:EE:00:11:22", "bt.profile.auto", "bt.disconnect 0", "bt.profile.connect nobody",
+        "bt.profile.remove nobody", "bt.profile.remove ghost", "bt.profile.remove", "bt.profile.list",
+        "bt.profile.remove vucx", "bt.profile.list"]) + "\n", capture_output=True, text=True, timeout=60,
+        errors="replace", cwd=tmp_path).stdout
+    assert "ERROR: no profiles (see bt.profile.add)" in out, out
+    assert "Scanning for known devices...\nERROR: no known device found" in out, out
+    assert "Strongest known device: 'vucx' (-50 dBm)" in out and "connection 0 (profile 'vucx')" in out, out
+    assert "ERROR: no profile 'nobody' (see bt.profile.list)" in out and "ERROR: no profile 'nobody'\n" in out, out
+    assert "profile 'ghost' removed" in out and "usage: bt.profile.remove <name>" in out, out
+    assert "vucx: C0:FF:EE:00:11:22\n1 profile(s)" in out and out.rstrip().endswith("0 profile(s)\nucxapp>"), out
+
+def test_bt_pairing_requests_and_failed_bonds_are_explained(app_exe):
+    """The module asks to confirm a code, shows a passkey and asks for one; bonds that fail say why and what to do."""
+    peer = "C0FFEE001122p"
+    module = _nora_with(urcs={"AT+UBTB=*": [[f"+UEBTUC:{peer},654321", f"+UEBTUPD:{peer},111222",
+                                             f"+UEBTUPE:{peer}", f"+UEBTB:{peer},2"],
+                                            [f"+UEBTB:{peer},4"], [f"+UEBTB:{peer},3"]]})
+    try:
+        out = _shell(app_exe, module.port, ["bt.autoconfirm off", "bt.bond 0 2", "bt.confirm yes", "bt.passkey deny",
+                                            "bt.bond 0 2", "bt.bond 0 2"], log=module.log)
+    finally:
+        module.stop()
+    text = out.stdout
+    assert out.returncode == 1, text   # the last bond failed
+    for line in ("[BT] pairing request from C0:FF:EE:00:11:22, code 654321\n[BT] answer with bt.confirm yes|no",
+                 "[BT] enter passkey 111222 on the remote device C0:FF:EE:00:11:22",
+                 "[BT] bonding FAILED: C0:FF:EE:00:11:22 (status 2)\n[BT] the peer rejected pairing",
+                 "(status 4)\n[BT] stale bond: one side still has keys the other forgot",
+                 "(status 3)\n[BT] MITM protection not possible with these I/O capabilities: try bt.iocap keydisplay"):
+        assert line in text, (line, text)
+    assert any(c.startswith("AT+UBTUC=C0FFEE001122p,1") for c in module.log), module.log[-20:]
+    assert any(c.startswith("AT+UBTUPE=C0FFEE001122p,0") for c in module.log), module.log[-20:]
+
+
+def test_gnss_sps_bridge_sends_the_receiver_data_to_a_ble_client_and_back(app_exe):
+    """A BLE client connects after the SPS service is on: the bridge opens SPS on its link, writes NMEA to it and
+    reads what the client sends back (vucx echoes every SPS write)."""
+    pytest.importorskip("yaml")
+    nora = _nora_with(urcs={"AT+USPSRM=*": {"after": 0.5, "times": 1, "lines": ["+UEBTC:0,C0FFEE001122p"]}})
+    try:
+        out = _shell(app_exe, nora.port, ["gnss.virtual malmo", "gnss.bridge ble sps", "gnss.watch 3",
+                                          "gnss.bridge status", "gnss.bridge off", "gnss.close"], log=nora.log)
+    finally:
+        nora.stop()
+    text = out.stdout
+    assert "gnss bridge: connect a BLE client to the u-blox Serial Port Service" in text, text[-3000:]
+    assert "AT+USPS=1" in nora.log and "AT+USPSC=0" in nora.log, nora.log[-30:]
+    writes = [c for c in nora.log if c.startswith("AT+USPSWB=0")]
+    reads = [c for c in nora.log if c.startswith("AT+USPSRB=0,")]
+    assert len(writes) >= 2 and reads, nora.log[-30:]
+    m = re.search(r"bridge 1: BLE SPS, client connected, (\d+) bytes out, (\d+) in, 0 dropped", text)
+    assert m and int(m[1]) > 0 and int(m[2]) > 0, text[-3000:]
+    assert "bridge stopped" in text, text[-3000:]
+
+
+@pytest.mark.parametrize("failing, says", [
+    (("ATE0", "AT+USYEE=1"), "ERROR: module on {port} does not answer AT commands (power-cycle it)"),
+    (("AT+USYEE=1",), "warning: could not enable extended error codes"),
+    (("ATE0",), "warning: could not disable echo"),
+])
+def test_a_module_that_refuses_the_setup_commands_is_named(app_exe, failing, says):
+    """A module that refuses ATE0 and AT+USYEE is dropped at once with a hint (no DTR on this port to recover it)
+    and the app goes on without a device; one that refuses only one of them gets a warning and stays connected."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    profile["commands"].update({cmd: ["ERROR"] for cmd in failing})
+    module = Vucx(profile)
+    try:
+        port = module.start()
+        out = subprocess.run([str(app_exe), port, "--exec", "app.wait 1"], capture_output=True, text=True,
+                             errors="replace", timeout=60, cwd=_CWD)
+    finally:
+        module.stop()
+    assert says.format(port=port) in out.stdout and out.returncode == 0, out.stdout
+    assert ("continuing without a device" in out.stdout) == (len(failing) == 2), out.stdout
+    assert ("module stuck: DTR low" in out.stdout) == ("ATE0" in failing), out.stdout
+
+
+def test_a_full_scan_list_keeps_the_strongest_devices(app_exe, tmp_path):
+    """bt.scan keeps 32 devices: a repeated address is listed once and, with the list full, a stronger device
+    takes the weakest one's place while a weaker one is left out; numbers and names then resolve from that list."""
+    pytest.importorskip("yaml")
+    from harness.vucx import Vucx, load
+
+    profile = load("nora-w36.yaml")
+    lines = ['+UBTD:C0FFEE0011%02Xp,%d,"tag%02d",0,020106' % (i, -40 - i, i) for i in range(34)]
+    lines.insert(5, lines[3])
+    lines += ['+UBTD:C0FFEE001199p,-90,"twin",0,020106', '+UBTD:C0FFEE001198p,-30,"twin",0,020106',
+              '+UBTD:C0FFEE001197p,-31,"twin",0,020106', "OK"]
+    profile["commands"]["AT+UBTD*"] = lines
+    module = Vucx(profile)
+    try:
+        port = module.start()
+        before = _run(app_exe, port, "bt.connect 1", cwd=tmp_path)
+        out = _run(app_exe, port, "bt.scan", "bt.connect 33", cwd=tmp_path)
+        twin = _run(app_exe, port, "bt.scan", "bt.connect twin", "bt.connect tag", cwd=tmp_path)
+    finally:
+        module.stop()
+    assert "ERROR: no scan results yet (run bt.scan first)" in before.stdout, before.stdout
+    listed = re.findall(r"^\s*\d+\s+(C0:FF:EE:00:11:[0-9A-F]{2})\s+(-\d+) dBm", out.stdout, re.M)
+    assert len(listed) == 32 and len(set(listed)) == 32, out.stdout
+    addrs = {a for a, _ in listed}
+    assert {"C0:FF:EE:00:11:98", "C0:FF:EE:00:11:97", "C0:FF:EE:00:11:1D"} <= addrs, out.stdout
+    assert not addrs & {"C0:FF:EE:00:11:99", "C0:FF:EE:00:11:1E", "C0:FF:EE:00:11:21"}, out.stdout
+    assert "32 device(s)" in out.stdout and "ERROR: no device 33 in the last scan (1-32)" in out.stdout, out.stdout
+    # a whole name picks the first (strongest) device with it, the start of a name must be unique
+    assert "connecting to twin (C0:FF:EE:00:11:98)" in twin.stdout, twin.stdout
+    assert "ERROR: 'tag' matches 30 scanned devices; use the number from bt.scan" in twin.stdout, twin.stdout

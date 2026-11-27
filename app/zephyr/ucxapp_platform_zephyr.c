@@ -232,7 +232,9 @@ int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uin
     return -1;
 }
 
-/* No file system yet: picolibc's fopen/remove/rename need these, every call fails. */
+/* No file system yet: picolibc's fopen/remove/rename need these, every call fails. A build with Zephyr's POSIX
+ * layer (a network stack brings it) has its own, and these are left out. */
+#ifndef CONFIG_POSIX_DEVICE_IO
 int open(const char *path, int flags, ...)
 {
     (void)path;
@@ -266,6 +268,9 @@ ssize_t write(int fd, const void *buf, size_t len)
     return -1;
 }
 
+#endif /* !CONFIG_POSIX_DEVICE_IO */
+
+#ifndef CONFIG_POSIX_FD_MGMT
 off_t lseek(int fd, off_t offset, int whence)
 {
     (void)fd;
@@ -275,6 +280,9 @@ off_t lseek(int fd, off_t offset, int whence)
     return -1;
 }
 
+#endif /* !CONFIG_POSIX_FD_MGMT */
+
+#ifndef CONFIG_POSIX_FILE_SYSTEM
 int unlink(const char *path)
 {
     (void)path;
@@ -289,3 +297,4 @@ int rename(const char *from, const char *to)
     errno = ENOSYS;
     return -1;
 }
+#endif /* !CONFIG_POSIX_FILE_SYSTEM */

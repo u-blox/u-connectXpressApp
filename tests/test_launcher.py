@@ -431,11 +431,14 @@ class _FakeConsole:
 
 def test_send_runs_commands_on_the_board_console(monkeypatch, capsys):
     import argparse
+    import sys
+    import types
 
-    import serial
-
+    # a stand-in for pyserial, which the launcher takes when it is installed and a test must not need
     consoles = []
-    monkeypatch.setattr(serial, "Serial", lambda *a, **kw: consoles.append(_FakeConsole(*a, **kw)) or consoles[-1])
+    serial = types.ModuleType("serial")
+    serial.Serial = lambda *a, **kw: consoles.append(_FakeConsole(*a, **kw)) or consoles[-1]
+    monkeypatch.setitem(sys.modules, "serial", serial)
     args = argparse.Namespace(board="h753", ports=["COM9"], send=["dev.info"])
     assert ucxapp.stm32_send(args, quiet=0.2) == 0
     out = capsys.readouterr().out

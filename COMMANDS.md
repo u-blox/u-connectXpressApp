@@ -664,6 +664,26 @@ ppk.vdd 3300
 ppk.measure 5000 idle.csv
 ```
 
+### Battery budget (PC only)
+
+A ledger of charge by kind, in microampere seconds (uAs; a microcoulomb, the charge `ppk.measure` reports). Put in what each thing a device does in a period takes and `power.budget` says how long a cell lasts. The ledger itself (`ucxapp_charge.h`) is portable, so firmware can keep it as it runs.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `power.status` | `[cell mAh=220]` | The charge taken since the ledger was emptied, by kind, and how long a cell lasts at that rate |
+| `power.budget` | `<seconds> [cell mAh=220]` | Take what the ledger holds as the cost of a period, and say how long a cell lasts |
+| `power.spend` | `<sleep\|cpu\|sensors\|ble\|ranging\|wifi\|gnss\|cell\|storage\|console> <uAs>` | Put a charge into the ledger |
+| `power.reset` | | Empty the ledger |
+
+```text
+# An hour: asleep at 5 uA, one GNSS fix, 60 advertisements
+power.reset
+power.spend sleep 18000
+power.spend gnss 20000
+power.spend ble 1600
+power.budget 3600
+```
+
 ### BLE sniffer (PC only)
 
 Captures Bluetooth LE with an nRF Sniffer for Bluetooth LE (an nRF52840 dongle or DK with Nordic's sniffer firmware, USB 1915:522A) through `nrfutil ble-sniffer sniff` into a pcap file. nrfutil comes from `UCXAPP_NRFUTIL`, PATH or `~/.nrfutil/bin` (`nrfutil install ble-sniffer` once). `live` shows the capture in Wireshark as it grows (`UCXAPP_WIRESHARK` overrides where Wireshark is); Wireshark stays open after the stop. The other detectors skip sniffer ports.
